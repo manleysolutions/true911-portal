@@ -1,17 +1,17 @@
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.hash import bcrypt
 
 from app.config import settings
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.verify(password, hashed)
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
 def create_access_token(user_id: int, tenant_id: str, role: str) -> str:
