@@ -1,4 +1,4 @@
-import { useAuth } from "./AuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { createPageUrl } from "@/utils";
 import { useEffect } from "react";
 
