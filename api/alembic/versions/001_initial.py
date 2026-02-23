@@ -23,7 +23,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("tenant_id", sa.String(100), unique=True, nullable=False, index=True),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
     # Users
@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.Column("role", sa.String(50), nullable=False),
         sa.Column("tenant_id", sa.String(100), sa.ForeignKey("tenants.tenant_id"), nullable=False, index=True),
         sa.Column("is_active", sa.Boolean, server_default=sa.text("true")),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
     # Sites
@@ -48,7 +48,7 @@ def upgrade() -> None:
         sa.Column("site_name", sa.String(255), nullable=False),
         sa.Column("customer_name", sa.String(255), nullable=False),
         sa.Column("status", sa.String(50), nullable=False),
-        sa.Column("last_checkin", sa.DateTime, nullable=True),
+        sa.Column("last_checkin", sa.DateTime(timezone=True), nullable=True),
         sa.Column("e911_street", sa.String(500), nullable=True),
         sa.Column("e911_city", sa.String(100), nullable=True),
         sa.Column("e911_state", sa.String(10), nullable=True),
@@ -65,22 +65,22 @@ def upgrade() -> None:
         sa.Column("signal_dbm", sa.Integer, nullable=True),
         sa.Column("network_tech", sa.String(50), nullable=True),
         sa.Column("heartbeat_frequency", sa.String(50), nullable=True),
-        sa.Column("heartbeat_next_due", sa.DateTime, nullable=True),
+        sa.Column("heartbeat_next_due", sa.DateTime(timezone=True), nullable=True),
         sa.Column("lat", sa.Float, nullable=True),
         sa.Column("lng", sa.Float, nullable=True),
         sa.Column("notes", sa.Text, nullable=True),
         sa.Column("endpoint_type", sa.String(100), nullable=True),
         sa.Column("service_class", sa.String(100), nullable=True),
-        sa.Column("last_device_heartbeat", sa.DateTime, nullable=True),
-        sa.Column("last_portal_sync", sa.DateTime, nullable=True),
+        sa.Column("last_device_heartbeat", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_portal_sync", sa.DateTime(timezone=True), nullable=True),
         sa.Column("container_version", sa.String(50), nullable=True),
         sa.Column("firmware_version", sa.String(50), nullable=True),
         sa.Column("csa_model", sa.String(100), nullable=True),
         sa.Column("heartbeat_interval", sa.Integer, nullable=True),
         sa.Column("uptime_percent", sa.Float, nullable=True),
         sa.Column("update_channel", sa.String(50), nullable=True),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now(), onupdate=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
     # Telemetry Events
@@ -90,12 +90,12 @@ def upgrade() -> None:
         sa.Column("event_id", sa.String(50), unique=True, nullable=False, index=True),
         sa.Column("site_id", sa.String(50), nullable=False, index=True),
         sa.Column("tenant_id", sa.String(100), nullable=False, index=True),
-        sa.Column("timestamp", sa.DateTime, nullable=True),
+        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=True),
         sa.Column("category", sa.String(50), nullable=True),
         sa.Column("severity", sa.String(20), nullable=True),
         sa.Column("message", sa.Text, nullable=True),
         sa.Column("raw_json", sa.Text, nullable=True),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
     # Action Audits
@@ -110,10 +110,10 @@ def upgrade() -> None:
         sa.Column("role", sa.String(50), nullable=True),
         sa.Column("action_type", sa.String(50), nullable=True),
         sa.Column("site_id", sa.String(50), nullable=True, index=True),
-        sa.Column("timestamp", sa.DateTime, nullable=True),
+        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=True),
         sa.Column("result", sa.String(20), nullable=True),
         sa.Column("details", sa.Text, nullable=True),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
     # Incidents
@@ -126,15 +126,15 @@ def upgrade() -> None:
         sa.Column("severity", sa.String(20), nullable=True),
         sa.Column("status", sa.String(20), nullable=True),
         sa.Column("summary", sa.Text, nullable=True),
-        sa.Column("opened_at", sa.DateTime, nullable=True),
+        sa.Column("opened_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ack_by", sa.String(255), nullable=True),
-        sa.Column("ack_at", sa.DateTime, nullable=True),
-        sa.Column("closed_at", sa.DateTime, nullable=True),
+        sa.Column("ack_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("resolution_notes", sa.Text, nullable=True),
         sa.Column("assigned_to", sa.String(255), nullable=True),
         sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now(), onupdate=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
     # Notification Rules
@@ -152,9 +152,9 @@ def upgrade() -> None:
         sa.Column("enabled", sa.Boolean, server_default=sa.text("true")),
         sa.Column("escalation_steps", postgresql.JSONB, server_default="[]"),
         sa.Column("trigger_count", sa.Integer, server_default=sa.text("0")),
-        sa.Column("last_triggered", sa.DateTime, nullable=True),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now(), onupdate=sa.func.now()),
+        sa.Column("last_triggered", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
     # E911 Change Logs
@@ -166,7 +166,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.String(100), nullable=False, index=True),
         sa.Column("requested_by", sa.String(255), nullable=True),
         sa.Column("requester_name", sa.String(255), nullable=True),
-        sa.Column("requested_at", sa.DateTime, nullable=True),
+        sa.Column("requested_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("old_street", sa.String(500), nullable=True),
         sa.Column("old_city", sa.String(100), nullable=True),
         sa.Column("old_state", sa.String(10), nullable=True),
@@ -177,9 +177,9 @@ def upgrade() -> None:
         sa.Column("new_zip", sa.String(20), nullable=True),
         sa.Column("reason", sa.Text, nullable=True),
         sa.Column("status", sa.String(50), nullable=True),
-        sa.Column("applied_at", sa.DateTime, nullable=True),
+        sa.Column("applied_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("correlation_id", sa.String(100), nullable=True),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
 

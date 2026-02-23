@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, func
+from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -19,7 +19,7 @@ class ActionAudit(Base):
     role: Mapped[str] = mapped_column(String(50))
     action_type: Mapped[str] = mapped_column(String(50))
     site_id: Mapped[Optional[str]] = mapped_column(String(50), index=True, nullable=True)
-    timestamp: Mapped[datetime]
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     result: Mapped[str] = mapped_column(String(20))
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

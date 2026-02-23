@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Float, Integer, Boolean, Text, func
+from sqlalchemy import DateTime, String, Float, Integer, Boolean, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,6 @@ class NotificationRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     escalation_steps: Mapped[list] = mapped_column(JSONB, default=list)
     trigger_count: Mapped[int] = mapped_column(Integer, default=0)
-    last_triggered: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
+    last_triggered: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
