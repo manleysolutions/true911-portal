@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events
 
 logger = logging.getLogger("true911")
 
@@ -49,7 +49,18 @@ app.include_router(incidents.router,     prefix="/api/incidents", tags=["inciden
 app.include_router(notifications.router, prefix="/api")
 app.include_router(e911.router,          prefix="/api")
 app.include_router(actions.router,       prefix="/api")
-app.include_router(devices.router,      prefix="/api/devices", tags=["devices"])
+app.include_router(devices.router,      prefix="/api/devices",    tags=["devices"])
+app.include_router(lines.router,        prefix="/api/lines",      tags=["lines"])
+app.include_router(recordings.router,   prefix="/api/recordings", tags=["recordings"])
+app.include_router(events.router,       prefix="/api/events",     tags=["events"])
+
+
+@app.get("/api/config/features")
+async def feature_flags():
+    """Return feature flags for the frontend."""
+    return {
+        "samantha": settings.FEATURE_SAMANTHA.lower() == "true",
+    }
 
 
 @app.get("/api/health")

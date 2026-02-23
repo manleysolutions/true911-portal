@@ -1,4 +1,5 @@
-"""Seed the database with demo tenant, users, sites, telemetry, audits, incidents, and notification rules.
+"""Seed the database with demo tenant, users, sites, telemetry, audits, incidents,
+notification rules, lines, recordings, events, and providers.
 
 Run: python -m app.seed
 """
@@ -17,6 +18,10 @@ from .models.action_audit import ActionAudit
 from .models.incident import Incident
 from .models.notification_rule import NotificationRule
 from .models.device import Device
+from .models.line import Line
+from .models.recording import Recording
+from .models.event import Event
+from .models.provider import Provider
 from .services.auth import hash_password
 
 
@@ -153,6 +158,86 @@ for _idx, _s in enumerate(SITES):
     })
 
 
+PROVIDERS = [
+    {"provider_id": "PROV-001", "provider_type": "telnyx", "display_name": "Telnyx SIP Trunking", "enabled": True, "config_json": {"region": "us-central", "sip_connection_id": "demo-conn-001"}},
+    {"provider_id": "PROV-002", "provider_type": "tmobile", "display_name": "T-Mobile IoT SIM", "enabled": True, "config_json": {"plan": "iot-500mb", "apn": "fast.t-mobile.com"}},
+    {"provider_id": "PROV-003", "provider_type": "bandwidth", "display_name": "Bandwidth Voice", "enabled": False, "config_json": None},
+]
+
+# Lines — voice lines assigned to first 15 sites/devices
+LINES = []
+_line_configs = [
+    ("telnyx",   "+12145550101", "SIP",      "active",       "validated"),
+    ("telnyx",   "+15125550102", "SIP",      "active",       "validated"),
+    ("tmobile",  "+17135550103", "cellular", "active",       "pending"),
+    ("telnyx",   "+12105550104", "SIP",      "active",       "validated"),
+    ("tmobile",  "+18175550105", "cellular", "disconnected", "failed"),
+    ("telnyx",   "+19155550106", "SIP",      "active",       "validated"),
+    ("telnyx",   "+14695550107", "SIP",      "active",       "validated"),
+    ("tmobile",  "+18175550108", "cellular", "active",       "pending"),
+    ("telnyx",   "+13615550109", "SIP",      "active",       "validated"),
+    ("telnyx",   "+18065550110", "SIP",      "active",       "validated"),
+    ("telnyx",   "+19565550111", "SIP",      "provisioning", "none"),
+    ("tmobile",  "+19725550112", "cellular", "disconnected", "none"),
+    ("telnyx",   "+18065550113", "SIP",      "active",       "validated"),
+    ("telnyx",   "+19565550114", "SIP",      "active",       "validated"),
+    ("telnyx",   "+14695550115", "SIP",      "active",       "validated"),
+]
+for _i, (_prov, _did, _proto, _st, _e911) in enumerate(_line_configs):
+    _site = SITES[_i]
+    LINES.append({
+        "line_id": f"LINE-{_i + 1:03d}",
+        "site_id": _site["site_id"],
+        "device_id": f"DEV-{_i + 1:03d}",
+        "provider": _prov,
+        "did": _did,
+        "sip_uri": f"sip:{_did[2:]}@sip.telnyx.com" if _prov == "telnyx" else None,
+        "protocol": _proto,
+        "status": _st,
+        "e911_status": _e911,
+        "e911_street": _site.get("e911_street"),
+        "e911_city": _site.get("e911_city"),
+        "e911_state": _site.get("e911_state"),
+        "e911_zip": _site.get("e911_zip"),
+    })
+
+# Recordings — sample call recordings for active lines
+RECORDINGS = [
+    {"line_idx": 0, "direction": "inbound",  "duration": 12, "ago_hours": 1,  "caller": "+12145559900", "callee": "+12145550101", "status": "available"},
+    {"line_idx": 0, "direction": "outbound", "duration": 5,  "ago_hours": 3,  "caller": "+12145550101", "callee": "+19725550000", "status": "available"},
+    {"line_idx": 1, "direction": "inbound",  "duration": 8,  "ago_hours": 2,  "caller": "+15125559900", "callee": "+15125550102", "status": "available"},
+    {"line_idx": 3, "direction": "inbound",  "duration": 15, "ago_hours": 4,  "caller": "+12105559900", "callee": "+12105550104", "status": "available"},
+    {"line_idx": 5, "direction": "outbound", "duration": 22, "ago_hours": 6,  "caller": "+19155550106", "callee": "+19155559900", "status": "available"},
+    {"line_idx": 6, "direction": "inbound",  "duration": 3,  "ago_hours": 1,  "caller": "+14695559900", "callee": "+14695550107", "status": "available"},
+    {"line_idx": 8, "direction": "inbound",  "duration": 45, "ago_hours": 8,  "caller": "+13615559900", "callee": "+13615550109", "status": "available"},
+    {"line_idx": 9, "direction": "outbound", "duration": 7,  "ago_hours": 12, "caller": "+18065550110", "callee": "+18065559900", "status": "available"},
+    {"line_idx": 2, "direction": "inbound",  "duration": 0,  "ago_hours": 5,  "caller": "+17135559900", "callee": "+17135550103", "status": "failed"},
+    {"line_idx": 4, "direction": "inbound",  "duration": 0,  "ago_hours": 48, "caller": "+18175559900", "callee": "+18175550105", "status": "failed"},
+]
+
+# Events — unified immutable log
+EVENTS = [
+    {"event_type": "device.registered", "site_id": "SITE-001", "device_id": "DEV-001", "severity": "info",     "message": "Device DEV-001 registered and connected", "ago_hours": 168},
+    {"event_type": "line.registered",   "site_id": "SITE-001", "device_id": "DEV-001", "line_id": "LINE-001", "severity": "info", "message": "Line LINE-001 SIP registration successful", "ago_hours": 167},
+    {"event_type": "e911.validated",    "site_id": "SITE-001", "line_id": "LINE-001", "severity": "info",     "message": "E911 address validated for LINE-001", "ago_hours": 166},
+    {"event_type": "call.completed",    "site_id": "SITE-001", "device_id": "DEV-001", "line_id": "LINE-001", "severity": "info", "message": "Inbound call completed — 12s duration", "ago_hours": 1},
+    {"event_type": "device.heartbeat",  "site_id": "SITE-001", "device_id": "DEV-001", "severity": "info",     "message": "Heartbeat OK — all systems nominal", "ago_hours": 0},
+    {"event_type": "device.offline",    "site_id": "SITE-005", "device_id": "DEV-005", "severity": "critical", "message": "Device DEV-005 missed 576 heartbeats — offline 48h", "ago_hours": 2},
+    {"event_type": "line.down",         "site_id": "SITE-005", "device_id": "DEV-005", "line_id": "LINE-005", "severity": "critical", "message": "Line LINE-005 SIP registration lost", "ago_hours": 48},
+    {"event_type": "alert.triggered",   "site_id": "SITE-005", "severity": "critical", "message": "Alert RULE-001 triggered: Life Safety Offline", "ago_hours": 47},
+    {"event_type": "e911.updated",      "site_id": "SITE-003", "line_id": "LINE-003", "severity": "warning",  "message": "E911 address updated — pending AHJ verification", "ago_hours": 6},
+    {"event_type": "device.registered", "site_id": "SITE-002", "device_id": "DEV-002", "severity": "info",     "message": "Device DEV-002 registered and connected", "ago_hours": 120},
+    {"event_type": "call.started",      "site_id": "SITE-006", "device_id": "DEV-006", "line_id": "LINE-006", "severity": "info", "message": "Outbound call initiated on LINE-006", "ago_hours": 6},
+    {"event_type": "call.completed",    "site_id": "SITE-006", "device_id": "DEV-006", "line_id": "LINE-006", "severity": "info", "message": "Outbound call completed — 22s duration", "ago_hours": 6},
+    {"event_type": "recording.available", "site_id": "SITE-006", "line_id": "LINE-006", "severity": "info",   "message": "Call recording available for LINE-006", "ago_hours": 6},
+    {"event_type": "device.offline",    "site_id": "SITE-012", "device_id": "DEV-012", "severity": "critical", "message": "Device DEV-012 offline — 72h since last heartbeat", "ago_hours": 1},
+    {"event_type": "system.info",       "severity": "info", "message": "Nightly maintenance completed — all systems healthy", "ago_hours": 8},
+    {"event_type": "device.heartbeat",  "site_id": "SITE-004", "device_id": "DEV-004", "severity": "info",     "message": "Heartbeat OK — uptime 99.9%", "ago_hours": 0},
+    {"event_type": "line.registered",   "site_id": "SITE-003", "device_id": "DEV-003", "line_id": "LINE-003", "severity": "info", "message": "Line LINE-003 cellular registration successful", "ago_hours": 72},
+    {"event_type": "e911.validated",    "site_id": "SITE-004", "line_id": "LINE-004", "severity": "info",     "message": "E911 address validated for LINE-004", "ago_hours": 96},
+]
+
+
 async def seed():
     from .config import settings
     if settings.APP_MODE != "demo":
@@ -249,11 +334,53 @@ async def seed():
         for d in DEVICES:
             db.add(Device(tenant_id=TENANT_ID, **d))
 
+        # Providers
+        for p in PROVIDERS:
+            db.add(Provider(tenant_id=TENANT_ID, **p))
+
+        # Lines
+        for ln in LINES:
+            db.add(Line(tenant_id=TENANT_ID, **ln))
+
+        # Recordings
+        for r in RECORDINGS:
+            _ln = LINES[r["line_idx"]]
+            db.add(Recording(
+                recording_id=uid("REC"),
+                tenant_id=TENANT_ID,
+                site_id=_ln["site_id"],
+                device_id=_ln["device_id"],
+                line_id=_ln["line_id"],
+                provider=_ln["provider"],
+                direction=r["direction"],
+                duration_seconds=r["duration"],
+                started_at=ago(hours_ago=r["ago_hours"]),
+                caller=r["caller"],
+                callee=r["callee"],
+                status=r["status"],
+            ))
+
+        # Events (unified log)
+        for e in EVENTS:
+            db.add(Event(
+                event_id=uid("EVT"),
+                tenant_id=TENANT_ID,
+                event_type=e["event_type"],
+                site_id=e.get("site_id"),
+                device_id=e.get("device_id"),
+                line_id=e.get("line_id"),
+                severity=e["severity"],
+                message=e["message"],
+                created_at=ago(hours_ago=e["ago_hours"]),
+            ))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
               f"{len(INCIDENTS)} incidents, {len(NOTIFICATION_RULES)} notification rules, "
-              f"{len(DEVICES)} devices.")
+              f"{len(DEVICES)} devices, {len(PROVIDERS)} providers, "
+              f"{len(LINES)} lines, {len(RECORDINGS)} recordings, "
+              f"{len(EVENTS)} events.")
 
 
 if __name__ == "__main__":
