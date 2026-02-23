@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select
-from .database import engine, AsyncSessionLocal, Base
+from .database import AsyncSessionLocal
 from .models.tenant import Tenant
 from .models.user import User
 from .models.site import Site
@@ -23,8 +23,9 @@ def uid(prefix="ID"):
     return f"{prefix}-{uuid.uuid4().hex[:12].upper()}"
 
 
-def iso(days_ago=0, hours_ago=0, minutes_ago=0):
-    return (datetime.now(timezone.utc) - timedelta(days=days_ago, hours=hours_ago, minutes=minutes_ago)).isoformat()
+def ago(days_ago=0, hours_ago=0, minutes_ago=0):
+    """Return a timezone-aware datetime object for 'X time ago'."""
+    return datetime.now(timezone.utc) - timedelta(days=days_ago, hours=hours_ago, minutes=minutes_ago)
 
 
 TENANT_ID = "demo"
@@ -36,31 +37,31 @@ USERS = [
 ]
 
 SITES = [
-    {"site_id": "SITE-001", "site_name": "Dallas Fire Station #7", "customer_name": "City of Dallas", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=2), "e911_street": "1234 Main St", "e911_city": "Dallas", "e911_state": "TX", "e911_zip": "75201", "lat": 32.7767, "lng": -96.7970, "heartbeat_interval": 5, "uptime_percent": 99.8},
-    {"site_id": "SITE-002", "site_name": "Austin EMS Central", "customer_name": "Travis County EMS", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=5), "e911_street": "15th & Lavaca", "e911_city": "Austin", "e911_state": "TX", "e911_zip": "78701", "lat": 30.2672, "lng": -97.7431, "heartbeat_interval": 5, "uptime_percent": 99.5},
-    {"site_id": "SITE-003", "site_name": "Houston Police Precinct 4", "customer_name": "Houston PD", "status": "Attention Needed", "firmware_version": "3.1.0", "csa_model": "CSA-400", "last_checkin": iso(hours_ago=2), "e911_street": "7300 N Shepherd Dr", "e911_city": "Houston", "e911_state": "TX", "e911_zip": "77091", "lat": 29.7604, "lng": -95.3698, "heartbeat_interval": 10, "uptime_percent": 94.2},
-    {"site_id": "SITE-004", "site_name": "San Antonio Fire HQ", "customer_name": "SA Fire Dept", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=1), "e911_street": "801 Dolorosa St", "e911_city": "San Antonio", "e911_state": "TX", "e911_zip": "78207", "lat": 29.4241, "lng": -98.4936, "heartbeat_interval": 5, "uptime_percent": 99.9},
-    {"site_id": "SITE-005", "site_name": "Fort Worth Station #12", "customer_name": "City of Fort Worth", "status": "Not Connected", "firmware_version": "3.0.5", "csa_model": "CSA-300", "last_checkin": iso(days_ago=2), "e911_street": "505 W Felix St", "e911_city": "Fort Worth", "e911_state": "TX", "e911_zip": "76115", "lat": 32.7555, "lng": -97.3308, "heartbeat_interval": 15, "uptime_percent": 72.1},
-    {"site_id": "SITE-006", "site_name": "El Paso Border Station", "customer_name": "El Paso County", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=8), "e911_street": "221 N Kansas St", "e911_city": "El Paso", "e911_state": "TX", "e911_zip": "79901", "lat": 31.7619, "lng": -106.4850, "heartbeat_interval": 5, "uptime_percent": 98.7},
-    {"site_id": "SITE-007", "site_name": "Plano Communications Center", "customer_name": "City of Plano", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=3), "e911_street": "909 14th St", "e911_city": "Plano", "e911_state": "TX", "e911_zip": "75074", "lat": 33.0198, "lng": -96.6989, "heartbeat_interval": 5, "uptime_percent": 99.6},
-    {"site_id": "SITE-008", "site_name": "Arlington Fire #3", "customer_name": "City of Arlington", "status": "Attention Needed", "firmware_version": "3.1.2", "csa_model": "CSA-400", "last_checkin": iso(hours_ago=1), "e911_street": "220 E Main St", "e911_city": "Arlington", "e911_state": "TX", "e911_zip": "76010", "lat": 32.7357, "lng": -97.1081, "heartbeat_interval": 10, "uptime_percent": 91.3},
-    {"site_id": "SITE-009", "site_name": "Corpus Christi PD Central", "customer_name": "CCPD", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=4), "e911_street": "321 John Sartain St", "e911_city": "Corpus Christi", "e911_state": "TX", "e911_zip": "78401", "lat": 27.8006, "lng": -97.3964, "heartbeat_interval": 5, "uptime_percent": 99.1},
-    {"site_id": "SITE-010", "site_name": "Lubbock EMS Dispatch", "customer_name": "Lubbock County", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=6), "e911_street": "916 Main St", "e911_city": "Lubbock", "e911_state": "TX", "e911_zip": "79401", "lat": 33.5779, "lng": -101.8552, "heartbeat_interval": 5, "uptime_percent": 98.9},
-    {"site_id": "SITE-011", "site_name": "Laredo Fire Station #1", "customer_name": "City of Laredo", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=7), "e911_street": "616 Salinas Ave", "e911_city": "Laredo", "e911_state": "TX", "e911_zip": "78040", "lat": 27.5036, "lng": -99.5076, "heartbeat_interval": 5, "uptime_percent": 97.5},
-    {"site_id": "SITE-012", "site_name": "Irving 911 Center", "customer_name": "City of Irving", "status": "Not Connected", "firmware_version": "3.0.3", "csa_model": "CSA-300", "last_checkin": iso(days_ago=3), "e911_street": "825 W Irving Blvd", "e911_city": "Irving", "e911_state": "TX", "e911_zip": "75060", "lat": 32.8140, "lng": -96.9489, "heartbeat_interval": 15, "uptime_percent": 65.8},
-    {"site_id": "SITE-013", "site_name": "Amarillo Fire #5", "customer_name": "City of Amarillo", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=10), "e911_street": "509 SE 7th Ave", "e911_city": "Amarillo", "e911_state": "TX", "e911_zip": "79101", "lat": 35.2220, "lng": -101.8313, "heartbeat_interval": 5, "uptime_percent": 99.0},
-    {"site_id": "SITE-014", "site_name": "Brownsville PD South", "customer_name": "City of Brownsville", "status": "Connected", "firmware_version": "3.1.5", "csa_model": "CSA-400", "last_checkin": iso(minutes_ago=12), "e911_street": "600 E Jackson St", "e911_city": "Brownsville", "e911_state": "TX", "e911_zip": "78520", "lat": 25.9017, "lng": -97.4975, "heartbeat_interval": 10, "uptime_percent": 96.4},
-    {"site_id": "SITE-015", "site_name": "McKinney Station #7", "customer_name": "City of McKinney", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=2), "e911_street": "222 N Tennessee St", "e911_city": "McKinney", "e911_state": "TX", "e911_zip": "75069", "lat": 33.1972, "lng": -96.6397, "heartbeat_interval": 5, "uptime_percent": 99.7},
-    {"site_id": "SITE-016", "site_name": "Midland Fire Central", "customer_name": "City of Midland", "status": "Attention Needed", "firmware_version": "3.1.0", "csa_model": "CSA-400", "last_checkin": iso(hours_ago=3), "e911_street": "300 N Loraine St", "e911_city": "Midland", "e911_state": "TX", "e911_zip": "79701", "lat": 31.9973, "lng": -102.0779, "heartbeat_interval": 10, "uptime_percent": 88.5},
-    {"site_id": "SITE-017", "site_name": "Round Rock EMS", "customer_name": "City of Round Rock", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=4), "e911_street": "221 E Main St", "e911_city": "Round Rock", "e911_state": "TX", "e911_zip": "78664", "lat": 30.5083, "lng": -97.6789, "heartbeat_interval": 5, "uptime_percent": 99.4},
-    {"site_id": "SITE-018", "site_name": "Odessa Fire Station #2", "customer_name": "City of Odessa", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=9), "e911_street": "411 W 8th St", "e911_city": "Odessa", "e911_state": "TX", "e911_zip": "79761", "lat": 31.8457, "lng": -102.3676, "heartbeat_interval": 5, "uptime_percent": 97.8},
-    {"site_id": "SITE-019", "site_name": "Frisco PD Communications", "customer_name": "City of Frisco", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=1), "e911_street": "7200 Stonebrook Pkwy", "e911_city": "Frisco", "e911_state": "TX", "e911_zip": "75034", "lat": 33.1507, "lng": -96.8236, "heartbeat_interval": 5, "uptime_percent": 99.9},
-    {"site_id": "SITE-020", "site_name": "Killeen Fire #4", "customer_name": "City of Killeen", "status": "Not Connected", "firmware_version": "2.9.8", "csa_model": "CSA-300", "last_checkin": iso(days_ago=5), "e911_street": "101 E Avenue D", "e911_city": "Killeen", "e911_state": "TX", "e911_zip": "76541", "lat": 31.1171, "lng": -97.7278, "heartbeat_interval": 15, "uptime_percent": 45.2},
-    {"site_id": "SITE-021", "site_name": "Tyler 911 Center", "customer_name": "Smith County", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=5), "e911_street": "100 N Broadway Ave", "e911_city": "Tyler", "e911_state": "TX", "e911_zip": "75702", "lat": 32.3513, "lng": -95.3011, "heartbeat_interval": 5, "uptime_percent": 98.6},
-    {"site_id": "SITE-022", "site_name": "Denton Fire HQ", "customer_name": "City of Denton", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=3), "e911_street": "332 E Hickory St", "e911_city": "Denton", "e911_state": "TX", "e911_zip": "76201", "lat": 33.2148, "lng": -97.1331, "heartbeat_interval": 5, "uptime_percent": 99.2},
-    {"site_id": "SITE-023", "site_name": "Waco PD Dispatch", "customer_name": "City of Waco", "status": "Attention Needed", "firmware_version": "3.1.1", "csa_model": "CSA-400", "last_checkin": iso(hours_ago=4), "e911_street": "721 N 4th St", "e911_city": "Waco", "e911_state": "TX", "e911_zip": "76707", "lat": 31.5493, "lng": -97.1467, "heartbeat_interval": 10, "uptime_percent": 85.7},
-    {"site_id": "SITE-024", "site_name": "Abilene Fire #1", "customer_name": "City of Abilene", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=6), "e911_street": "555 Walnut St", "e911_city": "Abilene", "e911_state": "TX", "e911_zip": "79601", "lat": 32.4487, "lng": -99.7331, "heartbeat_interval": 5, "uptime_percent": 98.3},
-    {"site_id": "SITE-025", "site_name": "Beaumont EMS Central", "customer_name": "Jefferson County", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": iso(minutes_ago=11), "e911_street": "801 Main St", "e911_city": "Beaumont", "e911_state": "TX", "e911_zip": "77701", "lat": 30.0802, "lng": -94.1266, "heartbeat_interval": 5, "uptime_percent": 97.1},
+    {"site_id": "SITE-001", "site_name": "Dallas Fire Station #7", "customer_name": "City of Dallas", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=2), "e911_street": "1234 Main St", "e911_city": "Dallas", "e911_state": "TX", "e911_zip": "75201", "lat": 32.7767, "lng": -96.7970, "heartbeat_interval": 5, "uptime_percent": 99.8},
+    {"site_id": "SITE-002", "site_name": "Austin EMS Central", "customer_name": "Travis County EMS", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=5), "e911_street": "15th & Lavaca", "e911_city": "Austin", "e911_state": "TX", "e911_zip": "78701", "lat": 30.2672, "lng": -97.7431, "heartbeat_interval": 5, "uptime_percent": 99.5},
+    {"site_id": "SITE-003", "site_name": "Houston Police Precinct 4", "customer_name": "Houston PD", "status": "Attention Needed", "firmware_version": "3.1.0", "csa_model": "CSA-400", "last_checkin": ago(hours_ago=2), "e911_street": "7300 N Shepherd Dr", "e911_city": "Houston", "e911_state": "TX", "e911_zip": "77091", "lat": 29.7604, "lng": -95.3698, "heartbeat_interval": 10, "uptime_percent": 94.2},
+    {"site_id": "SITE-004", "site_name": "San Antonio Fire HQ", "customer_name": "SA Fire Dept", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=1), "e911_street": "801 Dolorosa St", "e911_city": "San Antonio", "e911_state": "TX", "e911_zip": "78207", "lat": 29.4241, "lng": -98.4936, "heartbeat_interval": 5, "uptime_percent": 99.9},
+    {"site_id": "SITE-005", "site_name": "Fort Worth Station #12", "customer_name": "City of Fort Worth", "status": "Not Connected", "firmware_version": "3.0.5", "csa_model": "CSA-300", "last_checkin": ago(days_ago=2), "e911_street": "505 W Felix St", "e911_city": "Fort Worth", "e911_state": "TX", "e911_zip": "76115", "lat": 32.7555, "lng": -97.3308, "heartbeat_interval": 15, "uptime_percent": 72.1},
+    {"site_id": "SITE-006", "site_name": "El Paso Border Station", "customer_name": "El Paso County", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=8), "e911_street": "221 N Kansas St", "e911_city": "El Paso", "e911_state": "TX", "e911_zip": "79901", "lat": 31.7619, "lng": -106.4850, "heartbeat_interval": 5, "uptime_percent": 98.7},
+    {"site_id": "SITE-007", "site_name": "Plano Communications Center", "customer_name": "City of Plano", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=3), "e911_street": "909 14th St", "e911_city": "Plano", "e911_state": "TX", "e911_zip": "75074", "lat": 33.0198, "lng": -96.6989, "heartbeat_interval": 5, "uptime_percent": 99.6},
+    {"site_id": "SITE-008", "site_name": "Arlington Fire #3", "customer_name": "City of Arlington", "status": "Attention Needed", "firmware_version": "3.1.2", "csa_model": "CSA-400", "last_checkin": ago(hours_ago=1), "e911_street": "220 E Main St", "e911_city": "Arlington", "e911_state": "TX", "e911_zip": "76010", "lat": 32.7357, "lng": -97.1081, "heartbeat_interval": 10, "uptime_percent": 91.3},
+    {"site_id": "SITE-009", "site_name": "Corpus Christi PD Central", "customer_name": "CCPD", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=4), "e911_street": "321 John Sartain St", "e911_city": "Corpus Christi", "e911_state": "TX", "e911_zip": "78401", "lat": 27.8006, "lng": -97.3964, "heartbeat_interval": 5, "uptime_percent": 99.1},
+    {"site_id": "SITE-010", "site_name": "Lubbock EMS Dispatch", "customer_name": "Lubbock County", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=6), "e911_street": "916 Main St", "e911_city": "Lubbock", "e911_state": "TX", "e911_zip": "79401", "lat": 33.5779, "lng": -101.8552, "heartbeat_interval": 5, "uptime_percent": 98.9},
+    {"site_id": "SITE-011", "site_name": "Laredo Fire Station #1", "customer_name": "City of Laredo", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=7), "e911_street": "616 Salinas Ave", "e911_city": "Laredo", "e911_state": "TX", "e911_zip": "78040", "lat": 27.5036, "lng": -99.5076, "heartbeat_interval": 5, "uptime_percent": 97.5},
+    {"site_id": "SITE-012", "site_name": "Irving 911 Center", "customer_name": "City of Irving", "status": "Not Connected", "firmware_version": "3.0.3", "csa_model": "CSA-300", "last_checkin": ago(days_ago=3), "e911_street": "825 W Irving Blvd", "e911_city": "Irving", "e911_state": "TX", "e911_zip": "75060", "lat": 32.8140, "lng": -96.9489, "heartbeat_interval": 15, "uptime_percent": 65.8},
+    {"site_id": "SITE-013", "site_name": "Amarillo Fire #5", "customer_name": "City of Amarillo", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=10), "e911_street": "509 SE 7th Ave", "e911_city": "Amarillo", "e911_state": "TX", "e911_zip": "79101", "lat": 35.2220, "lng": -101.8313, "heartbeat_interval": 5, "uptime_percent": 99.0},
+    {"site_id": "SITE-014", "site_name": "Brownsville PD South", "customer_name": "City of Brownsville", "status": "Connected", "firmware_version": "3.1.5", "csa_model": "CSA-400", "last_checkin": ago(minutes_ago=12), "e911_street": "600 E Jackson St", "e911_city": "Brownsville", "e911_state": "TX", "e911_zip": "78520", "lat": 25.9017, "lng": -97.4975, "heartbeat_interval": 10, "uptime_percent": 96.4},
+    {"site_id": "SITE-015", "site_name": "McKinney Station #7", "customer_name": "City of McKinney", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=2), "e911_street": "222 N Tennessee St", "e911_city": "McKinney", "e911_state": "TX", "e911_zip": "75069", "lat": 33.1972, "lng": -96.6397, "heartbeat_interval": 5, "uptime_percent": 99.7},
+    {"site_id": "SITE-016", "site_name": "Midland Fire Central", "customer_name": "City of Midland", "status": "Attention Needed", "firmware_version": "3.1.0", "csa_model": "CSA-400", "last_checkin": ago(hours_ago=3), "e911_street": "300 N Loraine St", "e911_city": "Midland", "e911_state": "TX", "e911_zip": "79701", "lat": 31.9973, "lng": -102.0779, "heartbeat_interval": 10, "uptime_percent": 88.5},
+    {"site_id": "SITE-017", "site_name": "Round Rock EMS", "customer_name": "City of Round Rock", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=4), "e911_street": "221 E Main St", "e911_city": "Round Rock", "e911_state": "TX", "e911_zip": "78664", "lat": 30.5083, "lng": -97.6789, "heartbeat_interval": 5, "uptime_percent": 99.4},
+    {"site_id": "SITE-018", "site_name": "Odessa Fire Station #2", "customer_name": "City of Odessa", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=9), "e911_street": "411 W 8th St", "e911_city": "Odessa", "e911_state": "TX", "e911_zip": "79761", "lat": 31.8457, "lng": -102.3676, "heartbeat_interval": 5, "uptime_percent": 97.8},
+    {"site_id": "SITE-019", "site_name": "Frisco PD Communications", "customer_name": "City of Frisco", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=1), "e911_street": "7200 Stonebrook Pkwy", "e911_city": "Frisco", "e911_state": "TX", "e911_zip": "75034", "lat": 33.1507, "lng": -96.8236, "heartbeat_interval": 5, "uptime_percent": 99.9},
+    {"site_id": "SITE-020", "site_name": "Killeen Fire #4", "customer_name": "City of Killeen", "status": "Not Connected", "firmware_version": "2.9.8", "csa_model": "CSA-300", "last_checkin": ago(days_ago=5), "e911_street": "101 E Avenue D", "e911_city": "Killeen", "e911_state": "TX", "e911_zip": "76541", "lat": 31.1171, "lng": -97.7278, "heartbeat_interval": 15, "uptime_percent": 45.2},
+    {"site_id": "SITE-021", "site_name": "Tyler 911 Center", "customer_name": "Smith County", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=5), "e911_street": "100 N Broadway Ave", "e911_city": "Tyler", "e911_state": "TX", "e911_zip": "75702", "lat": 32.3513, "lng": -95.3011, "heartbeat_interval": 5, "uptime_percent": 98.6},
+    {"site_id": "SITE-022", "site_name": "Denton Fire HQ", "customer_name": "City of Denton", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=3), "e911_street": "332 E Hickory St", "e911_city": "Denton", "e911_state": "TX", "e911_zip": "76201", "lat": 33.2148, "lng": -97.1331, "heartbeat_interval": 5, "uptime_percent": 99.2},
+    {"site_id": "SITE-023", "site_name": "Waco PD Dispatch", "customer_name": "City of Waco", "status": "Attention Needed", "firmware_version": "3.1.1", "csa_model": "CSA-400", "last_checkin": ago(hours_ago=4), "e911_street": "721 N 4th St", "e911_city": "Waco", "e911_state": "TX", "e911_zip": "76707", "lat": 31.5493, "lng": -97.1467, "heartbeat_interval": 10, "uptime_percent": 85.7},
+    {"site_id": "SITE-024", "site_name": "Abilene Fire #1", "customer_name": "City of Abilene", "status": "Connected", "firmware_version": "3.2.1", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=6), "e911_street": "555 Walnut St", "e911_city": "Abilene", "e911_state": "TX", "e911_zip": "79601", "lat": 32.4487, "lng": -99.7331, "heartbeat_interval": 5, "uptime_percent": 98.3},
+    {"site_id": "SITE-025", "site_name": "Beaumont EMS Central", "customer_name": "Jefferson County", "status": "Connected", "firmware_version": "3.2.0", "csa_model": "CSA-500", "last_checkin": ago(minutes_ago=11), "e911_street": "801 Main St", "e911_city": "Beaumont", "e911_state": "TX", "e911_zip": "77701", "lat": 30.0802, "lng": -94.1266, "heartbeat_interval": 5, "uptime_percent": 97.1},
 ]
 
 TELEMETRY = [
@@ -133,9 +134,6 @@ NOTIFICATION_RULES = [
 
 
 async def seed():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     async with AsyncSessionLocal() as db:
         # Check if already seeded
         existing = (await db.execute(select(Tenant).where(Tenant.tenant_id == TENANT_ID))).scalar_one_or_none()
@@ -168,7 +166,7 @@ async def seed():
                 event_id=uid("EVT"),
                 site_id=t["site_id"],
                 tenant_id=TENANT_ID,
-                timestamp=iso(hours_ago=t["ago_hours"]),
+                timestamp=ago(hours_ago=t["ago_hours"]),
                 category=t["category"],
                 severity=t["severity"],
                 message=t["message"],
@@ -185,14 +183,14 @@ async def seed():
                 role=a["role"],
                 action_type=a["action_type"],
                 site_id=a["site_id"],
-                timestamp=iso(minutes_ago=a["ago_minutes"]),
+                timestamp=ago(minutes_ago=a["ago_minutes"]),
                 result=a["result"],
                 details=a["details"],
             ))
 
         # Incidents
         for i in INCIDENTS:
-            opened_at = iso(hours_ago=i["opened_hours_ago"])
+            opened_at = ago(hours_ago=i["opened_hours_ago"])
             db.add(Incident(
                 incident_id=uid("INC"),
                 site_id=i["site_id"],
@@ -202,7 +200,7 @@ async def seed():
                 summary=i["summary"],
                 opened_at=opened_at,
                 ack_by=i.get("ack_by"),
-                ack_at=iso(hours_ago=i["opened_hours_ago"] - 1) if i.get("ack_by") else None,
+                ack_at=ago(hours_ago=i["opened_hours_ago"] - 1) if i.get("ack_by") else None,
                 created_by="system",
             ))
 

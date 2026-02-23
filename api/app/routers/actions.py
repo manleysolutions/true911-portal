@@ -61,8 +61,8 @@ def _uid(prefix: str = "REQ") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12].upper()}"
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 async def _get_site(db: AsyncSession, site_id: str, tenant_id: str) -> Site:

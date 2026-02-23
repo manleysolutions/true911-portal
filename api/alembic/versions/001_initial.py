@@ -90,11 +90,12 @@ def upgrade() -> None:
         sa.Column("event_id", sa.String(50), unique=True, nullable=False, index=True),
         sa.Column("site_id", sa.String(50), nullable=False, index=True),
         sa.Column("tenant_id", sa.String(100), nullable=False, index=True),
-        sa.Column("timestamp", sa.String(100), nullable=True),
-        sa.Column("category", sa.String(100), nullable=True),
-        sa.Column("severity", sa.String(50), nullable=True),
+        sa.Column("timestamp", sa.DateTime, nullable=True),
+        sa.Column("category", sa.String(50), nullable=True),
+        sa.Column("severity", sa.String(20), nullable=True),
         sa.Column("message", sa.Text, nullable=True),
-        sa.Column("raw_json", postgresql.JSONB, nullable=True),
+        sa.Column("raw_json", sa.Text, nullable=True),
+        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
 
     # Action Audits
@@ -102,16 +103,17 @@ def upgrade() -> None:
         "action_audits",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("audit_id", sa.String(50), unique=True, nullable=False, index=True),
-        sa.Column("request_id", sa.String(50), nullable=True),
+        sa.Column("request_id", sa.String(50), nullable=True, index=True),
         sa.Column("tenant_id", sa.String(100), nullable=False, index=True),
         sa.Column("user_email", sa.String(255), nullable=True),
         sa.Column("requester_name", sa.String(255), nullable=True),
         sa.Column("role", sa.String(50), nullable=True),
-        sa.Column("action_type", sa.String(100), nullable=True),
+        sa.Column("action_type", sa.String(50), nullable=True),
         sa.Column("site_id", sa.String(50), nullable=True, index=True),
-        sa.Column("timestamp", sa.String(100), nullable=True),
-        sa.Column("result", sa.String(50), nullable=True),
+        sa.Column("timestamp", sa.DateTime, nullable=True),
+        sa.Column("result", sa.String(20), nullable=True),
         sa.Column("details", sa.Text, nullable=True),
+        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
 
     # Incidents
@@ -121,16 +123,18 @@ def upgrade() -> None:
         sa.Column("incident_id", sa.String(50), unique=True, nullable=False, index=True),
         sa.Column("site_id", sa.String(50), nullable=False, index=True),
         sa.Column("tenant_id", sa.String(100), nullable=False, index=True),
-        sa.Column("severity", sa.String(50), nullable=True),
-        sa.Column("status", sa.String(50), nullable=True),
+        sa.Column("severity", sa.String(20), nullable=True),
+        sa.Column("status", sa.String(20), nullable=True),
         sa.Column("summary", sa.Text, nullable=True),
-        sa.Column("opened_at", sa.String(100), nullable=True),
+        sa.Column("opened_at", sa.DateTime, nullable=True),
         sa.Column("ack_by", sa.String(255), nullable=True),
-        sa.Column("ack_at", sa.String(100), nullable=True),
-        sa.Column("closed_at", sa.String(100), nullable=True),
+        sa.Column("ack_at", sa.DateTime, nullable=True),
+        sa.Column("closed_at", sa.DateTime, nullable=True),
         sa.Column("resolution_notes", sa.Text, nullable=True),
         sa.Column("assigned_to", sa.String(255), nullable=True),
         sa.Column("created_by", sa.String(255), nullable=True),
+        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
     # Notification Rules
@@ -162,7 +166,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.String(100), nullable=False, index=True),
         sa.Column("requested_by", sa.String(255), nullable=True),
         sa.Column("requester_name", sa.String(255), nullable=True),
-        sa.Column("requested_at", sa.String(100), nullable=True),
+        sa.Column("requested_at", sa.DateTime, nullable=True),
         sa.Column("old_street", sa.String(500), nullable=True),
         sa.Column("old_city", sa.String(100), nullable=True),
         sa.Column("old_state", sa.String(10), nullable=True),
@@ -173,8 +177,9 @@ def upgrade() -> None:
         sa.Column("new_zip", sa.String(20), nullable=True),
         sa.Column("reason", sa.Text, nullable=True),
         sa.Column("status", sa.String(50), nullable=True),
-        sa.Column("applied_at", sa.String(100), nullable=True),
+        sa.Column("applied_at", sa.DateTime, nullable=True),
         sa.Column("correlation_id", sa.String(100), nullable=True),
+        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
 
 
