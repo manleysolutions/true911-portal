@@ -51,4 +51,4 @@ def require_permission(action: str):
             )
         return current_user
 
-    return Depends(_check)
+    return _check
