@@ -22,11 +22,11 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        value: https://true911-web.onrender.com
+        value: "*"
 
   # React Frontend (Static Site)
   - type: web
-    name: true911-web
+    name: true911-web-demo
     runtime: static
     plan: starter
     rootDir: web
@@ -37,7 +37,7 @@ services:
         name: Cache-Control
         value: public, max-age=0, must-revalidate
     routes:
-      # SPA fallback — serve index.html for all non-file routes
+      # SPA fallback — every non-file path serves index.html
       - type: rewrite
         source: /*
         destination: /index.html

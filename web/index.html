@@ -2,10 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="https://base44.com/logo_v2.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="manifest" href="/manifest.json" />
-    <title>Base44 APP</title>
+    <title>True911+ NOC Portal</title>
+    <style>
+      /* Prevent flash of white on slow loads — shows a spinner until React mounts */
+      #root:empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: #f8fafc;
+      }
+      #root:empty::after {
+        content: "";
+        width: 32px;
+        height: 32px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #dc2626;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
     <div id="root"></div>

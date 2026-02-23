@@ -3,7 +3,9 @@
  * Drop-in replacement for @base44/sdk HTTP layer.
  */
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+import { config } from "@/config";
+
+const API_URL = config.apiUrl;
 
 let _accessToken = localStorage.getItem("t911_token");
 let _refreshToken = localStorage.getItem("t911_refresh");
