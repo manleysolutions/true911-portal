@@ -1,8 +1,14 @@
-from fastapi import FastAPI
+import logging
+import traceback
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import settings
 from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices
+
+logger = logging.getLogger("true911")
 
 app = FastAPI(title="TRUE911 API", version="1.0.0")
 
@@ -18,6 +24,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    """Return a proper JSON 500 so CORSMiddleware can still add headers.
+
+    Without this, unhandled exceptions bypass the middleware stack and the
+    browser sees a missing Access-Control-Allow-Origin header — which it
+    reports as a CORS error, hiding the real 500 in the Render logs.
+    """
+    logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url.path, traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}: {exc}"},
+    )
+
 
 app.include_router(auth.router,          prefix="/api/auth",      tags=["auth"])
 app.include_router(sites.router,         prefix="/api/sites",     tags=["sites"])

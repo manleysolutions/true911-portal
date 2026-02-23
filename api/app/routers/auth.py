@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
+from app.models.tenant import Tenant
 from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
@@ -24,6 +25,14 @@ from app.services.auth import (
 router = APIRouter()
 
 
+async def _ensure_tenant(db: AsyncSession, tenant_id: str) -> None:
+    """Create the tenant row if it doesn't exist yet (idempotent)."""
+    result = await db.execute(select(Tenant).where(Tenant.tenant_id == tenant_id))
+    if not result.scalar_one_or_none():
+        db.add(Tenant(tenant_id=tenant_id, name=tenant_id.title()))
+        await db.flush()
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     # Check password strength
@@ -35,6 +44,9 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists")
+
+    # Ensure the tenant row exists (FK constraint on users.tenant_id)
+    await _ensure_tenant(db, body.tenant_id)
 
     user = User(
         email=body.email,
