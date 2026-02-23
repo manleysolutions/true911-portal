@@ -1,5 +1,6 @@
 import { X, Clock, Building2 } from "lucide-react";
 import StatusBadge from "../ui/StatusBadge";
+import { isDemo } from "@/config";
 
 function timeSince(iso) {
   if (!iso) return "Unknown";
@@ -21,7 +22,7 @@ export default function DrawerHeader({ site, lastActionResult, onClose }) {
             <StatusBadge status={site.status} />
             {site.tenant_id && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 font-medium">
-                {site.tenant_id === "demo" ? "Demo Tenant" : site.tenant_id}
+                {isDemo && site.tenant_id === "demo" ? "Demo Tenant" : site.tenant_id}
               </span>
             )}
           </div>

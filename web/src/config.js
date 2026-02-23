@@ -11,4 +11,8 @@
 export const config = {
   /** Base URL for all API calls (no trailing slash). */
   apiUrl: import.meta.env.VITE_API_URL || "/api",
+  /** "demo" | "production" — controls demo banners, role picker, etc. */
+  appMode: import.meta.env.VITE_APP_MODE || "demo",
 };
+
+export const isDemo = config.appMode === "demo";

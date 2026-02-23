@@ -3,6 +3,7 @@ import { Site, TelemetryEvent } from "@/api/entities";
 import { Building2, Wifi, WifiOff, AlertTriangle, HelpCircle, RefreshCw, Bell, TrendingUp } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDemo } from "@/config";
 import TriageQueue from "@/components/TriageQueue";
 import SiteDrawer from "@/components/SiteDrawer";
 
@@ -110,10 +111,12 @@ export default function Overview() {
         </div>
 
         {/* Demo banner */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-          <span className="text-amber-700 text-xs font-semibold">⚠ Demo Environment</span>
-          <span className="text-amber-600 text-xs">— All actions are simulated. No live devices are connected.</span>
-        </div>
+        {isDemo && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+            <span className="text-amber-700 text-xs font-semibold">⚠ Demo Environment</span>
+            <span className="text-amber-600 text-xs">— All actions are simulated. No live devices are connected.</span>
+          </div>
+        )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">

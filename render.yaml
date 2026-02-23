@@ -23,6 +23,8 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "*"
+      - key: APP_MODE
+        value: demo
 
   # React Frontend (Static Site)
   - type: web
@@ -44,3 +46,5 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://true911-api.onrender.com/api
+      - key: VITE_APP_MODE
+        value: demo

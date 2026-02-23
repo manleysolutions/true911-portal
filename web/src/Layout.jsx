@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, RefreshCw, FileText, Settings, Menu, X, LogOut, Box, AlertOctagon, Bell } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, RefreshCw, FileText, Settings, Menu, X, LogOut, Box, AlertOctagon, Bell, Cpu } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { name: "Deployment Map", page: "DeploymentMap", icon: Map },
   { name: "Sites", page: "Sites", icon: Building2 },
   { name: "Containers (CSAS)", page: "Containers", icon: Box },
+  { name: "Devices", page: "Devices", icon: Cpu },
   { name: "Incidents", page: "Incidents", icon: AlertOctagon },
   { name: "Sync Status", page: "SyncStatus", icon: RefreshCw },
   { name: "Reports", page: "Reports", icon: FileText },

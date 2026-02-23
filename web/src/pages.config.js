@@ -50,6 +50,7 @@
 import Admin from './pages/Admin';
 import AuthGate from './pages/AuthGate';
 import Containers from './pages/Containers';
+import Devices from './pages/Devices';
 import DeploymentMap from './pages/DeploymentMap';
 import Incidents from './pages/Incidents';
 import Notifications from './pages/Notifications';
@@ -64,6 +65,7 @@ export const PAGES = {
     "Admin": Admin,
     "AuthGate": AuthGate,
     "Containers": Containers,
+    "Devices": Devices,
     "DeploymentMap": DeploymentMap,
     "Incidents": Incidents,
     "Notifications": Notifications,

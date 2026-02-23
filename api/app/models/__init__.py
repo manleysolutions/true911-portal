@@ -6,6 +6,7 @@ from app.models.action_audit import ActionAudit
 from app.models.incident import Incident
 from app.models.notification_rule import NotificationRule
 from app.models.e911_change_log import E911ChangeLog
+from app.models.device import Device
 
 __all__ = [
     "Tenant",
@@ -16,4 +17,5 @@ __all__ = [
     "Incident",
     "NotificationRule",
     "E911ChangeLog",
+    "Device",
 ]

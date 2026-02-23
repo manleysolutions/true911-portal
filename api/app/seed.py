@@ -16,6 +16,7 @@ from .models.telemetry_event import TelemetryEvent
 from .models.action_audit import ActionAudit
 from .models.incident import Incident
 from .models.notification_rule import NotificationRule
+from .models.device import Device
 from .services.auth import hash_password
 
 
@@ -132,8 +133,32 @@ NOTIFICATION_RULES = [
     },
 ]
 
+# Derive devices from sites (one device per site)
+DEVICES = []
+for _idx, _s in enumerate(SITES):
+    _status_map = {"Connected": "active", "Not Connected": "inactive", "Attention Needed": "active"}
+    DEVICES.append({
+        "device_id": f"DEV-{_idx + 1:03d}",
+        "site_id": _s["site_id"],
+        "status": _status_map.get(_s["status"], "active"),
+        "device_type": "CSA",
+        "model": _s.get("csa_model", "CSA-500"),
+        "serial_number": f"SN-{_idx + 1:04d}-{uuid.uuid4().hex[:6].upper()}",
+        "mac_address": ":".join(f"{b:02X}" for b in [0x00, 0x1A, 0x2B, _idx, (_idx * 7) % 256, (_idx * 13) % 256]),
+        "imei": f"35{_idx:013d}",
+        "firmware_version": _s.get("firmware_version", "3.2.1"),
+        "container_version": "1.4.2",
+        "last_heartbeat": _s.get("last_checkin"),
+        "heartbeat_interval": _s.get("heartbeat_interval", 5),
+    })
+
 
 async def seed():
+    from .config import settings
+    if settings.APP_MODE != "demo":
+        print(f"APP_MODE={settings.APP_MODE} — skipping demo seed.")
+        return
+
     async with AsyncSessionLocal() as db:
         # Check if already seeded
         existing = (await db.execute(select(Tenant).where(Tenant.tenant_id == TENANT_ID))).scalar_one_or_none()
@@ -220,10 +245,15 @@ async def seed():
                 trigger_count=n.get("trigger_count", 0),
             ))
 
+        # Devices
+        for d in DEVICES:
+            db.add(Device(tenant_id=TENANT_ID, **d))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
-              f"{len(INCIDENTS)} incidents, {len(NOTIFICATION_RULES)} notification rules.")
+              f"{len(INCIDENTS)} incidents, {len(NOTIFICATION_RULES)} notification rules, "
+              f"{len(DEVICES)} devices.")
 
 
 if __name__ == "__main__":

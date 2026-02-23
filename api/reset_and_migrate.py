@@ -10,6 +10,11 @@ import sys
 
 
 async def drop_all():
+    app_mode = os.environ.get("APP_MODE", "demo")
+    if app_mode != "demo":
+        print(f"APP_MODE={app_mode} — skipping database reset.")
+        return
+
     try:
         import asyncpg
     except ImportError:

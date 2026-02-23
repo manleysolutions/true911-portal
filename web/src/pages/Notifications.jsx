@@ -3,6 +3,7 @@ import { NotificationRule } from "@/api/entities";
 import { Bell, Plus, Trash2, RefreshCw, ChevronDown, ChevronUp, Shield, AlertTriangle, Phone, Mail, MessageSquare, Edit2, Check, X } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDemo } from "@/config";
 import { toast } from "sonner";
 
 const RULE_TYPES = [
@@ -173,7 +174,7 @@ const DEFAULT_RULE = {
   channels: ['portal'],
   escalation_steps: [],
   enabled: true,
-  tenant_id: 'demo',
+  tenant_id: undefined,
 };
 
 function NewRuleForm({ onCreated, onCancel }) {
@@ -393,16 +394,18 @@ export default function Notifications() {
         </div>
 
         {/* Info banner */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <div className="text-sm font-semibold text-amber-800">Demo Mode — Simulated Notifications</div>
-            <div className="text-xs text-amber-700 mt-0.5">
-              Notification rules are stored and displayed, but delivery (SMS, email) is simulated.
-              Connect carrier SMS API and SMTP provider to enable real escalation.
+        {isDemo && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="text-sm font-semibold text-amber-800">Demo Mode — Simulated Notifications</div>
+              <div className="text-xs text-amber-700 mt-0.5">
+                Notification rules are stored and displayed, but delivery (SMS, email) is simulated.
+                Connect carrier SMS API and SMTP provider to enable real escalation.
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* New rule form */}
         {showForm && (

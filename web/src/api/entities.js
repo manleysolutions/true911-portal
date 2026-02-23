@@ -64,3 +64,4 @@ export const ActionAudit = makeEntity("/audits");
 export const Incident = makeEntity("/incidents");
 export const NotificationRule = makeEntity("/notification-rules");
 export const E911ChangeLog = makeEntity("/e911-changes");
+export const Device = makeEntity("/devices");

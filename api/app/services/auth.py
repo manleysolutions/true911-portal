@@ -48,3 +48,21 @@ def create_refresh_token(user_id: int) -> str:
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT token. Raises JWTError on failure."""
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+
+
+import re
+
+def validate_password_strength(password: str) -> str | None:
+    """Return an error message if the password is too weak, or None if OK.
+    Only enforced in production mode."""
+    if settings.APP_MODE == "demo":
+        return None
+    if len(password) < 12:
+        return "Password must be at least 12 characters"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter"
+    if not re.search(r"\d", password):
+        return "Password must contain at least one digit"
+    return None

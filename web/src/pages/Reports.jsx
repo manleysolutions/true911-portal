@@ -3,6 +3,7 @@ import { Site, ActionAudit } from "@/api/entities";
 import { FileText, Download, RefreshCw, Filter, Building2, AlertTriangle, ClipboardList } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDemo } from "@/config";
 
 const today = new Date().toISOString().split("T")[0];
 const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
@@ -149,7 +150,7 @@ export default function Reports() {
       <h1>True911+ ${preset?.label}</h1>
       <div class="meta">Generated: ${new Date().toLocaleString()} · By: ${user?.name} (${user?.role}) · Period: ${dateStart} to ${dateEnd}</div>
       ${tableHTML}
-      <footer>© 2026 Manley Solutions · True911+ Demo Portal · NDAA-TAA Compliant 🇺🇸</footer>
+      <footer>© 2026 Manley Solutions · True911+ ${isDemo ? "Demo Portal" : "Portal"} · NDAA-TAA Compliant 🇺🇸</footer>
       </body></html>
     `);
     win.print();

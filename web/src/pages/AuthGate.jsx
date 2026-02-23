@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { createPageUrl } from "@/utils";
 import { Shield, Eye, EyeOff, Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDemo } from "@/config";
 
 const DEMO_ROLES = [
   {
@@ -40,6 +41,7 @@ export default function AuthGate() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [quickLoading, setQuickLoading] = useState(null);
 
   useEffect(() => {
     if (ready && user) {
@@ -60,10 +62,18 @@ export default function AuthGate() {
     }
   };
 
-  const quickLogin = (acc) => {
+  const quickLogin = async (acc) => {
+    setError("");
     setEmail(acc.email);
     setPassword(acc.password);
-    setError("");
+    setQuickLoading(acc.role);
+    try {
+      await login(acc.email, acc.password);
+      window.location.href = createPageUrl("Overview");
+    } catch {
+      setError("Login failed. Check backend connection.");
+      setQuickLoading(null);
+    }
   };
 
   return (
@@ -77,17 +87,19 @@ export default function AuthGate() {
           <div className="text-3xl font-bold text-white tracking-tight">
             True911<span className="text-red-500">+</span>
           </div>
-          <div className="text-xs text-slate-400 mt-1 font-medium tracking-widest uppercase">NOC Demo Portal</div>
+          <div className="text-xs text-slate-400 mt-1 font-medium tracking-widest uppercase">{isDemo ? "NOC Demo Portal" : "NOC Portal"}</div>
           <p className="text-sm text-slate-400 mt-2">Life-Safety Device Monitoring & Management</p>
         </div>
 
         {/* Demo environment banner */}
-        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 mb-6">
-          <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-          <p className="text-xs text-amber-300 font-medium">
-            Demo Environment — All actions are simulated. No live devices are connected.
-          </p>
-        </div>
+        {isDemo && (
+          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 mb-6">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <p className="text-xs text-amber-300 font-medium">
+              Demo Environment — All actions are simulated. No live devices are connected.
+            </p>
+          </div>
+        )}
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-7">
@@ -148,41 +160,48 @@ export default function AuthGate() {
           </form>
 
           {/* Demo role picker */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="flex-1 h-px bg-gray-100" />
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Demo Role</span>
-              <div className="flex-1 h-px bg-gray-100" />
-            </div>
-            <p className="text-xs text-gray-500 mb-3 text-center">Select a role to preview permissions and auto-fill credentials</p>
+          {isDemo && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex-1 h-px bg-gray-100" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Demo Role</span>
+                <div className="flex-1 h-px bg-gray-100" />
+              </div>
+              <p className="text-xs text-gray-500 mb-3 text-center">Select a role to preview permissions and auto-fill credentials</p>
 
-            <div className="space-y-2">
-              {DEMO_ROLES.map(acc => (
-                <button
-                  key={acc.role}
-                  onClick={() => quickLogin(acc)}
-                  className={`w-full flex items-start justify-between px-4 py-3 border rounded-xl text-sm transition-all group ${acc.color}`}
-                >
-                  <div className="flex items-start gap-3 text-left">
-                    <span className={`mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.badgeColor} flex-shrink-0`}>
-                      {acc.role}
-                    </span>
-                    <div>
-                      <div className="text-xs font-medium text-gray-800 group-hover:text-gray-900">{acc.desc}</div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {acc.capabilities.map(cap => (
-                          <span key={cap} className="text-[10px] text-gray-500 bg-white/60 px-1.5 py-0.5 rounded border border-gray-200">
-                            {cap}
-                          </span>
-                        ))}
+              <div className="space-y-2">
+                {DEMO_ROLES.map(acc => (
+                  <button
+                    key={acc.role}
+                    onClick={() => quickLogin(acc)}
+                    disabled={quickLoading !== null}
+                    className={`w-full flex items-start justify-between px-4 py-3 border rounded-xl text-sm transition-all group ${acc.color} ${quickLoading !== null ? "opacity-60 cursor-not-allowed" : ""}`}
+                  >
+                    <div className="flex items-start gap-3 text-left">
+                      <span className={`mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.badgeColor} flex-shrink-0`}>
+                        {acc.role}
+                      </span>
+                      <div>
+                        <div className="text-xs font-medium text-gray-800 group-hover:text-gray-900">{acc.desc}</div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {acc.capabilities.map(cap => (
+                            <span key={cap} className="text-[10px] text-gray-500 bg-white/60 px-1.5 py-0.5 rounded border border-gray-200">
+                              {cap}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 mt-0.5 ml-2">{acc.password}</span>
-                </button>
-              ))}
+                    {quickLoading === acc.role ? (
+                      <span className="ml-2 mt-1 w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                    ) : (
+                      <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 mt-0.5 ml-2">{acc.password}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="text-center mt-6 flex items-center justify-center gap-3">

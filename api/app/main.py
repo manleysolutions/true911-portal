@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices
 
 app = FastAPI(title="TRUE911 API", version="1.0.0")
 
@@ -22,8 +22,9 @@ app.include_router(incidents.router,     prefix="/api/incidents", tags=["inciden
 app.include_router(notifications.router, prefix="/api")
 app.include_router(e911.router,          prefix="/api")
 app.include_router(actions.router,       prefix="/api")
+app.include_router(devices.router,      prefix="/api/devices", tags=["devices"])
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "app_mode": settings.APP_MODE}

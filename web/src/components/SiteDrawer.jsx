@@ -176,7 +176,7 @@ function CreateIncidentModal({ site, onClose, onCreated }) {
     setLoading(true);
     await Incident.create({
       incident_id: uid("INC"),
-      tenant_id: site.tenant_id || "demo",
+      tenant_id: site.tenant_id,
       site_id: site.site_id,
       opened_at: new Date().toISOString(),
       severity,

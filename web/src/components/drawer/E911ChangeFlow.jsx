@@ -30,7 +30,7 @@ export default function E911ChangeFlow({ site, onClose, onSiteUpdated }) {
     await E911ChangeLog.create({
       log_id: uid("LOG"),
       site_id: site.site_id,
-      tenant_id: site.tenant_id || "demo",
+      tenant_id: site.tenant_id,
       requested_by: user.email,
       requester_name: user.name,
       requested_at: new Date().toISOString(),
