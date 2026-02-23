@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     CORS_ORIGINS: str = "*"  # str — parsed into a list by cors_origin_list
     APP_MODE: str = "production"  # "demo" | "production" — default is production-safe
+    FEATURE_SAMANTHA: str = "false"  # "true" to show AI/Samantha nav item
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
