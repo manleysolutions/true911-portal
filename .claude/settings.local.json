@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd D:/True911_Base44_stuff/true911-prod/web && npm run build 2>&1)",
-      "Bash(cd D:/True911_Base44_stuff/true911-prod/web && npx vite build 2>&1)",
-      "Bash(cd D:/True911_Base44_stuff/true911-prod/web && npm install 2>&1)"
-    ]
-  }
-}
