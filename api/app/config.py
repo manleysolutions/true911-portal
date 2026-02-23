@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from pydantic import field_validator
+from functools import cached_property
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +12,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: str = "*"  # str — parsed into a list by cors_origin_list
     APP_MODE: str = "production"  # "demo" | "production" — default is production-safe
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -31,36 +32,31 @@ class Settings(BaseSettings):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return url
 
-    @property
-    def cors_is_wildcard(self) -> bool:
-        """True when origins list is effectively a wildcard."""
-        return self.CORS_ORIGINS == ["*"]
+    @cached_property
+    def cors_origin_list(self) -> list[str]:
+        """Parse CORS_ORIGINS string into a list.
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def _parse_cors(cls, v):
-        """Accept a JSON array, comma-separated string, or bare '*' from env.
-
-        Examples that all work:
+        Accepts any of these formats from the env var:
             *
             https://example.com
             https://a.com,https://b.com
             ["https://a.com","https://b.com"]
         Trailing slashes are stripped to avoid origin-mismatch bugs.
         """
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("["):
-                try:
-                    parsed = json.loads(v)
-                    if isinstance(parsed, list):
-                        return [s.strip().rstrip("/") for s in parsed if s.strip()]
-                except json.JSONDecodeError:
-                    pass
-            return [s.strip().rstrip("/") for s in v.split(",") if s.strip()]
-        if isinstance(v, list):
-            return [s.strip().rstrip("/") if isinstance(s, str) else s for s in v]
-        return v
+        raw = self.CORS_ORIGINS.strip()
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [s.strip().rstrip("/") for s in parsed if s.strip()]
+            except json.JSONDecodeError:
+                pass
+        return [s.strip().rstrip("/") for s in raw.split(",") if s.strip()]
+
+    @property
+    def cors_is_wildcard(self) -> bool:
+        """True when origins list is effectively a wildcard."""
+        return self.cors_origin_list == ["*"]
 
 
 settings = Settings()

@@ -19,7 +19,7 @@ _allow_creds = not settings.cors_is_wildcard
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origin_list,
     allow_credentials=_allow_creds,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,7 +62,7 @@ async def debug_cors():
     """Return resolved CORS config so we can verify from the browser.
     Only exposes non-sensitive values (origin list and credential flag)."""
     return {
-        "allow_origins": settings.CORS_ORIGINS,
+        "allow_origins": settings.cors_origin_list,
         "allow_credentials": _allow_creds,
         "cors_is_wildcard": settings.cors_is_wildcard,
     }
