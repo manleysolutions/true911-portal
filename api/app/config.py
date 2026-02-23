@@ -31,18 +31,35 @@ class Settings(BaseSettings):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return url
 
+    @property
+    def cors_is_wildcard(self) -> bool:
+        """True when origins list is effectively a wildcard."""
+        return self.CORS_ORIGINS == ["*"]
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _parse_cors(cls, v):
-        """Accept a JSON list *or* a comma-separated string from env."""
+        """Accept a JSON array, comma-separated string, or bare '*' from env.
+
+        Examples that all work:
+            *
+            https://example.com
+            https://a.com,https://b.com
+            ["https://a.com","https://b.com"]
+        Trailing slashes are stripped to avoid origin-mismatch bugs.
+        """
         if isinstance(v, str):
             v = v.strip()
             if v.startswith("["):
                 try:
-                    return json.loads(v)
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [s.strip().rstrip("/") for s in parsed if s.strip()]
                 except json.JSONDecodeError:
                     pass
-            return [s.strip() for s in v.split(",") if s.strip()]
+            return [s.strip().rstrip("/") for s in v.split(",") if s.strip()]
+        if isinstance(v, list):
+            return [s.strip().rstrip("/") if isinstance(s, str) else s for s in v]
         return v
 
 

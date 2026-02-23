@@ -22,7 +22,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://true911-web-demo.onrender.com,https://true911-web-prod.onrender.com"
       - key: APP_MODE
         value: production
 
