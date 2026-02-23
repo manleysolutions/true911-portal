@@ -14,14 +14,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router, prefix="/api")
-app.include_router(sites.router, prefix="/api")
-app.include_router(telemetry.router, prefix="/api")
-app.include_router(audits.router, prefix="/api")
-app.include_router(incidents.router, prefix="/api")
+app.include_router(auth.router,          prefix="/api/auth",      tags=["auth"])
+app.include_router(sites.router,         prefix="/api/sites",     tags=["sites"])
+app.include_router(telemetry.router,     prefix="/api/telemetry", tags=["telemetry"])
+app.include_router(audits.router,        prefix="/api/audits",    tags=["audits"])
+app.include_router(incidents.router,     prefix="/api/incidents", tags=["incidents"])
 app.include_router(notifications.router, prefix="/api")
-app.include_router(e911.router, prefix="/api")
-app.include_router(actions.router, prefix="/api")
+app.include_router(e911.router,          prefix="/api")
+app.include_router(actions.router,       prefix="/api")
 
 
 @app.get("/api/health")
