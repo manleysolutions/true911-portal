@@ -58,7 +58,17 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ email, password }),
     });
     setTokens(data.access_token, data.refresh_token);
-    // Fetch user profile
+    const u = await apiFetch("/auth/me");
+    setUser(u);
+    return u;
+  }, []);
+
+  const register = useCallback(async (email, password, name) => {
+    const data = await apiFetch("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, name }),
+    });
+    setTokens(data.access_token, data.refresh_token);
     const u = await apiFetch("/auth/me");
     setUser(u);
     return u;
@@ -80,7 +90,7 @@ export function AuthProvider({ children }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, ready, isLoadingAuth, login, logout, can }}>
+    <AuthContext.Provider value={{ user, ready, isLoadingAuth, login, register, logout, can }}>
       {children}
     </AuthContext.Provider>
   );

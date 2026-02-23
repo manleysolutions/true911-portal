@@ -156,9 +156,11 @@ function RuleCard({ rule, onUpdate, onDelete }) {
           ) : (
             <div className="text-xs text-gray-400 italic">No escalation steps defined.</div>
           )}
-          <div className="mt-2 text-[10px] text-gray-400">
-            ⚠ Notifications are simulated in demo mode. Connect SMS/email APIs to enable real delivery.
-          </div>
+          {isDemo && (
+            <div className="mt-2 text-[10px] text-gray-400">
+              Notifications are simulated in demo mode. Connect SMS/email APIs to enable real delivery.
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPageUrl } from "@/utils";
-import { Shield, Eye, EyeOff, Lock, AlertTriangle } from "lucide-react";
+import { Shield, Eye, EyeOff, Lock, AlertTriangle, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isDemo } from "@/config";
 
@@ -35,9 +35,11 @@ const DEMO_ROLES = [
 ];
 
 export default function AuthGate() {
-  const { user, login, ready } = useAuth();
+  const { user, login, register, ready } = useAuth();
+  const [tab, setTab] = useState("login"); // "login" | "register"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,6 +51,13 @@ export default function AuthGate() {
     }
   }, [user, ready]);
 
+  const resetForm = () => {
+    setError("");
+    setEmail("");
+    setPassword("");
+    setName("");
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
@@ -56,8 +65,21 @@ export default function AuthGate() {
     try {
       await login(email, password);
       window.location.href = createPageUrl("Overview");
-    } catch {
-      setError("Invalid credentials. Select a demo role below to auto-fill.");
+    } catch (err) {
+      setError(err?.message || "Invalid credentials. Please check your email and password.");
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await register(email, password, name);
+      window.location.href = createPageUrl("Overview");
+    } catch (err) {
+      setError(err?.message || "Registration failed. Please try again.");
       setLoading(false);
     }
   };
@@ -103,61 +125,160 @@ export default function AuthGate() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-7">
-          <div className="flex items-center gap-2 mb-5">
-            <Lock className="w-4 h-4 text-gray-400" />
-            <h2 className="text-base font-semibold text-gray-900">Sign In to Continue</h2>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4 mb-6">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                placeholder="you@true911.com"
-                required
-                autoComplete="email"
-              />
+          {/* Tab switcher (prod only - demo doesn't need register) */}
+          {!isDemo && (
+            <div className="flex mb-5 border-b border-gray-100">
+              <button
+                onClick={() => { setTab("login"); resetForm(); }}
+                className={`flex items-center gap-1.5 pb-2.5 px-3 text-sm font-semibold border-b-2 transition-colors ${
+                  tab === "login"
+                    ? "border-red-600 text-gray-900"
+                    : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5" /> Sign In
+              </button>
+              <button
+                onClick={() => { setTab("register"); resetForm(); }}
+                className={`flex items-center gap-1.5 pb-2.5 px-3 text-sm font-semibold border-b-2 transition-colors ${
+                  tab === "register"
+                    ? "border-red-600 text-gray-900"
+                    : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" /> Register
+              </button>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Password</label>
-              <div className="relative">
+          )}
+
+          {/* Demo mode: always show sign-in header */}
+          {isDemo && (
+            <div className="flex items-center gap-2 mb-5">
+              <Lock className="w-4 h-4 text-gray-400" />
+              <h2 className="text-base font-semibold text-gray-900">Sign In to Continue</h2>
+            </div>
+          )}
+
+          {/* Login form */}
+          {(tab === "login" || isDemo) && (
+            <form onSubmit={handleLogin} className="space-y-4 mb-6">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Email Address</label>
                 <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all pr-12"
-                  placeholder="Enter password"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                  placeholder="you@true911.com"
                   required
-                  autoComplete="current-password"
+                  autoComplete="email"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
-            </div>
-
-            {error && (
-              <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                {error}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all pr-12"
+                    placeholder="Enter password"
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-3 px-4 rounded-xl transition-colors text-sm shadow-sm"
-            >
-              {loading ? "Signing in..." : "Sign In →"}
-            </button>
-          </form>
+              {error && tab === "login" && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-3 px-4 rounded-xl transition-colors text-sm shadow-sm"
+              >
+                {loading ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+          )}
+
+          {/* Register form (prod only) */}
+          {tab === "register" && !isDemo && (
+            <form onSubmit={handleRegister} className="space-y-4 mb-6">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Full Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                  placeholder="Jane Smith"
+                  required
+                  autoComplete="name"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Email Address</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                  placeholder="you@true911.com"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all pr-12"
+                    placeholder="Min 12 chars, uppercase, lowercase, digit"
+                    required
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">At least 12 characters with uppercase, lowercase, and a digit.</p>
+              </div>
+
+              {error && tab === "register" && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-3 px-4 rounded-xl transition-colors text-sm shadow-sm"
+              >
+                {loading ? "Creating account..." : "Create Account"}
+              </button>
+            </form>
+          )}
 
           {/* Demo role picker */}
           {isDemo && (
@@ -205,7 +326,7 @@ export default function AuthGate() {
         </div>
 
         <div className="text-center mt-6 flex items-center justify-center gap-3">
-          <span className="text-blue-400 text-xs font-bold">🇺🇸 Made in USA</span>
+          <span className="text-blue-400 text-xs font-bold">Made in USA</span>
           <span className="text-slate-600">·</span>
           <span className="text-slate-500 text-xs font-medium">NDAA-TAA Compliant</span>
           <span className="text-slate-600">·</span>

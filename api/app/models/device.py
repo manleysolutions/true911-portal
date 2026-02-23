@@ -20,6 +20,8 @@ class Device(Base):
     serial_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     mac_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     imei: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    iccid: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    msisdn: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     firmware_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     container_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     provision_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

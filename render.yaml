@@ -24,11 +24,11 @@ services:
       - key: CORS_ORIGINS
         value: "*"
       - key: APP_MODE
-        value: demo
+        value: production
 
   # React Frontend (Static Site)
   - type: web
-    name: true911-web-demo
+    name: true911-web-prod
     runtime: static
     plan: starter
     rootDir: web
@@ -47,4 +47,4 @@ services:
       - key: VITE_API_URL
         value: https://true911-api.onrender.com/api
       - key: VITE_APP_MODE
-        value: demo
+        value: production

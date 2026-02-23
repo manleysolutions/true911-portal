@@ -15,6 +15,8 @@ class DeviceOut(BaseModel):
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
     imei: Optional[str] = None
+    iccid: Optional[str] = None
+    msisdn: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
     provision_code: Optional[str] = None
@@ -36,6 +38,8 @@ class DeviceCreate(BaseModel):
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
     imei: Optional[str] = None
+    iccid: Optional[str] = None
+    msisdn: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
     provision_code: Optional[str] = None
@@ -52,6 +56,8 @@ class DeviceUpdate(BaseModel):
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
     imei: Optional[str] = None
+    iccid: Optional[str] = None
+    msisdn: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
     provision_code: Optional[str] = None
