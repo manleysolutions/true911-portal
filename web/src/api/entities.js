@@ -65,3 +65,6 @@ export const Incident = makeEntity("/incidents");
 export const NotificationRule = makeEntity("/notification-rules");
 export const E911ChangeLog = makeEntity("/e911-changes");
 export const Device = makeEntity("/devices");
+export const Line = makeEntity("/lines");
+export const Recording = makeEntity("/recordings");
+export const Event = makeEntity("/events");

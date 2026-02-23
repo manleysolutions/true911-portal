@@ -1,21 +1,28 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, RefreshCw, FileText, Settings, Menu, X, LogOut, Box, AlertOctagon, Bell, Cpu } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
+import { config } from "@/config";
 
 const NAV_ITEMS = [
   { name: "Overview", page: "Overview", icon: LayoutDashboard },
-  { name: "Deployment Map", page: "DeploymentMap", icon: Map },
   { name: "Sites", page: "Sites", icon: Building2 },
-  { name: "Containers (CSAS)", page: "Containers", icon: Box },
   { name: "Devices", page: "Devices", icon: Cpu },
+  { name: "Lines", page: "Lines", icon: Phone },
+  { name: "E911", page: "E911", icon: MapPin, adminOnly: true },
+  { name: "Alerts", page: "Notifications", icon: Bell, adminOnly: true },
+  { name: "Recordings", page: "Recordings", icon: Disc3 },
+  { name: "Events", page: "Events", icon: Activity },
+  { section: "separator" },
+  { name: "Deployment Map", page: "DeploymentMap", icon: Map },
   { name: "Incidents", page: "Incidents", icon: AlertOctagon },
-  { name: "Sync Status", page: "SyncStatus", icon: RefreshCw },
   { name: "Reports", page: "Reports", icon: FileText },
-  { name: "Notifications", page: "Notifications", icon: Bell, adminOnly: true },
-  { name: "Admin", page: "Admin", icon: Settings, adminOnly: true },
+  { section: "separator" },
+  { name: "Settings", page: "Admin", icon: Settings, adminOnly: true },
+  { name: "Onboarding", page: "OnboardingWizard", icon: Rocket },
+  { name: "AI / Samantha", page: "Samantha", icon: Sparkles, featureFlag: "samantha" },
 ];
 
 const ROLE_BADGE = {
@@ -24,9 +31,18 @@ const ROLE_BADGE = {
   User: "bg-gray-100 text-gray-600 border-gray-200",
 };
 
+const FEATURE_FLAGS = {
+  samantha: config.featureSamantha,
+};
+
 function Sidebar({ currentPageName, onClose }) {
   const { user, logout, can } = useAuth();
-  const visibleNav = NAV_ITEMS.filter(item => !item.adminOnly || can('VIEW_ADMIN'));
+  const visibleNav = NAV_ITEMS.filter(item => {
+    if (item.section) return true;
+    if (item.adminOnly && !can('VIEW_ADMIN')) return false;
+    if (item.featureFlag && !FEATURE_FLAGS[item.featureFlag]) return false;
+    return true;
+  });
 
   return (
     <aside className="flex flex-col h-full bg-white border-r border-gray-200 w-60">
@@ -65,7 +81,11 @@ function Sidebar({ currentPageName, onClose }) {
       )}
 
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {visibleNav.map(({ name, page, icon: Icon }) => {
+        {visibleNav.map((item, idx) => {
+          if (item.section === "separator") {
+            return <div key={`sep-${idx}`} className="my-2 border-t border-gray-100" />;
+          }
+          const { name, page, icon: Icon } = item;
           const active = currentPageName === page;
           return (
             <Link

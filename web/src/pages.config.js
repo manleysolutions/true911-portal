@@ -52,10 +52,16 @@ import AuthGate from './pages/AuthGate';
 import Containers from './pages/Containers';
 import Devices from './pages/Devices';
 import DeploymentMap from './pages/DeploymentMap';
+import E911 from './pages/E911';
+import Events from './pages/Events';
 import Incidents from './pages/Incidents';
+import Lines from './pages/Lines';
 import Notifications from './pages/Notifications';
+import OnboardingWizard from './pages/OnboardingWizard';
 import Overview from './pages/Overview';
+import Recordings from './pages/Recordings';
 import Reports from './pages/Reports';
+import Samantha from './pages/Samantha';
 import Sites from './pages/Sites';
 import SyncStatus from './pages/SyncStatus';
 import __Layout from './Layout.jsx';
@@ -67,10 +73,16 @@ export const PAGES = {
     "Containers": Containers,
     "Devices": Devices,
     "DeploymentMap": DeploymentMap,
+    "E911": E911,
+    "Events": Events,
     "Incidents": Incidents,
+    "Lines": Lines,
     "Notifications": Notifications,
+    "OnboardingWizard": OnboardingWizard,
     "Overview": Overview,
+    "Recordings": Recordings,
     "Reports": Reports,
+    "Samantha": Samantha,
     "Sites": Sites,
     "SyncStatus": SyncStatus,
 }

@@ -13,6 +13,8 @@ export const config = {
   apiUrl: import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "/api",
   /** "demo" | "production" — controls demo banners, role picker, etc. Default is production-safe. */
   appMode: import.meta.env.VITE_APP_MODE || "production",
+  /** Feature flag: show AI / Samantha nav item. */
+  featureSamantha: import.meta.env.VITE_FEATURE_SAMANTHA === "true",
 };
 
 export const isDemo = config.appMode === "demo";
