@@ -1,25 +1,16 @@
 import logging
 import traceback
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, vola
-from .services import vola_connector
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events
 
 logger = logging.getLogger("true911")
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-    await vola_connector.close()
-
-
-app = FastAPI(title="TRUE911 API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="TRUE911 API", version="1.0.0")
 
 # CORS — wildcard origins and allow_credentials=True are mutually exclusive
 # per the Fetch spec.  Browsers silently reject the response when both are set.
@@ -62,7 +53,6 @@ app.include_router(devices.router,      prefix="/api/devices",    tags=["devices
 app.include_router(lines.router,        prefix="/api/lines",      tags=["lines"])
 app.include_router(recordings.router,   prefix="/api/recordings", tags=["recordings"])
 app.include_router(events.router,       prefix="/api/events",     tags=["events"])
-app.include_router(vola.router,        prefix="/api/integrations/vola", tags=["vola"])
 
 
 @app.get("/api/config/features")

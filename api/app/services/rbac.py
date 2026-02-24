@@ -13,7 +13,6 @@ PERMISSIONS: dict[str, list[str]] = {
     "ACK_INCIDENT": ["Admin", "Manager"],
     "CLOSE_INCIDENT": ["Admin", "Manager"],
     "MANAGE_NOTIFICATIONS": ["Admin"],
-    "VOLA_ADMIN": ["Admin"],
 }
 
 
