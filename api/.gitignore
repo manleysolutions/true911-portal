@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# venv
+.venv/
+venv/
+env/
+
+# dotenv
+.env
+
+# pytest
+.pytest_cache/
+
+# local tool dirs
+../.claude/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
