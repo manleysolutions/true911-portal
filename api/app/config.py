@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     APP_MODE: str = "production"  # "demo" | "production" — default is production-safe
     FEATURE_SAMANTHA: str = "false"  # "true" to show AI/Samantha nav item
 
+    # Vola Connector integration (Phase 1)
+    VOLA_CONNECTOR_BASE_URL: str = ""  # e.g. http://127.0.0.1:8811
+    VOLA_CONNECTOR_API_KEY: str = ""   # optional shared-secret
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
