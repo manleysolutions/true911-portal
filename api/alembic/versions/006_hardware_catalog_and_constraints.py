@@ -36,12 +36,43 @@ def upgrade() -> None:
         sa.Column("hardware_model_id", sa.String(50), sa.ForeignKey("hardware_models.id"), nullable=True),
     )
 
-    # 4. Partial unique indexes for device identifiers
+    # 4. Deduplicate existing data before adding unique indexes.
+    #    For each duplicated value, keep the row with the lowest id and NULL the rest.
+    op.execute("""
+        UPDATE devices SET imei = NULL
+        WHERE imei IS NOT NULL
+          AND id NOT IN (
+              SELECT MIN(id) FROM devices WHERE imei IS NOT NULL GROUP BY imei
+          )
+    """)
+    op.execute("""
+        UPDATE devices SET serial_number = NULL
+        WHERE serial_number IS NOT NULL
+          AND id NOT IN (
+              SELECT MIN(id) FROM devices WHERE serial_number IS NOT NULL GROUP BY serial_number
+          )
+    """)
+    op.execute("""
+        UPDATE devices SET msisdn = NULL
+        WHERE msisdn IS NOT NULL
+          AND id NOT IN (
+              SELECT MIN(id) FROM devices WHERE msisdn IS NOT NULL GROUP BY msisdn
+          )
+    """)
+    op.execute("""
+        UPDATE lines SET did = NULL
+        WHERE did IS NOT NULL
+          AND id NOT IN (
+              SELECT MIN(id) FROM lines WHERE did IS NOT NULL GROUP BY did, tenant_id
+          )
+    """)
+
+    # 5. Partial unique indexes for device identifiers
     op.execute("CREATE UNIQUE INDEX uq_devices_imei ON devices(imei) WHERE imei IS NOT NULL")
     op.execute("CREATE UNIQUE INDEX uq_devices_serial_number ON devices(serial_number) WHERE serial_number IS NOT NULL")
     op.execute("CREATE UNIQUE INDEX uq_devices_msisdn ON devices(msisdn) WHERE msisdn IS NOT NULL")
 
-    # 5. Partial unique index for line DID per tenant
+    # 6. Partial unique index for line DID per tenant
     op.execute("CREATE UNIQUE INDEX uq_lines_did_tenant ON lines(did, tenant_id) WHERE did IS NOT NULL")
 
 
