@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -9,6 +10,15 @@ from app.routers.helpers import apply_sort
 from app.schemas.line import LineCreate, LineOut, LineUpdate
 
 router = APIRouter()
+
+_LINE_CONFLICT_MSG = "A line with this DID already exists in your tenant"
+
+
+def _parse_line_conflict(e: IntegrityError) -> str:
+    msg = str(e.orig) if e.orig else str(e)
+    if "uq_lines_did_tenant" in msg:
+        return _LINE_CONFLICT_MSG
+    return "Duplicate value: a line with one of these identifiers already exists"
 
 
 @router.get("", response_model=list[LineOut])
@@ -63,6 +73,11 @@ async def create_line(
 ):
     line = Line(**body.model_dump(), tenant_id=current_user.tenant_id)
     db.add(line)
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=_parse_line_conflict(e))
     await db.commit()
     await db.refresh(line)
     return LineOut.model_validate(line)
@@ -83,6 +98,11 @@ async def update_line(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Line not found")
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(line, field, value)
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=_parse_line_conflict(e))
     await db.commit()
     await db.refresh(line)
     return LineOut.model_validate(line)

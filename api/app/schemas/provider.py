@@ -10,6 +10,7 @@ class ProviderOut(BaseModel):
     tenant_id: str
     provider_type: str
     display_name: str
+    category: Optional[str] = None
     api_key_ref: Optional[str] = None
     enabled: bool
     config_json: Optional[dict] = None
@@ -23,6 +24,7 @@ class ProviderCreate(BaseModel):
     provider_id: str
     provider_type: str
     display_name: str
+    category: Optional[str] = None
     api_key_ref: Optional[str] = None
     enabled: bool = False
     config_json: Optional[dict] = None
@@ -31,6 +33,7 @@ class ProviderCreate(BaseModel):
 class ProviderUpdate(BaseModel):
     provider_type: Optional[str] = None
     display_name: Optional[str] = None
+    category: Optional[str] = None
     api_key_ref: Optional[str] = None
     enabled: Optional[bool] = None
     config_json: Optional[dict] = None

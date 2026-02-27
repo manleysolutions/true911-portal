@@ -11,6 +11,7 @@ from app.models.line import Line
 from app.models.recording import Recording
 from app.models.event import Event
 from app.models.provider import Provider
+from app.models.hardware_model import HardwareModel
 
 __all__ = [
     "Tenant",
@@ -26,4 +27,5 @@ __all__ = [
     "Recording",
     "Event",
     "Provider",
+    "HardwareModel",
 ]

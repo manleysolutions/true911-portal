@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -27,6 +27,9 @@ class Device(Base):
     provision_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     last_heartbeat: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     heartbeat_interval: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    hardware_model_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("hardware_models.id"), nullable=True
+    )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     api_key_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

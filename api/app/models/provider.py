@@ -16,6 +16,7 @@ class Provider(Base):
     tenant_id: Mapped[str] = mapped_column(String(100), index=True)
     provider_type: Mapped[str] = mapped_column(String(50))  # telnyx, tmobile, napco, bandwidth, verizon, teal
     display_name: Mapped[str] = mapped_column(String(255))
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # carrier, sip, hardware_mfr
     api_key_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # reference only, NOT the key
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     config_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

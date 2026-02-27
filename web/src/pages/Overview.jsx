@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Site, TelemetryEvent, Device, Line, Event as EventEntity } from "@/api/entities";
-import { Building2, Wifi, WifiOff, AlertTriangle, HelpCircle, RefreshCw, Bell, TrendingUp, Rocket, Cpu, Phone, Activity } from "lucide-react";
+import { Site, TelemetryEvent, Device, Line, Event as EventEntity, Provider } from "@/api/entities";
+import { Building2, Wifi, WifiOff, AlertTriangle, HelpCircle, RefreshCw, Bell, TrendingUp, Rocket, Cpu, Phone, Activity, Link2, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import PageWrapper from "@/components/PageWrapper";
@@ -10,7 +10,7 @@ import TriageQueue from "@/components/TriageQueue";
 import SiteDrawer from "@/components/SiteDrawer";
 
 function timeSince(iso) {
-  if (!iso) return "—";
+  if (!iso) return "\u2014";
   const diff = Date.now() - new Date(iso);
   const m = Math.floor(diff / 60000);
   if (m < 60) return `${m}m ago`;
@@ -32,7 +32,7 @@ function KPICard({ label, value, icon: Icon, colorClass, borderClass, sub, onCli
         </div>
       </div>
       <div>
-        <div className="text-3xl font-bold text-gray-900">{value ?? "—"}</div>
+        <div className="text-3xl font-bold text-gray-900">{value ?? "\u2014"}</div>
         {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
       </div>
     </button>
@@ -45,6 +45,12 @@ const SEV_COLORS = {
   info: "bg-blue-50 border-blue-100 text-blue-700",
 };
 
+const CATEGORY_BADGE = {
+  carrier: "bg-blue-50 text-blue-700 border-blue-200",
+  sip: "bg-purple-50 text-purple-700 border-purple-200",
+  hardware_mfr: "bg-gray-100 text-gray-600 border-gray-200",
+};
+
 export default function Overview() {
   const { user } = useAuth();
   const [sites, setSites] = useState([]);
@@ -52,24 +58,27 @@ export default function Overview() {
   const [devices, setDevices] = useState([]);
   const [lines, setLines] = useState([]);
   const [events, setEvents] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSite, setSelectedSite] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [triageFilter, setTriageFilter] = useState(null);
 
   const fetchData = useCallback(async () => {
-    const [sitesData, eventsData, devData, lineData, eventData] = await Promise.all([
+    const [sitesData, eventsData, devData, lineData, eventData, provData] = await Promise.all([
       Site.list("-last_checkin", 100),
       TelemetryEvent.filter({ severity: "critical" }, "-timestamp", 20),
       Device.list("-created_at", 200),
       Line.list("-created_at", 200),
       EventEntity.filter({ severity: "critical" }, "-created_at", 10),
+      Provider.list("-created_at", 50).catch(() => []),
     ]);
     setSites(sitesData);
     setAlerts(eventsData);
     setDevices(devData);
     setLines(lineData);
     setEvents(eventData);
+    setProviders(provData);
     setLastRefresh(new Date());
     setLoading(false);
   }, []);
@@ -110,7 +119,7 @@ export default function Overview() {
             <h1 className="text-2xl font-bold text-gray-900">Overview</h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Welcome back, <span className="font-medium text-gray-700">{user?.name?.split(" ")[0]}</span>
-              &nbsp;·&nbsp;Auto-refreshes every 30s
+              &nbsp;&middot;&nbsp;Auto-refreshes every 30s
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -124,8 +133,8 @@ export default function Overview() {
         {/* Demo banner */}
         {isDemo && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-            <span className="text-amber-700 text-xs font-semibold">⚠ Demo Environment</span>
-            <span className="text-amber-600 text-xs">— All actions are simulated. No live devices are connected.</span>
+            <span className="text-amber-700 text-xs font-semibold">Demo Environment</span>
+            <span className="text-amber-600 text-xs">&mdash; All actions are simulated. No live devices are connected.</span>
           </div>
         )}
 
@@ -187,6 +196,47 @@ export default function Overview() {
             colorClass="bg-red-100 text-red-700" borderClass="border-red-200"
             sub="Last 24h" />
         </div>
+
+        {/* Integration Status */}
+        {providers.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-sm font-semibold text-gray-900">Integration Status</h3>
+                <span className="text-xs text-gray-400">{providers.length} providers</span>
+              </div>
+              <Link
+                to={createPageUrl("Providers")}
+                className="flex items-center gap-1 text-xs text-red-600 font-medium hover:underline"
+              >
+                Manage <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+              {providers.map(p => (
+                <div key={p.id} className="px-5 py-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-gray-900">{p.display_name}</span>
+                    <div className={`w-2.5 h-2.5 rounded-full ${p.enabled ? "bg-emerald-500" : "bg-gray-300"}`}
+                      title={p.enabled ? "Enabled" : "Disabled"} />
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    {p.category && (
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${CATEGORY_BADGE[p.category] || CATEGORY_BADGE.hardware_mfr}`}>
+                        {p.category}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-gray-400 capitalize">{p.provider_type}</span>
+                  </div>
+                  <div className="text-[11px] text-gray-400">
+                    Last sync: &mdash;
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Getting Started — shown when fleet is empty */}
         {sites.length === 0 && devices.length === 0 && (

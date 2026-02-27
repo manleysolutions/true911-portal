@@ -22,6 +22,7 @@ from .models.line import Line
 from .models.recording import Recording
 from .models.event import Event
 from .models.provider import Provider
+from .models.hardware_model import HardwareModel
 from .services.auth import hash_password
 
 
@@ -148,6 +149,7 @@ for _idx, _s in enumerate(SITES):
         "status": _status_map.get(_s["status"], "active"),
         "device_type": "CSA",
         "model": _s.get("csa_model", "CSA-500"),
+        "hardware_model_id": "flyingvoice-pr12",
         "serial_number": f"SN-{_idx + 1:04d}-{uuid.uuid4().hex[:6].upper()}",
         "mac_address": ":".join(f"{b:02X}" for b in [0x00, 0x1A, 0x2B, _idx, (_idx * 7) % 256, (_idx * 13) % 256]),
         "imei": f"35{_idx:013d}",
@@ -158,10 +160,19 @@ for _idx, _s in enumerate(SITES):
     })
 
 
+HARDWARE_MODELS = [
+    {"id": "flyingvoice-pr12", "manufacturer": "Flying Voice", "model_name": "PR12", "device_type": "Cellular Router"},
+    {"id": "flyingvoice-pr08", "manufacturer": "Flying Voice", "model_name": "PR08", "device_type": "Cellular Router"},
+    {"id": "atel-v810v", "manufacturer": "Atel", "model_name": "V810V", "device_type": "Fixed Wireless Terminal"},
+    {"id": "atel-v810vd", "manufacturer": "Atel", "model_name": "V810VD", "device_type": "Fixed Wireless Terminal"},
+    {"id": "cisco-ata191", "manufacturer": "Cisco", "model_name": "ATA191", "device_type": "ATA"},
+    {"id": "cisco-ata192", "manufacturer": "Cisco", "model_name": "ATA192", "device_type": "ATA"},
+]
+
 PROVIDERS = [
-    {"provider_id": "PROV-001", "provider_type": "telnyx", "display_name": "Telnyx SIP Trunking", "enabled": True, "config_json": {"region": "us-central", "sip_connection_id": "demo-conn-001"}},
-    {"provider_id": "PROV-002", "provider_type": "tmobile", "display_name": "T-Mobile IoT SIM", "enabled": True, "config_json": {"plan": "iot-500mb", "apn": "fast.t-mobile.com"}},
-    {"provider_id": "PROV-003", "provider_type": "bandwidth", "display_name": "Bandwidth Voice", "enabled": False, "config_json": None},
+    {"provider_id": "PROV-001", "provider_type": "telnyx", "display_name": "Telnyx SIP Trunking", "category": "sip", "enabled": True, "config_json": {"region": "us-central", "sip_connection_id": "demo-conn-001"}},
+    {"provider_id": "PROV-002", "provider_type": "tmobile", "display_name": "T-Mobile IoT SIM", "category": "carrier", "enabled": True, "config_json": {"plan": "iot-500mb", "apn": "fast.t-mobile.com"}},
+    {"provider_id": "PROV-003", "provider_type": "bandwidth", "display_name": "Bandwidth Voice", "category": "sip", "enabled": False, "config_json": None},
 ]
 
 # Lines — voice lines assigned to first 15 sites/devices
@@ -330,6 +341,10 @@ async def seed():
                 trigger_count=n.get("trigger_count", 0),
             ))
 
+        # Hardware Models
+        for hm in HARDWARE_MODELS:
+            db.add(HardwareModel(**hm))
+
         # Devices
         for d in DEVICES:
             db.add(Device(tenant_id=TENANT_ID, **d))
@@ -378,9 +393,9 @@ async def seed():
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
               f"{len(INCIDENTS)} incidents, {len(NOTIFICATION_RULES)} notification rules, "
-              f"{len(DEVICES)} devices, {len(PROVIDERS)} providers, "
-              f"{len(LINES)} lines, {len(RECORDINGS)} recordings, "
-              f"{len(EVENTS)} events.")
+              f"{len(HARDWARE_MODELS)} hardware models, {len(DEVICES)} devices, "
+              f"{len(PROVIDERS)} providers, {len(LINES)} lines, "
+              f"{len(RECORDINGS)} recordings, {len(EVENTS)} events.")
 
 
 if __name__ == "__main__":

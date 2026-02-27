@@ -15,6 +15,7 @@ PERMISSIONS: dict[str, list[str]] = {
     "MANAGE_NOTIFICATIONS": ["Admin"],
     "MANAGE_PROVIDERS": ["Admin"],
     "ROTATE_DEVICE_KEY": ["Admin"],
+    "MANAGE_USERS": ["Admin"],
 }
 
 

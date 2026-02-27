@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Site, Device, Line, Event } from "@/api/entities";
+import { Site, Device, Line, Event, HardwareModel } from "@/api/entities";
 import { Rocket, Building2, Cpu, Phone, MapPin, Bell, CheckCircle2, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useNavigate } from "react-router-dom";
@@ -12,16 +12,6 @@ const STEPS = [
   { key: "e911", label: "E911", icon: MapPin, desc: "Emergency address" },
   { key: "alerts", label: "Alerts", icon: Bell, desc: "Notification rules" },
   { key: "review", label: "Review", icon: CheckCircle2, desc: "Activate" },
-];
-
-const DEVICE_TYPES = [
-  { value: "PR12", label: "PR12 Cellular Router" },
-  { value: "ATA", label: "ATA (Analog Telephone Adapter)" },
-  { value: "Elevator Panel", label: "Elevator Panel" },
-  { value: "FACP", label: "Fire Alarm Control Panel" },
-  { value: "Digi", label: "Digi Cellular Gateway" },
-  { value: "ATEL", label: "ATEL Device" },
-  { value: "Other", label: "Other" },
 ];
 
 function StepIndicator({ current }) {
@@ -125,25 +115,86 @@ function StepSite({ data, setData, existingSites }) {
   );
 }
 
-function StepDevice({ data, setData }) {
+function StepDevice({ data, setData, hardwareModels }) {
+  // Group by manufacturer
+  const manufacturers = [...new Set(hardwareModels.map(m => m.manufacturer))].sort();
+  const selectedMfr = data._selectedManufacturer || "";
+  const modelsForMfr = hardwareModels.filter(m => m.manufacturer === selectedMfr);
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-900">Step 2: Device</h2>
-      <p className="text-sm text-gray-500">Register the edge hardware at this site.</p>
+      <p className="text-sm text-gray-500">Select the manufacturer and model, or choose "Other" for unlisted hardware.</p>
 
+      {/* Manufacturer selection */}
       <div>
-        <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Device Type *</label>
+        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Manufacturer</label>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {DEVICE_TYPES.map(dt => (
-            <button key={dt.value} onClick={() => setData(d => ({ ...d, device_type: dt.value }))}
+          {manufacturers.map(mfr => (
+            <button key={mfr} onClick={() => setData(d => ({
+              ...d,
+              _selectedManufacturer: mfr,
+              hardware_model_id: "",
+              device_type: "",
+              model: "",
+            }))}
               className={`p-3 rounded-xl border text-sm font-medium text-left transition-all ${
-                data.device_type === dt.value ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                selectedMfr === mfr ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"
               }`}>
-              {dt.label}
+              {mfr}
             </button>
           ))}
+          <button onClick={() => setData(d => ({
+            ...d,
+            _selectedManufacturer: "Other",
+            hardware_model_id: "",
+          }))}
+            className={`p-3 rounded-xl border text-sm font-medium text-left transition-all ${
+              selectedMfr === "Other" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"
+            }`}>
+            Other
+          </button>
         </div>
       </div>
+
+      {/* Model selection (when manufacturer chosen) */}
+      {selectedMfr && selectedMfr !== "Other" && modelsForMfr.length > 0 && (
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Model</label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {modelsForMfr.map(m => (
+              <button key={m.id} onClick={() => setData(d => ({
+                ...d,
+                hardware_model_id: m.id,
+                device_type: m.device_type,
+                model: m.model_name,
+              }))}
+                className={`p-3 rounded-xl border text-sm font-medium text-left transition-all ${
+                  data.hardware_model_id === m.id ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                }`}>
+                <div className="font-semibold">{m.model_name}</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">{m.device_type}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Manual device type/model for "Other" */}
+      {selectedMfr === "Other" && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Device Type *</label>
+            <input value={data.device_type || ""} onChange={e => setData(d => ({ ...d, device_type: e.target.value }))}
+              placeholder="e.g. ATA, FACP, Elevator Panel" className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Model</label>
+            <input value={data.model || ""} onChange={e => setData(d => ({ ...d, model: e.target.value }))}
+              placeholder="e.g. OBi200" className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -164,19 +215,21 @@ function StepDevice({ data, setData }) {
           <input value={data.serial_number || ""} onChange={e => setData(d => ({ ...d, serial_number: e.target.value }))}
             placeholder="Board serial" className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Model</label>
-          <input value={data.model || ""} onChange={e => setData(d => ({ ...d, model: e.target.value }))}
-            placeholder="e.g. PR12, OBi200" className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
-        </div>
+        {(selectedMfr && selectedMfr !== "Other") && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Model</label>
+            <input value={data.model || ""} readOnly
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-600" />
+          </div>
+        )}
       </div>
 
-      {data.device_type === "FACP" && (
+      {data.device_type === "Fire Alarm Control Panel" && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
           <strong>NFPA 72 Note:</strong> Fire alarm panels require 5-minute supervision intervals and dual-line backup per NFPA 72 monitoring requirements.
         </div>
       )}
-      {(data.device_type === "Elevator Panel" || data.device_type === "PR12") && (
+      {(data.device_type === "Cellular Router" || data.model === "PR12") && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
           <strong>Elevator Note:</strong> Test the call button after installation. Ensure AHJ (Authority Having Jurisdiction) compliance for your jurisdiction.
         </div>
@@ -283,7 +336,7 @@ function StepAlerts({ data, setData }) {
   const templates = [
     { key: "offline", label: "Device Offline", desc: "Alert when device goes offline for 30+ minutes", default: true },
     { key: "line_down", label: "Line Down", desc: "Alert when voice line loses SIP registration", default: true },
-    { key: "call_button", label: "Call Button Pressed", desc: "Log when elevator call button is pressed", default: data.device_type === "Elevator Panel" || data.device_type === "PR12" },
+    { key: "call_button", label: "Call Button Pressed", desc: "Log when elevator call button is pressed", default: data.device_type === "Cellular Router" || data.model === "PR12" },
   ];
 
   const selected = data.alert_templates || templates.filter(t => t.default).map(t => t.key);
@@ -323,6 +376,7 @@ function StepReview({ data, existingSites }) {
   const items = [
     { label: "Site", value: siteName },
     { label: "Device", value: `${data.device_type || "---"} — ${data.device_id || "---"}` },
+    { label: "Model", value: data.model || "Not set" },
     { label: "IMEI", value: data.imei || "Not set" },
     { label: "Line", value: `${data.did || "---"} (${data.provider || "telnyx"}, ${data.protocol || "SIP"})` },
     { label: "E911", value: [data.e911_street || data.site_address, data.e911_city || data.site_city, data.e911_state || data.site_state, data.e911_zip || data.site_zip].filter(Boolean).join(", ") || "Not set" },
@@ -356,15 +410,20 @@ export default function OnboardingWizard() {
   const [step, setStep] = useState(0);
   const [data, setData] = useState({ provider: "telnyx", protocol: "SIP" });
   const [sites, setSites] = useState([]);
+  const [hardwareModels, setHardwareModels] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchSites = useCallback(async () => {
-    const s = await Site.list("-last_checkin", 200);
+  const fetchData = useCallback(async () => {
+    const [s, hm] = await Promise.all([
+      Site.list("-last_checkin", 200),
+      HardwareModel.list().catch(() => []),
+    ]);
     setSites(s);
+    setHardwareModels(hm);
   }, []);
 
-  useEffect(() => { fetchSites(); }, [fetchSites]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleNext = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
   const handleBack = () => setStep(s => Math.max(s - 1, 0));
@@ -396,6 +455,7 @@ export default function OnboardingWizard() {
           site_id: siteId || undefined,
           device_type: data.device_type || "Other",
           model: data.model || data.device_type,
+          hardware_model_id: data.hardware_model_id || undefined,
           imei: data.imei || undefined,
           serial_number: data.serial_number || undefined,
           status: "provisioning",
@@ -440,7 +500,7 @@ export default function OnboardingWizard() {
 
   const stepComponents = [
     <StepSite data={data} setData={setData} existingSites={sites} />,
-    <StepDevice data={data} setData={setData} />,
+    <StepDevice data={data} setData={setData} hardwareModels={hardwareModels} />,
     <StepLine data={data} setData={setData} />,
     <StepE911 data={data} setData={setData} />,
     <StepAlerts data={data} setData={setData} />,

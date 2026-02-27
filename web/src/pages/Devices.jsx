@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Device, Site } from "@/api/entities";
+import { Device, Site, HardwareModel } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check } from "lucide-react";
+import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check, Pencil, Trash2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
 import ComputedStatusBadge from "@/components/ui/ComputedStatusBadge";
@@ -88,16 +88,55 @@ function ApiKeyModal({ deviceId, apiKey, onClose }) {
   );
 }
 
-/* ── PR12 registration modal ── */
-function RegisterPR12Modal({ onClose, onCreated, sites }) {
+/* ── Confirm delete modal ── */
+function ConfirmDeleteModal({ device, onClose, onConfirm }) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirm = async () => {
+    setDeleting(true);
+    await onConfirm();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+        <div className="text-center mb-4">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mb-3">
+            <Trash2 className="w-6 h-6 text-red-600" />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">Decommission Device?</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Device <span className="font-mono font-semibold">{device.device_id}</span> will be marked as decommissioned.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">
+            Cancel
+          </button>
+          <button onClick={handleConfirm} disabled={deleting} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
+            {deleting ? "Decommissioning..." : "Decommission"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Device form modal (create or edit) ── */
+function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }) {
+  const isEdit = !!editDevice;
   const [form, setForm] = useState({
-    device_id: "",
-    imei: "",
-    iccid: "",
-    msisdn: "",
-    site_id: "",
-    serial_number: "",
-    notes: "",
+    device_id: editDevice?.device_id || "",
+    imei: editDevice?.imei || "",
+    iccid: editDevice?.iccid || "",
+    msisdn: editDevice?.msisdn || "",
+    site_id: editDevice?.site_id || "",
+    serial_number: editDevice?.serial_number || "",
+    hardware_model_id: editDevice?.hardware_model_id || "",
+    device_type: editDevice?.device_type || "",
+    model: editDevice?.model || "",
+    notes: editDevice?.notes || "",
+    status: editDevice?.status || "provisioning",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -105,27 +144,50 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
+  // Group hardware models by manufacturer
+  const mfrs = [...new Set(hardwareModels.map(m => m.manufacturer))].sort();
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSaving(true);
     try {
-      const result = await Device.create({
-        device_id: form.device_id,
-        imei: form.imei || undefined,
-        iccid: form.iccid || undefined,
-        msisdn: form.msisdn || undefined,
-        site_id: form.site_id || undefined,
-        serial_number: form.serial_number || undefined,
-        notes: form.notes || undefined,
-        device_type: "PR12",
-        model: "PR12",
-        status: "provisioning",
-      });
-      setCreated(result);
-      onCreated();
+      if (isEdit) {
+        await Device.update(editDevice.id, {
+          imei: form.imei || undefined,
+          iccid: form.iccid || undefined,
+          msisdn: form.msisdn || undefined,
+          site_id: form.site_id || undefined,
+          serial_number: form.serial_number || undefined,
+          hardware_model_id: form.hardware_model_id || undefined,
+          device_type: form.device_type || undefined,
+          model: form.model || undefined,
+          notes: form.notes || undefined,
+          status: form.status,
+        });
+        toast.success(`Device ${form.device_id} updated`);
+        onSaved();
+        onClose();
+      } else {
+        const result = await Device.create({
+          device_id: form.device_id,
+          imei: form.imei || undefined,
+          iccid: form.iccid || undefined,
+          msisdn: form.msisdn || undefined,
+          site_id: form.site_id || undefined,
+          serial_number: form.serial_number || undefined,
+          hardware_model_id: form.hardware_model_id || undefined,
+          device_type: form.device_type || "Other",
+          model: form.model || form.device_type,
+          notes: form.notes || undefined,
+          status: "provisioning",
+        });
+        setCreated(result);
+        onSaved();
+      }
     } catch (err) {
-      setError(err?.message || "Failed to register device.");
+      const msg = err?.message || "Failed to save device.";
+      setError(msg);
       setSaving(false);
     }
   };
@@ -138,7 +200,7 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
             <div className="inline-flex items-center justify-center w-12 h-12 bg-emerald-100 rounded-full mb-3">
               <CheckCircle2 className="w-6 h-6 text-emerald-600" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900">PR12 Registered</h3>
+            <h3 className="text-lg font-bold text-gray-900">Device Registered</h3>
             <p className="text-sm text-gray-500 mt-1">Device <span className="font-mono font-semibold">{created.device_id}</span> created in provisioning status.</p>
           </div>
 
@@ -154,26 +216,6 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
               </div>
             </div>
           )}
-
-          <div className="bg-gray-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
-            <div className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Next Steps</div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0 mt-0.5">1</span>
-              <span className="text-gray-600">Insert SIM card and power on the PR12 device.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0 mt-0.5">2</span>
-              <span className="text-gray-600">Configure the device with the API key shown above.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0 mt-0.5">3</span>
-              <span className="text-gray-600">Activate SIM with carrier using ICCID{created.iccid ? ` (${created.iccid})` : ""}.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0 mt-0.5">4</span>
-              <span className="text-gray-600">Wait for first heartbeat — live status will change to <span className="font-semibold text-emerald-700">Online</span>.</span>
-            </div>
-          </div>
 
           <button
             onClick={onClose}
@@ -192,7 +234,7 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
         <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <Radio className="w-4 h-4 text-red-600" />
-            <h3 className="text-base font-bold text-gray-900">Register PR12 Device</h3>
+            <h3 className="text-base font-bold text-gray-900">{isEdit ? "Edit Device" : "Register Device"}</h3>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
             <X className="w-4 h-4" />
@@ -200,15 +242,44 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device ID *</label>
-            <input
-              value={form.device_id}
-              onChange={set("device_id")}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              placeholder="e.g. PR12-001"
-              required
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device ID *</label>
+              <input
+                value={form.device_id}
+                onChange={set("device_id")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="e.g. PR12-001"
+                required
+                disabled={isEdit}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model</label>
+              <select
+                value={form.hardware_model_id}
+                onChange={e => {
+                  const id = e.target.value;
+                  const hm = hardwareModels.find(m => m.id === id);
+                  setForm(f => ({
+                    ...f,
+                    hardware_model_id: id,
+                    device_type: hm?.device_type || f.device_type,
+                    model: hm?.model_name || f.model,
+                  }));
+                }}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              >
+                <option value="">-- Select model --</option>
+                {mfrs.map(mfr => (
+                  <optgroup key={mfr} label={mfr}>
+                    {hardwareModels.filter(m => m.manufacturer === mfr).map(m => (
+                      <option key={m.id} value={m.id}>{m.model_name} ({m.device_type})</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -269,6 +340,22 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
             </div>
           </div>
 
+          {isEdit && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Status</label>
+              <select
+                value={form.status}
+                onChange={set("status")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              >
+                <option value="provisioning">Provisioning</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="decommissioned">Decommissioned</option>
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Notes</label>
             <textarea
@@ -289,7 +376,7 @@ function RegisterPR12Modal({ onClose, onCreated, sites }) {
               Cancel
             </button>
             <button type="submit" disabled={saving} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
-              {saving ? "Registering..." : "Register PR12"}
+              {saving ? "Saving..." : isEdit ? "Save Changes" : "Register Device"}
             </button>
           </div>
         </form>
@@ -303,20 +390,25 @@ export default function Devices() {
   const { can } = useAuth();
   const [devices, setDevices] = useState([]);
   const [sites, setSites] = useState([]);
+  const [hardwareModels, setHardwareModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedSite, setSelectedSite] = useState(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [editDevice, setEditDevice] = useState(null);
+  const [deleteDevice, setDeleteDevice] = useState(null);
   const [rotateKeyResult, setRotateKeyResult] = useState(null);
 
   const fetchData = useCallback(async () => {
-    const [devData, siteData] = await Promise.all([
+    const [devData, siteData, hmData] = await Promise.all([
       Device.list("-created_at", 200),
       Site.list("-last_checkin", 200),
+      HardwareModel.list().catch(() => []),
     ]);
     setDevices(devData);
     setSites(siteData);
+    setHardwareModels(hmData);
     setLoading(false);
   }, []);
 
@@ -330,6 +422,18 @@ export default function Devices() {
       setRotateKeyResult(result);
     } catch (err) {
       toast.error(err?.message || "Failed to rotate key.");
+    }
+  };
+
+  const handleDelete = async (device) => {
+    try {
+      await Device.delete(device.id);
+      toast.success(`Device ${device.device_id} decommissioned`);
+      setDeleteDevice(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err?.message || "Failed to decommission device.");
+      setDeleteDevice(null);
     }
   };
 
@@ -372,7 +476,7 @@ export default function Devices() {
               onClick={() => setShowRegister(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors"
             >
-              <Plus className="w-4 h-4" /> Register PR12
+              <Plus className="w-4 h-4" /> Register Device
             </button>
             <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
               <RefreshCw className="w-4 h-4" />
@@ -417,9 +521,7 @@ export default function Devices() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Live</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Last Heartbeat</th>
-                {can("ROTATE_DEVICE_KEY") && (
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-10"></th>
-                )}
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-24">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -445,9 +547,25 @@ export default function Devices() {
                       <ComputedStatusBadge status={d.computed_status} />
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500">{timeSince(d.last_heartbeat)}</td>
-                    {can("ROTATE_DEVICE_KEY") && (
-                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
-                        {d.has_api_key && (
+                    <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditDevice(d)}
+                          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600"
+                          title="Edit device"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {d.status !== "decommissioned" && (
+                          <button
+                            onClick={() => setDeleteDevice(d)}
+                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-600"
+                            title="Decommission device"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {can("ROTATE_DEVICE_KEY") && d.has_api_key && (
                           <button
                             onClick={() => handleRotateKey(d)}
                             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
@@ -456,14 +574,14 @@ export default function Devices() {
                             <KeyRound className="w-3.5 h-3.5" />
                           </button>
                         )}
-                      </td>
-                    )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={can("ROTATE_DEVICE_KEY") ? 9 : 8} className="px-4 py-8 text-center text-sm text-gray-400">No devices found</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">No devices found</td>
                 </tr>
               )}
             </tbody>
@@ -478,10 +596,29 @@ export default function Devices() {
       />
 
       {showRegister && (
-        <RegisterPR12Modal
+        <DeviceFormModal
           sites={sites}
+          hardwareModels={hardwareModels}
           onClose={() => setShowRegister(false)}
-          onCreated={fetchData}
+          onSaved={fetchData}
+        />
+      )}
+
+      {editDevice && (
+        <DeviceFormModal
+          sites={sites}
+          hardwareModels={hardwareModels}
+          editDevice={editDevice}
+          onClose={() => setEditDevice(null)}
+          onSaved={fetchData}
+        />
+      )}
+
+      {deleteDevice && (
+        <ConfirmDeleteModal
+          device={deleteDevice}
+          onClose={() => setDeleteDevice(null)}
+          onConfirm={() => handleDelete(deleteDevice)}
         />
       )}
 

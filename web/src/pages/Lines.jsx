@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Line, Site } from "@/api/entities";
-import { Phone, Search, RefreshCw, Plus, X, CheckCircle2 } from "lucide-react";
+import { Phone, Search, RefreshCw, Plus, X, Pencil, Trash2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
+import { toast } from "sonner";
 
 const STATUS_BADGE = {
   active: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -17,11 +18,24 @@ const E911_BADGE = {
   none: "bg-gray-100 text-gray-500 border-gray-200",
 };
 
-function AddLineModal({ onClose, onCreated, sites }) {
+/* ── Line form modal (create or edit) ── */
+function LineFormModal({ onClose, onSaved, sites, editLine }) {
+  const isEdit = !!editLine;
   const [form, setForm] = useState({
-    line_id: "", provider: "telnyx", did: "", sip_uri: "",
-    protocol: "SIP", site_id: "", device_id: "",
-    e911_street: "", e911_city: "", e911_state: "", e911_zip: "",
+    line_id: editLine?.line_id || "",
+    provider: editLine?.provider || "telnyx",
+    did: editLine?.did || "",
+    sip_uri: editLine?.sip_uri || "",
+    protocol: editLine?.protocol || "SIP",
+    site_id: editLine?.site_id || "",
+    device_id: editLine?.device_id || "",
+    status: editLine?.status || "provisioning",
+    e911_status: editLine?.e911_status || "none",
+    e911_street: editLine?.e911_street || "",
+    e911_city: editLine?.e911_city || "",
+    e911_state: editLine?.e911_state || "",
+    e911_zip: editLine?.e911_zip || "",
+    notes: editLine?.notes || "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -33,20 +47,43 @@ function AddLineModal({ onClose, onCreated, sites }) {
     setError("");
     setSaving(true);
     try {
-      await Line.create({
-        ...form,
-        sip_uri: form.sip_uri || undefined,
-        site_id: form.site_id || undefined,
-        device_id: form.device_id || undefined,
-        e911_street: form.e911_street || undefined,
-        e911_city: form.e911_city || undefined,
-        e911_state: form.e911_state || undefined,
-        e911_zip: form.e911_zip || undefined,
-      });
-      onCreated();
-      onClose();
+      if (isEdit) {
+        await Line.update(editLine.id, {
+          provider: form.provider,
+          did: form.did || undefined,
+          sip_uri: form.sip_uri || undefined,
+          protocol: form.protocol,
+          site_id: form.site_id || undefined,
+          device_id: form.device_id || undefined,
+          status: form.status,
+          e911_status: form.e911_status,
+          e911_street: form.e911_street || undefined,
+          e911_city: form.e911_city || undefined,
+          e911_state: form.e911_state || undefined,
+          e911_zip: form.e911_zip || undefined,
+          notes: form.notes || undefined,
+        });
+        toast.success(`Line ${form.line_id} updated`);
+        onSaved();
+        onClose();
+      } else {
+        await Line.create({
+          ...form,
+          sip_uri: form.sip_uri || undefined,
+          site_id: form.site_id || undefined,
+          device_id: form.device_id || undefined,
+          e911_street: form.e911_street || undefined,
+          e911_city: form.e911_city || undefined,
+          e911_state: form.e911_state || undefined,
+          e911_zip: form.e911_zip || undefined,
+          notes: form.notes || undefined,
+        });
+        toast.success("Line created");
+        onSaved();
+        onClose();
+      }
     } catch (err) {
-      setError(err?.message || "Failed to create line.");
+      setError(err?.message || "Failed to save line.");
       setSaving(false);
     }
   };
@@ -57,7 +94,7 @@ function AddLineModal({ onClose, onCreated, sites }) {
         <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <Phone className="w-4 h-4 text-red-600" />
-            <h3 className="text-base font-bold text-gray-900">Add Voice Line</h3>
+            <h3 className="text-base font-bold text-gray-900">{isEdit ? "Edit Voice Line" : "Add Voice Line"}</h3>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
             <X className="w-4 h-4" />
@@ -68,8 +105,8 @@ function AddLineModal({ onClose, onCreated, sites }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Line ID *</label>
-              <input value={form.line_id} onChange={set("line_id")} required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              <input value={form.line_id} onChange={set("line_id")} required disabled={isEdit}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-50"
                 placeholder="e.g. LINE-001" />
             </div>
             <div>
@@ -110,6 +147,31 @@ function AddLineModal({ onClose, onCreated, sites }) {
             </div>
           </div>
 
+          {isEdit && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Status</label>
+                <select value={form.status} onChange={set("status")}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent">
+                  <option value="provisioning">Provisioning</option>
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="disconnected">Disconnected</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">E911 Status</label>
+                <select value={form.e911_status} onChange={set("e911_status")}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent">
+                  <option value="none">None</option>
+                  <option value="pending">Pending</option>
+                  <option value="validated">Validated</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">SIP URI</label>
             <input value={form.sip_uri} onChange={set("sip_uri")}
@@ -140,10 +202,40 @@ function AddLineModal({ onClose, onCreated, sites }) {
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">Cancel</button>
             <button type="submit" disabled={saving} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
-              {saving ? "Creating..." : "Add Line"}
+              {saving ? "Saving..." : isEdit ? "Save Changes" : "Add Line"}
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Confirm delete modal ── */
+function ConfirmDeleteLineModal({ line, onClose, onConfirm }) {
+  const [deleting, setDeleting] = useState(false);
+  const handleConfirm = async () => {
+    setDeleting(true);
+    await onConfirm();
+  };
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+        <div className="text-center mb-4">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mb-3">
+            <Trash2 className="w-6 h-6 text-red-600" />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">Delete Line?</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Line <span className="font-mono font-semibold">{line.line_id}</span> ({line.did || "no DID"}) will be permanently deleted.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">Cancel</button>
+          <button onClick={handleConfirm} disabled={deleting} className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -156,6 +248,8 @@ export default function Lines() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editLine, setEditLine] = useState(null);
+  const [deleteLine, setDeleteLine] = useState(null);
 
   const fetchData = useCallback(async () => {
     const [lineData, siteData] = await Promise.all([
@@ -170,6 +264,18 @@ export default function Lines() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const siteMap = Object.fromEntries(sites.map(s => [s.site_id, s]));
+
+  const handleDelete = async (line) => {
+    try {
+      await Line.delete(line.id);
+      toast.success(`Line ${line.line_id} deleted`);
+      setDeleteLine(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err?.message || "Failed to delete line.");
+      setDeleteLine(null);
+    }
+  };
 
   const filtered = lines.filter(l => {
     if (statusFilter && l.status !== statusFilter) return false;
@@ -254,6 +360,7 @@ export default function Lines() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Protocol</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">E911</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-20">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -276,6 +383,24 @@ export default function Lines() {
                           {l.e911_status}
                         </span>
                       </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setEditLine(l)}
+                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600"
+                            title="Edit line"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteLine(l)}
+                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-600"
+                            title="Delete line"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -286,10 +411,27 @@ export default function Lines() {
       </div>
 
       {showAdd && (
-        <AddLineModal
+        <LineFormModal
           sites={sites}
           onClose={() => setShowAdd(false)}
-          onCreated={fetchData}
+          onSaved={fetchData}
+        />
+      )}
+
+      {editLine && (
+        <LineFormModal
+          sites={sites}
+          editLine={editLine}
+          onClose={() => setEditLine(null)}
+          onSaved={fetchData}
+        />
+      )}
+
+      {deleteLine && (
+        <ConfirmDeleteLineModal
+          line={deleteLine}
+          onClose={() => setDeleteLine(null)}
+          onConfirm={() => handleDelete(deleteLine)}
         />
       )}
     </PageWrapper>

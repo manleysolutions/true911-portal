@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
@@ -26,6 +27,21 @@ from app.services.continuity import compute_device_computed_status
 router = APIRouter()
 
 _KEY_PREFIX = "t91_"
+
+_CONSTRAINT_MESSAGES = {
+    "uq_devices_imei": "A device with this IMEI already exists",
+    "uq_devices_serial_number": "A device with this serial number already exists",
+    "uq_devices_msisdn": "A device with this MSISDN already exists",
+    "devices_device_id_key": "A device with this device ID already exists",
+}
+
+
+def _parse_device_conflict(e: IntegrityError) -> str:
+    msg = str(e.orig) if e.orig else str(e)
+    for constraint, detail in _CONSTRAINT_MESSAGES.items():
+        if constraint in msg:
+            return detail
+    return "Duplicate value: a device with one of these identifiers already exists"
 
 
 def _generate_device_key() -> tuple[str, str]:
@@ -98,6 +114,12 @@ async def create_device(
         claimed_by=current_user.email,
     )
     db.add(device)
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        detail = _parse_device_conflict(e)
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=detail)
     await db.commit()
     await db.refresh(device)
 
@@ -126,6 +148,31 @@ async def update_device(
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(device, field, value)
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        detail = _parse_device_conflict(e)
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=detail)
+    await db.commit()
+    await db.refresh(device)
+    return _device_out(device)
+
+
+@router.delete("/{device_pk}", response_model=DeviceOut)
+async def delete_device(
+    device_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete: sets status to 'decommissioned'."""
+    result = await db.execute(
+        select(Device).where(Device.id == device_pk, Device.tenant_id == current_user.tenant_id)
+    )
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
+    device.status = "decommissioned"
     await db.commit()
     await db.refresh(device)
     return _device_out(device)
