@@ -7,6 +7,10 @@ from app.models.incident import Incident
 from app.models.notification_rule import NotificationRule
 from app.models.e911_change_log import E911ChangeLog
 from app.models.device import Device
+from app.models.line import Line
+from app.models.recording import Recording
+from app.models.event import Event
+from app.models.provider import Provider
 
 __all__ = [
     "Tenant",
@@ -18,4 +22,8 @@ __all__ = [
     "NotificationRule",
     "E911ChangeLog",
     "Device",
+    "Line",
+    "Recording",
+    "Event",
+    "Provider",
 ]
