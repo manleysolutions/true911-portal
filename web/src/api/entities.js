@@ -68,3 +68,4 @@ export const Device = makeEntity("/devices");
 export const Line = makeEntity("/lines");
 export const Recording = makeEntity("/recordings");
 export const Event = makeEntity("/events");
+export const Provider = makeEntity("/providers");

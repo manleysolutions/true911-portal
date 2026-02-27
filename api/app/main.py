@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat
 
 logger = logging.getLogger("true911")
 
@@ -53,6 +53,8 @@ app.include_router(devices.router,      prefix="/api/devices",    tags=["devices
 app.include_router(lines.router,        prefix="/api/lines",      tags=["lines"])
 app.include_router(recordings.router,   prefix="/api/recordings", tags=["recordings"])
 app.include_router(events.router,       prefix="/api/events",     tags=["events"])
+app.include_router(providers.router,   prefix="/api/providers",  tags=["providers"])
+app.include_router(heartbeat.router,  prefix="/api/heartbeat",  tags=["heartbeat"])
 
 
 @app.get("/api/config/features")

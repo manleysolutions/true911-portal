@@ -3,12 +3,35 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
+from app.models.device import Device
 from app.models.site import Site
 from app.models.user import User
 from app.routers.helpers import apply_sort
 from app.schemas.site import SiteCreate, SiteOut, SiteUpdate
+from app.services.continuity import (
+    compute_device_computed_status,
+    compute_site_computed_status,
+)
 
 router = APIRouter()
+
+
+async def _site_out(site: Site, db: AsyncSession) -> SiteOut:
+    """Build SiteOut with computed_status derived from its devices."""
+    out = SiteOut.model_validate(site)
+    result = await db.execute(
+        select(Device).where(
+            Device.site_id == site.site_id,
+            Device.tenant_id == site.tenant_id,
+        )
+    )
+    devices = result.scalars().all()
+    device_statuses = [
+        compute_device_computed_status(d.last_heartbeat, d.heartbeat_interval)
+        for d in devices
+    ]
+    out.computed_status = compute_site_computed_status(device_statuses)
+    return out
 
 
 @router.get("", response_model=list[SiteOut])
@@ -37,7 +60,29 @@ async def list_sites(
     q = apply_sort(q, Site, sort)
     q = q.limit(limit)
     result = await db.execute(q)
-    return [SiteOut.model_validate(r) for r in result.scalars().all()]
+    sites = result.scalars().all()
+
+    # Batch-load all devices for the tenant to avoid N+1 queries
+    dev_result = await db.execute(
+        select(Device).where(Device.tenant_id == current_user.tenant_id)
+    )
+    all_devices = dev_result.scalars().all()
+    devices_by_site: dict[str, list[Device]] = {}
+    for d in all_devices:
+        if d.site_id:
+            devices_by_site.setdefault(d.site_id, []).append(d)
+
+    out = []
+    for site in sites:
+        site_out = SiteOut.model_validate(site)
+        site_devices = devices_by_site.get(site.site_id, [])
+        device_statuses = [
+            compute_device_computed_status(d.last_heartbeat, d.heartbeat_interval)
+            for d in site_devices
+        ]
+        site_out.computed_status = compute_site_computed_status(device_statuses)
+        out.append(site_out)
+    return out
 
 
 @router.get("/{site_pk}", response_model=SiteOut)
@@ -52,7 +97,7 @@ async def get_site(
     site = result.scalar_one_or_none()
     if not site:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
-    return SiteOut.model_validate(site)
+    return await _site_out(site, db)
 
 
 @router.post("", response_model=SiteOut, status_code=201)
@@ -65,7 +110,7 @@ async def create_site(
     db.add(site)
     await db.commit()
     await db.refresh(site)
-    return SiteOut.model_validate(site)
+    return await _site_out(site, db)
 
 
 @router.patch("/{site_pk}", response_model=SiteOut)
@@ -86,4 +131,4 @@ async def update_site(
         setattr(site, field, value)
     await db.commit()
     await db.refresh(site)
-    return SiteOut.model_validate(site)
+    return await _site_out(site, db)

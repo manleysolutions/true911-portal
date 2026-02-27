@@ -76,6 +76,7 @@ class SiteOut(BaseModel):
     heartbeat_interval: Optional[int] = None
     uptime_percent: Optional[float] = None
     update_channel: Optional[str] = None
+    computed_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

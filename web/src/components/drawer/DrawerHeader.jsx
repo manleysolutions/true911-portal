@@ -1,5 +1,6 @@
 import { X, Clock, Building2 } from "lucide-react";
 import StatusBadge from "../ui/StatusBadge";
+import ComputedStatusBadge from "../ui/ComputedStatusBadge";
 import { isDemo } from "@/config";
 
 function timeSince(iso) {
@@ -20,6 +21,7 @@ export default function DrawerHeader({ site, lastActionResult, onClose }) {
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className="text-[10px] text-gray-400 font-mono bg-gray-50 px-1.5 py-0.5 rounded">{site.site_id}</span>
             <StatusBadge status={site.status} />
+            {site.computed_status && <ComputedStatusBadge status={site.computed_status} />}
             {site.tenant_id && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 font-medium">
                 {isDemo && site.tenant_id === "demo" ? "Demo Tenant" : site.tenant_id}

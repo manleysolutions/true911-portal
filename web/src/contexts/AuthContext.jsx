@@ -24,6 +24,8 @@ const PERMISSIONS = {
   ACK_INCIDENT: ["Admin", "Manager"],
   CLOSE_INCIDENT: ["Admin", "Manager"],
   MANAGE_NOTIFICATIONS: ["Admin"],
+  MANAGE_PROVIDERS: ["Admin"],
+  ROTATE_DEVICE_KEY: ["Admin"],
 };
 
 export function AuthProvider({ children }) {

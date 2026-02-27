@@ -23,8 +23,12 @@ class DeviceOut(BaseModel):
     last_heartbeat: Optional[datetime] = None
     heartbeat_interval: Optional[int] = None
     notes: Optional[str] = None
+    has_api_key: bool = False
+    claimed_at: Optional[datetime] = None
+    claimed_by: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    computed_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -67,6 +71,38 @@ class DeviceUpdate(BaseModel):
 
 
 class DeviceHeartbeatRequest(BaseModel):
-    """Payload from a device checking in."""
+    """Payload from a device checking in (JWT-authenticated admin endpoint)."""
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
+
+
+class DeviceCreateOut(DeviceOut):
+    """Returned only from POST /devices — includes the one-time raw API key."""
+    api_key: Optional[str] = None
+
+
+class DeviceKeyOut(BaseModel):
+    """Returned from rotate-key — one-time raw key display."""
+    device_id: str
+    api_key: str
+
+
+class DeviceTokenHeartbeatRequest(BaseModel):
+    """Payload for the unauthenticated device-token heartbeat.
+
+    ``device_id`` is required.  All other fields are passed through to
+    the vendor adapter for normalization, so the schema accepts extras.
+    """
+    device_id: str
+    firmware_version: Optional[str] = None
+    container_version: Optional[str] = None
+    signal_dbm: Optional[int] = None
+    ip_address: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class DeviceTokenHeartbeatResponse(BaseModel):
+    ok: bool = True
+    device_id: str
+    next_heartbeat_seconds: int
