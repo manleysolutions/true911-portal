@@ -59,6 +59,7 @@ import Lines from './pages/Lines';
 import Notifications from './pages/Notifications';
 import OnboardingWizard from './pages/OnboardingWizard';
 import Overview from './pages/Overview';
+import Providers from './pages/Providers';
 import Recordings from './pages/Recordings';
 import Reports from './pages/Reports';
 import Samantha from './pages/Samantha';
@@ -80,6 +81,7 @@ export const PAGES = {
     "Notifications": Notifications,
     "OnboardingWizard": OnboardingWizard,
     "Overview": Overview,
+    "Providers": Providers,
     "Recordings": Recordings,
     "Reports": Reports,
     "Samantha": Samantha,
