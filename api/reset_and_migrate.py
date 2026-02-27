@@ -1,7 +1,12 @@
 """Standalone script to drop ALL tables in the database.
 
-Uses raw SQL via asyncpg directly — no dependency on app modules.
-This guarantees it works even if the app has import issues.
+SAFETY: Requires BOTH of:
+  1. APP_MODE=demo
+  2. ALLOW_DB_RESET=1
+
+If either is missing, the script prints a message and exits cleanly.
+This script is NEVER called from render.yaml or any deploy pipeline.
+It exists only for local development convenience.
 """
 
 import asyncio
@@ -9,11 +14,21 @@ import os
 import sys
 
 
-async def drop_all():
-    app_mode = os.environ.get("APP_MODE", "demo")
+def _check_guards() -> None:
+    app_mode = os.environ.get("APP_MODE", "production")
+    allow = os.environ.get("ALLOW_DB_RESET", "")
+
     if app_mode != "demo":
-        print(f"APP_MODE={app_mode} — skipping database reset.")
-        return
+        print(f"ABORT: APP_MODE={app_mode!r} — reset only runs in demo mode.")
+        sys.exit(0)
+
+    if allow != "1":
+        print("ABORT: ALLOW_DB_RESET is not set to '1' — refusing to drop tables.")
+        sys.exit(0)
+
+
+async def drop_all():
+    _check_guards()
 
     try:
         import asyncpg
@@ -26,14 +41,12 @@ async def drop_all():
         print("DATABASE_URL not set, skipping reset")
         return
 
-    # asyncpg needs postgresql:// (not postgres://)
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
 
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     conn = await asyncpg.connect(url)
 
-    # Drop ALL tables in public schema (CASCADE handles foreign keys)
     await conn.execute("""
         DO $$ DECLARE
             r RECORD;
@@ -45,8 +58,9 @@ async def drop_all():
     """)
 
     await conn.close()
-    print("All public tables dropped (including alembic_version).")
+    print("All public tables dropped (demo reset).")
 
 
 if __name__ == "__main__":
+    _check_guards()
     asyncio.run(drop_all())
