@@ -23,6 +23,9 @@ from .models.recording import Recording
 from .models.event import Event
 from .models.provider import Provider
 from .models.hardware_model import HardwareModel
+from .models.integration import Integration, IntegrationAccount
+from .models.sim import Sim
+from .models.device_sim import DeviceSim
 from .services.auth import hash_password
 
 
@@ -168,6 +171,36 @@ HARDWARE_MODELS = [
     {"id": "cisco-ata191", "manufacturer": "Cisco", "model_name": "ATA191", "device_type": "ATA"},
     {"id": "cisco-ata192", "manufacturer": "Cisco", "model_name": "ATA192", "device_type": "ATA"},
 ]
+
+INTEGRATIONS = [
+    {"slug": "telnyx", "display_name": "Telnyx", "category": "sip", "base_url": "https://api.telnyx.com/v2", "docs_url": "https://developers.telnyx.com", "enabled": True},
+    {"slug": "vola", "display_name": "VolaCloud", "category": "hardware", "base_url": "https://api.volacloud.com/v1", "docs_url": "https://docs.volacloud.com", "enabled": True},
+    {"slug": "tmobile", "display_name": "T-Mobile IoT", "category": "carrier", "base_url": "https://api.t-mobile.com/iot/v1", "docs_url": "https://developer.t-mobile.com", "enabled": True},
+]
+
+# Demo SIMs — one per first 10 devices
+SIMS = []
+_sim_configs = [
+    ("tmobile", "+12145550201", "8901260882902000001", "active",    "iot-500mb", "fast.t-mobile.com"),
+    ("tmobile", "+15125550202", "8901260882902000002", "active",    "iot-500mb", "fast.t-mobile.com"),
+    ("tmobile", "+17135550203", "8901260882902000003", "active",    "iot-1gb",   "fast.t-mobile.com"),
+    ("tmobile", "+12105550204", "8901260882902000004", "active",    "iot-500mb", "fast.t-mobile.com"),
+    ("tmobile", "+18175550205", "8901260882902000005", "suspended", "iot-500mb", "fast.t-mobile.com"),
+    ("telnyx",  "+19155550206", "8942110000000000006", "active",    "global-iot",""),
+    ("telnyx",  "+14695550207", "8942110000000000007", "active",    "global-iot",""),
+    ("tmobile", "+18175550208", "8901260882902000008", "active",    "iot-1gb",   "fast.t-mobile.com"),
+    ("telnyx",  "+13615550209", "8942110000000000009", "active",    "global-iot",""),
+    ("tmobile", "+18065550210", "8901260882902000010", "inventory", "iot-500mb", "fast.t-mobile.com"),
+]
+for _i, (_carrier, _msisdn, _iccid, _st, _plan, _apn) in enumerate(_sim_configs):
+    SIMS.append({
+        "iccid": _iccid,
+        "msisdn": _msisdn,
+        "carrier": _carrier,
+        "status": _st,
+        "plan": _plan,
+        "apn": _apn or None,
+    })
 
 PROVIDERS = [
     {"provider_id": "PROV-001", "provider_type": "telnyx", "display_name": "Telnyx SIP Trunking", "category": "sip", "enabled": True, "config_json": {"region": "us-central", "sip_connection_id": "demo-conn-001"}},
@@ -389,13 +422,56 @@ async def seed():
                 created_at=ago(hours_ago=e["ago_hours"]),
             ))
 
+        # Integrations
+        integration_ids = {}
+        for intg in INTEGRATIONS:
+            obj = Integration(**intg)
+            db.add(obj)
+            await db.flush()
+            integration_ids[intg["slug"]] = obj.id
+
+        # Integration Accounts (demo credentials)
+        for slug, intg_id in integration_ids.items():
+            db.add(IntegrationAccount(
+                tenant_id=TENANT_ID,
+                integration_id=intg_id,
+                label=f"Demo {slug} account",
+                api_key_encrypted="demo-key-not-real",
+                enabled=True,
+            ))
+
+        # SIMs
+        sim_objects = []
+        for s in SIMS:
+            obj = Sim(tenant_id=TENANT_ID, **s)
+            db.add(obj)
+            sim_objects.append(obj)
+        await db.flush()
+
+        # Device-SIM assignments (first 9 active SIMs → first 9 devices)
+        # We need device PKs — query them
+        from sqlalchemy import select as sel
+        dev_rows = (await db.execute(
+            sel(Device).where(Device.tenant_id == TENANT_ID).order_by(Device.id).limit(10)
+        )).scalars().all()
+        for idx, sim_obj in enumerate(sim_objects):
+            if idx < len(dev_rows) and sim_obj.status == "active":
+                db.add(DeviceSim(
+                    device_id=dev_rows[idx].id,
+                    sim_id=sim_obj.id,
+                    slot=1,
+                    active=True,
+                    assigned_by="seed",
+                ))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
               f"{len(INCIDENTS)} incidents, {len(NOTIFICATION_RULES)} notification rules, "
               f"{len(HARDWARE_MODELS)} hardware models, {len(DEVICES)} devices, "
               f"{len(PROVIDERS)} providers, {len(LINES)} lines, "
-              f"{len(RECORDINGS)} recordings, {len(EVENTS)} events.")
+              f"{len(RECORDINGS)} recordings, {len(EVENTS)} events, "
+              f"{len(INTEGRATIONS)} integrations, {len(SIMS)} SIMs.")
 
 
 if __name__ == "__main__":

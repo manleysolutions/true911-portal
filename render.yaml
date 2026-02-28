@@ -4,6 +4,9 @@ databases:
     databaseName: true911
     postgresMajorVersion: 16
 
+  - name: true911-redis
+    plan: starter
+
 services:
   # FastAPI Backend
   - type: web
@@ -23,6 +26,32 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "https://true911-web-demo.onrender.com,https://true911-web-prod.onrender.com"
+      - key: APP_MODE
+        value: production
+      - key: REDIS_URL
+        fromService:
+          name: true911-redis
+          type: redis
+          property: connectionString
+
+  # RQ Worker (shares codebase with API)
+  - type: worker
+    name: true911-worker
+    runtime: python
+    plan: starter
+    rootDir: api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: true911-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: true911-redis
+          type: redis
+          property: connectionString
       - key: APP_MODE
         value: production
 

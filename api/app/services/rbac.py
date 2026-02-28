@@ -16,6 +16,9 @@ PERMISSIONS: dict[str, list[str]] = {
     "MANAGE_PROVIDERS": ["Admin"],
     "ROTATE_DEVICE_KEY": ["Admin"],
     "MANAGE_USERS": ["Admin"],
+    "MANAGE_SIMS": ["Admin"],
+    "VIEW_JOBS": ["Admin", "Manager"],
+    "MANAGE_INTEGRATIONS": ["Admin"],
 }
 
 
