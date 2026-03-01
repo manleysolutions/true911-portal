@@ -68,3 +68,31 @@ def verify_webhook_signature(raw_body: bytes, signature_header: str | None, time
 def compute_signature(body: bytes, secret: str) -> str:
     """Compute the HMAC-SHA256 signature for testing / external callers."""
     return "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+
+
+def verify_zoho_token(request: Request) -> None:
+    """Verify a static shared token for Zoho webhooks.
+
+    Accepts token via query string (?token=...) or header (X-True911-Token: ...).
+    Uses ZOHO_WEBHOOK_SECRET, falling back to INTEGRATION_WEBHOOK_SECRET.
+    Raises HTTPException(401) on failure.
+    """
+    import logging
+    logger = logging.getLogger("true911.integrations")
+
+    secret = settings.ZOHO_WEBHOOK_SECRET or settings.INTEGRATION_WEBHOOK_SECRET
+    if not secret:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Neither ZOHO_WEBHOOK_SECRET nor INTEGRATION_WEBHOOK_SECRET is configured",
+        )
+
+    token = request.query_params.get("token") or request.headers.get("X-True911-Token")
+
+    if not token:
+        logger.warning("Zoho webhook auth failed: no token provided (ip=%s)", request.client.host if request.client else "unknown")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized")
+
+    if not hmac.compare_digest(token, secret):
+        logger.warning("Zoho webhook auth failed: token mismatch (ip=%s)", request.client.host if request.client else "unknown")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized")

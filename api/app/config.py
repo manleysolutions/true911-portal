@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     APP_MODE: str = "production"  # "demo" | "production" — default is production-safe
     REDIS_URL: str = ""  # redis://localhost:6379/0 — set in Render env
     INTEGRATION_WEBHOOK_SECRET: str = ""  # shared HMAC secret for Zoho/QB webhooks
+    ZOHO_WEBHOOK_SECRET: str = ""  # static token for Zoho (falls back to INTEGRATION_WEBHOOK_SECRET)
     INTEGRATION_ALLOWED_SOURCES: str = "zoho,qb"  # comma-separated
     INTEGRATION_HMAC_SKEW_SECONDS: int = 300  # replay protection window
     FEATURE_SAMANTHA: str = "false"  # "true" to show AI/Samantha nav item

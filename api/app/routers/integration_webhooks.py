@@ -1,8 +1,8 @@
 """Integration webhook ingestion + admin API for Zoho CRM and QuickBooks.
 
-Webhook endpoints (no JWT auth — HMAC signed):
-    POST /api/integrations/zoho/webhook
-    POST /api/integrations/qb/webhook
+Webhook endpoints (no JWT auth):
+    POST /api/integrations/zoho/webhook  — static token auth (?token= or X-True911-Token)
+    POST /api/integrations/qb/webhook    — HMAC-SHA256 signed (X-True911-Signature)
 
 Admin endpoints (JWT + RBAC):
     GET  /api/integrations/events
@@ -27,7 +27,7 @@ from app.models.integration_event import IntegrationEvent
 from app.models.reconciliation_snapshot import ReconciliationSnapshot
 from app.models.user import User
 from app.services import job_service
-from app.services.webhook_auth import verify_webhook_signature
+from app.services.webhook_auth import verify_webhook_signature, verify_zoho_token
 
 logger = logging.getLogger("true911.integrations")
 
@@ -35,42 +35,22 @@ router = APIRouter()
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Webhook ingestion (HMAC auth, no JWT)
+# Shared ingestion logic
 # ═══════════════════════════════════════════════════════════════════
 
-async def _ingest_webhook(source: str, request: Request, db: AsyncSession) -> dict:
-    """Shared ingestion for all provider webhooks.
+async def _ingest_event(source: str, payload: dict, raw_body: bytes, db: AsyncSession) -> dict:
+    """Parse, persist idempotently, and enqueue a processing job.
 
-    1. Verify HMAC signature
-    2. Parse payload + derive idempotency key
-    3. INSERT … ON CONFLICT DO NOTHING (idempotent)
-    4. Enqueue background processing job
-    5. Return 202
+    Auth is handled by the caller — this function only does ingestion.
     """
-    raw_body = await request.body()
-
-    # Verify HMAC
-    sig_header = request.headers.get("X-True911-Signature")
-    ts_header = request.headers.get("X-True911-Timestamp")
-    verify_webhook_signature(raw_body, sig_header, ts_header)
-
-    # Parse JSON
-    try:
-        payload = json.loads(raw_body)
-    except (json.JSONDecodeError, ValueError):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON body")
-
-    # Extract fields from canonical payload
     org_id = payload.get("org_id") or payload.get("tenant_id") or "unknown"
     event_type = payload.get("event_type", "unknown")
     external_id = payload.get("external_id") or payload.get("external_account_id") or payload.get("external_subscription_id")
 
-    # Derive idempotency key
     idempotency_key = payload.get("idempotency_key")
     if not idempotency_key:
         idempotency_key = hashlib.sha256(raw_body).hexdigest()
 
-    # Idempotent insert using ON CONFLICT DO NOTHING
     stmt = pg_insert(IntegrationEvent).values(
         org_id=org_id,
         source=source,
@@ -87,13 +67,11 @@ async def _ingest_webhook(source: str, request: Request, db: AsyncSession) -> di
     row = result.fetchone()
 
     if row is None:
-        # Duplicate — already ingested
         await db.commit()
-        return {"accepted": True, "duplicate": True, "message": "Event already received"}
+        return {"ok": True, "duplicate": True, "message": "Event already received"}
 
     event_id = row[0]
 
-    # Enqueue processing job
     job = await job_service.create_and_enqueue(
         db,
         job_type=f"integration.process.{source}",
@@ -104,17 +82,50 @@ async def _ingest_webhook(source: str, request: Request, db: AsyncSession) -> di
     )
     await db.commit()
 
-    return {"accepted": True, "event_id": event_id, "job_id": job.id}
+    return {"ok": True, "event_id": event_id, "job_id": job.id}
 
 
-@router.post("/zoho/webhook", status_code=202)
+# ═══════════════════════════════════════════════════════════════════
+# Zoho webhook (static token auth, returns 200)
+# ═══════════════════════════════════════════════════════════════════
+
+@router.post("/zoho/webhook", status_code=200)
 async def zoho_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    return await _ingest_webhook("zoho", request, db)
+    # Token auth (query param ?token= or header X-True911-Token)
+    verify_zoho_token(request)
 
+    raw_body = await request.body()
+
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON body")
+
+    logger.info("Zoho webhook received: event_type=%s", payload.get("event_type", "unknown"))
+
+    return await _ingest_event("zoho", payload, raw_body, db)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# QB webhook (HMAC auth, returns 202)
+# ═══════════════════════════════════════════════════════════════════
 
 @router.post("/qb/webhook", status_code=202)
 async def qb_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    return await _ingest_webhook("qb", request, db)
+    raw_body = await request.body()
+
+    sig_header = request.headers.get("X-True911-Signature")
+    ts_header = request.headers.get("X-True911-Timestamp")
+    verify_webhook_signature(raw_body, sig_header, ts_header)
+
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON body")
+
+    logger.info("QB webhook received: event_type=%s", payload.get("event_type", "unknown"))
+
+    return await _ingest_event("qb", payload, raw_body, db)
 
 
 # ═══════════════════════════════════════════════════════════════════
