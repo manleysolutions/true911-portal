@@ -1,7 +1,7 @@
 """Integration webhook ingestion + admin API for Zoho CRM and QuickBooks.
 
 Webhook endpoints (no JWT auth):
-    POST /api/integrations/zoho/webhook  — static token auth (?token= or X-True911-Token)
+    POST /api/integrations/zoho/webhook  — X-Webhook-Secret header auth
     POST /api/integrations/qb/webhook    — HMAC-SHA256 signed (X-True911-Signature)
 
 Admin endpoints (JWT + RBAC):
@@ -26,8 +26,9 @@ from app.dependencies import get_db, require_permission
 from app.models.integration_event import IntegrationEvent
 from app.models.reconciliation_snapshot import ReconciliationSnapshot
 from app.models.user import User
+from app.security.webhooks import require_webhook_secret
 from app.services import job_service
-from app.services.webhook_auth import verify_webhook_signature, verify_zoho_token
+from app.services.webhook_auth import verify_webhook_signature
 
 logger = logging.getLogger("true911.integrations")
 
@@ -86,14 +87,15 @@ async def _ingest_event(source: str, payload: dict, raw_body: bytes, db: AsyncSe
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Zoho webhook (static token auth, returns 200)
+# Zoho webhook (X-Webhook-Secret auth, returns 200)
 # ═══════════════════════════════════════════════════════════════════
 
 @router.post("/zoho/webhook", status_code=200)
-async def zoho_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    # Token auth (query param ?token= or header X-True911-Token)
-    verify_zoho_token(request)
-
+async def zoho_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _secret: str = Depends(require_webhook_secret),
+):
     raw_body = await request.body()
 
     try:
@@ -101,7 +103,13 @@ async def zoho_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON body")
 
-    logger.info("Zoho webhook received: event_type=%s", payload.get("event_type", "unknown"))
+    event_type = payload.get("event_type", "unknown")
+    payload_id = payload.get("idempotency_key") or payload.get("external_id") or "n/a"
+    correlation_id = request.headers.get("X-Request-Id") or request.headers.get("X-Correlation-Id") or ""
+    logger.info(
+        "Zoho webhook received: event_type=%s payload_id=%s correlation_id=%s",
+        event_type, payload_id, correlation_id,
+    )
 
     return await _ingest_event("zoho", payload, raw_body, db)
 

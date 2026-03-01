@@ -35,6 +35,8 @@ services:
           property: connectionString
       - key: INTEGRATION_WEBHOOK_SECRET
         generateValue: true
+      - key: ZOHO_WEBHOOK_SECRET
+        generateValue: true
 
   # RQ Worker (shares codebase with API)
   - type: worker

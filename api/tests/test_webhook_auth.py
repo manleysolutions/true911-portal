@@ -1,14 +1,15 @@
-"""Tests for HMAC webhook signature verification and Zoho token auth."""
+"""Tests for HMAC webhook signature verification and Zoho X-Webhook-Secret auth."""
 
 import hashlib
 import hmac
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
 
-from app.services.webhook_auth import compute_signature, verify_webhook_signature, verify_zoho_token
+from app.security.webhooks import require_webhook_secret
+from app.services.webhook_auth import compute_signature, verify_webhook_signature
 
 
 FAKE_SECRET = "test-webhook-secret-12345"
@@ -122,70 +123,43 @@ class TestVerifyWebhookSignature:
         assert exc_info.value.status_code == 401
 
 
-ZOHO_TOKEN = "zoho-test-token-abc123"
+# ═══════════════════════════════════════════════════════════════════
+# Zoho webhook: X-Webhook-Secret header auth (require_webhook_secret)
+# ═══════════════════════════════════════════════════════════════════
+
+ZOHO_SECRET = "zoho-test-secret-xyz789"
 
 
-def _mock_request(token_query: str | None = None, token_header: str | None = None) -> MagicMock:
-    """Build a fake Request with query_params and headers."""
-    req = MagicMock()
-    req.query_params = {"token": token_query} if token_query else {}
-    headers = {}
-    if token_header:
-        headers["X-True911-Token"] = token_header
-    req.headers = headers
-    req.client = MagicMock()
-    req.client.host = "127.0.0.1"
-    return req
+class TestRequireWebhookSecret:
+    """Test the require_webhook_secret FastAPI dependency directly."""
 
-
-class TestVerifyZohoToken:
-    @patch("app.services.webhook_auth.settings")
-    def test_missing_token_returns_401(self, mock_settings):
-        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_TOKEN
-        mock_settings.INTEGRATION_WEBHOOK_SECRET = ""
-        req = _mock_request()  # no token at all
+    @patch("app.security.webhooks.settings")
+    def test_missing_header_returns_401(self, mock_settings):
+        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_SECRET
         with pytest.raises(HTTPException) as exc_info:
-            verify_zoho_token(req)
+            require_webhook_secret(x_webhook_secret=None)
         assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Unauthorized"
 
-    @patch("app.services.webhook_auth.settings")
-    def test_wrong_token_returns_401(self, mock_settings):
-        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_TOKEN
-        mock_settings.INTEGRATION_WEBHOOK_SECRET = ""
-        req = _mock_request(token_query="wrong-token")
+    @patch("app.security.webhooks.settings")
+    def test_wrong_header_returns_401(self, mock_settings):
+        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_SECRET
         with pytest.raises(HTTPException) as exc_info:
-            verify_zoho_token(req)
+            require_webhook_secret(x_webhook_secret="wrong-value")
         assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Unauthorized"
 
-    @patch("app.services.webhook_auth.settings")
-    def test_valid_query_param_token_passes(self, mock_settings):
-        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_TOKEN
-        mock_settings.INTEGRATION_WEBHOOK_SECRET = ""
-        req = _mock_request(token_query=ZOHO_TOKEN)
-        # Should not raise
-        verify_zoho_token(req)
+    @patch("app.security.webhooks.settings")
+    def test_correct_header_returns_200(self, mock_settings):
+        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_SECRET
+        # Should not raise — returns the secret on success
+        result = require_webhook_secret(x_webhook_secret=ZOHO_SECRET)
+        assert result == ZOHO_SECRET
 
-    @patch("app.services.webhook_auth.settings")
-    def test_valid_header_token_passes(self, mock_settings):
-        mock_settings.ZOHO_WEBHOOK_SECRET = ZOHO_TOKEN
-        mock_settings.INTEGRATION_WEBHOOK_SECRET = ""
-        req = _mock_request(token_header=ZOHO_TOKEN)
-        # Should not raise
-        verify_zoho_token(req)
-
-    @patch("app.services.webhook_auth.settings")
-    def test_fallback_to_integration_secret(self, mock_settings):
-        mock_settings.ZOHO_WEBHOOK_SECRET = ""
-        mock_settings.INTEGRATION_WEBHOOK_SECRET = "fallback-secret"
-        req = _mock_request(token_query="fallback-secret")
-        # Should not raise — uses fallback
-        verify_zoho_token(req)
-
-    @patch("app.services.webhook_auth.settings")
+    @patch("app.security.webhooks.settings")
     def test_no_secret_configured_returns_500(self, mock_settings):
         mock_settings.ZOHO_WEBHOOK_SECRET = ""
-        mock_settings.INTEGRATION_WEBHOOK_SECRET = ""
-        req = _mock_request(token_query="anything")
         with pytest.raises(HTTPException) as exc_info:
-            verify_zoho_token(req)
+            require_webhook_secret(x_webhook_secret="anything")
         assert exc_info.value.status_code == 500
+        assert exc_info.value.detail == "Webhook secret not configured"
