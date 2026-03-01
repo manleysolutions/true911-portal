@@ -20,6 +20,12 @@ from app.models.device_sim import DeviceSim
 from app.models.sim_event import SimEvent
 from app.models.sim_usage_daily import SimUsageDaily
 from app.models.job import Job
+from app.models.integration_event import IntegrationEvent
+from app.models.customer import Customer
+from app.models.subscription import Subscription
+from app.models.external_customer_map import ExternalCustomerMap
+from app.models.external_subscription_map import ExternalSubscriptionMap
+from app.models.reconciliation_snapshot import ReconciliationSnapshot
 
 __all__ = [
     "Tenant",
@@ -45,4 +51,10 @@ __all__ = [
     "SimEvent",
     "SimUsageDaily",
     "Job",
+    "IntegrationEvent",
+    "Customer",
+    "Subscription",
+    "ExternalCustomerMap",
+    "ExternalSubscriptionMap",
+    "ReconciliationSnapshot",
 ]

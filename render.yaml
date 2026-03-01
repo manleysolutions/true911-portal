@@ -33,6 +33,8 @@ services:
           name: true911-redis
           type: redis
           property: connectionString
+      - key: INTEGRATION_WEBHOOK_SECRET
+        generateValue: true
 
   # RQ Worker (shares codebase with API)
   - type: worker

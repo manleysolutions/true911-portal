@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks
 
 logger = logging.getLogger("true911")
 
@@ -60,6 +60,7 @@ app.include_router(admin.router,     prefix="/api/admin",      tags=["admin"])
 app.include_router(sims.router,     prefix="/api/sims",       tags=["sims"])
 app.include_router(jobs.router,     prefix="/api/jobs",       tags=["jobs"])
 app.include_router(webhooks.router, prefix="/api/webhooks",   tags=["webhooks"])
+app.include_router(integration_webhooks.router, prefix="/api/integrations", tags=["integrations"])
 
 
 @app.get("/api/config/features")

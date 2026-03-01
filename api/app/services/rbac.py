@@ -19,6 +19,8 @@ PERMISSIONS: dict[str, list[str]] = {
     "MANAGE_SIMS": ["Admin"],
     "VIEW_JOBS": ["Admin", "Manager"],
     "MANAGE_INTEGRATIONS": ["Admin"],
+    "VIEW_INTEGRATIONS": ["Admin", "Manager"],
+    "RUN_RECONCILIATION": ["Admin"],
 }
 
 

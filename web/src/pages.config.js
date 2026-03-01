@@ -55,6 +55,7 @@ import DeploymentMap from './pages/DeploymentMap';
 import E911 from './pages/E911';
 import Events from './pages/Events';
 import Incidents from './pages/Incidents';
+import IntegrationSync from './pages/IntegrationSync';
 import Lines from './pages/Lines';
 import Notifications from './pages/Notifications';
 import OnboardingWizard from './pages/OnboardingWizard';
@@ -77,6 +78,7 @@ export const PAGES = {
     "E911": E911,
     "Events": Events,
     "Incidents": Incidents,
+    "IntegrationSync": IntegrationSync,
     "Lines": Lines,
     "Notifications": Notifications,
     "OnboardingWizard": OnboardingWizard,

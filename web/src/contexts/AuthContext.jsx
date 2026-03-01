@@ -30,6 +30,8 @@ const PERMISSIONS = {
   MANAGE_SIMS: ["Admin"],
   VIEW_JOBS: ["Admin", "Manager"],
   MANAGE_INTEGRATIONS: ["Admin"],
+  VIEW_INTEGRATIONS: ["Admin", "Manager"],
+  RUN_RECONCILIATION: ["Admin"],
 };
 
 export function AuthProvider({ children }) {

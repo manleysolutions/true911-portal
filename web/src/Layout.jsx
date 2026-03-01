@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { config } from "@/config";
@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { name: "Reports", page: "Reports", icon: FileText },
   { section: "separator" },
   { name: "Providers", page: "Providers", icon: Plug, adminOnly: true },
+  { name: "Integration Sync", page: "IntegrationSync", icon: ArrowDownUp, adminOnly: true },
   { name: "Settings", page: "Admin", icon: Settings, adminOnly: true },
   { name: "Onboarding", page: "OnboardingWizard", icon: Rocket },
   { name: "AI / Samantha", page: "Samantha", icon: Sparkles, featureFlag: "samantha" },

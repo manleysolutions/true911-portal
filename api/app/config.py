@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"  # str — parsed into a list by cors_origin_list
     APP_MODE: str = "production"  # "demo" | "production" — default is production-safe
     REDIS_URL: str = ""  # redis://localhost:6379/0 — set in Render env
+    INTEGRATION_WEBHOOK_SECRET: str = ""  # shared HMAC secret for Zoho/QB webhooks
+    INTEGRATION_ALLOWED_SOURCES: str = "zoho,qb"  # comma-separated
+    INTEGRATION_HMAC_SKEW_SECONDS: int = 300  # replay protection window
     FEATURE_SAMANTHA: str = "false"  # "true" to show AI/Samantha nav item
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

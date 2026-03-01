@@ -26,6 +26,9 @@ _HANDLERS: dict[str, str] = {
     "webhook.tmobile": "app.services.sim_service:handle_webhook",
     "line.provision_e911": "app.services.line_service:handle_provision_e911",
     "line.sync_did": "app.services.line_service:handle_sync_did",
+    "integration.process.zoho": "app.services.integration_processor:process_integration_event",
+    "integration.process.qb": "app.services.integration_processor:process_integration_event",
+    "integration.reconcile": "app.services.reconciliation:run_reconciliation",
 }
 
 
