@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site } from "@/api/entities";
-import { apiFetch } from "@/api/client";
-import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2, Mail, Link, Copy, Check, RefreshCw, Building2, Pencil } from "lucide-react";
+import { apiFetch, setActAsTenant, getActAsTenant } from "@/api/client";
+import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2, Mail, Link, Copy, Check, RefreshCw, Building2, Pencil, Globe } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateE911, updateHeartbeat } from "@/components/actions";
@@ -199,7 +199,7 @@ function SiteAdminRow({ site, onSaved }) {
 }
 
 /* ── Create User Modal ── */
-function CreateUserModal({ open, onClose, onCreated, tenants, currentTenantId }) {
+function CreateUserModal({ open, onClose, onCreated, tenants, currentTenantId, isSuperAdmin }) {
   const [mode, setMode] = useState("invite"); // "invite" | "password"
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -370,10 +370,11 @@ function CreateUserModal({ open, onClose, onCreated, tenants, currentTenantId })
               <option value="User">User</option>
               <option value="Manager">Manager</option>
               <option value="Admin">Admin</option>
+              {isSuperAdmin && <option value="SuperAdmin">SuperAdmin</option>}
             </select>
           </div>
 
-          {tenants && tenants.length > 1 && (
+          {((tenants && tenants.length > 1) || isSuperAdmin) && tenants && tenants.length > 0 && (
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Tenant</label>
               <select value={tenantId} onChange={e => setTenantId(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
@@ -665,7 +666,7 @@ function TenantManagement() {
 
 /* ── User Management Section ── */
 function UserManagement() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isSuperAdmin } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
@@ -673,20 +674,25 @@ function UserManagement() {
   const [resetTarget, setResetTarget] = useState(null); // { id, name }
   const [resendResult, setResendResult] = useState(null); // { invite_url, email }
   const [tenants, setTenants] = useState([]);
+  const [tenantFilter, setTenantFilter] = useState(""); // "" = all
 
   const fetchUsers = useCallback(async () => {
     try {
-      const [userData, tenantData] = await Promise.all([
-        apiFetch("/admin/users"),
-        apiFetch("/admin/tenants").catch(() => []),
-      ]);
+      const qs = isSuperAdmin && tenantFilter ? `?tenant_id=${tenantFilter}` : "";
+      const fetches = [
+        apiFetch(`/admin/users${qs}`),
+      ];
+      if (isSuperAdmin) {
+        fetches.push(apiFetch("/admin/tenants").catch(() => []));
+      }
+      const [userData, tenantData] = await Promise.all(fetches);
       setUsers(userData);
-      setTenants(tenantData);
+      if (tenantData) setTenants(tenantData);
     } catch {
       // silently fail if endpoint not available
     }
     setLoading(false);
-  }, []);
+  }, [isSuperAdmin, tenantFilter]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
@@ -746,6 +752,7 @@ function UserManagement() {
   };
 
   const ROLE_BADGE = {
+    SuperAdmin: "bg-purple-50 text-purple-700 border-purple-200",
     Admin: "bg-red-50 text-red-700 border-red-200",
     Manager: "bg-blue-50 text-blue-700 border-blue-200",
     User: "bg-gray-100 text-gray-600 border-gray-200",
@@ -757,6 +764,21 @@ function UserManagement() {
         <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
           <Users className="w-4 h-4 text-indigo-600" />
           <h2 className="font-semibold text-gray-900 text-sm">User Management</h2>
+          {isSuperAdmin && tenants.length > 0 && (
+            <div className="relative ml-2">
+              <select
+                value={tenantFilter}
+                onChange={e => setTenantFilter(e.target.value)}
+                className="appearance-none pl-2 pr-6 py-1 text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400"
+              >
+                <option value="">All Tenants</option>
+                {tenants.map(t => (
+                  <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+            </div>
+          )}
           <span className="text-xs text-gray-400 ml-auto mr-3">{users.length} users</span>
           <button
             onClick={() => setShowCreateModal(true)}
@@ -776,6 +798,7 @@ function UserManagement() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Name</th>
                 <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Email</th>
+                {isSuperAdmin && <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Tenant</th>}
                 <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Role</th>
                 <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Joined</th>
@@ -794,6 +817,9 @@ function UserManagement() {
                     </div>
                   </td>
                   <td className="px-5 py-3 text-gray-600 text-xs font-mono">{u.email}</td>
+                  {isSuperAdmin && (
+                    <td className="px-5 py-3 text-xs text-gray-500 font-mono">{u.tenant_id}</td>
+                  )}
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       <select
@@ -802,6 +828,7 @@ function UserManagement() {
                         disabled={updatingId === u.id}
                         className={`appearance-none pl-2 pr-6 py-1 text-xs font-bold rounded-full border cursor-pointer ${ROLE_BADGE[u.role] || ROLE_BADGE.User}`}
                       >
+                        {isSuperAdmin && <option value="SuperAdmin">SuperAdmin</option>}
                         <option value="Admin">Admin</option>
                         <option value="Manager">Manager</option>
                         <option value="User">User</option>
@@ -880,6 +907,7 @@ function UserManagement() {
         onCreated={fetchUsers}
         tenants={tenants}
         currentTenantId={currentUser?.tenant_id}
+        isSuperAdmin={isSuperAdmin}
       />
 
       {resetTarget && (
@@ -903,18 +931,66 @@ function UserManagement() {
   );
 }
 
+/* ── SuperAdmin Tenant Switcher Banner ── */
+function TenantSwitcherBanner({ tenants, onRefresh }) {
+  const [activeTenant, setActiveTenant] = useState(getActAsTenant() || "");
+
+  const handleChange = (tenantId) => {
+    setActiveTenant(tenantId);
+    setActAsTenant(tenantId);
+    onRefresh?.();
+  };
+
+  return (
+    <div className="bg-purple-50 border border-purple-200 rounded-xl px-5 py-3 mb-6 flex items-center gap-3">
+      <Globe className="w-4 h-4 text-purple-600 flex-shrink-0" />
+      <span className="text-sm font-semibold text-purple-800">SuperAdmin</span>
+      <span className="text-xs text-purple-600">Acting as:</span>
+      <div className="relative">
+        <select
+          value={activeTenant}
+          onChange={e => handleChange(e.target.value)}
+          className="appearance-none pl-3 pr-7 py-1.5 text-xs font-medium border border-purple-300 bg-white text-purple-700 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400"
+        >
+          <option value="">All tenants (own context)</option>
+          {tenants.map(t => (
+            <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
+          ))}
+        </select>
+        <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+      </div>
+      {activeTenant && (
+        <button
+          onClick={() => handleChange("")}
+          className="text-xs text-purple-600 hover:text-purple-800 underline ml-1"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
-  const { user, can } = useAuth();
+  const { user, can, isSuperAdmin } = useAuth();
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("sites"); // 'sites' | 'users' | 'tenants'
+  const [saTenants, setSaTenants] = useState([]);
 
   const fetchData = useCallback(async () => {
     const data = await Site.list("-last_checkin", 100);
     setSites(data);
     setLoading(false);
   }, []);
+
+  // Fetch tenants for the SuperAdmin switcher
+  useEffect(() => {
+    if (isSuperAdmin) {
+      apiFetch("/admin/tenants").then(setSaTenants).catch(() => {});
+    }
+  }, [isSuperAdmin]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -944,10 +1020,16 @@ export default function Admin() {
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
-            <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full border border-red-200">Admin Only</span>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${isSuperAdmin ? "bg-purple-100 text-purple-700 border-purple-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+              {isSuperAdmin ? "SuperAdmin" : "Admin Only"}
+            </span>
           </div>
           <p className="text-sm text-gray-500">Manage site configuration, heartbeat policies, and user roles.</p>
         </div>
+
+        {isSuperAdmin && saTenants.length > 0 && (
+          <TenantSwitcherBanner tenants={saTenants} onRefresh={fetchData} />
+        )}
 
         {/* Tab switcher */}
         <div className="flex gap-2 mb-6">

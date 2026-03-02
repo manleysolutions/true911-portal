@@ -202,7 +202,13 @@ async def change_password(
     if pwd_err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
 
-    current_user.password_hash = hash_password(body.new_password)
-    current_user.must_change_password = False
+    # Re-query user from DB in case current_user is detached (SuperAdmin act-as)
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
     await db.commit()
     return {"detail": "Password changed successfully"}

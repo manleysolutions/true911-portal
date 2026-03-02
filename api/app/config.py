@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     INTEGRATION_HMAC_SKEW_SECONDS: int = 300  # replay protection window
     FEATURE_SAMANTHA: str = "false"  # "true" to show AI/Samantha nav item
     TRUE911_BOOTSTRAP_ADMIN_PASSWORD: str = ""  # required for prod bootstrap
+    TRUE911_BOOTSTRAP_SUPERADMIN_EMAIL: str = "smanley@manleysolutions.com"
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 

@@ -21,8 +21,11 @@ PERMISSIONS: dict[str, list[str]] = {
     "MANAGE_INTEGRATIONS": ["Admin"],
     "VIEW_INTEGRATIONS": ["Admin", "Manager"],
     "RUN_RECONCILIATION": ["Admin"],
+    "GLOBAL_ADMIN": ["SuperAdmin"],
 }
 
 
 def can(role: str, action: str) -> bool:
+    if role == "SuperAdmin":
+        return True
     return role in PERMISSIONS.get(action, [])

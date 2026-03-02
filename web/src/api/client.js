@@ -10,6 +10,15 @@ const API_URL = config.apiUrl;
 let _accessToken = localStorage.getItem("t911_token");
 let _refreshToken = localStorage.getItem("t911_refresh");
 let _refreshPromise = null;
+let _actAsTenantId = null;
+
+export function setActAsTenant(tenantId) {
+  _actAsTenantId = tenantId || null;
+}
+
+export function getActAsTenant() {
+  return _actAsTenantId;
+}
 
 export function setTokens(access, refresh) {
   _accessToken = access;
@@ -53,6 +62,7 @@ export async function apiFetch(path, options = {}) {
 
   const headers = { ...options.headers };
   if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
+  if (_actAsTenantId) headers["X-Act-As-Tenant"] = _actAsTenantId;
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }

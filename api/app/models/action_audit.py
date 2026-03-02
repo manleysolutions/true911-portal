@@ -22,4 +22,6 @@ class ActionAudit(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     result: Mapped[str] = mapped_column(String(20))
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    acting_as_tenant_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    original_tenant_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

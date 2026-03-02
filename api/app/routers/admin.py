@@ -16,7 +16,7 @@ from app.services.auth import generate_invite_token, hash_password, validate_pas
 
 router = APIRouter()
 
-ALLOWED_ROLES = {"Admin", "Manager", "User"}
+ALLOWED_ROLES = {"SuperAdmin", "Admin", "Manager", "User"}
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -121,13 +121,16 @@ class TenantUpdate(BaseModel):
 async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[str] = None,
 ):
-    """List all users in the current tenant. Admin only."""
-    result = await db.execute(
-        select(User)
-        .where(User.tenant_id == current_user.tenant_id)
-        .order_by(User.created_at)
-    )
+    """List users. SuperAdmin sees all (with optional ?tenant_id filter). Others see own tenant."""
+    q = select(User)
+    if current_user.role == "SuperAdmin":
+        if tenant_id:
+            q = q.where(User.tenant_id == tenant_id)
+    else:
+        q = q.where(User.tenant_id == current_user.tenant_id)
+    result = await db.execute(q.order_by(User.created_at))
     return [AdminUserOut.from_user(u) for u in result.scalars().all()]
 
 
@@ -147,6 +150,12 @@ async def invite_user(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"Invalid role '{body.role}'. Must be one of: {', '.join(sorted(ALLOWED_ROLES))}",
+        )
+    # Only SuperAdmin can assign the SuperAdmin role
+    if body.role == "SuperAdmin" and current_user.role != "SuperAdmin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a SuperAdmin can assign the SuperAdmin role",
         )
 
     email = body.email.strip().lower()
@@ -197,6 +206,12 @@ async def create_user(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"Invalid role '{body.role}'. Must be one of: {', '.join(sorted(ALLOWED_ROLES))}",
         )
+    # Only SuperAdmin can assign the SuperAdmin role
+    if body.role == "SuperAdmin" and current_user.role != "SuperAdmin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a SuperAdmin can assign the SuperAdmin role",
+        )
 
     pwd_err = validate_password_strength(body.password)
     if pwd_err:
@@ -239,9 +254,10 @@ async def resend_invite(
     current_user: User = Depends(get_current_user),
 ):
     """Regenerate invite token and reset expiry. Admin only."""
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
-    )
+    q = select(User).where(User.id == user_id)
+    if current_user.role != "SuperAdmin":
+        q = q.where(User.tenant_id == current_user.tenant_id)
+    result = await db.execute(q)
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -270,9 +286,10 @@ async def update_user(
     current_user: User = Depends(get_current_user),
 ):
     """Update a user (role, is_active, password, name). Admin only."""
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
-    )
+    q = select(User).where(User.id == user_id)
+    if current_user.role != "SuperAdmin":
+        q = q.where(User.tenant_id == current_user.tenant_id)
+    result = await db.execute(q)
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -288,6 +305,12 @@ async def update_user(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"Invalid role '{body.role}'. Must be one of: {', '.join(sorted(ALLOWED_ROLES))}",
+            )
+        # Only SuperAdmin can assign the SuperAdmin role
+        if body.role == "SuperAdmin" and current_user.role != "SuperAdmin":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only a SuperAdmin can assign the SuperAdmin role",
             )
         user.role = body.role
 
@@ -324,9 +347,10 @@ async def delete_user(
             status.HTTP_400_BAD_REQUEST, "You cannot delete your own account"
         )
 
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
-    )
+    q = select(User).where(User.id == user_id)
+    if current_user.role != "SuperAdmin":
+        q = q.where(User.tenant_id == current_user.tenant_id)
+    result = await db.execute(q)
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -352,10 +376,17 @@ async def update_user_role(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"Invalid role '{body.role}'. Must be one of: {', '.join(sorted(ALLOWED_ROLES))}",
         )
+    # Only SuperAdmin can assign the SuperAdmin role
+    if body.role == "SuperAdmin" and current_user.role != "SuperAdmin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a SuperAdmin can assign the SuperAdmin role",
+        )
 
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
-    )
+    q = select(User).where(User.id == user_id)
+    if current_user.role != "SuperAdmin":
+        q = q.where(User.tenant_id == current_user.tenant_id)
+    result = await db.execute(q)
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -371,10 +402,10 @@ async def update_user_role(
 @router.get(
     "/tenants",
     response_model=list[TenantOut],
-    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
 )
 async def list_tenants(db: AsyncSession = Depends(get_db)):
-    """List all tenants. Admin only."""
+    """List all tenants. SuperAdmin only."""
     result = await db.execute(select(Tenant).order_by(Tenant.created_at))
     return [TenantOut.model_validate(t) for t in result.scalars().all()]
 
@@ -383,10 +414,10 @@ async def list_tenants(db: AsyncSession = Depends(get_db)):
     "/tenants",
     response_model=TenantOut,
     status_code=201,
-    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
 )
 async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new tenant. Admin only."""
+    """Create a new tenant. SuperAdmin only."""
     existing = await db.execute(
         select(Tenant).where(Tenant.tenant_id == body.tenant_id)
     )
@@ -406,7 +437,7 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
 @router.patch(
     "/tenants/{tenant_id}",
     response_model=TenantOut,
-    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
 )
 async def update_tenant(
     tenant_id: str,

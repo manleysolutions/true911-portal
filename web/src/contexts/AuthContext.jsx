@@ -32,6 +32,7 @@ const PERMISSIONS = {
   MANAGE_INTEGRATIONS: ["Admin"],
   VIEW_INTEGRATIONS: ["Admin", "Manager"],
   RUN_RECONCILIATION: ["Admin"],
+  GLOBAL_ADMIN: ["SuperAdmin"],
 };
 
 export function AuthProvider({ children }) {
@@ -91,14 +92,18 @@ export function AuthProvider({ children }) {
   const can = useCallback(
     (action) => {
       if (!user) return false;
+      // SuperAdmin has implicit access to everything
+      if (user.role === "SuperAdmin") return true;
       const allowed = PERMISSIONS[action];
       return allowed ? allowed.includes(user.role) : false;
     },
     [user]
   );
 
+  const isSuperAdmin = user?.role === "SuperAdmin";
+
   return (
-    <AuthContext.Provider value={{ user, ready, isLoadingAuth, login, register, logout, can }}>
+    <AuthContext.Provider value={{ user, ready, isLoadingAuth, login, register, logout, can, isSuperAdmin }}>
       {children}
     </AuthContext.Provider>
   );

@@ -75,6 +75,8 @@ async def _get_site(db: AsyncSession, site_id: str, tenant_id: str) -> Site:
 
 
 async def _audit(db: AsyncSession, user: User, action_type: str, site_id: str, result: str, details: str = "") -> ActionAudit:
+    original_tid = getattr(user, "_original_tenant_id", user.tenant_id)
+    acting_as = user.tenant_id if user.tenant_id != original_tid else None
     audit = ActionAudit(
         audit_id=_uid("AUD"),
         request_id=_uid("REQ"),
@@ -87,6 +89,8 @@ async def _audit(db: AsyncSession, user: User, action_type: str, site_id: str, r
         timestamp=_now(),
         result=result,
         details=details,
+        original_tenant_id=original_tid,
+        acting_as_tenant_id=acting_as,
     )
     db.add(audit)
     return audit
