@@ -172,6 +172,33 @@ async def update_user(
     return AdminUserOut.model_validate(user)
 
 
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def delete_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a user. Admin only. Cannot delete yourself."""
+    if user_id == current_user.id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "You cannot delete your own account"
+        )
+
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    await db.delete(user)
+    await db.commit()
+
+
 @router.put(
     "/users/{user_id}/role",
     response_model=AdminUserOut,

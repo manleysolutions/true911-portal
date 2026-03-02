@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp } from "lucide-react";
-import { Incident } from "@/api/entities";
+import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2 } from "lucide-react";
+import { Incident, Site } from "@/api/entities";
 import { toast } from "sonner";
 import { uid } from "./actions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +25,95 @@ function Section({ title, children, defaultOpen = true }) {
       </button>
       {open && <div className="pb-3">{children}</div>}
     </div>
+  );
+}
+
+function ContactPOCSection({ site, onSiteUpdated }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pocName, setPocName] = useState(site.poc_name || "");
+  const [pocPhone, setPocPhone] = useState(site.poc_phone || "");
+  const [pocEmail, setPocEmail] = useState(site.poc_email || "");
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await Site.update(site.id, { poc_name: pocName, poc_phone: pocPhone, poc_email: pocEmail });
+      toast.success("Contact info updated");
+      setEditing(false);
+      onSiteUpdated?.();
+    } catch (err) {
+      toast.error(err?.message || "Failed to update contact info");
+    }
+    setSaving(false);
+  };
+
+  const handleCancel = () => {
+    setPocName(site.poc_name || "");
+    setPocPhone(site.poc_phone || "");
+    setPocEmail(site.poc_email || "");
+    setEditing(false);
+  };
+
+  return (
+    <Section title="Contact / POC" defaultOpen={false}>
+      {editing ? (
+        <div className="space-y-2.5">
+          <div>
+            <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">Name</label>
+            <input value={pocName} onChange={e => setPocName(e.target.value)} className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Contact name" />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">Phone</label>
+            <input value={pocPhone} onChange={e => setPocPhone(e.target.value)} className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="(555) 123-4567" />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">Email</label>
+            <input value={pocEmail} onChange={e => setPocEmail(e.target.value)} className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="contact@example.com" />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleSave} disabled={saving} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors">
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button onClick={handleCancel} disabled={saving} className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2 flex-1">
+              {site.poc_name && (
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <User className="w-3.5 h-3.5 text-gray-400" />
+                  <span>{site.poc_name}</span>
+                </div>
+              )}
+              {site.poc_phone && (
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <Phone className="w-3.5 h-3.5 text-gray-400" />
+                  <a href={`tel:${site.poc_phone}`} className="hover:text-blue-600">{site.poc_phone}</a>
+                </div>
+              )}
+              {site.poc_email && (
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <Mail className="w-3.5 h-3.5 text-gray-400" />
+                  <a href={`mailto:${site.poc_email}`} className="hover:text-blue-600 truncate">{site.poc_email}</a>
+                </div>
+              )}
+              {!site.poc_name && !site.poc_phone && !site.poc_email && (
+                <div className="text-xs text-gray-400">No contact info on file.</div>
+              )}
+            </div>
+            <button onClick={() => setEditing(true)} title="Edit contact info" className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -75,31 +164,7 @@ export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
             <ActionTimeline site={site} refreshKey={timelineKey} />
           </Section>
 
-          <Section title="Contact / POC" defaultOpen={false}>
-            <div className="space-y-2">
-              {site.poc_name && (
-                <div className="flex items-center gap-2 text-xs text-gray-700">
-                  <User className="w-3.5 h-3.5 text-gray-400" />
-                  <span>{site.poc_name}</span>
-                </div>
-              )}
-              {site.poc_phone && (
-                <div className="flex items-center gap-2 text-xs text-gray-700">
-                  <Phone className="w-3.5 h-3.5 text-gray-400" />
-                  <a href={`tel:${site.poc_phone}`} className="hover:text-blue-600">{site.poc_phone}</a>
-                </div>
-              )}
-              {site.poc_email && (
-                <div className="flex items-center gap-2 text-xs text-gray-700">
-                  <Mail className="w-3.5 h-3.5 text-gray-400" />
-                  <a href={`mailto:${site.poc_email}`} className="hover:text-blue-600 truncate">{site.poc_email}</a>
-                </div>
-              )}
-              {!site.poc_name && !site.poc_phone && !site.poc_email && (
-                <div className="text-xs text-gray-400">No contact info on file.</div>
-              )}
-            </div>
-          </Section>
+          <ContactPOCSection site={site} onSiteUpdated={handleSiteUpdated} />
 
           <Section title="E911 Address" defaultOpen={false}>
             <div className="flex items-start gap-2">

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
 from app.models.device import Device
+from app.models.incident import Incident
 from app.models.site import Site
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -132,3 +133,54 @@ async def update_site(
     await db.commit()
     await db.refresh(site)
     return await _site_out(site, db)
+
+
+@router.delete(
+    "/{site_pk}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("VIEW_ADMIN"))],
+)
+async def delete_site(
+    site_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a site. Admin only. Refuses if devices or open incidents reference it."""
+    result = await db.execute(
+        select(Site).where(Site.id == site_pk, Site.tenant_id == current_user.tenant_id)
+    )
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
+
+    # Guard: check for devices referencing this site
+    dev_count = await db.scalar(
+        select(func.count()).select_from(Device).where(
+            Device.site_id == site.site_id,
+            Device.tenant_id == current_user.tenant_id,
+        )
+    )
+    if dev_count:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot delete site: {dev_count} device(s) still assigned. "
+            "Decommission or reassign devices first.",
+        )
+
+    # Guard: check for open incidents referencing this site
+    inc_count = await db.scalar(
+        select(func.count()).select_from(Incident).where(
+            Incident.site_id == site.site_id,
+            Incident.tenant_id == current_user.tenant_id,
+            Incident.status != "closed",
+        )
+    )
+    if inc_count:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot delete site: {inc_count} open incident(s). "
+            "Close all incidents first.",
+        )
+
+    await db.delete(site)
+    await db.commit()

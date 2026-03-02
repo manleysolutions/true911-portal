@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound } from "lucide-react";
+import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateE911, updateHeartbeat } from "@/components/actions";
@@ -132,6 +132,20 @@ function HeartbeatEditor({ site, onSaved }) {
 
 function SiteAdminRow({ site, onSaved }) {
   const [expanded, setExpanded] = useState(null); // 'e911' | 'heartbeat' | null
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete site "${site.site_name}" (${site.site_id})? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await Site.delete(site.id);
+      toast.success(`Site "${site.site_name}" deleted`);
+      onSaved?.();
+    } catch (err) {
+      toast.error(err?.message || "Failed to delete site");
+    }
+    setDeleting(false);
+  };
 
   return (
     <div className="border border-gray-100 rounded-xl mb-3 overflow-hidden">
@@ -157,6 +171,14 @@ function SiteAdminRow({ site, onSaved }) {
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all ${expanded === 'heartbeat' ? 'bg-gray-900 border-gray-900 text-white font-medium' : 'border-gray-200 text-gray-600 hover:border-gray-400'}`}
           >
             <Clock className="w-3 h-3" /> Heartbeat
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            title="Delete site"
+            className="flex items-center p-1.5 text-gray-400 border border-gray-200 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-50"
+          >
+            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
@@ -362,6 +384,19 @@ function UserManagement() {
     setUpdatingId(null);
   };
 
+  const handleDeleteUser = async (userId, userName) => {
+    if (!window.confirm(`Delete user "${userName}"? This action cannot be undone.`)) return;
+    setUpdatingId(userId);
+    try {
+      await apiFetch(`/admin/users/${userId}`, { method: "DELETE" });
+      toast.success(`User "${userName}" deleted`);
+      fetchUsers();
+    } catch (err) {
+      toast.error(err?.message || "Failed to delete user");
+    }
+    setUpdatingId(null);
+  };
+
   const ROLE_BADGE = {
     Admin: "bg-red-50 text-red-700 border-red-200",
     Manager: "bg-blue-50 text-blue-700 border-blue-200",
@@ -444,12 +479,22 @@ function UserManagement() {
                     {u.created_at ? new Date(u.created_at).toLocaleDateString() : "\u2014"}
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <button
-                      onClick={() => setResetTarget({ id: u.id, name: u.name })}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                    >
-                      <KeyRound className="w-3 h-3" /> Reset Password
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setResetTarget({ id: u.id, name: u.name })}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                      >
+                        <KeyRound className="w-3 h-3" /> Reset Password
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(u.id, u.name)}
+                        disabled={updatingId === u.id || u.id === currentUser?.id}
+                        title={u.id === currentUser?.id ? "Cannot delete yourself" : "Delete user"}
+                        className={`inline-flex items-center p-1.5 text-gray-400 border border-gray-200 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors ${u.id === currentUser?.id ? "cursor-not-allowed opacity-40" : ""}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
