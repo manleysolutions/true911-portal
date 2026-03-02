@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 _SITE_FIELDS = {
     "last_checkin": (Optional[datetime], None),
@@ -77,6 +77,15 @@ class SiteOut(BaseModel):
     uptime_percent: Optional[float] = None
     update_channel: Optional[str] = None
     computed_status: Optional[str] = None
+
+    @computed_field
+    @property
+    def has_coords(self) -> bool:
+        if self.lat is None or self.lng is None:
+            return False
+        if self.lat == 0 and self.lng == 0:
+            return False
+        return -90 <= self.lat <= 90 and -180 <= self.lng <= 180
 
     model_config = {"from_attributes": True}
 

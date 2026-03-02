@@ -13,7 +13,7 @@ from app.services.continuity import (
     compute_device_computed_status,
     compute_site_computed_status,
 )
-from app.services.geocoding import geocode_address
+from app.services.geocoding import geocode_address, has_valid_coords
 
 router = APIRouter()
 
@@ -87,6 +87,81 @@ async def list_sites(
     return out
 
 
+@router.get("/missing-coords", response_model=list[SiteOut])
+async def list_missing_coords(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all tenant sites that lack valid lat/lng coordinates."""
+    result = await db.execute(
+        select(Site).where(Site.tenant_id == current_user.tenant_id)
+    )
+    all_sites = result.scalars().all()
+
+    # Batch-load devices for computed_status
+    dev_result = await db.execute(
+        select(Device).where(Device.tenant_id == current_user.tenant_id)
+    )
+    all_devices = dev_result.scalars().all()
+    devices_by_site: dict[str, list[Device]] = {}
+    for d in all_devices:
+        if d.site_id:
+            devices_by_site.setdefault(d.site_id, []).append(d)
+
+    out = []
+    for site in all_sites:
+        if has_valid_coords(site.lat, site.lng):
+            continue
+        site_out = SiteOut.model_validate(site)
+        site_devices = devices_by_site.get(site.site_id, [])
+        device_statuses = [
+            compute_device_computed_status(d.last_heartbeat, d.heartbeat_interval)
+            for d in site_devices
+        ]
+        site_out.computed_status = compute_site_computed_status(device_statuses)
+        out.append(site_out)
+    return out
+
+
+@router.post(
+    "/{site_pk}/geocode",
+    response_model=SiteOut,
+    dependencies=[Depends(require_permission("VIEW_ADMIN"))],
+)
+async def geocode_site(
+    site_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Geocode a site from its E911 address. Admin only."""
+    result = await db.execute(
+        select(Site).where(Site.id == site_pk, Site.tenant_id == current_user.tenant_id)
+    )
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
+
+    if not any([site.e911_street, site.e911_city, site.e911_state, site.e911_zip]):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "No E911 address on file",
+        )
+
+    coords = await geocode_address(
+        site.e911_street, site.e911_city, site.e911_state, site.e911_zip
+    )
+    if not coords:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Geocoding failed — address could not be resolved",
+        )
+
+    site.lat, site.lng = coords
+    await db.commit()
+    await db.refresh(site)
+    return await _site_out(site, db)
+
+
 @router.get("/{site_pk}", response_model=SiteOut)
 async def get_site(
     site_pk: int,
@@ -138,7 +213,23 @@ async def update_site(
     if not site:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+
+    # Validate lat/lng ranges if provided
+    if "lat" in updates and updates["lat"] is not None:
+        if not (-90 <= updates["lat"] <= 90):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Latitude must be between -90 and 90",
+            )
+    if "lng" in updates and updates["lng"] is not None:
+        if not (-180 <= updates["lng"] <= 180):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Longitude must be between -180 and 180",
+            )
+
+    for field, value in updates.items():
         setattr(site, field, value)
 
     # Auto-geocode when any E911 address field is updated

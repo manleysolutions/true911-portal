@@ -58,7 +58,11 @@ function makeEntity(basePath) {
   };
 }
 
-export const Site = makeEntity("/sites");
+export const Site = {
+  ...makeEntity("/sites"),
+  missingCoords: () => apiFetch("/sites/missing-coords"),
+  geocode: (id) => apiFetch(`/sites/${id}/geocode`, { method: "POST" }),
+};
 export const TelemetryEvent = makeEntity("/telemetry");
 export const ActionAudit = makeEntity("/audits");
 export const Incident = makeEntity("/incidents");

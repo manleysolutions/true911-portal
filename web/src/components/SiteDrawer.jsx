@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2 } from "lucide-react";
+import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2, Navigation, Crosshair, AlertTriangle } from "lucide-react";
 import { Incident, Site } from "@/api/entities";
 import { toast } from "sonner";
 import { uid } from "./actions";
@@ -117,6 +117,155 @@ function ContactPOCSection({ site, onSiteUpdated }) {
   );
 }
 
+function E911CoordsSection({ site, onSiteUpdated }) {
+  const { can } = useAuth();
+  const isAdmin = can("VIEW_ADMIN");
+  const [geocoding, setGeocoding] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualLat, setManualLat] = useState(site.lat != null ? String(site.lat) : "");
+  const [manualLng, setManualLng] = useState(site.lng != null ? String(site.lng) : "");
+  const [savingCoords, setSavingCoords] = useState(false);
+
+  const hasE911 = !!(site.e911_street || site.e911_city || site.e911_state || site.e911_zip);
+
+  const handleGeocode = async () => {
+    setGeocoding(true);
+    try {
+      await Site.geocode(site.id);
+      toast.success("Coordinates resolved from E911 address");
+      onSiteUpdated?.();
+    } catch (err) {
+      toast.error(err?.message || "Geocoding failed");
+    }
+    setGeocoding(false);
+  };
+
+  const handleSaveCoords = async () => {
+    const lat = parseFloat(manualLat);
+    const lng = parseFloat(manualLng);
+    if (isNaN(lat) || isNaN(lng)) {
+      toast.error("Enter valid numeric coordinates");
+      return;
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      toast.error("Coordinates out of range");
+      return;
+    }
+    setSavingCoords(true);
+    try {
+      await Site.update(site.id, { lat, lng });
+      toast.success("Coordinates saved");
+      setShowManual(false);
+      onSiteUpdated?.();
+    } catch (err) {
+      toast.error(err?.message || "Failed to save coordinates");
+    }
+    setSavingCoords(false);
+  };
+
+  return (
+    <Section title="E911 Address" defaultOpen={false}>
+      {/* Missing coords badge */}
+      {!site.has_coords && (
+        <div className="flex items-center gap-1.5 mb-2.5 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <span className="text-[10px] font-medium text-amber-700">Missing coordinates — site won't appear on map</span>
+        </div>
+      )}
+
+      <div className="flex items-start gap-2">
+        <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+        <div className="text-xs text-gray-700">
+          <div>{site.e911_street || "—"}</div>
+          <div>{site.e911_city}, {site.e911_state} {site.e911_zip}</div>
+        </div>
+      </div>
+
+      {/* Coordinates display */}
+      {site.has_coords && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <Crosshair className="w-3 h-3 text-gray-400" />
+          <span className="text-[10px] font-mono text-gray-500">{site.lat?.toFixed(4)}, {site.lng?.toFixed(4)}</span>
+        </div>
+      )}
+
+      {/* Admin actions for missing coords */}
+      {isAdmin && !site.has_coords && (
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-1.5">
+            {hasE911 && (
+              <button
+                onClick={handleGeocode}
+                disabled={geocoding}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-60 transition-colors"
+              >
+                {geocoding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+                Geocode from Address
+              </button>
+            )}
+            <button
+              onClick={() => setShowManual(!showManual)}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <Crosshair className="w-3 h-3" />
+              Set Manually
+            </button>
+          </div>
+
+          {showManual && (
+            <div className="bg-gray-50 rounded-lg p-2.5 space-y-2">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-[9px] font-medium text-gray-500 mb-0.5 block">Latitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={manualLat}
+                    onChange={e => setManualLat(e.target.value)}
+                    placeholder="32.7767"
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[9px] font-medium text-gray-500 mb-0.5 block">Longitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={manualLng}
+                    onChange={e => setManualLng(e.target.value)}
+                    placeholder="-96.7970"
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={handleSaveCoords}
+                  disabled={savingCoords}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                >
+                  {savingCoords ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  Save
+                </button>
+                <button
+                  onClick={() => setShowManual(false)}
+                  className="px-2.5 py-1.5 text-[10px] font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {site.notes && (
+        <div className="mt-2 text-xs text-gray-400 italic leading-relaxed">{site.notes}</div>
+      )}
+    </Section>
+  );
+}
+
 export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
   const [lastActionResult, setLastActionResult] = useState(null);
   const [showE911, setShowE911] = useState(false);
@@ -166,18 +315,7 @@ export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
 
           <ContactPOCSection site={site} onSiteUpdated={handleSiteUpdated} />
 
-          <Section title="E911 Address" defaultOpen={false}>
-            <div className="flex items-start gap-2">
-              <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-gray-700">
-                <div>{site.e911_street || "—"}</div>
-                <div>{site.e911_city}, {site.e911_state} {site.e911_zip}</div>
-              </div>
-            </div>
-            {site.notes && (
-              <div className="mt-2 text-xs text-gray-400 italic leading-relaxed">{site.notes}</div>
-            )}
-          </Section>
+          <E911CoordsSection site={site} onSiteUpdated={handleSiteUpdated} />
 
           <Section title="Device Info" defaultOpen={false}>
             <div className="space-y-1.5">

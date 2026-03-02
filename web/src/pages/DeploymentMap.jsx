@@ -3,7 +3,9 @@ import { Site } from "@/api/entities";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
-import { MapPin, Layers, RefreshCw, AlertTriangle, ChevronRight, X } from "lucide-react";
+import { MapPin, Layers, RefreshCw, AlertTriangle, ChevronRight, X, Crosshair, Navigation, Loader2, Save } from "lucide-react";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const STATUS_COLORS = {
   Connected: "#10b981",
@@ -30,11 +32,18 @@ function FlyTo({ site }) {
 }
 
 export default function DeploymentMap() {
+  const { can } = useAuth();
+  const isAdmin = can("VIEW_ADMIN");
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSite, setSelectedSite] = useState(null);
   const [filterStatus, setFilterStatus] = useState("All");
   const [showMissingCoords, setShowMissingCoords] = useState(false);
+  const [geocodingId, setGeocodingId] = useState(null);
+  const [editingCoordsId, setEditingCoordsId] = useState(null);
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
+  const [savingCoords, setSavingCoords] = useState(false);
 
   const fetchData = useCallback(async () => {
     const data = await Site.list("-last_checkin", 100);
@@ -49,8 +58,51 @@ export default function DeploymentMap() {
   }, [fetchData]);
 
   const filteredSites = filterStatus === "All" ? sites : sites.filter(s => s.status === filterStatus);
-  const mappableSites = filteredSites.filter(s => s.lat && s.lng);
-  const missingCoordsSites = sites.filter(s => !s.lat || !s.lng);
+  const mappableSites = filteredSites.filter(s => s.has_coords);
+  const missingCoordsSites = sites.filter(s => !s.has_coords);
+
+  const hasE911 = (site) => !!(site.e911_street || site.e911_city || site.e911_state || site.e911_zip);
+
+  const handleGeocode = async (site) => {
+    setGeocodingId(site.id);
+    try {
+      await Site.geocode(site.id);
+      toast.success(`Geocoded ${site.site_name}`);
+      await fetchData();
+    } catch (err) {
+      toast.error(err?.message || "Geocoding failed");
+    }
+    setGeocodingId(null);
+  };
+
+  const handleStartManual = (site) => {
+    setEditingCoordsId(site.id);
+    setManualLat(site.lat != null ? String(site.lat) : "");
+    setManualLng(site.lng != null ? String(site.lng) : "");
+  };
+
+  const handleSaveManual = async (site) => {
+    const lat = parseFloat(manualLat);
+    const lng = parseFloat(manualLng);
+    if (isNaN(lat) || isNaN(lng)) {
+      toast.error("Enter valid numeric coordinates");
+      return;
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      toast.error("Coordinates out of range");
+      return;
+    }
+    setSavingCoords(true);
+    try {
+      await Site.update(site.id, { lat, lng });
+      toast.success(`Coordinates saved for ${site.site_name}`);
+      setEditingCoordsId(null);
+      await fetchData();
+    } catch (err) {
+      toast.error(err?.message || "Failed to save coordinates");
+    }
+    setSavingCoords(false);
+  };
 
   return (
     <PageWrapper>
@@ -111,6 +163,18 @@ export default function DeploymentMap() {
                   <span className="text-sm text-gray-500">Loading sites...</span>
                 </div>
               </div>
+            ) : mappableSites.length === 0 ? (
+              <div className="flex items-center justify-center h-full bg-gray-50">
+                <div className="text-center max-w-xs">
+                  <MapPin className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <h3 className="text-sm font-semibold text-gray-700 mb-1">No sites on the map</h3>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    {missingCoordsSites.length > 0
+                      ? `${missingCoordsSites.length} site${missingCoordsSites.length > 1 ? "s" : ""} missing coordinates. Click "Missing Coords" above to fix them.`
+                      : "No sites have been created yet."}
+                  </p>
+                </div>
+              </div>
             ) : (
               <MapContainer
                 center={[38.5, -97]}
@@ -155,39 +219,43 @@ export default function DeploymentMap() {
             )}
 
             {/* Legend — bottom left */}
-            <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5 pointer-events-none" style={{ zIndex: 10 }}>
-              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Legend</div>
-              <div className="space-y-1">
-                {LEGEND.map(({ status, color }) => (
-                  <div key={status} className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
-                    <span className="text-[11px] text-gray-600">{status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Network Summary — top left */}
-            <div className="absolute top-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5" style={{ zIndex: 10 }}>
-              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Summary</div>
-              {LEGEND.map(({ status, color }) => {
-                const count = sites.filter(s => s.status === status).length;
-                return (
-                  <div key={status} className="flex items-center justify-between gap-4 py-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+            {mappableSites.length > 0 && (
+              <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5 pointer-events-none" style={{ zIndex: 10 }}>
+                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Legend</div>
+                <div className="space-y-1">
+                  {LEGEND.map(({ status, color }) => (
+                    <div key={status} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
                       <span className="text-[11px] text-gray-600">{status}</span>
                     </div>
-                    <span className="text-[11px] font-bold text-gray-900 tabular-nums">{count}</span>
-                  </div>
-                );
-              })}
-            </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Network Summary — top left */}
+            {mappableSites.length > 0 && (
+              <div className="absolute top-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5" style={{ zIndex: 10 }}>
+                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Summary</div>
+                {LEGEND.map(({ status, color }) => {
+                  const count = sites.filter(s => s.status === status).length;
+                  return (
+                    <div key={status} className="flex items-center justify-between gap-4 py-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+                        <span className="text-[11px] text-gray-600">{status}</span>
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-900 tabular-nums">{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Missing Coordinates Sidebar */}
           {showMissingCoords && missingCoordsSites.length > 0 && (
-            <div className="w-72 bg-white border-l border-gray-200 flex flex-col overflow-hidden flex-shrink-0" style={{ zIndex: 1 }}>
+            <div className="w-80 bg-white border-l border-gray-200 flex flex-col overflow-hidden flex-shrink-0" style={{ zIndex: 1 }}>
               <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                 <h3 className="text-xs font-semibold text-gray-900">Missing Coordinates</h3>
@@ -200,22 +268,94 @@ export default function DeploymentMap() {
               </div>
               <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
                 {missingCoordsSites.map(site => (
-                  <button
-                    key={site.id}
-                    onClick={() => setSelectedSite(site)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="text-xs font-medium text-gray-900 truncate">{site.site_name}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">{site.site_id}</div>
-                    {site.e911_city && (
-                      <div className="text-[10px] text-gray-500 mt-0.5">{site.e911_city}, {site.e911_state}</div>
+                  <div key={site.id} className="px-4 py-2.5">
+                    <button
+                      onClick={() => setSelectedSite(site)}
+                      className="w-full text-left hover:opacity-80 transition-opacity"
+                    >
+                      <div className="text-xs font-medium text-gray-900 truncate">{site.site_name}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">{site.site_id}</div>
+                      {site.e911_city && (
+                        <div className="text-[10px] text-gray-500 mt-0.5">{site.e911_city}, {site.e911_state}</div>
+                      )}
+                    </button>
+
+                    {/* Admin action buttons */}
+                    {isAdmin && (
+                      <div className="mt-2 space-y-2">
+                        <div className="flex gap-1.5">
+                          {hasE911(site) && (
+                            <button
+                              onClick={() => handleGeocode(site)}
+                              disabled={geocodingId === site.id}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-60 transition-colors"
+                            >
+                              {geocodingId === site.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Navigation className="w-3 h-3" />
+                              )}
+                              Geocode
+                            </button>
+                          )}
+                          <button
+                            onClick={() => editingCoordsId === site.id ? setEditingCoordsId(null) : handleStartManual(site)}
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-gray-50 text-gray-700 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
+                          >
+                            <Crosshair className="w-3 h-3" />
+                            Set Coords
+                          </button>
+                        </div>
+
+                        {/* Inline manual coord editor */}
+                        {editingCoordsId === site.id && (
+                          <div className="bg-gray-50 rounded-lg p-2 space-y-1.5">
+                            <div className="flex gap-1.5">
+                              <input
+                                type="number"
+                                step="any"
+                                placeholder="Lat"
+                                value={manualLat}
+                                onChange={e => setManualLat(e.target.value)}
+                                className="flex-1 px-2 py-1 text-[10px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              />
+                              <input
+                                type="number"
+                                step="any"
+                                placeholder="Lng"
+                                value={manualLng}
+                                onChange={e => setManualLng(e.target.value)}
+                                className="flex-1 px-2 py-1 text-[10px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              />
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => handleSaveManual(site)}
+                                disabled={savingCoords}
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-60 transition-colors"
+                              >
+                                {savingCoords ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingCoordsId(null)}
+                                className="px-2 py-1 text-[10px] font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-100 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
               <div className="px-3 py-2 border-t border-gray-100 bg-amber-50/50 flex-shrink-0">
                 <p className="text-[10px] text-amber-700 leading-relaxed">
-                  Click a site to open the drawer and add coordinates.
+                  {isAdmin
+                    ? "Use Geocode to resolve from E911 address, or Set Coords to enter manually."
+                    : "Click a site to open the drawer and view details."}
                 </p>
               </div>
             </div>
