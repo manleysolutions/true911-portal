@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2, Mail, Link, Copy, Check, RefreshCw } from "lucide-react";
+import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2, Mail, Link, Copy, Check, RefreshCw, Building2, Pencil } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateE911, updateHeartbeat } from "@/components/actions";
@@ -199,19 +199,26 @@ function SiteAdminRow({ site, onSaved }) {
 }
 
 /* ── Create User Modal ── */
-function CreateUserModal({ open, onClose, onCreated }) {
+function CreateUserModal({ open, onClose, onCreated, tenants, currentTenantId }) {
   const [mode, setMode] = useState("invite"); // "invite" | "password"
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("User");
+  const [tenantId, setTenantId] = useState(currentTenantId || "");
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inviteUrl, setInviteUrl] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  // Reset tenant to current user's tenant when modal opens
+  useEffect(() => {
+    if (open && currentTenantId) setTenantId(currentTenantId);
+  }, [open, currentTenantId]);
+
   const resetState = () => {
     setEmail(""); setName(""); setPassword(""); setRole("User");
+    setTenantId(currentTenantId || "");
     setInviteUrl(null); setCopied(false); setMode("invite");
   };
 
@@ -234,7 +241,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
     try {
       const data = await apiFetch("/admin/users/invite", {
         method: "POST",
-        body: JSON.stringify({ email, name, role }),
+        body: JSON.stringify({ email, name, role, tenant_id: tenantId || undefined }),
       });
       setInviteUrl(data.invite_url);
       toast.success("Invite created — copy the link to share");
@@ -251,7 +258,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
     try {
       await apiFetch("/admin/users", {
         method: "POST",
-        body: JSON.stringify({ email, name, password, role }),
+        body: JSON.stringify({ email, name, password, role, tenant_id: tenantId || undefined }),
       });
       toast.success("User created — they must change password on first login");
       resetState();
@@ -365,6 +372,17 @@ function CreateUserModal({ open, onClose, onCreated }) {
               <option value="Admin">Admin</option>
             </select>
           </div>
+
+          {tenants && tenants.length > 1 && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Tenant</label>
+              <select value={tenantId} onChange={e => setTenantId(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
+                {tenants.map(t => (
+                  <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {mode === "invite" && (
             <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
@@ -483,6 +501,168 @@ function InviteUrlModal({ open, onClose, inviteUrl, email }) {
   );
 }
 
+/* ── Tenant Management Section ── */
+function TenantManagement() {
+  const [tenants, setTenants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [newId, setNewId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const fetchTenants = useCallback(async () => {
+    try {
+      const data = await apiFetch("/admin/tenants");
+      setTenants(data);
+    } catch { /* silently fail */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchTenants(); }, [fetchTenants]);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await apiFetch("/admin/tenants", {
+        method: "POST",
+        body: JSON.stringify({ tenant_id: newId, name: newName }),
+      });
+      toast.success(`Tenant "${newId}" created`);
+      setNewId(""); setNewName(""); setShowCreate(false);
+      fetchTenants();
+    } catch (err) {
+      toast.error(err?.message || "Failed to create tenant");
+    }
+    setSaving(false);
+  };
+
+  const handleSaveEdit = async (tenantId) => {
+    setSaving(true);
+    try {
+      await apiFetch(`/admin/tenants/${tenantId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editName }),
+      });
+      toast.success("Tenant updated");
+      setEditingId(null);
+      fetchTenants();
+    } catch (err) {
+      toast.error(err?.message || "Failed to update tenant");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+        <Building2 className="w-4 h-4 text-violet-600" />
+        <h2 className="font-semibold text-gray-900 text-sm">Tenants</h2>
+        <span className="text-xs text-gray-400 ml-auto mr-3">{tenants.length} tenants</span>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors"
+        >
+          <Plus className="w-3 h-3" /> Create Tenant
+        </button>
+      </div>
+
+      {/* Inline create form */}
+      {showCreate && (
+        <form onSubmit={handleCreate} className="px-5 py-4 bg-gray-50 border-b border-gray-200 flex items-end gap-3">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Tenant ID (slug)</label>
+            <input
+              type="text"
+              required
+              value={newId}
+              onChange={e => setNewId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500 font-mono"
+              placeholder="e.g. acme-corp"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Display Name</label>
+            <input
+              type="text"
+              required
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
+              placeholder="e.g. Acme Corporation"
+            />
+          </div>
+          <button type="submit" disabled={saving} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors whitespace-nowrap">
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+            Create
+          </button>
+          <button type="button" onClick={() => { setShowCreate(false); setNewId(""); setNewName(""); }} className="px-3 py-2 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+            Cancel
+          </button>
+        </form>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Tenant ID</th>
+              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Name</th>
+              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Created</th>
+              <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {tenants.map(t => (
+              <tr key={t.tenant_id} className="hover:bg-gray-50">
+                <td className="px-5 py-3 font-mono text-xs text-gray-700">{t.tenant_id}</td>
+                <td className="px-5 py-3">
+                  {editingId === t.tenant_id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
+                        autoFocus
+                      />
+                      <button onClick={() => handleSaveEdit(t.tenant_id)} disabled={saving} className="px-2 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 disabled:opacity-60">
+                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
+                    </div>
+                  ) : (
+                    <span className="text-gray-900">{t.name}</span>
+                  )}
+                </td>
+                <td className="px-5 py-3 text-xs text-gray-400">
+                  {t.created_at ? new Date(t.created_at).toLocaleDateString() : "\u2014"}
+                </td>
+                <td className="px-5 py-3 text-right">
+                  {editingId !== t.tenant_id && (
+                    <button
+                      onClick={() => { setEditingId(t.tenant_id); setEditName(t.name); }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" /> Edit
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 /* ── User Management Section ── */
 function UserManagement() {
   const { user: currentUser } = useAuth();
@@ -492,11 +672,16 @@ function UserManagement() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [resetTarget, setResetTarget] = useState(null); // { id, name }
   const [resendResult, setResendResult] = useState(null); // { invite_url, email }
+  const [tenants, setTenants] = useState([]);
 
   const fetchUsers = useCallback(async () => {
     try {
-      const data = await apiFetch("/admin/users");
-      setUsers(data);
+      const [userData, tenantData] = await Promise.all([
+        apiFetch("/admin/users"),
+        apiFetch("/admin/tenants").catch(() => []),
+      ]);
+      setUsers(userData);
+      setTenants(tenantData);
     } catch {
       // silently fail if endpoint not available
     }
@@ -693,6 +878,8 @@ function UserManagement() {
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreated={fetchUsers}
+        tenants={tenants}
+        currentTenantId={currentUser?.tenant_id}
       />
 
       {resetTarget && (
@@ -721,7 +908,7 @@ export default function Admin() {
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("sites"); // 'sites' | 'users'
+  const [activeTab, setActiveTab] = useState("sites"); // 'sites' | 'users' | 'tenants'
 
   const fetchData = useCallback(async () => {
     const data = await Site.list("-last_checkin", 100);
@@ -780,9 +967,18 @@ export default function Admin() {
           >
             <Shield className="w-3.5 h-3.5" /> Users & Roles
           </button>
+          <button
+            onClick={() => setActiveTab("tenants")}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border transition-all ${
+              activeTab === "tenants" ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:border-gray-400"
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" /> Tenants
+          </button>
         </div>
 
         {activeTab === "users" && <UserManagement />}
+        {activeTab === "tenants" && <TenantManagement />}
 
         {activeTab === "sites" && (
           <>

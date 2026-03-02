@@ -1,14 +1,16 @@
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission, get_current_user
+from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.auth import generate_invite_token, hash_password, validate_password_strength
 
@@ -75,6 +77,38 @@ class AdminUserUpdate(BaseModel):
 # Keep backward compat schema for the old PUT endpoint (now subsumed by PATCH)
 class RoleUpdate(BaseModel):
     role: str
+
+
+# ── Tenant Schemas ──────────────────────────────────────────────────────────
+
+TENANT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+class TenantOut(BaseModel):
+    tenant_id: str
+    name: str
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TenantCreate(BaseModel):
+    tenant_id: str
+    name: str
+
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not TENANT_ID_RE.match(v):
+            raise ValueError("tenant_id must be a lowercase slug (a-z, 0-9, hyphens only)")
+        if len(v) > 100:
+            raise ValueError("tenant_id must be 100 characters or fewer")
+        return v
+
+
+class TenantUpdate(BaseModel):
+    name: str
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -330,3 +364,64 @@ async def update_user_role(
     await db.commit()
     await db.refresh(user)
     return AdminUserOut.from_user(user)
+
+
+# ── Tenant Endpoints ────────────────────────────────────────────────────────
+
+@router.get(
+    "/tenants",
+    response_model=list[TenantOut],
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def list_tenants(db: AsyncSession = Depends(get_db)):
+    """List all tenants. Admin only."""
+    result = await db.execute(select(Tenant).order_by(Tenant.created_at))
+    return [TenantOut.model_validate(t) for t in result.scalars().all()]
+
+
+@router.post(
+    "/tenants",
+    response_model=TenantOut,
+    status_code=201,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
+    """Create a new tenant. Admin only."""
+    existing = await db.execute(
+        select(Tenant).where(Tenant.tenant_id == body.tenant_id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Tenant '{body.tenant_id}' already exists",
+        )
+
+    tenant = Tenant(tenant_id=body.tenant_id, name=body.name.strip())
+    db.add(tenant)
+    await db.commit()
+    await db.refresh(tenant)
+    return TenantOut.model_validate(tenant)
+
+
+@router.patch(
+    "/tenants/{tenant_id}",
+    response_model=TenantOut,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def update_tenant(
+    tenant_id: str,
+    body: TenantUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a tenant's name. Admin only."""
+    result = await db.execute(
+        select(Tenant).where(Tenant.tenant_id == tenant_id)
+    )
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
+
+    tenant.name = body.name.strip()
+    await db.commit()
+    await db.refresh(tenant)
+    return TenantOut.model_validate(tenant)
