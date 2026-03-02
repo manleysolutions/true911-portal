@@ -86,3 +86,23 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Leaflet + Tailwind compatibility — restore Leaflet's expected box model */
+.leaflet-container *,
+.leaflet-container *::before,
+.leaflet-container *::after {
+  box-sizing: content-box;
+  border-width: revert;
+  border-style: revert;
+  border-color: revert;
+}
+
+/* Ensure popups render above all map-internal layers */
+.leaflet-popup-pane {
+  z-index: 700 !important;
+}
+
+/* Keep Leaflet controls (zoom, attribution) visible */
+.leaflet-control {
+  z-index: 800 !important;
+}

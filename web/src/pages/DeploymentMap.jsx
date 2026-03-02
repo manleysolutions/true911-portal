@@ -171,7 +171,7 @@ export default function DeploymentMap() {
             )}
 
             {/* Legend */}
-            <div className="absolute bottom-6 left-4 bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 z-[400]">
+            <div className="absolute bottom-6 left-4 bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 z-10">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Status Legend</div>
               <div className="space-y-1.5">
                 {LEGEND.map(({ status, color }) => (
@@ -184,7 +184,7 @@ export default function DeploymentMap() {
             </div>
 
             {/* Site count by status */}
-            <div className="absolute top-4 right-4 bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 z-[400]">
+            <div className="absolute top-4 right-4 bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 z-10">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Network Summary</div>
               {LEGEND.map(({ status, color }) => {
                 const count = sites.filter(s => s.status === status).length;
@@ -203,7 +203,7 @@ export default function DeploymentMap() {
 
           {/* Missing Coordinates Sidebar */}
           {showMissingCoords && missingCoordsSites.length > 0 && (
-            <div className="w-80 bg-white border-l border-gray-200 flex flex-col z-[401] overflow-hidden">
+            <div className="w-80 bg-white border-l border-gray-200 flex flex-col z-20 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
                 <AlertTriangle className="w-4 h-4 text-amber-500" />
                 <h3 className="text-sm font-semibold text-gray-900">Missing Coordinates</h3>
