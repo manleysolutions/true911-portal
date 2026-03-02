@@ -1,4 +1,5 @@
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -47,6 +48,11 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT token. Raises JWTError on failure."""
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+
+
+def generate_invite_token() -> str:
+    """Generate a cryptographically secure invite token (URL-safe, 48 chars)."""
+    return secrets.token_urlsafe(36)
 
 
 def validate_password_strength(password: str) -> str | None:

@@ -22,6 +22,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: "UserOut"
+    must_change_password: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -36,8 +37,25 @@ class UserOut(BaseModel):
     tenant_id: str
     is_active: bool = True
     updated_at: Optional[datetime] = None
+    must_change_password: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class InviteInfoResponse(BaseModel):
+    email: str
+    name: str
+    role: str
+
+
+class InviteAcceptRequest(BaseModel):
+    password: str
+    name: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 TokenResponse.model_rebuild()

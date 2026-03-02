@@ -1,5 +1,6 @@
+import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission, get_current_user
 from app.models.user import User
-from app.services.auth import hash_password, validate_password_strength
+from app.services.auth import generate_invite_token, hash_password, validate_password_strength
 
 router = APIRouter()
 
@@ -27,8 +28,22 @@ class AdminUserOut(BaseModel):
     is_active: bool
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    invite_token: Optional[str] = None
+    invite_expires_at: Optional[datetime] = None
+    must_change_password: bool = False
+    invite_status: Optional[str] = None  # "pending" | "expired" | null
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_user(cls, user: "User") -> "AdminUserOut":
+        out = cls.model_validate(user)
+        if user.invite_token:
+            if user.invite_expires_at and user.invite_expires_at < datetime.now(timezone.utc):
+                out.invite_status = "expired"
+            else:
+                out.invite_status = "pending"
+        return out
 
 
 class AdminUserCreate(BaseModel):
@@ -37,6 +52,17 @@ class AdminUserCreate(BaseModel):
     password: str
     role: str
     tenant_id: Optional[str] = None  # defaults to current user's tenant
+
+
+class AdminInviteCreate(BaseModel):
+    email: EmailStr
+    name: str
+    role: str
+    tenant_id: Optional[str] = None
+
+
+class AdminInviteOut(AdminUserOut):
+    invite_url: Optional[str] = None
 
 
 class AdminUserUpdate(BaseModel):
@@ -68,7 +94,56 @@ async def list_users(
         .where(User.tenant_id == current_user.tenant_id)
         .order_by(User.created_at)
     )
-    return [AdminUserOut.model_validate(u) for u in result.scalars().all()]
+    return [AdminUserOut.from_user(u) for u in result.scalars().all()]
+
+
+@router.post(
+    "/users/invite",
+    response_model=AdminInviteOut,
+    status_code=201,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def invite_user(
+    body: AdminInviteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a user via invite link. Admin only."""
+    if body.role not in ALLOWED_ROLES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Invalid role '{body.role}'. Must be one of: {', '.join(sorted(ALLOWED_ROLES))}",
+        )
+
+    email = body.email.strip().lower()
+    existing = await db.execute(
+        select(User).where(func.lower(User.email) == email)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "An account with this email already exists"
+        )
+
+    tenant_id = body.tenant_id or current_user.tenant_id
+    token = generate_invite_token()
+
+    user = User(
+        email=email,
+        name=body.name,
+        password_hash=hash_password(secrets.token_urlsafe(32)),
+        role=body.role,
+        tenant_id=tenant_id,
+        is_active=False,
+        invite_token=token,
+        invite_expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    out = AdminInviteOut.from_user(user)
+    out.invite_url = f"/AuthGate?invite={token}"
+    return out
 
 
 @router.post(
@@ -82,23 +157,19 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new user. Admin only."""
-    # Validate role
+    """Create a new user with password. Admin only. User must change password on first login."""
     if body.role not in ALLOWED_ROLES:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"Invalid role '{body.role}'. Must be one of: {', '.join(sorted(ALLOWED_ROLES))}",
         )
 
-    # Validate password strength
     pwd_err = validate_password_strength(body.password)
     if pwd_err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
 
-    # Normalize email to lowercase
     email = body.email.strip().lower()
 
-    # Check duplicate email (case-insensitive)
     existing = await db.execute(
         select(User).where(func.lower(User.email) == email)
     )
@@ -115,11 +186,42 @@ async def create_user(
         password_hash=hash_password(body.password),
         role=body.role,
         tenant_id=tenant_id,
+        must_change_password=True,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return AdminUserOut.model_validate(user)
+    return AdminUserOut.from_user(user)
+
+
+@router.post(
+    "/users/{user_id}/resend-invite",
+    response_model=AdminInviteOut,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def resend_invite(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Regenerate invite token and reset expiry. Admin only."""
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    token = generate_invite_token()
+    user.invite_token = token
+    user.invite_expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    user.is_active = False
+    await db.commit()
+    await db.refresh(user)
+
+    out = AdminInviteOut.from_user(user)
+    out.invite_url = f"/AuthGate?invite={token}"
+    return out
 
 
 @router.patch(
@@ -169,7 +271,7 @@ async def update_user(
 
     await db.commit()
     await db.refresh(user)
-    return AdminUserOut.model_validate(user)
+    return AdminUserOut.from_user(user)
 
 
 @router.delete(
@@ -227,4 +329,4 @@ async def update_user_role(
     user.role = body.role
     await db.commit()
     await db.refresh(user)
-    return AdminUserOut.model_validate(user)
+    return AdminUserOut.from_user(user)

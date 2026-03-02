@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2 } from "lucide-react";
+import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound, Trash2, Mail, Link, Copy, Check, RefreshCw } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateE911, updateHeartbeat } from "@/components/actions";
@@ -200,14 +200,52 @@ function SiteAdminRow({ site, onSaved }) {
 
 /* ── Create User Modal ── */
 function CreateUserModal({ open, onClose, onCreated }) {
+  const [mode, setMode] = useState("invite"); // "invite" | "password"
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("User");
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState(null);
+  const [copied, setCopied] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const resetState = () => {
+    setEmail(""); setName(""); setPassword(""); setRole("User");
+    setInviteUrl(null); setCopied(false); setMode("invite");
+  };
+
+  const handleClose = () => {
+    resetState();
+    onClose();
+  };
+
+  const copyInviteUrl = () => {
+    const fullUrl = `${window.location.origin}${inviteUrl}`;
+    navigator.clipboard.writeText(fullUrl);
+    setCopied(true);
+    toast.success("Invite link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSubmitInvite = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const data = await apiFetch("/admin/users/invite", {
+        method: "POST",
+        body: JSON.stringify({ email, name, role }),
+      });
+      setInviteUrl(data.invite_url);
+      toast.success("Invite created — copy the link to share");
+      onCreated?.();
+    } catch (err) {
+      toast.error(err?.message || "Failed to create invite");
+    }
+    setSaving(false);
+  };
+
+  const handleSubmitPassword = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
@@ -215,8 +253,8 @@ function CreateUserModal({ open, onClose, onCreated }) {
         method: "POST",
         body: JSON.stringify({ email, name, password, role }),
       });
-      toast.success("User created successfully");
-      setEmail(""); setName(""); setPassword(""); setRole("User");
+      toast.success("User created — they must change password on first login");
+      resetState();
       onCreated?.();
       onClose();
     } catch (err) {
@@ -227,16 +265,76 @@ function CreateUserModal({ open, onClose, onCreated }) {
 
   if (!open) return null;
 
+  // Show invite URL result
+  if (inviteUrl) {
+    const fullUrl = `${window.location.origin}${inviteUrl}`;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900 text-sm">Invite Link Ready</h3>
+            <button onClick={handleClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span className="text-sm font-medium text-emerald-800">Invite created for {email}</span>
+              </div>
+              <p className="text-xs text-emerald-600">Share this link with the user. It expires in 7 days.</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Invite URL</label>
+              <div className="flex gap-2">
+                <input type="text" readOnly value={fullUrl} className="flex-1 px-3 py-2 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg text-gray-700" />
+                <button onClick={copyInviteUrl} className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium rounded-lg transition-colors">
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button onClick={handleClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Done</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900 text-sm">Create User</h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+          <button onClick={handleClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
             <X className="w-4 h-4 text-gray-400" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+
+        {/* Mode toggle */}
+        <div className="px-5 pt-4">
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode("invite")}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-md transition-all ${mode === "invite" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+            >
+              <Link className="w-3 h-3" /> Send invite link
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("password")}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-md transition-all ${mode === "password" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+            >
+              <KeyRound className="w-3 h-3" /> Set password
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={mode === "invite" ? handleSubmitInvite : handleSubmitPassword} className="p-5 space-y-4">
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Email</label>
             <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="user@example.com" />
@@ -245,15 +343,20 @@ function CreateUserModal({ open, onClose, onCreated }) {
             <label className="text-xs font-medium text-gray-600 mb-1 block">Full Name</label>
             <input type="text" required value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Jane Doe" />
           </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Password</label>
-            <div className="relative">
-              <input type={showPassword ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)} className="w-full px-3 py-2 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Min 12 chars, upper+lower+digit" />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+
+          {mode === "password" && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Temporary Password</label>
+              <div className="relative">
+                <input type={showPassword ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)} className="w-full px-3 py-2 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Min 12 chars, upper+lower+digit" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-amber-600 mt-1">User will be required to change this password on first login.</p>
             </div>
-          </div>
+          )}
+
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Role</label>
             <select value={role} onChange={e => setRole(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
@@ -262,11 +365,18 @@ function CreateUserModal({ open, onClose, onCreated }) {
               <option value="Admin">Admin</option>
             </select>
           </div>
+
+          {mode === "invite" && (
+            <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              <p className="text-[10px] text-blue-700">An invite link will be generated. Share it with the user so they can set their own password. Link expires in 7 days.</p>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="button" onClick={handleClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
             <button type="submit" disabled={saving} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-              {saving ? "Creating..." : "Create User"}
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : mode === "invite" ? <Mail className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {saving ? "Creating..." : mode === "invite" ? "Create & Get Link" : "Create User"}
             </button>
           </div>
         </form>
@@ -333,6 +443,46 @@ function ResetPasswordModal({ open, onClose, userId, userName }) {
   );
 }
 
+/* ── Invite URL Modal (for resend) ── */
+function InviteUrlModal({ open, onClose, inviteUrl, email }) {
+  const [copied, setCopied] = useState(false);
+  if (!open) return null;
+
+  const fullUrl = `${window.location.origin}${inviteUrl}`;
+  const copyUrl = () => {
+    navigator.clipboard.writeText(fullUrl);
+    setCopied(true);
+    toast.success("Invite link copied");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 text-sm">New Invite Link</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">New invite link generated for <strong>{email}</strong>. Expires in 7 days.</p>
+          <div className="flex gap-2">
+            <input type="text" readOnly value={fullUrl} className="flex-1 px-3 py-2 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg text-gray-700" />
+            <button onClick={copyUrl} className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium rounded-lg transition-colors">
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── User Management Section ── */
 function UserManagement() {
   const { user: currentUser } = useAuth();
@@ -341,6 +491,7 @@ function UserManagement() {
   const [updatingId, setUpdatingId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [resetTarget, setResetTarget] = useState(null); // { id, name }
+  const [resendResult, setResendResult] = useState(null); // { invite_url, email }
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -393,6 +544,18 @@ function UserManagement() {
       fetchUsers();
     } catch (err) {
       toast.error(err?.message || "Failed to delete user");
+    }
+    setUpdatingId(null);
+  };
+
+  const handleResendInvite = async (userId) => {
+    setUpdatingId(userId);
+    try {
+      const data = await apiFetch(`/admin/users/${userId}/resend-invite`, { method: "POST" });
+      setResendResult({ invite_url: data.invite_url, email: data.email });
+      fetchUsers();
+    } catch (err) {
+      toast.error(err?.message || "Failed to resend invite");
     }
     setUpdatingId(null);
   };
@@ -462,30 +625,53 @@ function UserManagement() {
                     </div>
                   </td>
                   <td className="px-5 py-3">
-                    <button
-                      onClick={() => handleToggleActive(u.id, u.is_active)}
-                      disabled={updatingId === u.id || u.id === currentUser?.id}
-                      title={u.id === currentUser?.id ? "Cannot disable yourself" : (u.is_active ? "Click to disable" : "Click to enable")}
-                      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border transition-colors ${
-                        u.is_active
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                          : "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
-                      } ${(u.id === currentUser?.id) ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
-                    >
-                      {u.is_active ? "Active" : "Disabled"}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {u.invite_status === "pending" ? (
+                        <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                          Invite Pending
+                        </span>
+                      ) : u.invite_status === "expired" ? (
+                        <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border bg-red-50 text-red-600 border-red-200">
+                          Invite Expired
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleActive(u.id, u.is_active)}
+                          disabled={updatingId === u.id || u.id === currentUser?.id}
+                          title={u.id === currentUser?.id ? "Cannot disable yourself" : (u.is_active ? "Click to disable" : "Click to enable")}
+                          className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border transition-colors ${
+                            u.is_active
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                              : "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
+                          } ${(u.id === currentUser?.id) ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                        >
+                          {u.is_active ? "Active" : "Disabled"}
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-3 text-xs text-gray-400">
                     {u.created_at ? new Date(u.created_at).toLocaleDateString() : "\u2014"}
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => setResetTarget({ id: u.id, name: u.name })}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                      >
-                        <KeyRound className="w-3 h-3" /> Reset Password
-                      </button>
+                      {u.invite_status ? (
+                        <button
+                          onClick={() => handleResendInvite(u.id)}
+                          disabled={updatingId === u.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50"
+                        >
+                          {updatingId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                          Resend Invite
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setResetTarget({ id: u.id, name: u.name })}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                        >
+                          <KeyRound className="w-3 h-3" /> Reset Password
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDeleteUser(u.id, u.name)}
                         disabled={updatingId === u.id || u.id === currentUser?.id}
@@ -515,6 +701,15 @@ function UserManagement() {
           onClose={() => setResetTarget(null)}
           userId={resetTarget.id}
           userName={resetTarget.name}
+        />
+      )}
+
+      {resendResult && (
+        <InviteUrlModal
+          open={true}
+          onClose={() => setResendResult(null)}
+          inviteUrl={resendResult.invite_url}
+          email={resendResult.email}
         />
       )}
     </>

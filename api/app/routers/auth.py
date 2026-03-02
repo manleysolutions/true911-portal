@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
@@ -10,6 +11,9 @@ from app.dependencies import get_current_user, get_db
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
+    InviteAcceptRequest,
+    InviteInfoResponse,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -101,6 +105,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         access_token=access,
         refresh_token=refresh,
         user=UserOut.model_validate(user),
+        must_change_password=user.must_change_password,
     )
 
 
@@ -131,3 +136,73 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
         refresh_token=new_refresh,
         user=UserOut.model_validate(user),
     )
+
+
+@router.get("/invite/{token}", response_model=InviteInfoResponse)
+async def get_invite_info(token: str, db: AsyncSession = Depends(get_db)):
+    """Validate an invite token and return the invited user's info. Public endpoint."""
+    result = await db.execute(select(User).where(User.invite_token == token))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid invite link")
+    if user.invite_expires_at and user.invite_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status.HTTP_410_GONE, "Invite link has expired. Contact your admin for a new invite.")
+    return InviteInfoResponse(email=user.email, name=user.name, role=user.role)
+
+
+@router.post("/invite/{token}/accept", response_model=TokenResponse)
+async def accept_invite(
+    token: str,
+    body: InviteAcceptRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept an invite by setting a password. Public endpoint. Auto-logs in the user."""
+    result = await db.execute(select(User).where(User.invite_token == token))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid invite link")
+    if user.invite_expires_at and user.invite_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status.HTTP_410_GONE, "Invite link has expired. Contact your admin for a new invite.")
+
+    pwd_err = validate_password_strength(body.password)
+    if pwd_err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
+
+    user.password_hash = hash_password(body.password)
+    user.is_active = True
+    user.must_change_password = False
+    user.invite_token = None
+    user.invite_expires_at = None
+    if body.name:
+        user.name = body.name
+
+    await db.commit()
+    await db.refresh(user)
+
+    access = create_access_token(user.id, user.tenant_id, user.role)
+    refresh_tok = create_refresh_token(user.id)
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh_tok,
+        user=UserOut.model_validate(user),
+    )
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the current user's password. Requires authentication."""
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
+
+    pwd_err = validate_password_strength(body.new_password)
+    if pwd_err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
+
+    current_user.password_hash = hash_password(body.new_password)
+    current_user.must_change_password = False
+    await db.commit()
+    return {"detail": "Password changed successfully"}
