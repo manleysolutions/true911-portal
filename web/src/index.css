@@ -87,7 +87,10 @@
   }
 }
 
-/* Leaflet + Tailwind compatibility — restore Leaflet's expected box model */
+/* Leaflet + Tailwind compatibility */
+.leaflet-container {
+  z-index: 0;           /* contain all internal z-indexes so drawers/modals render above */
+}
 .leaflet-container *,
 .leaflet-container *::before,
 .leaflet-container *::after {
@@ -95,14 +98,4 @@
   border-width: revert;
   border-style: revert;
   border-color: revert;
-}
-
-/* Ensure popups render above all map-internal layers */
-.leaflet-popup-pane {
-  z-index: 700 !important;
-}
-
-/* Keep Leaflet controls (zoom, attribution) visible */
-.leaflet-control {
-  z-index: 800 !important;
 }
