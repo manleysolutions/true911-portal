@@ -1,8 +1,11 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -35,13 +38,24 @@ async def _ensure_tenant(db: AsyncSession, tenant_id: str) -> None:
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    # Gate behind ALLOW_PUBLIC_REGISTRATION
+    if not settings.ALLOW_PUBLIC_REGISTRATION:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Public registration is disabled"
+        )
+
     # Check password strength
     pwd_err = validate_password_strength(body.password)
     if pwd_err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
 
-    # Check duplicate email
-    existing = await db.execute(select(User).where(User.email == body.email))
+    # Normalize email to lowercase
+    email = body.email.strip().lower()
+
+    # Check duplicate email (case-insensitive)
+    existing = await db.execute(
+        select(User).where(func.lower(User.email) == email)
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists")
 
@@ -49,7 +63,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     await _ensure_tenant(db, body.tenant_id)
 
     user = User(
-        email=body.email,
+        email=email,
         name=body.name,
         password_hash=hash_password(body.password),
         tenant_id=body.tenant_id,
@@ -70,7 +84,11 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
+    # Case-insensitive email lookup
+    email = body.email.strip().lower()
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == email)
+    )
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
@@ -97,7 +115,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
         payload = decode_token(body.refresh_token)
         if payload.get("type") != "refresh":
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token type")
-        user_id = int(payload["sub"])
+        user_id = uuid.UUID(payload["sub"])
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
 

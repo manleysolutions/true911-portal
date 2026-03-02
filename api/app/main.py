@@ -6,11 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
+from .bootstrap import ensure_bootstrap_admin
 from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks
 
 logger = logging.getLogger("true911")
 
 app = FastAPI(title="TRUE911 API", version="1.0.0")
+
+
+@app.on_event("startup")
+async def startup():
+    await ensure_bootstrap_admin()
 
 # CORS — wildcard origins and allow_credentials=True are mutually exclusive
 # per the Fetch spec.  Browsers silently reject the response when both are set.

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield } from "lucide-react";
+import { Settings, Search, Save, MapPin, Clock, ChevronDown, Loader2, Users, Shield, Plus, X, Eye, EyeOff, KeyRound } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateE911, updateHeartbeat } from "@/components/actions";
@@ -176,11 +176,149 @@ function SiteAdminRow({ site, onSaved }) {
   );
 }
 
+/* ── Create User Modal ── */
+function CreateUserModal({ open, onClose, onCreated }) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("User");
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await apiFetch("/admin/users", {
+        method: "POST",
+        body: JSON.stringify({ email, name, password, role }),
+      });
+      toast.success("User created successfully");
+      setEmail(""); setName(""); setPassword(""); setRole("User");
+      onCreated?.();
+      onClose();
+    } catch (err) {
+      toast.error(err?.message || "Failed to create user");
+    }
+    setSaving(false);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 text-sm">Create User</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Email</label>
+            <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="user@example.com" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Full Name</label>
+            <input type="text" required value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Jane Doe" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Password</label>
+            <div className="relative">
+              <input type={showPassword ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)} className="w-full px-3 py-2 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Min 12 chars, upper+lower+digit" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Role</label>
+            <select value={role} onChange={e => setRole(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
+              <option value="User">User</option>
+              <option value="Manager">Manager</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="submit" disabled={saving} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              {saving ? "Creating..." : "Create User"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Reset Password Modal ── */
+function ResetPasswordModal({ open, onClose, userId, userName }) {
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await apiFetch(`/admin/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ password }),
+      });
+      toast.success(`Password reset for ${userName}`);
+      setPassword("");
+      onClose();
+    } catch (err) {
+      toast.error(err?.message || "Failed to reset password");
+    }
+    setSaving(false);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 text-sm">Reset Password</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">Set a new password for <strong>{userName}</strong>.</p>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">New Password</label>
+            <div className="relative">
+              <input type={showPassword ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)} className="w-full px-3 py-2 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Min 12 chars, upper+lower+digit" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="submit" disabled={saving} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+              {saving ? "Resetting..." : "Reset Password"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ── User Management Section ── */
 function UserManagement() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null); // { id, name }
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -197,14 +335,29 @@ function UserManagement() {
   const handleRoleChange = async (userId, newRole) => {
     setUpdatingId(userId);
     try {
-      await apiFetch(`/admin/users/${userId}/role`, {
-        method: "PUT",
+      await apiFetch(`/admin/users/${userId}`, {
+        method: "PATCH",
         body: JSON.stringify({ role: newRole }),
       });
       toast.success("User role updated");
       fetchUsers();
     } catch (err) {
       toast.error(err?.message || "Failed to update role");
+    }
+    setUpdatingId(null);
+  };
+
+  const handleToggleActive = async (userId, currentlyActive) => {
+    setUpdatingId(userId);
+    try {
+      await apiFetch(`/admin/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: !currentlyActive }),
+      });
+      toast.success(currentlyActive ? "User disabled" : "User enabled");
+      fetchUsers();
+    } catch (err) {
+      toast.error(err?.message || "Failed to update user status");
     }
     setUpdatingId(null);
   };
@@ -216,63 +369,110 @@ function UserManagement() {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
-      <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-        <Users className="w-4 h-4 text-indigo-600" />
-        <h2 className="font-semibold text-gray-900 text-sm">User Management</h2>
-        <span className="text-xs text-gray-400 ml-auto">{users.length} users</span>
+    <>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+          <Users className="w-4 h-4 text-indigo-600" />
+          <h2 className="font-semibold text-gray-900 text-sm">User Management</h2>
+          <span className="text-xs text-gray-400 ml-auto mr-3">{users.length} users</span>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            <Plus className="w-3 h-3" /> Create User
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Name</th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Email</th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Role</th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Joined</th>
+                <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {users.map(u => (
+                <tr key={u.id} className={`hover:bg-gray-50 ${!u.is_active ? "opacity-50" : ""}`}>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-[11px] font-bold text-gray-600">
+                        {u.name?.charAt(0)?.toUpperCase() || "?"}
+                      </div>
+                      <span className="font-medium text-gray-900">{u.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-gray-600 text-xs font-mono">{u.email}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={u.role}
+                        onChange={e => handleRoleChange(u.id, e.target.value)}
+                        disabled={updatingId === u.id}
+                        className={`appearance-none pl-2 pr-6 py-1 text-xs font-bold rounded-full border cursor-pointer ${ROLE_BADGE[u.role] || ROLE_BADGE.User}`}
+                      >
+                        <option value="Admin">Admin</option>
+                        <option value="Manager">Manager</option>
+                        <option value="User">User</option>
+                      </select>
+                      {updatingId === u.id && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => handleToggleActive(u.id, u.is_active)}
+                      disabled={updatingId === u.id || u.id === currentUser?.id}
+                      title={u.id === currentUser?.id ? "Cannot disable yourself" : (u.is_active ? "Click to disable" : "Click to enable")}
+                      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border transition-colors ${
+                        u.is_active
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                          : "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
+                      } ${(u.id === currentUser?.id) ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                    >
+                      {u.is_active ? "Active" : "Disabled"}
+                    </button>
+                  </td>
+                  <td className="px-5 py-3 text-xs text-gray-400">
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : "\u2014"}
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <button
+                      onClick={() => setResetTarget({ id: u.id, name: u.name })}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                    >
+                      <KeyRound className="w-3 h-3" /> Reset Password
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Name</th>
-              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Email</th>
-              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Role</th>
-              <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Joined</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {users.map(u => (
-              <tr key={u.id} className="hover:bg-gray-50">
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-[11px] font-bold text-gray-600">
-                      {u.name?.charAt(0)?.toUpperCase() || "?"}
-                    </div>
-                    <span className="font-medium text-gray-900">{u.name}</span>
-                  </div>
-                </td>
-                <td className="px-5 py-3 text-gray-600 text-xs font-mono">{u.email}</td>
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={u.role}
-                      onChange={e => handleRoleChange(u.id, e.target.value)}
-                      disabled={updatingId === u.id}
-                      className={`appearance-none pl-2 pr-6 py-1 text-xs font-bold rounded-full border cursor-pointer ${ROLE_BADGE[u.role] || ROLE_BADGE.User}`}
-                    >
-                      <option value="Admin">Admin</option>
-                      <option value="Manager">Manager</option>
-                      <option value="User">User</option>
-                    </select>
-                    {updatingId === u.id && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
-                  </div>
-                </td>
-                <td className="px-5 py-3 text-xs text-gray-400">
-                  {u.created_at ? new Date(u.created_at).toLocaleDateString() : "\u2014"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <CreateUserModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={fetchUsers}
+      />
+
+      {resetTarget && (
+        <ResetPasswordModal
+          open={true}
+          onClose={() => setResetTarget(null)}
+          userId={resetTarget.id}
+          userName={resetTarget.name}
+        />
       )}
-    </div>
+    </>
   );
 }
 

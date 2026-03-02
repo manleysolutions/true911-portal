@@ -1,25 +1,24 @@
+import re
+import uuid
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from app.config import settings
 
-
-def _prep(password: str) -> bytes:
-    """Encode and truncate to 72 bytes (bcrypt hard limit)."""
-    return password.encode("utf-8")[:72]
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(_prep(password), bcrypt.gensalt()).decode()
+    return pwd_context.hash(password)
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(_prep(password), hashed.encode())
+    return pwd_context.verify(password, hashed)
 
 
-def create_access_token(user_id: int, tenant_id: str, role: str) -> str:
+def create_access_token(user_id: uuid.UUID, tenant_id: str, role: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
@@ -33,7 +32,7 @@ def create_access_token(user_id: int, tenant_id: str, role: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: int) -> str:
+def create_refresh_token(user_id: uuid.UUID) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
@@ -49,8 +48,6 @@ def decode_token(token: str) -> dict:
     """Decode and validate a JWT token. Raises JWTError on failure."""
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
 
-
-import re
 
 def validate_password_strength(password: str) -> str | None:
     """Return an error message if the password is too weak, or None if OK.

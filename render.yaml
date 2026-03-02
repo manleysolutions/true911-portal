@@ -37,6 +37,10 @@ services:
         generateValue: true
       - key: ZOHO_WEBHOOK_SECRET
         generateValue: true
+      - key: TRUE911_BOOTSTRAP_ADMIN_PASSWORD
+        generateValue: true
+      - key: SEED_DEMO
+        value: "false"
 
   # RQ Worker (shares codebase with API)
   - type: worker

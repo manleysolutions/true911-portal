@@ -1,3 +1,7 @@
+import uuid
+from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -25,11 +29,13 @@ class RefreshRequest(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: int
+    id: uuid.UUID
     email: str
     name: str
     role: str
     tenant_id: str
+    is_active: bool = True
+    updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

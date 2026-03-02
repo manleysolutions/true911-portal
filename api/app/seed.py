@@ -284,8 +284,8 @@ EVENTS = [
 
 async def seed():
     from .config import settings
-    if settings.APP_MODE != "demo":
-        print(f"APP_MODE={settings.APP_MODE} — skipping demo seed.")
+    if settings.SEED_DEMO.lower() != "true":
+        print(f"SEED_DEMO={settings.SEED_DEMO} — skipping demo seed.")
         return
 
     async with AsyncSessionLocal() as db:

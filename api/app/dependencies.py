@@ -1,3 +1,4 @@
+import uuid
 from typing import AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
@@ -29,7 +30,7 @@ async def get_current_user(
         payload = decode_token(token)
         if payload.get("type") != "access":
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token type")
-        user_id = int(payload["sub"])
+        user_id = uuid.UUID(payload["sub"])
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
 
