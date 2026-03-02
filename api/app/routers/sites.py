@@ -13,6 +13,7 @@ from app.services.continuity import (
     compute_device_computed_status,
     compute_site_computed_status,
 )
+from app.services.geocoding import geocode_address
 
 router = APIRouter()
 
@@ -108,6 +109,15 @@ async def create_site(
     current_user: User = Depends(get_current_user),
 ):
     site = Site(**body.model_dump(), tenant_id=current_user.tenant_id)
+
+    # Auto-geocode if E911 address fields were provided
+    if any([site.e911_street, site.e911_city, site.e911_state, site.e911_zip]):
+        coords = await geocode_address(
+            site.e911_street, site.e911_city, site.e911_state, site.e911_zip
+        )
+        if coords:
+            site.lat, site.lng = coords
+
     db.add(site)
     await db.commit()
     await db.refresh(site)
@@ -130,6 +140,16 @@ async def update_site(
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(site, field, value)
+
+    # Auto-geocode when any E911 address field is updated
+    e911_fields = {"e911_street", "e911_city", "e911_state", "e911_zip"}
+    if e911_fields & body.model_fields_set:
+        coords = await geocode_address(
+            site.e911_street, site.e911_city, site.e911_state, site.e911_zip
+        )
+        if coords:
+            site.lat, site.lng = coords
+
     await db.commit()
     await db.refresh(site)
     return await _site_out(site, db)

@@ -22,6 +22,7 @@ from ..models.telemetry_event import TelemetryEvent
 from ..models.site import Site
 from ..models.e911_change_log import E911ChangeLog
 from ..models.user import User
+from ..services.geocoding import geocode_address
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 
@@ -163,6 +164,11 @@ async def update_e911(
     site.e911_city = body.city
     site.e911_state = body.state
     site.e911_zip = body.zip
+
+    # Auto-geocode the new E911 address
+    coords = await geocode_address(body.street, body.city, body.state, body.zip)
+    if coords:
+        site.lat, site.lng = coords
 
     await _audit(db, current_user, "UPDATE_E911", body.site_id, "success",
                  f"E911 updated: {old['street']} → {body.street}")
