@@ -34,3 +34,6 @@ class Incident(Base):
     location_detail: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     recommended_actions_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Phase 3 columns
+    escalation_level: Mapped[Optional[int]] = mapped_column(nullable=True, server_default="0")
+    escalated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

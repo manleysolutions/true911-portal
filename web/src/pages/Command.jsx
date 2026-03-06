@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Shield, Building2, AlertOctagon, Cpu, RefreshCw,
-  ChevronRight, Zap, Eye, Activity, Radio,
+  ChevronRight, Zap, Eye, Activity, Radio, ArrowUpCircle,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,6 +13,8 @@ import SystemHealthMatrix from "@/components/command/SystemHealthMatrix";
 import ReadinessScore from "@/components/command/ReadinessScore";
 import ScenarioRunner from "@/components/command/ScenarioRunner";
 import ActivityTimeline from "@/components/command/ActivityTimeline";
+import NotificationCenter from "@/components/command/NotificationCenter";
+import ReportExport from "@/components/command/ReportExport";
 
 function timeSince(iso) {
   if (!iso) return "--";
@@ -81,6 +83,7 @@ export default function Command() {
   const incidents = data?.incident_feed || [];
   const attentionSites = data?.attention_sites_list || [];
   const activities = data?.activity_timeline || [];
+  const escalatedCount = data?.escalated_incidents || 0;
 
   return (
     <PageWrapper>
@@ -110,6 +113,7 @@ export default function Command() {
                 <Zap className="w-3.5 h-3.5 text-amber-500" />
                 {showScenario ? "Hide Scenario" : "Run Scenario"}
               </button>
+              <NotificationCenter unreadCount={data?.unread_notifications || 0} />
               <span className="text-xs text-slate-600 hidden sm:block">
                 {timeSince(lastRefresh.toISOString())}
               </span>
@@ -134,7 +138,13 @@ export default function Command() {
               icon={AlertOctagon}
               color="bg-red-900/40 text-red-400"
               border={data?.critical_incidents > 0 ? "border-red-700/50" : "border-slate-700/50"}
-              sub={data?.critical_incidents > 0 ? `${data.critical_incidents} critical` : "All clear"}
+              sub={
+                escalatedCount > 0
+                  ? `${data?.critical_incidents || 0} critical, ${escalatedCount} escalated`
+                  : data?.critical_incidents > 0
+                  ? `${data.critical_incidents} critical`
+                  : "All clear"
+              }
             />
             <KPICard
               label="Needs Attention"
@@ -242,13 +252,7 @@ export default function Command() {
                     <Radio className="w-4 h-4 text-blue-500" />
                     Deployment Map
                   </Link>
-                  <Link
-                    to={createPageUrl("Reports")}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-300 text-sm transition-colors"
-                  >
-                    <Activity className="w-4 h-4 text-emerald-500" />
-                    Generate Report
-                  </Link>
+                  <ReportExport />
                 </div>
               </div>
             </div>

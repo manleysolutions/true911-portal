@@ -1,13 +1,14 @@
 """
-True911 Command — Phase 2 endpoints.
+True911 Command — Phase 2 + Phase 3 endpoints.
 
 Real incident workflow, activity timeline, readiness scoring,
-and role-guarded actions backed by persistent data.
+role-guarded actions, telemetry ingest, auto-incident detection,
+escalation checks, and notification dispatch.
 """
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -20,12 +21,16 @@ from ..models.site import Site
 from ..models.device import Device
 from ..models.incident import Incident
 from ..models.command_activity import CommandActivity
+from ..models.notification import CommandNotification
+from ..models.escalation_rule import EscalationRule
+from ..models.command_telemetry import CommandTelemetry
 from ..models.user import User
 from ..schemas.command import (
     CommandIncidentTransition,
     CommandIncidentCreate,
     CommandActivityOut,
 )
+from ..schemas.command_phase3 import TelemetryIngest, TelemetryOut
 
 router = APIRouter()
 
@@ -96,6 +101,81 @@ async def _log_activity(
     db.add(act)
 
 
+async def _create_notification(
+    db: AsyncSession,
+    tenant_id: str,
+    title: str,
+    *,
+    body: str = None,
+    severity: str = "info",
+    incident_id: str = None,
+    site_id: str = None,
+    target_role: str = None,
+    target_user: str = None,
+    channel: str = "in_app",
+):
+    """Insert an in-app notification."""
+    notif = CommandNotification(
+        tenant_id=tenant_id,
+        channel=channel,
+        severity=severity,
+        title=title,
+        body=body,
+        incident_id=incident_id,
+        site_id=site_id,
+        target_role=target_role,
+        target_user=target_user,
+    )
+    db.add(notif)
+
+
+async def _check_escalation(db: AsyncSession, inc: Incident):
+    """Check if an incident should be escalated based on escalation rules."""
+    if inc.status in ("resolved", "dismissed", "closed"):
+        return
+
+    now = datetime.now(timezone.utc)
+    minutes_open = (now - inc.opened_at).total_seconds() / 60 if inc.opened_at else 0
+
+    rules_q = await db.execute(
+        select(EscalationRule)
+        .where(
+            EscalationRule.tenant_id == inc.tenant_id,
+            EscalationRule.severity == inc.severity,
+            EscalationRule.enabled == True,  # noqa: E712
+        )
+        .order_by(EscalationRule.escalate_after_minutes)
+    )
+    rules = list(rules_q.scalars().all())
+
+    current_level = inc.escalation_level or 0
+    for i, rule in enumerate(rules):
+        level = i + 1
+        if level <= current_level:
+            continue
+        if minutes_open >= rule.escalate_after_minutes and inc.status in ("new", "open"):
+            inc.escalation_level = level
+            inc.escalated_at = now
+            await _create_notification(
+                db, inc.tenant_id,
+                f"Escalation L{level}: {inc.summary}",
+                body=f"Incident {inc.incident_id} unacknowledged for {int(minutes_open)}min. Rule: {rule.name}",
+                severity=inc.severity,
+                incident_id=inc.incident_id,
+                site_id=inc.site_id,
+                target_role=rule.escalation_target if rule.escalation_target in ("Admin", "Manager") else None,
+                target_user=rule.escalation_target if rule.escalation_target and "@" in rule.escalation_target else None,
+            )
+            await _log_activity(
+                db, inc.tenant_id, "incident_escalated",
+                f"Incident {inc.incident_id} escalated to level {level}",
+                site_id=inc.site_id, incident_id=inc.incident_id,
+                actor="system",
+                detail=f"Rule: {rule.name}, after {rule.escalate_after_minutes}min",
+            )
+            break  # one escalation per check
+
+
 def _serialize_incident(inc: Incident, site_name: str = None) -> dict:
     return {
         "id": inc.id,
@@ -117,6 +197,8 @@ def _serialize_incident(inc: Incident, site_name: str = None) -> dict:
         "assigned_to": inc.assigned_to,
         "resolution_notes": inc.resolution_notes,
         "recommended_actions_json": inc.recommended_actions_json,
+        "escalation_level": inc.escalation_level or 0,
+        "escalated_at": inc.escalated_at.isoformat() if inc.escalated_at else None,
     }
 
 
@@ -238,11 +320,28 @@ async def command_summary(
     )
     activities = list(activities_q.scalars().all())
 
+    # Notification count
+    notif_count_q = await db.execute(
+        select(func.count())
+        .select_from(CommandNotification)
+        .where(
+            CommandNotification.tenant_id == tenant,
+            CommandNotification.read == False,  # noqa: E712
+        )
+    )
+    unread_notifications = notif_count_q.scalar() or 0
+
     total_sites = len(sites)
     active_devices = [d for d in devices if d.status == "active"]
     active_incidents = [i for i in incidents if i.status in ("new", "open", "acknowledged", "in_progress")]
     critical_incidents = [i for i in active_incidents if i.severity == "critical"]
     connected = sum(1 for s in sites if s.status == "Connected")
+
+    # Check escalation for unacked incidents
+    for inc in active_incidents:
+        if inc.status in ("new", "open"):
+            await _check_escalation(db, inc)
+    await db.commit()
 
     # System health matrix
     systems = {}
@@ -279,6 +378,9 @@ async def command_summary(
     site_map = {s.site_id: s for s in sites}
     incident_feed = [_serialize_incident(inc, site_map.get(inc.site_id, None) and site_map[inc.site_id].site_name) for inc in incidents[:20]]
 
+    # Escalated incident count
+    escalated_count = sum(1 for i in active_incidents if (i.escalation_level or 0) > 0)
+
     # Attention sites
     attention_sites = [
         {"site_id": s.site_id, "site_name": s.site_name, "status": s.status, "kit_type": s.kit_type,
@@ -306,6 +408,8 @@ async def command_summary(
         "incident_feed": incident_feed,
         "active_incidents": len(active_incidents),
         "critical_incidents": len(critical_incidents),
+        "escalated_incidents": escalated_count,
+        "unread_notifications": unread_notifications,
         "attention_sites_list": attention_sites[:10],
         "activity_timeline": activity_timeline,
     }
@@ -346,6 +450,18 @@ async def command_site_detail(
         .limit(20)
     )
     activities = list(activities_q.scalars().all())
+
+    # Telemetry for site devices
+    device_ids = [d.device_id for d in devices]
+    telemetry_data = []
+    if device_ids:
+        telem_q = await db.execute(
+            select(CommandTelemetry)
+            .where(CommandTelemetry.site_id == site_id, CommandTelemetry.tenant_id == tenant)
+            .order_by(CommandTelemetry.recorded_at.desc())
+            .limit(len(device_ids) * 5)
+        )
+        telemetry_data = [TelemetryOut.model_validate(t).model_dump(mode="json") for t in telem_q.scalars().all()]
 
     active_incidents = [i for i in incidents if i.status in ("new", "open", "acknowledged", "in_progress")]
     active_devices = [d for d in devices if d.status == "active"]
@@ -428,6 +544,7 @@ async def command_site_detail(
         "devices": {"total": len(devices), "active": len(active_devices)},
         "recommended_actions": actions,
         "activity_timeline": activity_timeline,
+        "telemetry": telemetry_data,
     }
 
 
@@ -469,6 +586,14 @@ async def command_create_incident(
         f"Incident created: {body.summary}",
         site_id=body.site_id, incident_id=incident_id,
         actor=current_user.email,
+    )
+
+    await _create_notification(
+        db, current_user.tenant_id,
+        f"New {body.severity} incident: {body.summary}",
+        severity=body.severity,
+        incident_id=incident_id,
+        site_id=body.site_id,
     )
 
     await db.commit()
@@ -538,6 +663,14 @@ async def command_transition_incident(
         detail=body.resolution_notes if body and body.resolution_notes else None,
     )
 
+    await _create_notification(
+        db, current_user.tenant_id,
+        f"Incident {target_status}: {inc.summary}",
+        severity="info" if target_status in ("resolved", "dismissed") else inc.severity,
+        incident_id=inc.incident_id,
+        site_id=inc.site_id,
+    )
+
     await db.commit()
     await db.refresh(inc)
     return _serialize_incident(inc)
@@ -577,12 +710,134 @@ async def command_assign_incident(
 
 
 # ---------------------------------------------------------------------------
+# Telemetry ingest
+# ---------------------------------------------------------------------------
+
+@router.post("/telemetry")
+async def ingest_telemetry(
+    body: TelemetryIngest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("COMMAND_INGEST_TELEMETRY")),
+):
+    """Ingest device telemetry data and check for anomalies."""
+    telem = CommandTelemetry(
+        tenant_id=current_user.tenant_id,
+        device_id=body.device_id,
+        site_id=body.site_id,
+        signal_strength=body.signal_strength,
+        battery_pct=body.battery_pct,
+        uptime_seconds=body.uptime_seconds,
+        temperature_c=body.temperature_c,
+        error_count=body.error_count,
+        firmware_version=body.firmware_version,
+        metadata_json=body.metadata_json,
+    )
+    db.add(telem)
+
+    # Auto-incident detection from telemetry anomalies
+    anomalies = []
+    if body.battery_pct is not None and body.battery_pct < 10:
+        anomalies.append(("critical" if body.battery_pct < 5 else "warning", f"Battery critically low: {body.battery_pct}%", "low_battery"))
+    if body.signal_strength is not None and body.signal_strength < -90:
+        anomalies.append(("warning", f"Weak signal: {body.signal_strength} dBm", "weak_signal"))
+    if body.error_count is not None and body.error_count > 10:
+        anomalies.append(("warning", f"High error count: {body.error_count}", "high_errors"))
+    if body.temperature_c is not None and body.temperature_c > 70:
+        anomalies.append(("critical" if body.temperature_c > 85 else "warning", f"High temperature: {body.temperature_c}C", "overtemp"))
+
+    created_incidents = []
+    for severity, summary, inc_type in anomalies:
+        incident_id = f"AUTO-{uuid.uuid4().hex[:10].upper()}"
+        now = datetime.now(timezone.utc)
+        inc = Incident(
+            incident_id=incident_id,
+            tenant_id=current_user.tenant_id,
+            site_id=body.site_id or "UNKNOWN",
+            opened_at=now,
+            severity=severity,
+            status="new",
+            summary=f"[Auto] {summary} — Device {body.device_id}",
+            incident_type=inc_type,
+            source="telemetry_auto",
+            description=f"Automatically detected from telemetry ingest for device {body.device_id}",
+            location_detail=None,
+            created_by="system",
+        )
+        db.add(inc)
+        await _log_activity(
+            db, current_user.tenant_id, "incident_created",
+            f"Auto-incident: {summary}",
+            site_id=body.site_id, incident_id=incident_id,
+            actor="system",
+            detail=f"Telemetry anomaly detected for device {body.device_id}",
+        )
+        await _create_notification(
+            db, current_user.tenant_id,
+            f"Auto-detected: {summary}",
+            severity=severity,
+            incident_id=incident_id,
+            site_id=body.site_id,
+        )
+        created_incidents.append(incident_id)
+
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "device_id": body.device_id,
+        "anomalies_detected": len(anomalies),
+        "incidents_created": created_incidents,
+    }
+
+
+@router.get("/telemetry/{device_id}", response_model=list[TelemetryOut])
+async def get_device_telemetry(
+    device_id: str,
+    limit: int = Query(20, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get recent telemetry for a specific device."""
+    result = await db.execute(
+        select(CommandTelemetry)
+        .where(
+            CommandTelemetry.tenant_id == current_user.tenant_id,
+            CommandTelemetry.device_id == device_id,
+        )
+        .order_by(CommandTelemetry.recorded_at.desc())
+        .limit(limit)
+    )
+    return [TelemetryOut.model_validate(t) for t in result.scalars().all()]
+
+
+@router.get("/telemetry/site/{site_id}", response_model=list[TelemetryOut])
+async def get_site_telemetry(
+    site_id: str,
+    limit: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get recent telemetry for all devices at a site."""
+    result = await db.execute(
+        select(CommandTelemetry)
+        .where(
+            CommandTelemetry.tenant_id == current_user.tenant_id,
+            CommandTelemetry.site_id == site_id,
+        )
+        .order_by(CommandTelemetry.recorded_at.desc())
+        .limit(limit)
+    )
+    return [TelemetryOut.model_validate(t) for t in result.scalars().all()]
+
+
+# ---------------------------------------------------------------------------
 # Activity timeline
 # ---------------------------------------------------------------------------
 
 @router.get("/activities", response_model=list[CommandActivityOut])
 async def list_activities(
     site_id: str | None = None,
+    activity_type: str | None = None,
     limit: int = Query(30, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -595,5 +850,7 @@ async def list_activities(
     )
     if site_id:
         q = q.where(CommandActivity.site_id == site_id)
+    if activity_type:
+        q = q.where(CommandActivity.activity_type == activity_type)
     result = await db.execute(q)
     return [CommandActivityOut.model_validate(a) for a in result.scalars().all()]

@@ -12,6 +12,9 @@ import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
 import ReadinessScore from "@/components/command/ReadinessScore";
 import ActivityTimeline from "@/components/command/ActivityTimeline";
+import EscalationBadge from "@/components/command/EscalationBadge";
+import DeviceHealthPanel from "@/components/command/DeviceHealthPanel";
+import ReportExport from "@/components/command/ReportExport";
 
 const SEV_STYLE = {
   critical: { bg: "bg-red-900/30", border: "border-red-700/40", text: "text-red-400", dot: "bg-red-500" },
@@ -152,6 +155,7 @@ export default function CommandSite() {
   const devices = data?.devices || {};
   const actions = data?.recommended_actions || [];
   const activities = data?.activity_timeline || [];
+  const telemetry = data?.telemetry || [];
   const sts = SITE_STATUS[site.status] || SITE_STATUS.Unknown;
 
   const activeIncidents = incidents.filter(i => !["resolved", "dismissed", "closed"].includes(i.status));
@@ -188,9 +192,12 @@ export default function CommandSite() {
                   </div>
                 </div>
               </div>
-              <button onClick={fetchData} className="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800 text-slate-500">
-                <RefreshCw className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <ReportExport siteId={siteId} />
+                <button onClick={fetchData} className="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800 text-slate-500">
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -257,6 +264,7 @@ export default function CommandSite() {
                           <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold border ${stsBadge.cls}`}>
                             {stsBadge.label}
                           </span>
+                          <EscalationBadge incident={inc} />
                           {inc.incident_type && (
                             <span className="text-[10px] text-slate-600">{inc.incident_type}</span>
                           )}
@@ -343,6 +351,9 @@ export default function CommandSite() {
             {/* Right 1/3 */}
             <div className="space-y-5">
               <ReadinessScore readiness={readiness} />
+
+              {/* Device Health Panel */}
+              <DeviceHealthPanel telemetry={telemetry} />
 
               {/* Recommended Actions */}
               <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">

@@ -3,6 +3,7 @@ import { AlertTriangle, AlertOctagon, Info, Clock, CheckCircle2, UserCheck, Chev
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
+import EscalationBadge from "@/components/command/EscalationBadge";
 
 const SEV = {
   critical: { bg: "bg-red-900/40", border: "border-red-700/50", text: "text-red-400", icon: AlertOctagon, dot: "bg-red-500" },
@@ -105,6 +106,7 @@ export default function IncidentFeed({ incidents = [], onSelectSite, onRefresh, 
                       <span className={`w-1.5 h-1.5 rounded-full ${sev.dot}`} />
                       {inc.severity}
                     </span>
+                    <EscalationBadge incident={inc} />
                     {inc.incident_type && (
                       <span className="text-[10px] text-slate-600">{inc.incident_type}</span>
                     )}

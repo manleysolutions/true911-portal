@@ -39,6 +39,11 @@ const PERMISSIONS = {
   COMMAND_RESOLVE: ["Admin", "Manager"],
   COMMAND_DISMISS: ["Admin"],
   COMMAND_CREATE_INCIDENT: ["Admin", "Manager"],
+  // Command Phase 3
+  COMMAND_VIEW_NOTIFICATIONS: ["Admin", "Manager", "User"],
+  COMMAND_MANAGE_ESCALATION: ["Admin"],
+  COMMAND_INGEST_TELEMETRY: ["Admin", "Manager"],
+  COMMAND_EXPORT_REPORTS: ["Admin", "Manager"],
 };
 
 export function AuthProvider({ children }) {

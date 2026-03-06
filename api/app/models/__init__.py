@@ -26,6 +26,9 @@ from app.models.subscription import Subscription
 from app.models.external_customer_map import ExternalCustomerMap
 from app.models.external_subscription_map import ExternalSubscriptionMap
 from app.models.reconciliation_snapshot import ReconciliationSnapshot
+from app.models.notification import CommandNotification
+from app.models.escalation_rule import EscalationRule
+from app.models.command_telemetry import CommandTelemetry
 
 __all__ = [
     "Tenant",
@@ -57,4 +60,7 @@ __all__ = [
     "ExternalCustomerMap",
     "ExternalSubscriptionMap",
     "ReconciliationSnapshot",
+    "CommandNotification",
+    "EscalationRule",
+    "CommandTelemetry",
 ]

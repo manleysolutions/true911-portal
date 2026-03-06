@@ -19,6 +19,9 @@ from .models.incident import Incident
 from .models.notification_rule import NotificationRule
 from .models.device import Device
 from .models.command_activity import CommandActivity
+from .models.notification import CommandNotification
+from .models.escalation_rule import EscalationRule
+from .models.command_telemetry import CommandTelemetry
 from .models.line import Line
 from .models.recording import Recording
 from .models.event import Event
@@ -157,6 +160,34 @@ COMMAND_ACTIVITIES = [
      "summary": "Portfolio readiness score recalculated: 74% — Attention Needed", "ago_minutes": 15},
     {"activity_type": "incident_created", "site_id": "SITE-008", "actor": "system",
      "summary": "Emergency call station offline — missed heartbeats", "ago_minutes": 60},
+]
+
+ESCALATION_RULES = [
+    {"name": "Critical — 15min escalation", "severity": "critical", "escalate_after_minutes": 15, "escalation_target": "Admin", "notify_channel": "in_app"},
+    {"name": "Critical — 30min supervisor", "severity": "critical", "escalate_after_minutes": 30, "escalation_target": "admin@true911.com", "notify_channel": "in_app"},
+    {"name": "Warning — 60min escalation", "severity": "warning", "escalate_after_minutes": 60, "escalation_target": "Manager", "notify_channel": "in_app"},
+]
+
+COMMAND_NOTIFICATIONS = [
+    {"severity": "critical", "title": "New critical incident: Elevator emergency phone verification failed", "site_id": "SITE-003", "ago_minutes": 120},
+    {"severity": "critical", "title": "Escalation L1: DAS responder radio signal lost in sub-basement", "site_id": "SITE-005", "ago_minutes": 100},
+    {"severity": "warning", "title": "Emergency call station offline — missed heartbeats", "site_id": "SITE-008", "ago_minutes": 60},
+    {"severity": "info", "title": "Fire alarm verification completed — all panels passed", "site_id": "SITE-016", "ago_minutes": 30, "read": True},
+    {"severity": "warning", "title": "UPS battery bank failure — backup power at 0%", "site_id": "SITE-012", "ago_minutes": 360},
+    {"severity": "info", "title": "Portfolio readiness score recalculated: 74%", "ago_minutes": 15},
+]
+
+COMMAND_TELEMETRY_DATA = [
+    {"device_id": "DEV-001", "site_id": "SITE-001", "signal_strength": -45.0, "battery_pct": 98.0, "uptime_seconds": 864000, "temperature_c": 24.5, "error_count": 0, "ago_minutes": 5},
+    {"device_id": "DEV-002", "site_id": "SITE-002", "signal_strength": -52.0, "battery_pct": 95.0, "uptime_seconds": 720000, "temperature_c": 23.1, "error_count": 0, "ago_minutes": 10},
+    {"device_id": "DEV-003", "site_id": "SITE-003", "signal_strength": -68.0, "battery_pct": 72.0, "uptime_seconds": 432000, "temperature_c": 27.3, "error_count": 3, "ago_minutes": 15},
+    {"device_id": "DEV-005", "site_id": "SITE-005", "signal_strength": -95.0, "battery_pct": 8.0, "uptime_seconds": 0, "temperature_c": 31.2, "error_count": 42, "ago_minutes": 2880},
+    {"device_id": "DEV-008", "site_id": "SITE-008", "signal_strength": -78.0, "battery_pct": 45.0, "uptime_seconds": 172800, "temperature_c": 29.8, "error_count": 7, "ago_minutes": 30},
+    {"device_id": "DEV-012", "site_id": "SITE-012", "signal_strength": -92.0, "battery_pct": 12.0, "uptime_seconds": 0, "temperature_c": 35.0, "error_count": 28, "ago_minutes": 4320},
+    {"device_id": "DEV-004", "site_id": "SITE-004", "signal_strength": -40.0, "battery_pct": 100.0, "uptime_seconds": 950000, "temperature_c": 22.0, "error_count": 0, "ago_minutes": 3},
+    {"device_id": "DEV-007", "site_id": "SITE-007", "signal_strength": -48.0, "battery_pct": 97.0, "uptime_seconds": 800000, "temperature_c": 23.5, "error_count": 0, "ago_minutes": 8},
+    {"device_id": "DEV-009", "site_id": "SITE-009", "signal_strength": -55.0, "battery_pct": 91.0, "uptime_seconds": 650000, "temperature_c": 25.0, "error_count": 1, "ago_minutes": 12},
+    {"device_id": "DEV-010", "site_id": "SITE-010", "signal_strength": -60.0, "battery_pct": 88.0, "uptime_seconds": 550000, "temperature_c": 26.0, "error_count": 2, "ago_minutes": 20},
 ]
 
 NOTIFICATION_RULES = [
@@ -442,6 +473,36 @@ async def seed():
                 created_at=ago(minutes_ago=ca["ago_minutes"]),
             ))
 
+        # Escalation Rules (Phase 3)
+        for er in ESCALATION_RULES:
+            db.add(EscalationRule(tenant_id=TENANT_ID, **er))
+
+        # Command Notifications (Phase 3)
+        for cn in COMMAND_NOTIFICATIONS:
+            db.add(CommandNotification(
+                tenant_id=TENANT_ID,
+                channel="in_app",
+                severity=cn["severity"],
+                title=cn["title"],
+                site_id=cn.get("site_id"),
+                read=cn.get("read", False),
+                created_at=ago(minutes_ago=cn["ago_minutes"]),
+            ))
+
+        # Command Telemetry (Phase 3)
+        for ct in COMMAND_TELEMETRY_DATA:
+            db.add(CommandTelemetry(
+                tenant_id=TENANT_ID,
+                device_id=ct["device_id"],
+                site_id=ct["site_id"],
+                signal_strength=ct.get("signal_strength"),
+                battery_pct=ct.get("battery_pct"),
+                uptime_seconds=ct.get("uptime_seconds"),
+                temperature_c=ct.get("temperature_c"),
+                error_count=ct.get("error_count", 0),
+                recorded_at=ago(minutes_ago=ct["ago_minutes"]),
+            ))
+
         # Notification Rules
         for n in NOTIFICATION_RULES:
             db.add(NotificationRule(
@@ -553,6 +614,9 @@ async def seed():
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
               f"{len(INCIDENTS)} + {len(COMMAND_INCIDENTS)} incidents, "
               f"{len(COMMAND_ACTIVITIES)} command activities, "
+              f"{len(ESCALATION_RULES)} escalation rules, "
+              f"{len(COMMAND_NOTIFICATIONS)} command notifications, "
+              f"{len(COMMAND_TELEMETRY_DATA)} command telemetry snapshots, "
               f"{len(NOTIFICATION_RULES)} notification rules, "
               f"{len(HARDWARE_MODELS)} hardware models, {len(DEVICES)} devices, "
               f"{len(PROVIDERS)} providers, {len(LINES)} lines, "
