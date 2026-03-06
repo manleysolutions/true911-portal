@@ -24,3 +24,8 @@ class AutomationRule(Base):
     fire_count: Mapped[int] = mapped_column(Integer, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Phase 8 columns
+    max_fires_per_hour: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, server_default="10")
+    cooldown_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, server_default="15")
+    auto_diagnostic: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    self_heal_action: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

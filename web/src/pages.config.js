@@ -72,6 +72,7 @@ import Samantha from './pages/Samantha';
 import Sites from './pages/Sites';
 import SyncStatus from './pages/SyncStatus';
 import NetworkDashboard from './pages/NetworkDashboard';
+import AutoOps from './pages/AutoOps';
 import __Layout from './Layout.jsx';
 
 
@@ -101,6 +102,7 @@ export const PAGES = {
     "Sites": Sites,
     "SyncStatus": SyncStatus,
     "NetworkDashboard": NetworkDashboard,
+    "AutoOps": AutoOps,
 }
 
 export const pagesConfig = {

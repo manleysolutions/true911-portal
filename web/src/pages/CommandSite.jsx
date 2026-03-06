@@ -20,6 +20,7 @@ import VendorAssignments from "@/components/command/VendorAssignments";
 import StalenessIndicator from "@/components/command/StalenessIndicator";
 import NetworkStatus from "@/components/command/NetworkStatus";
 import InfraTestPanel from "@/components/command/InfraTestPanel";
+import AutonomousLog from "@/components/command/AutonomousLog";
 
 const SEV_STYLE = {
   critical: { bg: "bg-red-900/30", border: "border-red-700/40", text: "text-red-400", dot: "bg-red-500" },
@@ -381,6 +382,11 @@ export default function CommandSite() {
               {/* Infrastructure Tests (Phase 7) */}
               <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden p-4">
                 <InfraTestPanel siteId={siteId} />
+              </div>
+
+              {/* Autonomous Actions (Phase 8) */}
+              <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden p-4">
+                <AutonomousLog siteId={siteId} limit={10} />
               </div>
 
               {/* Recommended Actions */}

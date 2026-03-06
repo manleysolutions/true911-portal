@@ -40,6 +40,8 @@ from .models.network_event import NetworkEvent
 from .models.infra_test import InfraTest
 from .models.infra_test_result import InfraTestResult
 from .models.audit_log_entry import AuditLogEntry
+from .models.autonomous_action import AutonomousAction
+from .models.operational_digest import OperationalDigest
 from .services.auth import hash_password
 
 
@@ -794,6 +796,77 @@ async def seed():
                 **ae,
             ))
 
+        # ── Phase 8: Autonomous actions & operational digests ─────────
+        import json as _json
+
+        AUTO_ACTIONS = [
+            {"action_type": "incident_created", "trigger_source": "autonomous_engine",
+             "site_id": SITES[0]["site_id"], "device_id": DEVICES[0]["device_id"],
+             "summary": "Incident AUTO-DEMO0001 created for device offline",
+             "incident_id": "AUTO-DEMO0001", "status": "completed", "result": "incident_opened"},
+            {"action_type": "diagnostic_executed", "trigger_source": "autonomous_engine",
+             "site_id": SITES[0]["site_id"], "device_id": DEVICES[0]["device_id"],
+             "summary": "Diagnostic 'Voice Path' executed — result: pass",
+             "status": "completed", "result": "pass"},
+            {"action_type": "incident_routed", "trigger_source": "autonomous_engine",
+             "site_id": SITES[1]["site_id"],
+             "summary": "Incident routed to vendor technician",
+             "incident_id": "AUTO-DEMO0002", "status": "completed"},
+            {"action_type": "self_heal_device_reboot", "trigger_source": "self_healing_engine",
+             "site_id": SITES[2]["site_id"], "device_id": DEVICES[2]["device_id"],
+             "summary": "Self-heal device_reboot attempted — resolved",
+             "status": "completed", "result": "resolved"},
+            {"action_type": "escalations_processed", "trigger_source": "escalation_autopilot",
+             "summary": "2 incident(s) escalated",
+             "status": "completed"},
+            {"action_type": "verifications_scheduled", "trigger_source": "verification_scheduler",
+             "summary": "3 verification task(s) auto-scheduled",
+             "status": "completed"},
+            {"action_type": "problem_verified", "trigger_source": "device_monitor",
+             "site_id": SITES[3]["site_id"], "device_id": DEVICES[3]["device_id"] if len(DEVICES) > 3 else DEVICES[0]["device_id"],
+             "summary": "Problem verified for device — heartbeat overdue",
+             "status": "completed", "result": "confirmed"},
+            {"action_type": "readiness_recalculated", "trigger_source": "autonomous_engine",
+             "summary": "Portfolio readiness recalculated after autonomous cycle",
+             "status": "completed"},
+        ]
+        for aa in AUTO_ACTIONS:
+            db.add(AutonomousAction(
+                action_id=uid("AA"),
+                tenant_id=TENANT_ID,
+                **aa,
+            ))
+
+        DIGESTS = [
+            {"digest_type": "daily",
+             "period_start": ago(days_ago=1),
+             "period_end": ago(),
+             "summary_json": _json.dumps({
+                 "period": "daily", "sites_total": 25, "sites_needing_attention": 3,
+                 "devices_total": 10, "devices_offline": 1,
+                 "verification_tasks_due": 4, "verification_tasks_overdue": 1,
+                 "incidents_opened": 2, "incidents_resolved": 1,
+                 "incidents_currently_open": 3, "autonomous_actions": 8,
+             })},
+            {"digest_type": "weekly",
+             "period_start": ago(days_ago=7),
+             "period_end": ago(),
+             "summary_json": _json.dumps({
+                 "period": "weekly",
+                 "incidents": {"opened": 5, "resolved": 4, "trend": "decreasing",
+                               "prev_opened": 7, "prev_resolved": 5},
+                 "devices": {"total": 10, "active": 9, "health_pct": 90.0},
+                 "verifications": {"completed": 6, "pending": 3},
+                 "autonomous_ops": {"total_actions": 18, "self_heals_resolved": 2},
+             })},
+        ]
+        for dg in DIGESTS:
+            db.add(OperationalDigest(
+                digest_id=uid("DG"),
+                tenant_id=TENANT_ID,
+                **dg,
+            ))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
@@ -811,7 +884,8 @@ async def seed():
               f"{len(VERIFICATION_TASKS)} verification tasks, {len(AUTOMATION_RULES)} automation rules, "
               f"{len(BUILTIN_TEMPLATES)} site templates, {len(VENDORS)} service contracts, "
               f"{len(NETWORK_EVENTS)} network events, {len(INFRA_TESTS)} infra tests, "
-              f"{len(AUDIT_ENTRIES)} audit entries.")
+              f"{len(AUDIT_ENTRIES)} audit entries, "
+              f"{len(AUTO_ACTIONS)} autonomous actions, {len(DIGESTS)} digests.")
 
 
 if __name__ == "__main__":

@@ -69,6 +69,13 @@ const PERMISSIONS = {
   COMMAND_VIEW_INFRA_TESTS: ["Admin", "Manager", "User"],
   COMMAND_VIEW_AUDIT: ["Admin", "Manager"],
   COMMAND_EXPORT_AUDIT: ["Admin"],
+  // Command Phase 8
+  COMMAND_VIEW_AUTO_OPS: ["Admin", "Manager", "User"],
+  COMMAND_MANAGE_AUTO_OPS: ["Admin"],
+  COMMAND_RUN_ENGINE: ["Admin"],
+  COMMAND_VIEW_DIGESTS: ["Admin", "Manager"],
+  COMMAND_GENERATE_DIGEST: ["Admin"],
+  COMMAND_VIEW_AUTO_LOG: ["Admin", "Manager", "User"],
 };
 
 export function AuthProvider({ children }) {
