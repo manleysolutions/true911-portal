@@ -34,6 +34,8 @@ from .models.vendor import Vendor
 from .models.site_vendor import SiteVendorAssignment
 from .models.verification_task import VerificationTask
 from .models.automation_rule import AutomationRule
+from .models.site_template import SiteTemplate
+from .models.service_contract import ServiceContract
 from .services.auth import hash_password
 
 
@@ -697,6 +699,31 @@ async def seed():
         for ar in AUTOMATION_RULES:
             db.add(AutomationRule(tenant_id=TENANT_ID, **ar))
 
+        # Site Templates (Phase 5) — global built-in templates
+        from .services.template_engine import BUILTIN_TEMPLATES
+        for tmpl in BUILTIN_TEMPLATES:
+            db.add(SiteTemplate(
+                tenant_id=None,
+                is_global=True,
+                created_by="system",
+                **tmpl,
+            ))
+        await db.flush()
+
+        # Service Contracts (Phase 5)
+        for i, v_obj in enumerate(vendor_objects):
+            db.add(ServiceContract(
+                tenant_id=TENANT_ID,
+                vendor_id=v_obj.id,
+                contract_type="annual_maintenance",
+                description=f"Annual maintenance contract with {v_obj.name}",
+                start_date=ago(days_ago=180),
+                end_date=ago(days_ago=-185),
+                sla_response_minutes=60 if i < 2 else 120,
+                sla_resolution_hours=24 if i < 2 else 48,
+                status="active",
+            ))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
@@ -711,7 +738,8 @@ async def seed():
               f"{len(RECORDINGS)} recordings, {len(EVENTS)} events, "
               f"{len(INTEGRATIONS)} integrations, {len(SIMS)} SIMs, "
               f"{len(VENDORS)} vendors, {len(SITE_VENDOR_ASSIGNMENTS)} vendor assignments, "
-              f"{len(VERIFICATION_TASKS)} verification tasks, {len(AUTOMATION_RULES)} automation rules.")
+              f"{len(VERIFICATION_TASKS)} verification tasks, {len(AUTOMATION_RULES)} automation rules, "
+              f"{len(BUILTIN_TEMPLATES)} site templates, {len(VENDORS)} service contracts.")
 
 
 if __name__ == "__main__":

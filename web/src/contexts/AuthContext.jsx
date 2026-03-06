@@ -52,6 +52,14 @@ const PERMISSIONS = {
   COMMAND_VIEW_VERIFICATION: ["Admin", "Manager", "User"],
   COMMAND_MANAGE_AUTOMATION: ["Admin"],
   COMMAND_VIEW_OPERATOR: ["Admin", "Manager", "User"],
+  // Command Phase 5
+  COMMAND_MANAGE_TEMPLATES: ["Admin"],
+  COMMAND_VIEW_TEMPLATES: ["Admin", "Manager", "User"],
+  COMMAND_BULK_IMPORT: ["Admin"],
+  COMMAND_MANAGE_WEBHOOKS: ["Admin"],
+  COMMAND_VIEW_CONTRACTS: ["Admin", "Manager"],
+  COMMAND_MANAGE_ORG: ["Admin"],
+  COMMAND_VIEW_ORG: ["Admin", "Manager", "User"],
 };
 
 export function AuthProvider({ children }) {

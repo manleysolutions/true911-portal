@@ -33,6 +33,9 @@ from app.models.vendor import Vendor
 from app.models.site_vendor import SiteVendorAssignment
 from app.models.verification_task import VerificationTask
 from app.models.automation_rule import AutomationRule
+from app.models.site_template import SiteTemplate
+from app.models.service_contract import ServiceContract
+from app.models.outbound_webhook import OutboundWebhook
 
 __all__ = [
     "Tenant",
@@ -71,4 +74,7 @@ __all__ = [
     "SiteVendorAssignment",
     "VerificationTask",
     "AutomationRule",
+    "SiteTemplate",
+    "ServiceContract",
+    "OutboundWebhook",
 ]

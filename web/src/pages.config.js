@@ -49,6 +49,7 @@
  */
 import Admin from './pages/Admin';
 import AuthGate from './pages/AuthGate';
+import BulkDeploy from './pages/BulkDeploy';
 import Command from './pages/Command';
 import CommandSite from './pages/CommandSite';
 import Containers from './pages/Containers';
@@ -62,6 +63,7 @@ import Lines from './pages/Lines';
 import Notifications from './pages/Notifications';
 import OnboardingWizard from './pages/OnboardingWizard';
 import OperatorView from './pages/OperatorView';
+import OrgSettings from './pages/OrgSettings';
 import Overview from './pages/Overview';
 import Providers from './pages/Providers';
 import Recordings from './pages/Recordings';
@@ -75,6 +77,7 @@ import __Layout from './Layout.jsx';
 export const PAGES = {
     "Admin": Admin,
     "AuthGate": AuthGate,
+    "BulkDeploy": BulkDeploy,
     "Command": Command,
     "CommandSite": CommandSite,
     "Containers": Containers,
@@ -88,6 +91,7 @@ export const PAGES = {
     "Notifications": Notifications,
     "OnboardingWizard": OnboardingWizard,
     "OperatorView": OperatorView,
+    "OrgSettings": OrgSettings,
     "Overview": Overview,
     "Providers": Providers,
     "Recordings": Recordings,

@@ -49,5 +49,8 @@ class Site(Base):
     heartbeat_interval: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     uptime_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     update_channel: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    building_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    onboarding_status: Mapped[str] = mapped_column(String(50), server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
