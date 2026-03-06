@@ -1,9 +1,9 @@
 """
-True911 Command — Phase 2 + Phase 3 endpoints.
+True911 Command — Phase 2 + Phase 3 + Phase 4 endpoints.
 
-Real incident workflow, activity timeline, readiness scoring,
-role-guarded actions, telemetry ingest, auto-incident detection,
-escalation checks, and notification dispatch.
+Site-centric command model, incident workflow, activity timeline,
+readiness scoring, telemetry, escalation, automation rules,
+staleness monitoring, verification-aware readiness, and digest.
 """
 
 import json
@@ -24,6 +24,9 @@ from ..models.command_activity import CommandActivity
 from ..models.notification import CommandNotification
 from ..models.escalation_rule import EscalationRule
 from ..models.command_telemetry import CommandTelemetry
+from ..models.verification_task import VerificationTask
+from ..models.site_vendor import SiteVendorAssignment
+from ..models.automation_rule import AutomationRule
 from ..models.user import User
 from ..schemas.command import (
     CommandIncidentTransition,
@@ -31,6 +34,7 @@ from ..schemas.command import (
     CommandActivityOut,
 )
 from ..schemas.command_phase3 import TelemetryIngest, TelemetryOut
+from ..services.automation_engine import compute_site_staleness, evaluate_rules
 
 router = APIRouter()
 
@@ -206,8 +210,8 @@ def _serialize_incident(inc: Incident, site_name: str = None) -> dict:
 # Readiness scoring engine
 # ---------------------------------------------------------------------------
 
-def _compute_readiness(sites, devices, incidents):
-    """Compute readiness score with 5-factor weighted model."""
+def _compute_readiness(sites, devices, incidents, *, verification_tasks=None, stale_device_count=0):
+    """Compute readiness score with 7-factor weighted model (Phase 4)."""
     total_sites = len(sites)
     active_devices = [d for d in devices if d.status == "active"]
     active_incidents = [i for i in incidents if i.status in ("new", "open", "acknowledged", "in_progress")]
@@ -216,10 +220,10 @@ def _compute_readiness(sites, devices, incidents):
     score = 100.0
     factors = []
 
-    # Factor 1: Device health (30%)
+    # Factor 1: Device health (25%)
     device_pct = (len(active_devices) / len(devices) * 100) if devices else 100
     if device_pct < 100:
-        penalty = (100 - device_pct) * 0.30
+        penalty = (100 - device_pct) * 0.25
         score -= penalty
         factors.append({
             "label": "Device health",
@@ -227,9 +231,9 @@ def _compute_readiness(sites, devices, incidents):
             "detail": f"{len(active_devices)}/{len(devices)} devices active",
         })
 
-    # Factor 2: Open critical incidents (25%)
+    # Factor 2: Open critical incidents (20%)
     if critical_incidents:
-        penalty = min(len(critical_incidents) * 8, 25)
+        penalty = min(len(critical_incidents) * 8, 20)
         score -= penalty
         factors.append({
             "label": "Critical incidents",
@@ -237,11 +241,11 @@ def _compute_readiness(sites, devices, incidents):
             "detail": f"{len(critical_incidents)} critical incident(s) open",
         })
 
-    # Factor 3: Site connectivity (20%)
+    # Factor 3: Site connectivity (15%)
     connected = sum(1 for s in sites if s.status == "Connected")
     conn_pct = (connected / total_sites * 100) if total_sites else 100
     if conn_pct < 100:
-        penalty = (100 - conn_pct) * 0.20
+        penalty = (100 - conn_pct) * 0.15
         score -= penalty
         factors.append({
             "label": "Site connectivity",
@@ -249,10 +253,10 @@ def _compute_readiness(sites, devices, incidents):
             "detail": f"{connected}/{total_sites} sites connected",
         })
 
-    # Factor 4: Unacknowledged incidents (15%)
+    # Factor 4: Unacknowledged incidents (10%)
     unacked = [i for i in active_incidents if i.status in ("new", "open")]
     if unacked:
-        penalty = min(len(unacked) * 3, 15)
+        penalty = min(len(unacked) * 3, 10)
         score -= penalty
         factors.append({
             "label": "Unacknowledged incidents",
@@ -260,15 +264,50 @@ def _compute_readiness(sites, devices, incidents):
             "detail": f"{len(unacked)} incident(s) awaiting acknowledgment",
         })
 
-    # Factor 5: Warning-level incidents (10%)
+    # Factor 5: Warning-level incidents (5%)
     warn_incidents = [i for i in active_incidents if i.severity == "warning"]
     if warn_incidents:
-        penalty = min(len(warn_incidents) * 2, 10)
+        penalty = min(len(warn_incidents) * 2, 5)
         score -= penalty
         factors.append({
             "label": "Warning incidents",
             "impact": round(-penalty, 1),
             "detail": f"{len(warn_incidents)} warning-level issue(s)",
+        })
+
+    # Factor 6: Verification tasks (15%) — Phase 4
+    if verification_tasks is not None:
+        now = datetime.now(timezone.utc)
+        pending = [t for t in verification_tasks if t.status in ("pending", "in_progress")]
+        overdue = [t for t in pending if t.due_date and t.due_date < now]
+        total_tasks = len(verification_tasks)
+        if overdue:
+            penalty = min(len(overdue) * 3, 15)
+            score -= penalty
+            factors.append({
+                "label": "Overdue verifications",
+                "impact": round(-penalty, 1),
+                "detail": f"{len(overdue)} overdue verification task(s)",
+            })
+        elif pending and total_tasks > 0:
+            pct_incomplete = len(pending) / total_tasks
+            if pct_incomplete > 0.5:
+                penalty = round(pct_incomplete * 8, 1)
+                score -= penalty
+                factors.append({
+                    "label": "Incomplete verifications",
+                    "impact": round(-penalty, 1),
+                    "detail": f"{len(pending)}/{total_tasks} task(s) pending",
+                })
+
+    # Factor 7: Stale devices (10%) — Phase 4
+    if stale_device_count > 0:
+        penalty = min(stale_device_count * 3, 10)
+        score -= penalty
+        factors.append({
+            "label": "Stale devices",
+            "impact": round(-penalty, 1),
+            "detail": f"{stale_device_count} device(s) with overdue heartbeat",
         })
 
     readiness_score = max(0, round(score))
@@ -295,7 +334,7 @@ async def command_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Full Command dashboard payload — real data."""
+    """Full Command dashboard payload — site-centric (Phase 4)."""
     tenant = current_user.tenant_id
 
     sites_q = await db.execute(select(Site).where(Site.tenant_id == tenant))
@@ -320,6 +359,20 @@ async def command_summary(
     )
     activities = list(activities_q.scalars().all())
 
+    # Verification tasks
+    vtasks_q = await db.execute(
+        select(VerificationTask).where(VerificationTask.tenant_id == tenant)
+    )
+    vtasks = list(vtasks_q.scalars().all())
+
+    # Vendor assignment counts per site
+    vendor_counts_q = await db.execute(
+        select(SiteVendorAssignment.site_id, func.count())
+        .where(SiteVendorAssignment.tenant_id == tenant)
+        .group_by(SiteVendorAssignment.site_id)
+    )
+    vendor_counts = dict(vendor_counts_q.all())
+
     # Notification count
     notif_count_q = await db.execute(
         select(func.count())
@@ -337,11 +390,32 @@ async def command_summary(
     critical_incidents = [i for i in active_incidents if i.severity == "critical"]
     connected = sum(1 for s in sites if s.status == "Connected")
 
+    # Staleness computation
+    devs_by_site = {}
+    for d in devices:
+        devs_by_site.setdefault(d.site_id, []).append(d)
+    total_stale = 0
+    site_staleness = {}
+    for sid, site_devs in devs_by_site.items():
+        info = compute_site_staleness(site_devs)
+        site_staleness[sid] = info
+        total_stale += info["stale_count"]
+
     # Check escalation for unacked incidents
     for inc in active_incidents:
         if inc.status in ("new", "open"):
             await _check_escalation(db, inc)
+
+    # Run automation rules
+    await evaluate_rules(db, tenant)
     await db.commit()
+
+    # Verification summary
+    now = datetime.now(timezone.utc)
+    vtasks_by_site = {}
+    for t in vtasks:
+        vtasks_by_site.setdefault(t.site_id, []).append(t)
+    overdue_tasks = [t for t in vtasks if t.status in ("pending", "in_progress") and t.due_date and t.due_date < now]
 
     # System health matrix
     systems = {}
@@ -371,8 +445,8 @@ async def command_summary(
         st = "healthy" if pct >= 90 else ("warning" if pct >= 70 else "critical")
         system_health.append({**cat, "health_pct": pct, "status": st})
 
-    # Readiness
-    readiness = _compute_readiness(sites, devices, incidents)
+    # Readiness (now with verification + staleness)
+    readiness = _compute_readiness(sites, devices, incidents, verification_tasks=vtasks, stale_device_count=total_stale)
 
     # Incident feed
     site_map = {s.site_id: s for s in sites}
@@ -381,12 +455,49 @@ async def command_summary(
     # Escalated incident count
     escalated_count = sum(1 for i in active_incidents if (i.escalation_level or 0) > 0)
 
-    # Attention sites
-    attention_sites = [
-        {"site_id": s.site_id, "site_name": s.site_name, "status": s.status, "kit_type": s.kit_type,
-         "last_checkin": s.last_checkin.isoformat() if s.last_checkin else None}
-        for s in sites if s.status in ("Attention Needed", "Not Connected")
-    ]
+    # Incidents by site
+    incs_by_site = {}
+    for i in active_incidents:
+        incs_by_site.setdefault(i.site_id, []).append(i)
+
+    # Site command summaries — sites needing attention first
+    site_summaries = []
+    for s in sites:
+        s_incs = incs_by_site.get(s.site_id, [])
+        s_tasks = vtasks_by_site.get(s.site_id, [])
+        s_overdue = [t for t in s_tasks if t.status in ("pending", "in_progress") and t.due_date and t.due_date < now]
+        s_stale = site_staleness.get(s.site_id, {}).get("stale_count", 0)
+        s_critical = [i for i in s_incs if i.severity == "critical"]
+        s_escalated = [i for i in s_incs if (i.escalation_level or 0) > 0]
+
+        needs_attention = (
+            s.status in ("Attention Needed", "Not Connected")
+            or len(s_critical) > 0
+            or len(s_overdue) > 0
+            or s_stale > 0
+        )
+
+        site_summaries.append({
+            "site_id": s.site_id,
+            "site_name": s.site_name,
+            "customer_name": s.customer_name,
+            "status": s.status,
+            "kit_type": s.kit_type,
+            "needs_attention": needs_attention,
+            "active_incidents": len(s_incs),
+            "critical_incidents": len(s_critical),
+            "escalated_incidents": len(s_escalated),
+            "stale_devices": s_stale,
+            "total_devices": len(devs_by_site.get(s.site_id, [])),
+            "overdue_tasks": len(s_overdue),
+            "pending_tasks": len([t for t in s_tasks if t.status in ("pending", "in_progress")]),
+            "total_tasks": len(s_tasks),
+            "vendor_count": vendor_counts.get(s.site_id, 0),
+            "last_checkin": s.last_checkin.isoformat() if s.last_checkin else None,
+        })
+
+    # Sort: needs_attention first, then by critical count desc
+    site_summaries.sort(key=lambda x: (-x["needs_attention"], -x["critical_incidents"], -x["active_incidents"], x["site_name"]))
 
     # Activity timeline
     activity_timeline = [
@@ -402,6 +513,9 @@ async def command_summary(
             "connected_sites": connected,
             "attention_sites": len([s for s in sites if s.status == "Attention Needed"]),
             "disconnected_sites": len([s for s in sites if s.status == "Not Connected"]),
+            "stale_devices": total_stale,
+            "overdue_tasks": len(overdue_tasks),
+            "total_verification_tasks": len(vtasks),
         },
         "readiness": readiness,
         "system_health": system_health,
@@ -410,7 +524,7 @@ async def command_summary(
         "critical_incidents": len(critical_incidents),
         "escalated_incidents": escalated_count,
         "unread_notifications": unread_notifications,
-        "attention_sites_list": attention_sites[:10],
+        "site_summaries": site_summaries,
         "activity_timeline": activity_timeline,
     }
 
@@ -463,37 +577,47 @@ async def command_site_detail(
         )
         telemetry_data = [TelemetryOut.model_validate(t).model_dump(mode="json") for t in telem_q.scalars().all()]
 
+    # Verification tasks (Phase 4)
+    vtasks_q = await db.execute(
+        select(VerificationTask)
+        .where(VerificationTask.tenant_id == tenant, VerificationTask.site_id == site_id)
+        .order_by(VerificationTask.due_date.asc().nullslast(), VerificationTask.priority.desc())
+    )
+    vtasks = list(vtasks_q.scalars().all())
+
+    # Vendor assignments (Phase 4)
+    from ..models.vendor import Vendor
+    vassign_q = await db.execute(
+        select(SiteVendorAssignment)
+        .where(SiteVendorAssignment.tenant_id == tenant, SiteVendorAssignment.site_id == site_id)
+        .order_by(SiteVendorAssignment.system_category)
+    )
+    vassignments = list(vassign_q.scalars().all())
+    vendor_ids = list(set(a.vendor_id for a in vassignments))
+    vendors_map = {}
+    if vendor_ids:
+        vendors_q = await db.execute(select(Vendor).where(Vendor.id.in_(vendor_ids)))
+        for v in vendors_q.scalars().all():
+            vendors_map[v.id] = v
+
     active_incidents = [i for i in incidents if i.status in ("new", "open", "acknowledged", "in_progress")]
     active_devices = [d for d in devices if d.status == "active"]
 
-    # Site readiness (site-level weights)
-    score = 100.0
-    factors = []
+    # Staleness (Phase 4)
+    staleness = compute_site_staleness(devices)
 
-    device_health = (len(active_devices) / len(devices) * 100) if devices else 100
-    if device_health < 100:
-        penalty = (100 - device_health) * 0.4
-        score -= penalty
-        factors.append({"label": "Device health", "impact": round(-penalty, 1), "detail": f"{len(active_devices)}/{len(devices)} active"})
+    # Verification summary
+    now = datetime.now(timezone.utc)
+    pending_tasks = [t for t in vtasks if t.status in ("pending", "in_progress")]
+    overdue_tasks = [t for t in pending_tasks if t.due_date and t.due_date < now]
+    completed_tasks = [t for t in vtasks if t.status == "completed"]
 
-    critical = [i for i in active_incidents if i.severity == "critical"]
-    if critical:
-        penalty = min(len(critical) * 12, 35)
-        score -= penalty
-        factors.append({"label": "Critical incidents", "impact": round(-penalty, 1), "detail": f"{len(critical)} open"})
-
-    if site.status != "Connected":
-        score -= 20
-        factors.append({"label": "Site connectivity", "impact": -20, "detail": f"Status: {site.status}"})
-
-    unacked = [i for i in active_incidents if i.status in ("new", "open")]
-    if unacked:
-        penalty = min(len(unacked) * 3, 10)
-        score -= penalty
-        factors.append({"label": "Unacknowledged incidents", "impact": round(-penalty, 1), "detail": f"{len(unacked)} pending"})
-
-    readiness_score = max(0, round(score))
-    risk_label = "Operational" if readiness_score >= 85 else ("Attention Needed" if readiness_score >= 60 else "At Risk")
+    # Site readiness (site-level 7-factor model)
+    readiness = _compute_readiness(
+        [site], devices, incidents,
+        verification_tasks=vtasks,
+        stale_device_count=staleness["stale_count"],
+    )
 
     cat = _system_category(site.kit_type) if site.kit_type else "other"
     system_categories = [{
@@ -508,15 +632,22 @@ async def command_site_detail(
 
     # Recommended actions
     actions = []
+    critical = [i for i in active_incidents if i.severity == "critical"]
     if critical:
         actions.append({"priority": "high", "action": "Resolve critical incidents", "detail": f"{len(critical)} critical incident(s) require immediate attention"})
     if site.status == "Not Connected":
         actions.append({"priority": "high", "action": "Restore site connectivity", "detail": "Site disconnected from monitoring"})
+    if overdue_tasks:
+        actions.append({"priority": "high", "action": "Complete overdue verification tasks", "detail": f"{len(overdue_tasks)} task(s) past due date"})
+    if staleness["stale_count"] > 0:
+        actions.append({"priority": "high", "action": "Investigate stale devices", "detail": f"{staleness['stale_count']} device(s) with overdue heartbeat"})
     if site.status == "Attention Needed":
         actions.append({"priority": "medium", "action": "Investigate site warnings", "detail": "Site has reported intermittent issues"})
     inactive_devs = [d for d in devices if d.status != "active"]
     if inactive_devs:
         actions.append({"priority": "medium", "action": "Activate idle devices", "detail": f"{len(inactive_devs)} device(s) not active"})
+    if pending_tasks and not overdue_tasks:
+        actions.append({"priority": "medium", "action": "Complete pending verification tasks", "detail": f"{len(pending_tasks)} task(s) remaining"})
     if not actions:
         actions.append({"priority": "low", "action": "No action required", "detail": "All systems operational"})
 
@@ -524,6 +655,34 @@ async def command_site_detail(
         CommandActivityOut.model_validate(a).model_dump(mode="json")
         for a in activities
     ]
+
+    # Serialize verification tasks
+    vtasks_out = []
+    for t in vtasks:
+        is_overdue = t.status in ("pending", "in_progress") and t.due_date is not None and t.due_date < now
+        vtasks_out.append({
+            "id": t.id, "task_type": t.task_type, "title": t.title,
+            "description": t.description, "system_category": t.system_category,
+            "status": t.status, "priority": t.priority,
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+            "completed_by": t.completed_by, "assigned_to": t.assigned_to,
+            "result": t.result, "evidence_notes": t.evidence_notes,
+            "is_overdue": is_overdue,
+        })
+
+    # Serialize vendor assignments
+    vassign_out = []
+    for a in vassignments:
+        v = vendors_map.get(a.vendor_id)
+        vassign_out.append({
+            "id": a.id, "vendor_id": a.vendor_id, "system_category": a.system_category,
+            "is_primary": a.is_primary, "notes": a.notes,
+            "vendor_name": v.name if v else None,
+            "vendor_contact_name": v.contact_name if v else None,
+            "vendor_contact_phone": v.contact_phone if v else None,
+            "vendor_contact_email": v.contact_email if v else None,
+        })
 
     return {
         "site": {
@@ -537,11 +696,26 @@ async def command_site_detail(
             "e911_state": site.e911_state,
             "e911_zip": site.e911_zip,
             "last_checkin": site.last_checkin.isoformat() if site.last_checkin else None,
+            "poc_name": getattr(site, "poc_name", None),
+            "poc_phone": getattr(site, "poc_phone", None),
+            "poc_email": getattr(site, "poc_email", None),
         },
-        "readiness": {"score": readiness_score, "risk_label": risk_label, "factors": sorted(factors, key=lambda f: f["impact"])},
+        "readiness": readiness,
         "system_categories": system_categories,
         "incidents": incident_list,
         "devices": {"total": len(devices), "active": len(active_devices)},
+        "staleness": staleness,
+        "verification_tasks": vtasks_out,
+        "verification_summary": {
+            "total": len(vtasks),
+            "pending": len(pending_tasks),
+            "completed": len(completed_tasks),
+            "overdue": len(overdue_tasks),
+            "passed": len([t for t in completed_tasks if t.result == "pass"]),
+            "failed": len([t for t in completed_tasks if t.result == "fail"]),
+            "completion_pct": round(len(completed_tasks) / len(vtasks) * 100) if vtasks else 0,
+        },
+        "vendor_assignments": vassign_out,
         "recommended_actions": actions,
         "activity_timeline": activity_timeline,
         "telemetry": telemetry_data,
@@ -854,3 +1028,206 @@ async def list_activities(
         q = q.where(CommandActivity.activity_type == activity_type)
     result = await db.execute(q)
     return [CommandActivityOut.model_validate(a) for a in result.scalars().all()]
+
+
+# ---------------------------------------------------------------------------
+# Incident detail (Phase 4)
+# ---------------------------------------------------------------------------
+
+@router.get("/incidents/{incident_pk}")
+async def command_incident_detail(
+    incident_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Full incident detail with timeline, related data."""
+    result = await db.execute(
+        select(Incident).where(
+            Incident.id == incident_pk,
+            Incident.tenant_id == current_user.tenant_id,
+        )
+    )
+    inc = result.scalar_one_or_none()
+    if not inc:
+        raise HTTPException(404, "Incident not found")
+
+    # Site name
+    site_q = await db.execute(
+        select(Site).where(Site.tenant_id == current_user.tenant_id, Site.site_id == inc.site_id)
+    )
+    site = site_q.scalar_one_or_none()
+
+    # Incident activity timeline
+    acts_q = await db.execute(
+        select(CommandActivity)
+        .where(
+            CommandActivity.tenant_id == current_user.tenant_id,
+            CommandActivity.incident_id == inc.incident_id,
+        )
+        .order_by(CommandActivity.created_at.desc())
+        .limit(20)
+    )
+    timeline = [CommandActivityOut.model_validate(a).model_dump(mode="json") for a in acts_q.scalars().all()]
+
+    data = _serialize_incident(inc, site.site_name if site else None)
+    data["timeline"] = timeline
+    data["site_status"] = site.status if site else None
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Digest / report payload (Phase 4)
+# ---------------------------------------------------------------------------
+
+@router.get("/digest")
+async def command_digest(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("COMMAND_EXPORT_REPORTS")),
+):
+    """Digest payload for scheduled reporting — summary of portfolio state."""
+    tenant = current_user.tenant_id
+    now = datetime.now(timezone.utc)
+
+    sites_q = await db.execute(select(Site).where(Site.tenant_id == tenant))
+    sites = list(sites_q.scalars().all())
+
+    devices_q = await db.execute(select(Device).where(Device.tenant_id == tenant))
+    devices = list(devices_q.scalars().all())
+
+    incidents_q = await db.execute(
+        select(Incident)
+        .where(Incident.tenant_id == tenant, Incident.status.in_(["new", "open", "acknowledged", "in_progress"]))
+    )
+    active_incidents = list(incidents_q.scalars().all())
+
+    vtasks_q = await db.execute(
+        select(VerificationTask).where(VerificationTask.tenant_id == tenant)
+    )
+    vtasks = list(vtasks_q.scalars().all())
+
+    devs_by_site = {}
+    for d in devices:
+        devs_by_site.setdefault(d.site_id, []).append(d)
+
+    total_stale = 0
+    for site_devs in devs_by_site.values():
+        info = compute_site_staleness(site_devs)
+        total_stale += info["stale_count"]
+
+    overdue = [t for t in vtasks if t.status in ("pending", "in_progress") and t.due_date and t.due_date < now]
+    critical = [i for i in active_incidents if i.severity == "critical"]
+
+    readiness = _compute_readiness(sites, devices, active_incidents, verification_tasks=vtasks, stale_device_count=total_stale)
+
+    # Sites needing attention
+    incs_by_site = {}
+    for i in active_incidents:
+        incs_by_site.setdefault(i.site_id, []).append(i)
+
+    attention_sites = []
+    for s in sites:
+        s_incs = incs_by_site.get(s.site_id, [])
+        s_critical = [i for i in s_incs if i.severity == "critical"]
+        if s.status in ("Attention Needed", "Not Connected") or s_critical:
+            attention_sites.append({
+                "site_id": s.site_id, "site_name": s.site_name,
+                "status": s.status, "critical_incidents": len(s_critical),
+                "active_incidents": len(s_incs),
+            })
+
+    return {
+        "generated_at": now.isoformat(),
+        "readiness": readiness,
+        "portfolio": {
+            "total_sites": len(sites),
+            "connected": sum(1 for s in sites if s.status == "Connected"),
+            "attention": sum(1 for s in sites if s.status == "Attention Needed"),
+            "disconnected": sum(1 for s in sites if s.status == "Not Connected"),
+            "total_devices": len(devices),
+            "stale_devices": total_stale,
+        },
+        "incidents": {
+            "active": len(active_incidents),
+            "critical": len(critical),
+            "escalated": sum(1 for i in active_incidents if (i.escalation_level or 0) > 0),
+        },
+        "verification": {
+            "total": len(vtasks),
+            "overdue": len(overdue),
+            "completed": len([t for t in vtasks if t.status == "completed"]),
+        },
+        "attention_sites": attention_sites,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Operator view (Phase 4 — simplified role-aware view)
+# ---------------------------------------------------------------------------
+
+@router.get("/operator")
+async def operator_view(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Simplified operator view — site list with status, active issues, tasks."""
+    tenant = current_user.tenant_id
+    now = datetime.now(timezone.utc)
+
+    sites_q = await db.execute(select(Site).where(Site.tenant_id == tenant).order_by(Site.site_name))
+    sites = list(sites_q.scalars().all())
+
+    incidents_q = await db.execute(
+        select(Incident)
+        .where(Incident.tenant_id == tenant, Incident.status.in_(["new", "open", "acknowledged", "in_progress"]))
+    )
+    active_incidents = list(incidents_q.scalars().all())
+    incs_by_site = {}
+    for i in active_incidents:
+        incs_by_site.setdefault(i.site_id, []).append(i)
+
+    vtasks_q = await db.execute(
+        select(VerificationTask).where(
+            VerificationTask.tenant_id == tenant,
+            VerificationTask.status.in_(["pending", "in_progress"]),
+        )
+    )
+    vtasks = list(vtasks_q.scalars().all())
+    tasks_by_site = {}
+    for t in vtasks:
+        tasks_by_site.setdefault(t.site_id, []).append(t)
+
+    site_list = []
+    for s in sites:
+        s_incs = incs_by_site.get(s.site_id, [])
+        s_tasks = tasks_by_site.get(s.site_id, [])
+        s_overdue = [t for t in s_tasks if t.due_date and t.due_date < now]
+        s_critical = [i for i in s_incs if i.severity == "critical"]
+
+        needs_attention = (
+            s.status in ("Attention Needed", "Not Connected")
+            or len(s_critical) > 0
+            or len(s_overdue) > 0
+        )
+
+        site_list.append({
+            "site_id": s.site_id,
+            "site_name": s.site_name,
+            "customer_name": s.customer_name,
+            "status": s.status,
+            "kit_type": s.kit_type,
+            "needs_attention": needs_attention,
+            "active_incidents": len(s_incs),
+            "critical_incidents": len(s_critical),
+            "pending_tasks": len(s_tasks),
+            "overdue_tasks": len(s_overdue),
+            "last_checkin": s.last_checkin.isoformat() if s.last_checkin else None,
+        })
+
+    site_list.sort(key=lambda x: (-x["needs_attention"], -x["critical_incidents"], x["site_name"]))
+
+    return {
+        "total_sites": len(sites),
+        "sites_needing_attention": sum(1 for s in site_list if s["needs_attention"]),
+        "active_incidents": len(active_incidents),
+        "sites": site_list,
+    }

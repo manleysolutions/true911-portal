@@ -8,6 +8,7 @@ import { config } from "@/config";
 
 const NAV_ITEMS = [
   { name: "Command", page: "Command", icon: ShieldCheck },
+  { name: "Operator View", page: "OperatorView", icon: Building2 },
   { name: "Overview", page: "Overview", icon: LayoutDashboard },
   { name: "Sites", page: "Sites", icon: Building2 },
   { name: "Devices", page: "Devices", icon: Cpu },

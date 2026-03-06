@@ -33,6 +33,14 @@ PERMISSIONS: dict[str, list[str]] = {
     "COMMAND_MANAGE_ESCALATION": ["Admin"],
     "COMMAND_INGEST_TELEMETRY": ["Admin", "Manager"],
     "COMMAND_EXPORT_REPORTS": ["Admin", "Manager"],
+    # Command Phase 4
+    "COMMAND_MANAGE_VENDORS": ["Admin"],
+    "COMMAND_VIEW_VENDORS": ["Admin", "Manager", "User"],
+    "COMMAND_MANAGE_VERIFICATION": ["Admin", "Manager"],
+    "COMMAND_COMPLETE_VERIFICATION": ["Admin", "Manager"],
+    "COMMAND_VIEW_VERIFICATION": ["Admin", "Manager", "User"],
+    "COMMAND_MANAGE_AUTOMATION": ["Admin"],
+    "COMMAND_VIEW_OPERATOR": ["Admin", "Manager", "User"],
 }
 
 

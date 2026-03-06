@@ -4,6 +4,7 @@ import { createPageUrl } from "@/utils";
 import {
   Shield, Building2, AlertOctagon, Cpu, RefreshCw,
   ChevronRight, Zap, Eye, Activity, Radio, ArrowUpCircle,
+  ClipboardCheck, WifiOff,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +16,7 @@ import ScenarioRunner from "@/components/command/ScenarioRunner";
 import ActivityTimeline from "@/components/command/ActivityTimeline";
 import NotificationCenter from "@/components/command/NotificationCenter";
 import ReportExport from "@/components/command/ReportExport";
+import SiteCommandCard from "@/components/command/SiteCommandCard";
 
 function timeSince(iso) {
   if (!iso) return "--";
@@ -81,7 +83,8 @@ export default function Command() {
   const readiness = data?.readiness || {};
   const systemHealth = data?.system_health || [];
   const incidents = data?.incident_feed || [];
-  const attentionSites = data?.attention_sites_list || [];
+  const siteSummaries = data?.site_summaries || [];
+  const attentionSites = siteSummaries.filter(s => s.needs_attention);
   const activities = data?.activity_timeline || [];
   const escalatedCount = data?.escalated_incidents || 0;
 
@@ -148,10 +151,14 @@ export default function Command() {
             />
             <KPICard
               label="Needs Attention"
-              value={p.attention_sites}
+              value={attentionSites.length}
               icon={Eye}
               color="bg-amber-900/30 text-amber-400"
-              sub="Sites with warnings"
+              sub={
+                (p.stale_devices > 0 || p.overdue_tasks > 0)
+                  ? `${p.stale_devices || 0} stale, ${p.overdue_tasks || 0} overdue`
+                  : "Sites with warnings"
+              }
             />
             <KPICard
               label="Active Devices"
@@ -200,37 +207,27 @@ export default function Command() {
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
                   <h3 className="text-sm font-semibold text-white">Sites Needing Attention</h3>
                   <Link
-                    to={createPageUrl("Sites")}
+                    to={createPageUrl("OperatorView")}
                     className="text-xs text-red-500 hover:text-red-400 font-medium flex items-center gap-0.5"
                   >
                     All Sites <ChevronRight className="w-3 h-3" />
                   </Link>
                 </div>
-                <div className="divide-y divide-slate-800/50 max-h-[300px] overflow-y-auto">
+                <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
                   {attentionSites.length === 0 && (
-                    <div className="px-5 py-8 text-center text-sm text-slate-600">All sites operational</div>
+                    <div className="px-2 py-6 text-center text-sm text-slate-600">All sites operational</div>
                   )}
-                  {attentionSites.map((site) => (
-                    <Link
-                      key={site.site_id}
-                      to={createPageUrl("CommandSite") + `?site=${site.site_id}`}
-                      className="flex items-center justify-between px-5 py-3 hover:bg-slate-800/50 transition-colors"
-                    >
-                      <div>
-                        <p className="text-sm text-slate-200">{site.site_name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            site.status === "Not Connected" ? "bg-red-500" : "bg-amber-500"
-                          }`} />
-                          <span className="text-xs text-slate-500">{site.status}</span>
-                          {site.kit_type && (
-                            <span className="text-xs text-slate-600">{site.kit_type}</span>
-                          )}
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-600" />
-                    </Link>
+                  {attentionSites.slice(0, 8).map((site) => (
+                    <SiteCommandCard key={site.site_id} site={site} />
                   ))}
+                  {attentionSites.length > 8 && (
+                    <Link
+                      to={createPageUrl("OperatorView")}
+                      className="block text-center text-xs text-slate-500 hover:text-slate-300 py-2"
+                    >
+                      +{attentionSites.length - 8} more sites
+                    </Link>
+                  )}
                 </div>
               </div>
 

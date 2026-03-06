@@ -29,6 +29,10 @@ from app.models.reconciliation_snapshot import ReconciliationSnapshot
 from app.models.notification import CommandNotification
 from app.models.escalation_rule import EscalationRule
 from app.models.command_telemetry import CommandTelemetry
+from app.models.vendor import Vendor
+from app.models.site_vendor import SiteVendorAssignment
+from app.models.verification_task import VerificationTask
+from app.models.automation_rule import AutomationRule
 
 __all__ = [
     "Tenant",
@@ -63,4 +67,8 @@ __all__ = [
     "CommandNotification",
     "EscalationRule",
     "CommandTelemetry",
+    "Vendor",
+    "SiteVendorAssignment",
+    "VerificationTask",
+    "AutomationRule",
 ]

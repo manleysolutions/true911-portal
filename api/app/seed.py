@@ -30,6 +30,10 @@ from .models.hardware_model import HardwareModel
 from .models.integration import Integration, IntegrationAccount
 from .models.sim import Sim
 from .models.device_sim import DeviceSim
+from .models.vendor import Vendor
+from .models.site_vendor import SiteVendorAssignment
+from .models.verification_task import VerificationTask
+from .models.automation_rule import AutomationRule
 from .services.auth import hash_password
 
 
@@ -363,6 +367,47 @@ EVENTS = [
 ]
 
 
+# -- Phase 4 seed data --
+
+VENDORS = [
+    {"name": "FireGuard Systems", "vendor_type": "fire_alarm", "contact_name": "James Walker", "contact_email": "jwalker@fireguard.com", "contact_phone": "+1-214-555-0101", "specialties_json": '["fire_alarm", "monitoring"]'},
+    {"name": "Kone Elevator Services", "vendor_type": "elevator", "contact_name": "Lisa Chen", "contact_email": "lchen@kone.com", "contact_phone": "+1-972-555-0202", "specialties_json": '["elevator_phone", "elevator_monitoring"]'},
+    {"name": "DAS Solutions Inc", "vendor_type": "radio", "contact_name": "Robert Martinez", "contact_email": "rmartinez@dassolutions.com", "contact_phone": "+1-817-555-0303", "specialties_json": '["das_radio", "signal_boosting"]'},
+    {"name": "SecureComm Electric", "vendor_type": "electrical", "contact_name": "Amanda Hayes", "contact_email": "ahayes@securecomm.com", "contact_phone": "+1-469-555-0404", "specialties_json": '["backup_power", "electrical"]'},
+]
+
+SITE_VENDOR_ASSIGNMENTS = [
+    {"site_id": "SITE-001", "vendor_idx": 0, "system_category": "fire_alarm", "is_primary": True},
+    {"site_id": "SITE-001", "vendor_idx": 1, "system_category": "elevator_phone", "is_primary": True},
+    {"site_id": "SITE-002", "vendor_idx": 0, "system_category": "fire_alarm", "is_primary": True},
+    {"site_id": "SITE-003", "vendor_idx": 0, "system_category": "fire_alarm", "is_primary": True},
+    {"site_id": "SITE-003", "vendor_idx": 2, "system_category": "das_radio", "is_primary": True},
+    {"site_id": "SITE-004", "vendor_idx": 0, "system_category": "fire_alarm", "is_primary": True},
+    {"site_id": "SITE-005", "vendor_idx": 3, "system_category": "backup_power", "is_primary": True},
+    {"site_id": "SITE-008", "vendor_idx": 0, "system_category": "fire_alarm", "is_primary": True},
+]
+
+VERIFICATION_TASKS = [
+    {"site_id": "SITE-001", "task_type": "annual_inspection", "title": "Annual FACP Inspection", "description": "Fire alarm control panel annual test per NFPA 72", "system_category": "fire_alarm", "priority": "high", "status": "completed", "result": "pass", "due_days_ago": 10, "completed_days_ago": 12},
+    {"site_id": "SITE-001", "task_type": "line_test", "title": "E911 Line Test", "description": "Verify E911 line connectivity and PSAP routing", "system_category": "call_station", "priority": "medium", "status": "completed", "result": "pass", "due_days_ago": 5, "completed_days_ago": 6},
+    {"site_id": "SITE-002", "task_type": "annual_inspection", "title": "Annual FACP Inspection", "system_category": "fire_alarm", "priority": "high", "status": "pending", "due_days_ago": -15},
+    {"site_id": "SITE-003", "task_type": "signal_test", "title": "DAS Signal Coverage Test", "description": "Verify responder radio coverage meets AHJ requirements", "system_category": "das_radio", "priority": "high", "status": "pending", "due_days_ago": 3},
+    {"site_id": "SITE-003", "task_type": "battery_test", "title": "UPS Battery Load Test", "system_category": "backup_power", "priority": "medium", "status": "in_progress", "due_days_ago": -5},
+    {"site_id": "SITE-005", "task_type": "annual_inspection", "title": "Annual System Inspection", "system_category": "fire_alarm", "priority": "high", "status": "pending", "due_days_ago": 20},
+    {"site_id": "SITE-005", "task_type": "line_test", "title": "E911 Line Verification", "system_category": "call_station", "priority": "high", "status": "pending", "due_days_ago": 15},
+    {"site_id": "SITE-008", "task_type": "firmware_update", "title": "Firmware Update Verification", "description": "Verify firmware update to v3.2.1 completed successfully", "system_category": "other", "priority": "medium", "status": "pending", "due_days_ago": 1},
+    {"site_id": "SITE-012", "task_type": "connectivity_check", "title": "Connectivity Restoration Check", "description": "Verify site connectivity after outage", "system_category": "other", "priority": "high", "status": "pending", "due_days_ago": 5},
+    {"site_id": "SITE-004", "task_type": "annual_inspection", "title": "Annual FACP Inspection", "system_category": "fire_alarm", "priority": "high", "status": "completed", "result": "pass", "due_days_ago": 30, "completed_days_ago": 32},
+    {"site_id": "SITE-007", "task_type": "line_test", "title": "Quarterly Line Test", "system_category": "call_station", "priority": "medium", "status": "completed", "result": "pass", "due_days_ago": 7, "completed_days_ago": 8},
+]
+
+AUTOMATION_RULES = [
+    {"name": "Heartbeat Missing > 30min", "description": "Create incident when device heartbeat exceeds 30 minutes", "trigger_type": "heartbeat_missing", "condition_json": '{"threshold_minutes": 30}', "action_type": "create_incident", "action_config_json": '{"severity": "warning"}', "enabled": True},
+    {"name": "Critical Incident Unresolved > 2h", "description": "Notify admin when critical incidents remain unresolved for 2+ hours", "trigger_type": "incident_unresolved", "condition_json": '{"threshold_minutes": 120, "severity": "critical"}', "action_type": "notify", "action_config_json": '{"notify_role": "Admin", "notify_target": "admin@true911.com"}', "enabled": True},
+    {"name": "Verification Overdue Alert", "description": "Daily alert when verification tasks are past due", "trigger_type": "verification_overdue", "condition_json": '{}', "action_type": "notify", "action_config_json": '{"notify_role": "Admin"}', "enabled": True},
+]
+
+
 async def seed():
     from .config import settings
     if settings.SEED_DEMO.lower() != "true":
@@ -609,6 +654,49 @@ async def seed():
                     assigned_by="seed",
                 ))
 
+        # Vendors (Phase 4)
+        vendor_objects = []
+        for v in VENDORS:
+            obj = Vendor(tenant_id=TENANT_ID, **v)
+            db.add(obj)
+            vendor_objects.append(obj)
+        await db.flush()
+
+        # Site Vendor Assignments (Phase 4)
+        for sva in SITE_VENDOR_ASSIGNMENTS:
+            db.add(SiteVendorAssignment(
+                tenant_id=TENANT_ID,
+                site_id=sva["site_id"],
+                vendor_id=vendor_objects[sva["vendor_idx"]].id,
+                system_category=sva["system_category"],
+                is_primary=sva["is_primary"],
+            ))
+
+        # Verification Tasks (Phase 4)
+        now = datetime.now(timezone.utc)
+        for vt in VERIFICATION_TASKS:
+            due_date = now - timedelta(days=vt["due_days_ago"]) if "due_days_ago" in vt else None
+            completed_at = now - timedelta(days=vt["completed_days_ago"]) if vt.get("completed_days_ago") else None
+            db.add(VerificationTask(
+                tenant_id=TENANT_ID,
+                site_id=vt["site_id"],
+                task_type=vt["task_type"],
+                title=vt["title"],
+                description=vt.get("description"),
+                system_category=vt.get("system_category"),
+                priority=vt["priority"],
+                status=vt["status"],
+                due_date=due_date,
+                result=vt.get("result"),
+                completed_at=completed_at,
+                completed_by="admin@true911.com" if completed_at else None,
+                created_by="admin@true911.com",
+            ))
+
+        # Automation Rules (Phase 4)
+        for ar in AUTOMATION_RULES:
+            db.add(AutomationRule(tenant_id=TENANT_ID, **ar))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
@@ -621,7 +709,9 @@ async def seed():
               f"{len(HARDWARE_MODELS)} hardware models, {len(DEVICES)} devices, "
               f"{len(PROVIDERS)} providers, {len(LINES)} lines, "
               f"{len(RECORDINGS)} recordings, {len(EVENTS)} events, "
-              f"{len(INTEGRATIONS)} integrations, {len(SIMS)} SIMs.")
+              f"{len(INTEGRATIONS)} integrations, {len(SIMS)} SIMs, "
+              f"{len(VENDORS)} vendors, {len(SITE_VENDOR_ASSIGNMENTS)} vendor assignments, "
+              f"{len(VERIFICATION_TASKS)} verification tasks, {len(AUTOMATION_RULES)} automation rules.")
 
 
 if __name__ == "__main__":

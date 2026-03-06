@@ -61,6 +61,7 @@ import IntegrationSync from './pages/IntegrationSync';
 import Lines from './pages/Lines';
 import Notifications from './pages/Notifications';
 import OnboardingWizard from './pages/OnboardingWizard';
+import OperatorView from './pages/OperatorView';
 import Overview from './pages/Overview';
 import Providers from './pages/Providers';
 import Recordings from './pages/Recordings';
@@ -86,6 +87,7 @@ export const PAGES = {
     "Lines": Lines,
     "Notifications": Notifications,
     "OnboardingWizard": OnboardingWizard,
+    "OperatorView": OperatorView,
     "Overview": Overview,
     "Providers": Providers,
     "Recordings": Recordings,

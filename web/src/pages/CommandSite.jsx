@@ -15,6 +15,9 @@ import ActivityTimeline from "@/components/command/ActivityTimeline";
 import EscalationBadge from "@/components/command/EscalationBadge";
 import DeviceHealthPanel from "@/components/command/DeviceHealthPanel";
 import ReportExport from "@/components/command/ReportExport";
+import VerificationTasks from "@/components/command/VerificationTasks";
+import VendorAssignments from "@/components/command/VendorAssignments";
+import StalenessIndicator from "@/components/command/StalenessIndicator";
 
 const SEV_STYLE = {
   critical: { bg: "bg-red-900/30", border: "border-red-700/40", text: "text-red-400", dot: "bg-red-500" },
@@ -156,6 +159,10 @@ export default function CommandSite() {
   const actions = data?.recommended_actions || [];
   const activities = data?.activity_timeline || [];
   const telemetry = data?.telemetry || [];
+  const vtasks = data?.verification_tasks || [];
+  const vsummary = data?.verification_summary || {};
+  const vendors = data?.vendor_assignments || [];
+  const staleness = data?.staleness || {};
   const sts = SITE_STATUS[site.status] || SITE_STATUS.Unknown;
 
   const activeIncidents = incidents.filter(i => !["resolved", "dismissed", "closed"].includes(i.status));
@@ -314,6 +321,9 @@ export default function CommandSite() {
                 </div>
               </div>
 
+              {/* Verification Tasks (Phase 4) */}
+              <VerificationTasks tasks={vtasks} summary={vsummary} />
+
               {/* System Categories */}
               <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">
                 <div className="px-5 py-4 border-b border-slate-700/50">
@@ -352,8 +362,14 @@ export default function CommandSite() {
             <div className="space-y-5">
               <ReadinessScore readiness={readiness} />
 
+              {/* Staleness (Phase 4) */}
+              <StalenessIndicator staleness={staleness} />
+
               {/* Device Health Panel */}
               <DeviceHealthPanel telemetry={telemetry} />
+
+              {/* Vendor Assignments (Phase 4) */}
+              <VendorAssignments assignments={vendors} />
 
               {/* Recommended Actions */}
               <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">
