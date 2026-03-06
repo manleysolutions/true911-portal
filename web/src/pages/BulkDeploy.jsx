@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
-import { apiFetch } from "@/api/client";
+import { apiFetch, getAccessToken } from "@/api/client";
 import { toast } from "sonner";
 
 export default function BulkDeploy() {
@@ -37,19 +37,10 @@ export default function BulkDeploy() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL}/command/bulk-import`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
-          body: formData,
-        }
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `Upload failed (${res.status})`);
-      }
-      const data = await res.json();
+      const data = await apiFetch("/command/bulk-import", {
+        method: "POST",
+        body: formData,
+      });
       setResult(data);
       if (data.created > 0) toast.success(`${data.created} sites imported`);
     } catch (err) {
@@ -61,10 +52,12 @@ export default function BulkDeploy() {
 
   const downloadTemplate = async () => {
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL}/command/bulk-import/template-csv`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } }
-      );
+      const token = getAccessToken();
+      const base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+      const res = await fetch(`${base}/command/bulk-import/template-csv`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
