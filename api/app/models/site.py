@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Float, Integer, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Float, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -52,6 +52,11 @@ class Site(Base):
     template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     building_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     onboarding_status: Mapped[str] = mapped_column(String(50), server_default="active")
+    # Address enrichment columns
+    address_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    e911_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    e911_confirmation_required: Mapped[bool] = mapped_column(Boolean, server_default="false", default=False)
+    address_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Phase 7 NG911 columns
     psap_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     emergency_class: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

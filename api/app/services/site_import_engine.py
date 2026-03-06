@@ -26,6 +26,8 @@ from ..models.command_activity import CommandActivity
 
 # ── Constants ──────────────────────────────────────────────────────────
 
+from .address_enrichment import enrich_row
+
 REQUIRED_COLUMNS = {"site_name", "system_type"}
 ALL_COLUMNS = {
     "site_name", "site_code", "address", "city", "state", "zip", "country",
@@ -34,6 +36,12 @@ ALL_COLUMNS = {
     "sim_iccid", "phone_number", "device_serial", "firmware_version",
     "vendor_name", "vendor_contact", "vendor_email",
     "verification_frequency", "install_date", "system_priority", "notes",
+    # Address enrichment columns
+    "service_address", "service_city", "service_state", "service_zip",
+    "billing_address", "billing_city", "billing_state", "billing_zip",
+    "shipping_address", "shipping_city", "shipping_state", "shipping_zip",
+    "suggested_address", "suggested_city", "suggested_state", "suggested_zip",
+    "e911_confirmed",
 }
 
 VALID_SYSTEM_TYPES = {
@@ -380,8 +388,14 @@ async def commit_import(
                 stats["sites_attached"] += 1
 
         if site_id is None:
-            # Create new site
+            # Create new site — run address enrichment
+            enriched = enrich_row(row, i)
             site_id = site_code or f"SITE-{uuid.uuid4().hex[:8].upper()}"
+            # Use enriched final address if available, fall back to raw columns
+            e_street = enriched.final_address_street or address or None
+            e_city = enriched.final_address_city or row.get("city") or None
+            e_state = enriched.final_address_state or row.get("state") or None
+            e_zip = enriched.final_address_zip or row.get("zip") or None
             site = Site(
                 site_id=site_id,
                 tenant_id=tenant_id,
@@ -389,12 +403,16 @@ async def commit_import(
                 customer_name=site_name,
                 status="Not Connected",
                 onboarding_status="onboarding",
-                e911_street=address or None,
-                e911_city=row.get("city") or None,
-                e911_state=row.get("state") or None,
-                e911_zip=row.get("zip") or None,
+                e911_street=e_street,
+                e911_city=e_city,
+                e911_state=e_state,
+                e911_zip=e_zip,
                 building_type=row.get("building_type") or None,
                 notes=row.get("notes") or None,
+                address_source=enriched.address_source or None,
+                e911_status=enriched.e911_status,
+                e911_confirmation_required=enriched.e911_confirmation_required,
+                address_notes=enriched.address_notes or None,
             )
             db.add(site)
             existing_sites_by_id[site_id] = site
@@ -514,6 +532,11 @@ def generate_template_csv() -> str:
         "sim_iccid", "phone_number", "device_serial", "firmware_version",
         "vendor_name", "vendor_contact", "vendor_email",
         "verification_frequency", "install_date", "system_priority", "notes",
+        "service_address", "service_city", "service_state", "service_zip",
+        "billing_address", "billing_city", "billing_state", "billing_zip",
+        "shipping_address", "shipping_city", "shipping_state", "shipping_zip",
+        "suggested_address", "suggested_city", "suggested_state", "suggested_zip",
+        "e911_confirmed",
     ]
     example_1 = [
         "RH Gallery Dallas", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
@@ -522,6 +545,11 @@ def generate_template_csv() -> str:
         "8901260882280000001", "+12145559001", "MS130-SN-00001", "4.2.1",
         "Lone Star Elevator", "Mike Torres", "mike@lonestarelev.com",
         "quarterly", "2025-06-15", "high", "Main gallery elevator bank",
+        "8300 NorthPark Center", "Dallas", "TX", "75225",
+        "", "", "", "",
+        "", "", "", "",
+        "", "", "", "",
+        "yes",
     ]
     example_2 = [
         "RH Gallery Dallas", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
@@ -530,6 +558,11 @@ def generate_template_csv() -> str:
         "8901260882280000002", "+12145559002", "SL-SN-00001", "3.8.0",
         "Metro Fire Systems", "Sarah Chen", "sarah@metrofire.com",
         "annual", "2025-06-15", "high", "FACP communicator",
+        "", "", "", "",
+        "100 Commerce Blvd", "Dallas", "TX", "75201",
+        "8300 NorthPark Center", "Dallas", "TX", "75225",
+        "", "", "", "",
+        "",
     ]
     return (
         ",".join(headers) + "\n"
