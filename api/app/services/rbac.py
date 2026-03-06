@@ -70,7 +70,23 @@ PERMISSIONS: dict[str, list[str]] = {
 }
 
 
+ROLE_NORMALIZE = {
+    "superadmin": "SuperAdmin",
+    "admin": "Admin",
+    "manager": "Manager",
+    "user": "User",
+}
+
+
+def normalize_role(role: str) -> str:
+    """Normalize role string to canonical PascalCase."""
+    if not role:
+        return "User"
+    return ROLE_NORMALIZE.get(role.lower(), role)
+
+
 def can(role: str, action: str) -> bool:
+    role = normalize_role(role)
     if role == "SuperAdmin":
         return True
     return role in PERMISSIONS.get(action, [])

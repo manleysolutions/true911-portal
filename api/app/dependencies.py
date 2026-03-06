@@ -11,7 +11,7 @@ from app.database import AsyncSessionLocal
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.auth import decode_token
-from app.services.rbac import can as rbac_can
+from app.services.rbac import can as rbac_can, normalize_role
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -40,6 +40,9 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
+
+    # Normalize role to canonical PascalCase (handles "superadmin" -> "SuperAdmin" etc.)
+    user.role = normalize_role(user.role)
 
     # Always store the original tenant_id for audit purposes
     user._original_tenant_id = user.tenant_id
