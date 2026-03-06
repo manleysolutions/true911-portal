@@ -15,12 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, case, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from ..dependencies import get_db, get_current_user
 from app.models.device import Device
 from app.models.site import Site
 from app.models.network_event import NetworkEvent
 from app.models.incident import Incident
-from app.routers.auth import get_current_user
 from app.services.rbac import can
 from app.services.carrier_adapter import (
     get_adapter, ingest_carrier_telemetry, CarrierTelemetry,

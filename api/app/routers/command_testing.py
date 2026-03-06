@@ -19,11 +19,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from ..dependencies import get_db, get_current_user
 from app.models.infra_test import InfraTest
 from app.models.infra_test_result import InfraTestResult
 from app.models.audit_log_entry import AuditLogEntry
-from app.routers.auth import get_current_user
 from app.services.rbac import can
 from app.services.infra_test_engine import run_test, create_verification_from_result
 from app.services.audit_logger import log_audit, export_audit_csv
