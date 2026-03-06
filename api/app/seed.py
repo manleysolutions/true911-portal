@@ -18,6 +18,7 @@ from .models.action_audit import ActionAudit
 from .models.incident import Incident
 from .models.notification_rule import NotificationRule
 from .models.device import Device
+from .models.command_activity import CommandActivity
 from .models.line import Line
 from .models.recording import Recording
 from .models.event import Event
@@ -107,6 +108,55 @@ INCIDENTS = [
     {"site_id": "SITE-016", "severity": "warning", "status": "open", "summary": "Connectivity drops averaging 3x per 6h window. ISP ticket opened.", "opened_hours_ago": 18},
     {"site_id": "SITE-023", "severity": "info", "status": "open", "summary": "E911 address pending AHJ re-verification after recent municipal boundary change.", "opened_hours_ago": 24},
     {"site_id": "SITE-014", "severity": "info", "status": "acknowledged", "summary": "Firmware update available (3.1.5 → 3.2.1). Scheduled for next maintenance window.", "opened_hours_ago": 48, "ack_by": "Mike Torres"},
+]
+
+COMMAND_INCIDENTS = [
+    {"site_id": "SITE-001", "severity": "warning", "status": "acknowledged", "incident_type": "fire_alarm_comm",
+     "source": "monitoring", "summary": "Fire alarm communicator latency exceeding threshold — 450ms avg",
+     "location_detail": "Floor 3, FACP Room", "opened_hours_ago": 4, "ack_by": "Sarah Chen",
+     "assigned_to": "Mike Torres"},
+    {"site_id": "SITE-003", "severity": "critical", "status": "new", "incident_type": "elevator_phone_fail",
+     "source": "verification", "summary": "Elevator emergency phone verification failed — no dial tone on line test",
+     "location_detail": "Floor 12, Elevator Bank A", "opened_hours_ago": 2},
+    {"site_id": "SITE-005", "severity": "critical", "status": "in_progress", "incident_type": "das_signal_loss",
+     "source": "monitoring", "summary": "DAS responder radio signal lost in sub-basement — BDA offline",
+     "location_detail": "Sub-basement B2", "opened_hours_ago": 8, "ack_by": "Mike Torres",
+     "assigned_to": "Mike Torres"},
+    {"site_id": "SITE-008", "severity": "warning", "status": "new", "incident_type": "call_station_offline",
+     "source": "heartbeat", "summary": "Emergency call station offline — missed 6 consecutive heartbeats",
+     "location_detail": "Parking Garage Level P3", "opened_hours_ago": 1},
+    {"site_id": "SITE-012", "severity": "critical", "status": "acknowledged", "incident_type": "backup_power_fail",
+     "source": "monitoring", "summary": "UPS battery bank failure — backup power at 0% capacity",
+     "location_detail": "Electrical Room ER-1", "opened_hours_ago": 6, "ack_by": "Sarah Chen"},
+    {"site_id": "SITE-016", "severity": "info", "status": "resolved", "incident_type": "fire_alarm_comm",
+     "source": "verification", "summary": "Fire alarm annual verification completed — all panels passed",
+     "location_detail": "All floors", "opened_hours_ago": 24, "resolved": True},
+    {"site_id": "SITE-020", "severity": "warning", "status": "dismissed", "incident_type": "elevator_phone_fail",
+     "source": "monitoring", "summary": "Elevator phone intermittent static — cleared after line reset",
+     "location_detail": "Floor 5, Service Elevator", "opened_hours_ago": 36, "dismissed": True},
+]
+
+COMMAND_ACTIVITIES = [
+    {"activity_type": "incident_created", "site_id": "SITE-003", "actor": "system",
+     "summary": "Incident created: Elevator emergency phone verification failed", "ago_minutes": 120},
+    {"activity_type": "incident_created", "site_id": "SITE-005", "actor": "system",
+     "summary": "Incident created: DAS responder radio signal lost in sub-basement", "ago_minutes": 480},
+    {"activity_type": "incident_acknowledged", "site_id": "SITE-005", "actor": "manager@true911.com",
+     "summary": "Incident acknowledged by Mike Torres", "ago_minutes": 450},
+    {"activity_type": "incident_in_progress", "site_id": "SITE-005", "actor": "manager@true911.com",
+     "summary": "Incident assigned to Mike Torres — dispatching technician", "ago_minutes": 420},
+    {"activity_type": "incident_acknowledged", "site_id": "SITE-001", "actor": "admin@true911.com",
+     "summary": "Fire alarm communicator latency acknowledged by Sarah Chen", "ago_minutes": 200},
+    {"activity_type": "incident_assigned", "site_id": "SITE-001", "actor": "admin@true911.com",
+     "summary": "Incident assigned to Mike Torres", "ago_minutes": 190},
+    {"activity_type": "incident_resolved", "site_id": "SITE-016", "actor": "admin@true911.com",
+     "summary": "Fire alarm verification completed and resolved", "ago_minutes": 60},
+    {"activity_type": "incident_dismissed", "site_id": "SITE-020", "actor": "admin@true911.com",
+     "summary": "Elevator phone static issue dismissed — self-resolved", "ago_minutes": 30},
+    {"activity_type": "readiness_recalculated", "actor": "system",
+     "summary": "Portfolio readiness score recalculated: 74% — Attention Needed", "ago_minutes": 15},
+    {"activity_type": "incident_created", "site_id": "SITE-008", "actor": "system",
+     "summary": "Emergency call station offline — missed heartbeats", "ago_minutes": 60},
 ]
 
 NOTIFICATION_RULES = [
@@ -358,6 +408,40 @@ async def seed():
                 created_by="system",
             ))
 
+        # Command Incidents (Phase 2)
+        for ci in COMMAND_INCIDENTS:
+            opened_at = ago(hours_ago=ci["opened_hours_ago"])
+            inc_obj = Incident(
+                incident_id=uid("CMD"),
+                site_id=ci["site_id"],
+                tenant_id=TENANT_ID,
+                severity=ci["severity"],
+                status=ci["status"],
+                summary=ci["summary"],
+                incident_type=ci.get("incident_type"),
+                source=ci.get("source", "command"),
+                location_detail=ci.get("location_detail"),
+                opened_at=opened_at,
+                ack_by=ci.get("ack_by"),
+                ack_at=ago(hours_ago=ci["opened_hours_ago"] - 1) if ci.get("ack_by") else None,
+                assigned_to=ci.get("assigned_to"),
+                resolved_at=ago(hours_ago=1) if ci.get("resolved") else None,
+                closed_at=ago(hours_ago=1) if ci.get("resolved") or ci.get("dismissed") else None,
+                created_by="system",
+            )
+            db.add(inc_obj)
+
+        # Command Activities (Phase 2)
+        for ca in COMMAND_ACTIVITIES:
+            db.add(CommandActivity(
+                tenant_id=TENANT_ID,
+                activity_type=ca["activity_type"],
+                site_id=ca.get("site_id"),
+                actor=ca.get("actor"),
+                summary=ca["summary"],
+                created_at=ago(minutes_ago=ca["ago_minutes"]),
+            ))
+
         # Notification Rules
         for n in NOTIFICATION_RULES:
             db.add(NotificationRule(
@@ -467,7 +551,9 @@ async def seed():
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
-              f"{len(INCIDENTS)} incidents, {len(NOTIFICATION_RULES)} notification rules, "
+              f"{len(INCIDENTS)} + {len(COMMAND_INCIDENTS)} incidents, "
+              f"{len(COMMAND_ACTIVITIES)} command activities, "
+              f"{len(NOTIFICATION_RULES)} notification rules, "
               f"{len(HARDWARE_MODELS)} hardware models, {len(DEVICES)} devices, "
               f"{len(PROVIDERS)} providers, {len(LINES)} lines, "
               f"{len(RECORDINGS)} recordings, {len(EVENTS)} events, "

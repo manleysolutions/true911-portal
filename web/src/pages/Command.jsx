@@ -12,6 +12,7 @@ import IncidentFeed from "@/components/command/IncidentFeed";
 import SystemHealthMatrix from "@/components/command/SystemHealthMatrix";
 import ReadinessScore from "@/components/command/ReadinessScore";
 import ScenarioRunner from "@/components/command/ScenarioRunner";
+import ActivityTimeline from "@/components/command/ActivityTimeline";
 
 function timeSince(iso) {
   if (!iso) return "--";
@@ -79,6 +80,7 @@ export default function Command() {
   const systemHealth = data?.system_health || [];
   const incidents = data?.incident_feed || [];
   const attentionSites = data?.attention_sites_list || [];
+  const activities = data?.activity_timeline || [];
 
   return (
     <PageWrapper>
@@ -159,27 +161,28 @@ export default function Command() {
           </div>
 
           {/* Scenario runner */}
-          {showScenario && <ScenarioRunner />}
+          {showScenario && <ScenarioRunner onRefresh={fetchData} />}
 
           {/* Main grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* Left 2/3 */}
             <div className="lg:col-span-2 space-y-5">
-              {/* Incident feed */}
               <IncidentFeed
                 incidents={incidents}
+                onRefresh={fetchData}
                 onSelectSite={(siteId) => {
                   window.location.href = createPageUrl("CommandSite") + `?site=${siteId}`;
                 }}
               />
 
-              {/* System health */}
               <SystemHealthMatrix systems={systemHealth} />
+
+              {/* Activity timeline */}
+              <ActivityTimeline activities={activities} />
             </div>
 
             {/* Right 1/3 */}
             <div className="space-y-5">
-              {/* Readiness score */}
               <ReadinessScore readiness={readiness} />
 
               {/* Sites needing attention */}

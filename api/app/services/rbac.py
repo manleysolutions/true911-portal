@@ -22,6 +22,12 @@ PERMISSIONS: dict[str, list[str]] = {
     "VIEW_INTEGRATIONS": ["Admin", "Manager"],
     "RUN_RECONCILIATION": ["Admin"],
     "GLOBAL_ADMIN": ["SuperAdmin"],
+    # Command Phase 2
+    "COMMAND_ACK": ["Admin", "Manager"],
+    "COMMAND_ASSIGN": ["Admin", "Manager"],
+    "COMMAND_RESOLVE": ["Admin", "Manager"],
+    "COMMAND_DISMISS": ["Admin"],
+    "COMMAND_CREATE_INCIDENT": ["Admin", "Manager"],
 }
 
 

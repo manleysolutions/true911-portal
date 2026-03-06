@@ -4,11 +4,14 @@ import { createPageUrl } from "@/utils";
 import {
   Shield, ArrowLeft, Building2, RefreshCw, Clock,
   AlertOctagon, CheckCircle2, ChevronRight, Cpu,
-  Wrench, MapPin, Phone,
+  Wrench, MapPin, Eye, Play, XCircle,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
+import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
+import { toast } from "sonner";
 import ReadinessScore from "@/components/command/ReadinessScore";
+import ActivityTimeline from "@/components/command/ActivityTimeline";
 
 const SEV_STYLE = {
   critical: { bg: "bg-red-900/30", border: "border-red-700/40", text: "text-red-400", dot: "bg-red-500" },
@@ -17,9 +20,22 @@ const SEV_STYLE = {
 };
 
 const STATUS_BADGE = {
+  new:          { label: "New", cls: "bg-red-500/20 text-red-400 border-red-500/30" },
   open:         { label: "Open", cls: "bg-red-500/20 text-red-400 border-red-500/30" },
   acknowledged: { label: "Ack'd", cls: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+  in_progress:  { label: "In Progress", cls: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  resolved:     { label: "Resolved", cls: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+  dismissed:    { label: "Dismissed", cls: "bg-slate-500/20 text-slate-400 border-slate-500/30" },
   closed:       { label: "Closed", cls: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+};
+
+const TRANSITIONS = {
+  new:          [{ target: "acknowledged", label: "Acknowledge", perm: "COMMAND_ACK", icon: Eye },
+                 { target: "dismissed", label: "Dismiss", perm: "COMMAND_DISMISS", icon: XCircle }],
+  open:         [{ target: "acknowledged", label: "Acknowledge", perm: "COMMAND_ACK", icon: Eye },
+                 { target: "dismissed", label: "Dismiss", perm: "COMMAND_DISMISS", icon: XCircle }],
+  acknowledged: [{ target: "in_progress", label: "Start Work", perm: "COMMAND_ASSIGN", icon: Play }],
+  in_progress:  [{ target: "resolved", label: "Resolve", perm: "COMMAND_RESOLVE", icon: CheckCircle2 }],
 };
 
 const PRIORITY_STYLE = {
@@ -46,18 +62,20 @@ function timeSince(iso) {
 }
 
 const SITE_STATUS = {
-  Connected:        { dot: "bg-emerald-500", text: "text-emerald-400", bg: "bg-emerald-900/20 border-emerald-700/40" },
+  Connected:          { dot: "bg-emerald-500", text: "text-emerald-400", bg: "bg-emerald-900/20 border-emerald-700/40" },
   "Attention Needed": { dot: "bg-amber-500", text: "text-amber-400", bg: "bg-amber-900/20 border-amber-700/40" },
-  "Not Connected":  { dot: "bg-red-500", text: "text-red-400", bg: "bg-red-900/20 border-red-700/40" },
-  Unknown:          { dot: "bg-slate-500", text: "text-slate-400", bg: "bg-slate-800/50 border-slate-700/50" },
+  "Not Connected":    { dot: "bg-red-500", text: "text-red-400", bg: "bg-red-900/20 border-red-700/40" },
+  Unknown:            { dot: "bg-slate-500", text: "text-slate-400", bg: "bg-slate-800/50 border-slate-700/50" },
 };
 
 export default function CommandSite() {
   const [searchParams] = useSearchParams();
+  const { can } = useAuth();
   const siteId = searchParams.get("site");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [acting, setActing] = useState(null);
 
   const fetchData = useCallback(async () => {
     if (!siteId) return;
@@ -77,15 +95,27 @@ export default function CommandSite() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  async function handleTransition(inc, target) {
+    const key = `${inc.id}-${target}`;
+    setActing(key);
+    try {
+      await apiFetch(`/command/incidents/${inc.id}/transition/${target}`, { method: "POST", body: JSON.stringify({}) });
+      toast.success(`Incident ${target}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.message || "Action failed");
+    } finally {
+      setActing(null);
+    }
+  }
+
   if (!siteId) {
     return (
       <PageWrapper>
         <div className="min-h-screen bg-slate-950 flex items-center justify-center">
           <div className="text-center">
             <p className="text-slate-500">No site specified.</p>
-            <Link to={createPageUrl("Command")} className="text-red-500 text-sm mt-2 inline-block">
-              Back to Command
-            </Link>
+            <Link to={createPageUrl("Command")} className="text-red-500 text-sm mt-2 inline-block">Back to Command</Link>
           </div>
         </div>
       </PageWrapper>
@@ -108,9 +138,7 @@ export default function CommandSite() {
         <div className="min-h-screen bg-slate-950 flex items-center justify-center">
           <div className="text-center">
             <p className="text-red-400 mb-2">{error}</p>
-            <Link to={createPageUrl("Command")} className="text-red-500 text-sm">
-              Back to Command
-            </Link>
+            <Link to={createPageUrl("Command")} className="text-red-500 text-sm">Back to Command</Link>
           </div>
         </div>
       </PageWrapper>
@@ -123,9 +151,10 @@ export default function CommandSite() {
   const incidents = data?.incidents || [];
   const devices = data?.devices || {};
   const actions = data?.recommended_actions || [];
+  const activities = data?.activity_timeline || [];
   const sts = SITE_STATUS[site.status] || SITE_STATUS.Unknown;
 
-  const activeIncidents = incidents.filter(i => i.status !== "closed");
+  const activeIncidents = incidents.filter(i => !["resolved", "dismissed", "closed"].includes(i.status));
 
   return (
     <PageWrapper>
@@ -154,16 +183,11 @@ export default function CommandSite() {
                       <span className={`w-1.5 h-1.5 rounded-full ${sts.dot}`} />
                       {site.status}
                     </div>
-                    {site.kit_type && (
-                      <span className="text-xs text-slate-500">{site.kit_type}</span>
-                    )}
-                    {site.customer_name && (
-                      <span className="text-xs text-slate-600">{site.customer_name}</span>
-                    )}
+                    {site.kit_type && <span className="text-xs text-slate-500">{site.kit_type}</span>}
+                    {site.customer_name && <span className="text-xs text-slate-600">{site.customer_name}</span>}
                   </div>
                 </div>
               </div>
-
               <button onClick={fetchData} className="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800 text-slate-500">
                 <RefreshCw className="w-4 h-4" />
               </button>
@@ -198,7 +222,7 @@ export default function CommandSite() {
             {/* Left 2/3 */}
             <div className="lg:col-span-2 space-y-5">
 
-              {/* Active Incidents */}
+              {/* Active Incidents with actions */}
               <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
                   <div className="flex items-center gap-2">
@@ -213,7 +237,7 @@ export default function CommandSite() {
                     All <ChevronRight className="w-3 h-3" />
                   </Link>
                 </div>
-                <div className="divide-y divide-slate-800/50 max-h-[350px] overflow-y-auto">
+                <div className="divide-y divide-slate-800/50 max-h-[400px] overflow-y-auto">
                   {activeIncidents.length === 0 && (
                     <div className="px-5 py-8 text-center">
                       <CheckCircle2 className="w-8 h-8 text-emerald-500/50 mx-auto mb-2" />
@@ -223,6 +247,8 @@ export default function CommandSite() {
                   {activeIncidents.map((inc) => {
                     const sev = SEV_STYLE[inc.severity] || SEV_STYLE.info;
                     const stsBadge = STATUS_BADGE[inc.status] || STATUS_BADGE.open;
+                    const availableActions = (TRANSITIONS[inc.status] || []).filter(t => can(t.perm));
+
                     return (
                       <div key={inc.incident_id || inc.id} className="px-5 py-3.5 hover:bg-slate-800/50">
                         <div className="flex items-center gap-2 mb-1">
@@ -231,11 +257,48 @@ export default function CommandSite() {
                           <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold border ${stsBadge.cls}`}>
                             {stsBadge.label}
                           </span>
+                          {inc.incident_type && (
+                            <span className="text-[10px] text-slate-600">{inc.incident_type}</span>
+                          )}
                           <span className="text-[10px] text-slate-600 ml-auto">{timeSince(inc.opened_at)}</span>
                         </div>
                         <p className="text-sm text-slate-300">{inc.summary}</p>
+                        {inc.location_detail && (
+                          <p className="text-xs text-slate-600 mt-0.5">{inc.location_detail}</p>
+                        )}
                         {inc.assigned_to && (
                           <p className="text-xs text-slate-500 mt-1">Assigned: {inc.assigned_to}</p>
+                        )}
+
+                        {availableActions.length > 0 && (
+                          <div className="flex items-center gap-2 mt-2">
+                            {availableActions.map((action) => {
+                              const ActionIcon = action.icon;
+                              const isActing = acting === `${inc.id}-${action.target}`;
+                              return (
+                                <button
+                                  key={action.target}
+                                  onClick={() => handleTransition(inc, action.target)}
+                                  disabled={isActing}
+                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border
+                                    ${action.target === "dismissed"
+                                      ? "border-slate-600 text-slate-400 hover:bg-slate-800"
+                                      : action.target === "resolved"
+                                      ? "border-emerald-700/50 text-emerald-400 hover:bg-emerald-900/30"
+                                      : "border-slate-600 text-slate-300 hover:bg-slate-700"
+                                    }
+                                    ${isActing ? "opacity-50 cursor-not-allowed" : ""}
+                                  `}
+                                >
+                                  {isActing
+                                    ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                                    : <ActionIcon className="w-3 h-3" />
+                                  }
+                                  {action.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                     );
@@ -273,49 +336,12 @@ export default function CommandSite() {
                 </div>
               </div>
 
-              {/* Recent Activity Timeline */}
-              <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-700/50">
-                  <h3 className="text-sm font-semibold text-white">Recent Activity</h3>
-                </div>
-                <div className="p-5 max-h-[300px] overflow-y-auto">
-                  {incidents.length === 0 ? (
-                    <p className="text-sm text-slate-600 text-center py-4">No recent activity</p>
-                  ) : (
-                    <div className="space-y-0">
-                      {incidents.slice(0, 10).map((inc, i) => {
-                        const sev = SEV_STYLE[inc.severity] || SEV_STYLE.info;
-                        return (
-                          <div key={inc.incident_id || inc.id} className="flex gap-3">
-                            <div className="flex flex-col items-center">
-                              <div className={`w-2.5 h-2.5 rounded-full ${sev.dot} flex-shrink-0 mt-1.5`} />
-                              {i < Math.min(incidents.length, 10) - 1 && (
-                                <div className="w-px flex-1 bg-slate-800 my-1" />
-                              )}
-                            </div>
-                            <div className="flex-1 pb-4">
-                              <p className="text-sm text-slate-300">{inc.summary}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className={`text-[10px] font-bold uppercase ${sev.text}`}>{inc.severity}</span>
-                                <span className="text-xs text-slate-600">{timeSince(inc.opened_at)}</span>
-                                <span className={`text-[10px] capitalize ${
-                                  inc.status === "closed" ? "text-emerald-500" :
-                                  inc.status === "acknowledged" ? "text-amber-500" : "text-red-500"
-                                }`}>{inc.status}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* Activity Timeline */}
+              <ActivityTimeline activities={activities} />
             </div>
 
             {/* Right 1/3 */}
             <div className="space-y-5">
-              {/* Readiness */}
               <ReadinessScore readiness={readiness} />
 
               {/* Recommended Actions */}

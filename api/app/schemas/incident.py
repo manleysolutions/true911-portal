@@ -16,9 +16,16 @@ class IncidentOut(BaseModel):
     ack_by: Optional[str] = None
     ack_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
     resolution_notes: Optional[str] = None
     assigned_to: Optional[str] = None
     created_by: Optional[str] = None
+    incident_type: Optional[str] = None
+    source: Optional[str] = None
+    description: Optional[str] = None
+    location_detail: Optional[str] = None
+    recommended_actions_json: Optional[str] = None
+    metadata_json: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -32,6 +39,12 @@ class IncidentCreate(BaseModel):
     summary: str
     assigned_to: Optional[str] = None
     created_by: Optional[str] = None
+    incident_type: Optional[str] = None
+    source: Optional[str] = None
+    description: Optional[str] = None
+    location_detail: Optional[str] = None
+    recommended_actions_json: Optional[str] = None
+    metadata_json: Optional[str] = None
 
 
 class IncidentUpdate(BaseModel):
@@ -39,8 +52,14 @@ class IncidentUpdate(BaseModel):
     ack_by: Optional[str] = None
     ack_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
     resolution_notes: Optional[str] = None
     assigned_to: Optional[str] = None
+    incident_type: Optional[str] = None
+    description: Optional[str] = None
+    location_detail: Optional[str] = None
+    recommended_actions_json: Optional[str] = None
+    metadata_json: Optional[str] = None
 
 
 class IncidentCloseRequest(BaseModel):

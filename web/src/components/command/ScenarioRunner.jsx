@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback } from "react";
-import { Play, Square, Clock, CheckCircle2, AlertTriangle, User, Wrench, RotateCcw } from "lucide-react";
+import { Play, Square, Clock, CheckCircle2, AlertTriangle, User, Wrench, RotateCcw, Database } from "lucide-react";
+import { apiFetch } from "@/api/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 const SCENARIO_STEPS = [
   {
@@ -64,7 +67,7 @@ const SCENARIO_STEPS = [
   {
     time: 55000,
     title: "Incident Resolving",
-    detail: "Technician on-site. Line test passed. Incident status: In Progress → Resolved. Readiness score recovering to 92%.",
+    detail: "Technician on-site. Line test passed. Incident status: In Progress -> Resolved. Readiness score recovering to 92%.",
     severity: "success",
     type: "resolution",
     scoreAfter: 92,
@@ -78,16 +81,20 @@ const SEV_STYLE = {
   success:  { bg: "bg-emerald-900/30", border: "border-emerald-700/40", text: "text-emerald-400", dot: "bg-emerald-500" },
 };
 
-export default function ScenarioRunner() {
+export default function ScenarioRunner({ onRefresh }) {
+  const { can } = useAuth();
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [visibleSteps, setVisibleSteps] = useState([]);
+  const [persistMode, setPersistMode] = useState(false);
+  const [persisted, setPersisted] = useState(false);
   const timersRef = useRef([]);
 
   const startScenario = useCallback(() => {
     setRunning(true);
     setCompleted(false);
     setVisibleSteps([]);
+    setPersisted(false);
 
     const timers = SCENARIO_STEPS.map((step, idx) =>
       setTimeout(() => {
@@ -113,7 +120,40 @@ export default function ScenarioRunner() {
     setRunning(false);
     setCompleted(false);
     setVisibleSteps([]);
+    setPersisted(false);
   }, []);
+
+  const persistToBackend = useCallback(async () => {
+    try {
+      // Pick a real site_id from the first available site, fallback to SITE-001
+      const siteId = "SITE-001";
+      await apiFetch("/command/incidents", {
+        method: "POST",
+        body: JSON.stringify({
+          site_id: siteId,
+          summary: "Elevator Emergency Phone Verification Failed — Floor 18, Elevator Bank C",
+          severity: "critical",
+          incident_type: "elevator_phone_fail",
+          source: "scenario_simulation",
+          description: "Simulated incident from scenario runner. Elevator emergency phone line test failed during scheduled verification.",
+          location_detail: "Floor 18 — Elevator Bank C",
+          recommended_actions_json: JSON.stringify([
+            "Notify integrator (Schindler Elevator Corp)",
+            "Dispatch certified technician",
+            "Hold final verification for Floor 18",
+            "Update readiness checklist",
+          ]),
+        }),
+      });
+      setPersisted(true);
+      toast.success("Scenario incident persisted to backend");
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err.message || "Failed to persist incident");
+    }
+  }, [onRefresh]);
+
+  const canCreate = can("COMMAND_CREATE_INCIDENT");
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">
@@ -142,18 +182,28 @@ export default function ScenarioRunner() {
             </button>
           )}
           {completed && (
-            <button
-              onClick={resetScenario}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-semibold transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset
-            </button>
+            <>
+              {canCreate && !persisted && (
+                <button
+                  onClick={persistToBackend}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Save to Backend
+                </button>
+              )}
+              <button
+                onClick={resetScenario}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-semibold transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {/* Progress bar */}
       {running && (
         <div className="h-1 bg-slate-800">
           <div
@@ -163,7 +213,6 @@ export default function ScenarioRunner() {
         </div>
       )}
 
-      {/* Timeline */}
       <div className="p-5 max-h-[500px] overflow-y-auto">
         {visibleSteps.length === 0 && !running && (
           <div className="text-center py-8">
@@ -178,7 +227,6 @@ export default function ScenarioRunner() {
             const sev = SEV_STYLE[step.severity] || SEV_STYLE.info;
             return (
               <div key={i} className="flex gap-3 animate-fadeIn">
-                {/* Timeline line */}
                 <div className="flex flex-col items-center">
                   <div className={`w-3 h-3 rounded-full ${sev.dot} flex-shrink-0 mt-1.5`} />
                   {i < visibleSteps.length - 1 && (
@@ -249,7 +297,10 @@ export default function ScenarioRunner() {
           {completed && (
             <div className="flex items-center gap-2 pl-6 pt-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs text-emerald-400 font-medium">Scenario complete — incident resolved</span>
+              <span className="text-xs text-emerald-400 font-medium">
+                Scenario complete — incident resolved
+                {persisted && " (saved to backend)"}
+              </span>
             </div>
           )}
         </div>
