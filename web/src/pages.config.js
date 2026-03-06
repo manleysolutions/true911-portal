@@ -71,6 +71,7 @@ import Reports from './pages/Reports';
 import Samantha from './pages/Samantha';
 import Sites from './pages/Sites';
 import SyncStatus from './pages/SyncStatus';
+import NetworkDashboard from './pages/NetworkDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -99,6 +100,7 @@ export const PAGES = {
     "Samantha": Samantha,
     "Sites": Sites,
     "SyncStatus": SyncStatus,
+    "NetworkDashboard": NetworkDashboard,
 }
 
 export const pagesConfig = {

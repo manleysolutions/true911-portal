@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { config } from "@/config";
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { name: "Recordings", page: "Recordings", icon: Disc3 },
   { name: "Events", page: "Events", icon: Activity },
   { section: "separator" },
+  { name: "Network", page: "NetworkDashboard", icon: Radio },
   { name: "Deployment Map", page: "DeploymentMap", icon: Map },
   { name: "Incidents", page: "Incidents", icon: AlertOctagon },
   { name: "Reports", page: "Reports", icon: FileText },

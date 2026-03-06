@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -36,3 +36,10 @@ class Device(Base):
     claimed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Phase 7 columns
+    carrier: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    sim_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    imsi: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    network_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    data_usage_mb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_network_event: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

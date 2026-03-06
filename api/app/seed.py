@@ -36,6 +36,10 @@ from .models.verification_task import VerificationTask
 from .models.automation_rule import AutomationRule
 from .models.site_template import SiteTemplate
 from .models.service_contract import ServiceContract
+from .models.network_event import NetworkEvent
+from .models.infra_test import InfraTest
+from .models.infra_test_result import InfraTestResult
+from .models.audit_log_entry import AuditLogEntry
 from .services.auth import hash_password
 
 
@@ -724,6 +728,72 @@ async def seed():
                 status="active",
             ))
 
+        # ── Phase 7: Network events, infra tests, audit entries ──────
+        NETWORK_EVENTS = [
+            {"device_id": DEVICES[0]["device_id"], "site_id": SITES[0]["site_id"], "carrier": "t-mobile",
+             "event_type": "signal_degradation", "severity": "warning",
+             "summary": "Signal at -102 dBm", "signal_dbm": -102.0},
+            {"device_id": DEVICES[1]["device_id"], "site_id": SITES[1]["site_id"], "carrier": "verizon",
+             "event_type": "device_disconnected", "severity": "critical",
+             "summary": "Device disconnected from network"},
+            {"device_id": DEVICES[2]["device_id"], "site_id": SITES[2]["site_id"], "carrier": "att",
+             "event_type": "roaming_detected", "severity": "warning",
+             "summary": "Device roaming on AT&T", "roaming": True},
+        ]
+        for ne in NETWORK_EVENTS:
+            db.add(NetworkEvent(
+                event_id=uid("NE"),
+                tenant_id=TENANT_ID,
+                **ne,
+            ))
+
+        INFRA_TESTS = [
+            {"name": "Voice Path — Site 1", "test_type": "voice_path",
+             "site_id": SITES[0]["site_id"], "device_id": DEVICES[0]["device_id"],
+             "description": "End-to-end voice path test", "schedule_cron": "0 6 * * *"},
+            {"name": "Emergency Call — Site 2", "test_type": "emergency_call",
+             "site_id": SITES[1]["site_id"],
+             "description": "E911 call routing verification", "schedule_cron": "0 0 1 * *"},
+            {"name": "Heartbeat Check — Site 3", "test_type": "heartbeat_verify",
+             "site_id": SITES[2]["site_id"], "device_id": DEVICES[2]["device_id"],
+             "description": "Heartbeat timing validation"},
+            {"name": "Connectivity — Site 1", "test_type": "connectivity",
+             "site_id": SITES[0]["site_id"],
+             "description": "Network connectivity and latency test", "run_after_provision": True},
+            {"name": "Radio Coverage — Site 4", "test_type": "radio_coverage",
+             "site_id": SITES[3]["site_id"],
+             "description": "Cellular coverage quality check"},
+        ]
+        for it in INFRA_TESTS:
+            db.add(InfraTest(
+                test_id=uid("IT"),
+                tenant_id=TENANT_ID,
+                **it,
+            ))
+
+        AUDIT_ENTRIES = [
+            {"category": "device", "action": "device_registered", "actor": "admin@true911.com",
+             "target_type": "device", "target_id": DEVICES[0]["device_id"],
+             "summary": f"Device {DEVICES[0]['device_id']} registered"},
+            {"category": "firmware", "action": "firmware_updated", "actor": "system",
+             "target_type": "device", "target_id": DEVICES[1]["device_id"],
+             "summary": f"Firmware updated to v2.1.0 on {DEVICES[1]['device_id']}"},
+            {"category": "incident", "action": "incident_escalated", "actor": "admin@true911.com",
+             "target_type": "incident", "summary": "Incident escalated to level 2"},
+            {"category": "network", "action": "carrier_telemetry_ingested", "actor": "system",
+             "device_id": DEVICES[0]["device_id"],
+             "summary": "Carrier telemetry ingested from T-Mobile"},
+            {"category": "verification", "action": "infra_test_executed", "actor": "admin@true911.com",
+             "site_id": SITES[0]["site_id"],
+             "summary": "Voice path test executed — result: pass"},
+        ]
+        for ae in AUDIT_ENTRIES:
+            db.add(AuditLogEntry(
+                entry_id=uid("AU"),
+                tenant_id=TENANT_ID,
+                **ae,
+            ))
+
         await db.commit()
         print(f"Seeded: 1 tenant, {len(USERS)} users, {len(SITES)} sites, "
               f"{len(TELEMETRY)} telemetry events, {len(AUDITS)} audits, "
@@ -739,7 +809,9 @@ async def seed():
               f"{len(INTEGRATIONS)} integrations, {len(SIMS)} SIMs, "
               f"{len(VENDORS)} vendors, {len(SITE_VENDOR_ASSIGNMENTS)} vendor assignments, "
               f"{len(VERIFICATION_TASKS)} verification tasks, {len(AUTOMATION_RULES)} automation rules, "
-              f"{len(BUILTIN_TEMPLATES)} site templates, {len(VENDORS)} service contracts.")
+              f"{len(BUILTIN_TEMPLATES)} site templates, {len(VENDORS)} service contracts, "
+              f"{len(NETWORK_EVENTS)} network events, {len(INFRA_TESTS)} infra tests, "
+              f"{len(AUDIT_ENTRIES)} audit entries.")
 
 
 if __name__ == "__main__":

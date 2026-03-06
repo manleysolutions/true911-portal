@@ -18,6 +18,8 @@ import ReportExport from "@/components/command/ReportExport";
 import VerificationTasks from "@/components/command/VerificationTasks";
 import VendorAssignments from "@/components/command/VendorAssignments";
 import StalenessIndicator from "@/components/command/StalenessIndicator";
+import NetworkStatus from "@/components/command/NetworkStatus";
+import InfraTestPanel from "@/components/command/InfraTestPanel";
 
 const SEV_STYLE = {
   critical: { bg: "bg-red-900/30", border: "border-red-700/40", text: "text-red-400", dot: "bg-red-500" },
@@ -370,6 +372,16 @@ export default function CommandSite() {
 
               {/* Vendor Assignments (Phase 4) */}
               <VendorAssignments assignments={vendors} />
+
+              {/* Network Status (Phase 7) */}
+              <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden p-4">
+                <NetworkStatus siteId={siteId} />
+              </div>
+
+              {/* Infrastructure Tests (Phase 7) */}
+              <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden p-4">
+                <InfraTestPanel siteId={siteId} />
+              </div>
 
               {/* Recommended Actions */}
               <div className="bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">

@@ -60,6 +60,15 @@ const PERMISSIONS = {
   COMMAND_VIEW_CONTRACTS: ["Admin", "Manager"],
   COMMAND_MANAGE_ORG: ["Admin"],
   COMMAND_VIEW_ORG: ["Admin", "Manager", "User"],
+  // Command Phase 7
+  COMMAND_VIEW_NETWORK: ["Admin", "Manager", "User"],
+  COMMAND_MANAGE_NETWORK: ["Admin"],
+  COMMAND_INGEST_CARRIER: ["Admin"],
+  COMMAND_MANAGE_INFRA_TESTS: ["Admin", "Manager"],
+  COMMAND_RUN_INFRA_TESTS: ["Admin", "Manager"],
+  COMMAND_VIEW_INFRA_TESTS: ["Admin", "Manager", "User"],
+  COMMAND_VIEW_AUDIT: ["Admin", "Manager"],
+  COMMAND_EXPORT_AUDIT: ["Admin"],
 };
 
 export function AuthProvider({ children }) {

@@ -52,5 +52,9 @@ class Site(Base):
     template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     building_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     onboarding_status: Mapped[str] = mapped_column(String(50), server_default="active")
+    # Phase 7 NG911 columns
+    psap_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    emergency_class: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    ng911_uri: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

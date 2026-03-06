@@ -37,3 +37,5 @@ class Incident(Base):
     # Phase 3 columns
     escalation_level: Mapped[Optional[int]] = mapped_column(nullable=True, server_default="0")
     escalated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase 7 columns
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # life_safety, network, infrastructure, verification

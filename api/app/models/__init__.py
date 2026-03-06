@@ -36,6 +36,10 @@ from app.models.automation_rule import AutomationRule
 from app.models.site_template import SiteTemplate
 from app.models.service_contract import ServiceContract
 from app.models.outbound_webhook import OutboundWebhook
+from app.models.network_event import NetworkEvent
+from app.models.infra_test import InfraTest
+from app.models.infra_test_result import InfraTestResult
+from app.models.audit_log_entry import AuditLogEntry
 
 __all__ = [
     "Tenant",
@@ -77,4 +81,8 @@ __all__ = [
     "SiteTemplate",
     "ServiceContract",
     "OutboundWebhook",
+    "NetworkEvent",
+    "InfraTest",
+    "InfraTestResult",
+    "AuditLogEntry",
 ]
