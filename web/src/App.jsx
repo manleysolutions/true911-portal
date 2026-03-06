@@ -25,6 +25,10 @@ const AuthenticatedApp = () => {
     );
   }
 
+  // Build a lowercase lookup for case-insensitive route matching
+  const lowerPages = {};
+  Object.keys(Pages).forEach(key => { lowerPages[key.toLowerCase()] = key; });
+
   return (
     <Routes>
       <Route path="/" element={
@@ -43,6 +47,24 @@ const AuthenticatedApp = () => {
           }
         />
       ))}
+      {/* Lowercase aliases — e.g. /admin -> /Admin, /overview -> /Overview */}
+      {Object.entries(Pages).map(([path, Page]) => {
+        const lower = path.toLowerCase();
+        if (lower !== path) {
+          return (
+            <Route
+              key={`lower-${path}`}
+              path={`/${lower}`}
+              element={
+                <LayoutWrapper currentPageName={path}>
+                  <Page />
+                </LayoutWrapper>
+              }
+            />
+          );
+        }
+        return null;
+      })}
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

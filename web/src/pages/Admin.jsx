@@ -1001,7 +1001,7 @@ export default function Admin() {
           <div className="text-center">
             <div className="text-4xl mb-3">&#128274;</div>
             <div className="text-lg font-semibold text-gray-800">Admin Access Required</div>
-            <div className="text-sm text-gray-500 mt-1">This section is only accessible to Admin users.</div>
+            <div className="text-sm text-gray-500 mt-1">This section is only accessible to Admin and SuperAdmin users.</div>
           </div>
         </div>
       </PageWrapper>

@@ -26,12 +26,15 @@ const NAV_ITEMS = [
   { section: "separator" },
   { name: "Providers", page: "Providers", icon: Plug, adminOnly: true },
   { name: "Integration Sync", page: "IntegrationSync", icon: ArrowDownUp, adminOnly: true },
-  { name: "Settings", page: "Admin", icon: Settings, adminOnly: true },
   { name: "Onboarding", page: "OnboardingWizard", icon: Rocket },
-  { name: "Bulk Import", page: "BulkDeploy", icon: FileSpreadsheet, adminOnly: true },
-  { name: "Site Import", page: "SiteImport", icon: Upload, adminOnly: true },
   { name: "Organization", page: "OrgSettings", icon: Globe, adminOnly: true },
   { name: "AI / Samantha", page: "Samantha", icon: Sparkles, featureFlag: "samantha" },
+  { section: "separator" },
+  { section: "label", label: "SYSTEM ADMIN", adminOnly: true },
+  { name: "Admin Dashboard", page: "Admin", icon: Settings, adminOnly: true },
+  { name: "Tenants", page: "AdminTenants", icon: Building2, adminOnly: true },
+  { name: "Users", page: "AdminUsers", icon: Shield, adminOnly: true },
+  { name: "Imports", page: "AdminImports", icon: Upload, adminOnly: true },
 ];
 
 const ROLE_BADGE = {
@@ -48,7 +51,9 @@ const FEATURE_FLAGS = {
 function Sidebar({ currentPageName, onClose }) {
   const { user, logout, can } = useAuth();
   const visibleNav = NAV_ITEMS.filter(item => {
-    if (item.section) return true;
+    if (item.section && !item.adminOnly) return true;
+    if (item.section && item.adminOnly && can('VIEW_ADMIN')) return true;
+    if (item.section) return false;
     if (item.adminOnly && !can('VIEW_ADMIN')) return false;
     if (item.featureFlag && !FEATURE_FLAGS[item.featureFlag]) return false;
     return true;
@@ -94,6 +99,9 @@ function Sidebar({ currentPageName, onClose }) {
         {visibleNav.map((item, idx) => {
           if (item.section === "separator") {
             return <div key={`sep-${idx}`} className="my-2 border-t border-gray-100" />;
+          }
+          if (item.section === "label") {
+            return <div key={`lbl-${idx}`} className="px-3 pt-3 pb-1 text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.label}</div>;
           }
           const { name, page, icon: Icon } = item;
           const active = currentPageName === page;

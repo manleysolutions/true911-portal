@@ -6,7 +6,7 @@ PERMISSIONS: dict[str, list[str]] = {
     "GENERATE_REPORT": ["Admin", "Manager"],
     "UPDATE_E911": ["Admin"],
     "UPDATE_HEARTBEAT": ["Admin"],
-    "VIEW_ADMIN": ["Admin"],
+    "VIEW_ADMIN": ["Admin", "SuperAdmin"],
     "RESTART_CONTAINER": ["Admin"],
     "PULL_LOGS": ["Admin"],
     "SWITCH_CHANNEL": ["Admin"],

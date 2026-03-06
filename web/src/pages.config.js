@@ -48,6 +48,9 @@
  * The mainPage value must match a key in the PAGES object exactly.
  */
 import Admin from './pages/Admin';
+import AdminTenants from './pages/AdminTenants';
+import AdminUsers from './pages/AdminUsers';
+import AdminImports from './pages/AdminImports';
 import AuthGate from './pages/AuthGate';
 import BulkDeploy from './pages/BulkDeploy';
 import Command from './pages/Command';
@@ -79,6 +82,9 @@ import __Layout from './Layout.jsx';
 
 export const PAGES = {
     "Admin": Admin,
+    "AdminTenants": AdminTenants,
+    "AdminUsers": AdminUsers,
+    "AdminImports": AdminImports,
     "AuthGate": AuthGate,
     "BulkDeploy": BulkDeploy,
     "Command": Command,

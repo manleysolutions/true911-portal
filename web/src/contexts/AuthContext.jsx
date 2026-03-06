@@ -10,6 +10,19 @@ import { apiFetch, setTokens, clearTokens, getAccessToken } from "@/api/client";
 
 const AuthContext = createContext(null);
 
+// Normalize role strings from backend to PascalCase
+// Handles: "superadmin" -> "SuperAdmin", "admin" -> "Admin", etc.
+const ROLE_MAP = {
+  superadmin: "SuperAdmin",
+  admin: "Admin",
+  manager: "Manager",
+  user: "User",
+};
+function normalizeRole(role) {
+  if (!role) return "User";
+  return ROLE_MAP[role.toLowerCase()] || role;
+}
+
 // RBAC permission matrix — identical to the original components/AuthContext.jsx
 const PERMISSIONS = {
   PING: ["Admin", "Manager"],
@@ -17,7 +30,7 @@ const PERMISSIONS = {
   GENERATE_REPORT: ["Admin", "Manager"],
   UPDATE_E911: ["Admin"],
   UPDATE_HEARTBEAT: ["Admin"],
-  VIEW_ADMIN: ["Admin"],
+  VIEW_ADMIN: ["Admin", "SuperAdmin"],
   RESTART_CONTAINER: ["Admin"],
   PULL_LOGS: ["Admin"],
   SWITCH_CHANNEL: ["Admin"],
@@ -95,7 +108,7 @@ export function AuthProvider({ children }) {
     }
     apiFetch("/auth/me")
       .then((u) => {
-        setUser(u);
+        setUser({ ...u, role: normalizeRole(u.role) });
       })
       .catch(() => {
         clearTokens();
@@ -113,8 +126,9 @@ export function AuthProvider({ children }) {
     });
     setTokens(data.access_token, data.refresh_token);
     const u = await apiFetch("/auth/me");
-    setUser(u);
-    return u;
+    const normalized = { ...u, role: normalizeRole(u.role) };
+    setUser(normalized);
+    return normalized;
   }, []);
 
   const register = useCallback(async (email, password, name) => {
@@ -124,8 +138,9 @@ export function AuthProvider({ children }) {
     });
     setTokens(data.access_token, data.refresh_token);
     const u = await apiFetch("/auth/me");
-    setUser(u);
-    return u;
+    const normalized = { ...u, role: normalizeRole(u.role) };
+    setUser(normalized);
+    return normalized;
   }, []);
 
   const logout = useCallback(() => {
