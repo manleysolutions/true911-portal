@@ -49,6 +49,8 @@
  */
 import Admin from './pages/Admin';
 import AuthGate from './pages/AuthGate';
+import Command from './pages/Command';
+import CommandSite from './pages/CommandSite';
 import Containers from './pages/Containers';
 import Devices from './pages/Devices';
 import DeploymentMap from './pages/DeploymentMap';
@@ -72,6 +74,8 @@ import __Layout from './Layout.jsx';
 export const PAGES = {
     "Admin": Admin,
     "AuthGate": AuthGate,
+    "Command": Command,
+    "CommandSite": CommandSite,
     "Containers": Containers,
     "Devices": Devices,
     "DeploymentMap": DeploymentMap,
