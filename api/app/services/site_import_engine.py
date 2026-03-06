@@ -27,8 +27,11 @@ from ..models.command_activity import CommandActivity
 # ── Constants ──────────────────────────────────────────────────────────
 
 from .address_enrichment import enrich_row
+from .csv_importer import _resolve_site_name, _resolve_customer_name
 
 REQUIRED_COLUMNS = {"site_name", "system_type"}
+# Accept Zoho aliases for site_name
+SITE_NAME_ALIASES = {"location_name", "customer_name", "subscription_id"}
 ALL_COLUMNS = {
     "site_name", "site_code", "address", "city", "state", "zip", "country",
     "building_type", "floors", "elevator_count",
@@ -97,8 +100,12 @@ def _parse_csv(csv_text: str) -> tuple[list[dict], list[str]]:
     if not reader.fieldnames:
         return [], ["Empty CSV or no header row"]
 
-    headers = {h.strip().lower() for h in reader.fieldnames}
+    headers = {h.strip().lower() for h in reader.fieldnames if h}
+    # Accept Zoho aliases for site_name
+    has_site_name = "site_name" in headers or bool(SITE_NAME_ALIASES & headers)
     missing = REQUIRED_COLUMNS - headers
+    if "site_name" in missing and has_site_name:
+        missing.discard("site_name")
     if missing:
         return [], [f"Missing required columns: {', '.join(sorted(missing))}"]
 
@@ -184,7 +191,7 @@ async def preview_import(
     for i, row in enumerate(rows, 1):
         errors = []
         warnings = []
-        site_name = row.get("site_name", "")
+        site_name = _resolve_site_name(row)
         site_code = row.get("site_code", "")
         system_type_raw = row.get("system_type", "")
         device_serial = row.get("device_serial", "")
@@ -355,7 +362,7 @@ async def commit_import(
     }
 
     for i, row in enumerate(rows, 1):
-        site_name = row.get("site_name", "")
+        site_name = _resolve_site_name(row)
         site_code = row.get("site_code", "")
         system_type_raw = row.get("system_type", "")
         address = row.get("address", "")
@@ -400,7 +407,7 @@ async def commit_import(
                 site_id=site_id,
                 tenant_id=tenant_id,
                 site_name=site_name,
-                customer_name=site_name,
+                customer_name=_resolve_customer_name(row) or site_name,
                 status="Not Connected",
                 onboarding_status="onboarding",
                 e911_street=e_street,
