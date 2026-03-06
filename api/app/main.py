@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import
 
 logger = logging.getLogger("true911")
 
@@ -77,6 +77,7 @@ app.include_router(command_contracts.router,     prefix="/api/command",      tag
 app.include_router(command_network.router,       prefix="/api/command",      tags=["command"])
 app.include_router(command_testing.router,       prefix="/api/command",      tags=["command"])
 app.include_router(command_autonomous.router,    prefix="/api/command",      tags=["command"])
+app.include_router(command_site_import.router,   prefix="/api/command",      tags=["command"])
 
 
 @app.get("/api/config/features")

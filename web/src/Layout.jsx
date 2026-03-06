@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { config } from "@/config";
@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { name: "Settings", page: "Admin", icon: Settings, adminOnly: true },
   { name: "Onboarding", page: "OnboardingWizard", icon: Rocket },
   { name: "Bulk Import", page: "BulkDeploy", icon: FileSpreadsheet, adminOnly: true },
+  { name: "Site Import", page: "SiteImport", icon: Upload, adminOnly: true },
   { name: "Organization", page: "OrgSettings", icon: Globe, adminOnly: true },
   { name: "AI / Samantha", page: "Samantha", icon: Sparkles, featureFlag: "samantha" },
 ];
