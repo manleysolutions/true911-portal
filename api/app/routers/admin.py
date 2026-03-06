@@ -72,6 +72,8 @@ class AdminUserUpdate(BaseModel):
     is_active: Optional[bool] = None
     password: Optional[str] = None
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    tenant_id: Optional[str] = None
 
 
 # Keep backward compat schema for the old PUT endpoint (now subsumed by PATCH)
@@ -326,9 +328,54 @@ async def update_user(
     if body.name is not None:
         user.name = body.name
 
+    if body.email is not None:
+        new_email = body.email.strip().lower()
+        if new_email != user.email:
+            dup = await db.execute(
+                select(User).where(func.lower(User.email) == new_email)
+            )
+            if dup.scalar_one_or_none():
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "An account with this email already exists",
+                )
+            user.email = new_email
+
+    if body.tenant_id is not None:
+        if current_user.role != "SuperAdmin":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only SuperAdmin can change tenant assignment",
+            )
+        # Validate target tenant exists
+        t_check = await db.execute(
+            select(Tenant).where(Tenant.tenant_id == body.tenant_id)
+        )
+        if not t_check.scalar_one_or_none():
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Tenant '{body.tenant_id}' does not exist",
+            )
+        user.tenant_id = body.tenant_id
+
     await db.commit()
     await db.refresh(user)
     return AdminUserOut.from_user(user)
+
+
+@router.put(
+    "/users/{user_id}",
+    response_model=AdminUserOut,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def put_update_user(
+    user_id: uuid.UUID,
+    body: AdminUserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Full update a user (PUT alias for PATCH). Accepts same fields."""
+    return await update_user(user_id, body, db, current_user)
 
 
 @router.delete(

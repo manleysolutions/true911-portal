@@ -4,6 +4,7 @@ import { apiFetch } from "@/api/client";
 import {
   Users, Plus, Loader2, ChevronDown, ArrowLeft, Shield, KeyRound,
   Trash2, RefreshCw, Eye, EyeOff, X, Copy, Check, Mail, Link as LinkIcon,
+  Pencil, Save,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +17,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [resendResult, setResendResult] = useState(null);
   const [tenants, setTenants] = useState([]);
@@ -129,26 +131,37 @@ export default function AdminUsers() {
         </div>
         <p className="text-sm text-gray-500 mb-6">Create users, manage roles, and send invitations.</p>
 
+        {/* Tenant Filter */}
+        {isSuperAdmin && tenants.length > 0 && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4 flex items-center gap-3">
+            <Shield className="w-4 h-4 text-purple-600 flex-shrink-0" />
+            <span className="text-sm font-medium text-purple-800">Tenant Filter</span>
+            <div className="relative">
+              <select
+                value={tenantFilter}
+                onChange={e => setTenantFilter(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-1.5 text-xs font-medium border border-purple-300 bg-white text-purple-800 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400"
+              >
+                <option value="">All Tenants</option>
+                {tenants.map(t => (
+                  <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+            </div>
+            {tenantFilter && (
+              <button onClick={() => setTenantFilter("")} className="text-xs text-purple-600 hover:text-purple-800 underline">
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
           <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
             <Users className="w-4 h-4 text-indigo-600" />
             <h2 className="font-semibold text-gray-900 text-sm">Users</h2>
-            {isSuperAdmin && tenants.length > 0 && (
-              <div className="relative ml-2">
-                <select
-                  value={tenantFilter}
-                  onChange={e => setTenantFilter(e.target.value)}
-                  className="appearance-none pl-2 pr-6 py-1 text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400"
-                >
-                  <option value="">All Tenants</option>
-                  {tenants.map(t => (
-                    <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
-              </div>
-            )}
-            <span className="text-xs text-gray-400 ml-auto mr-3">{users.length} users</span>
+            <span className="text-xs text-gray-400 ml-auto mr-3">{users.length} users{tenantFilter ? ` in ${tenantFilter}` : ""}</span>
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors"
@@ -236,6 +249,12 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setEditTarget(u)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
                         {u.invite_status ? (
                           <button
                             onClick={() => handleResendInvite(u.id)}
@@ -281,6 +300,17 @@ export default function AdminUsers() {
           />
         )}
 
+        {/* Edit User Modal */}
+        {editTarget && (
+          <EditUserModal
+            user={editTarget}
+            onClose={() => setEditTarget(null)}
+            onSaved={fetchUsers}
+            tenants={tenants}
+            isSuperAdmin={isSuperAdmin}
+          />
+        )}
+
         {/* Reset Password Modal */}
         {resetTarget && (
           <ResetPasswordModal
@@ -300,6 +330,91 @@ export default function AdminUsers() {
         )}
       </div>
     </PageWrapper>
+  );
+}
+
+
+/* ── Edit User Modal ── */
+function EditUserModal({ user: target, onClose, onSaved, tenants, isSuperAdmin }) {
+  const [name, setName] = useState(target.name || "");
+  const [email, setEmail] = useState(target.email || "");
+  const [role, setRole] = useState(target.role || "User");
+  const [tenantId, setTenantId] = useState(target.tenant_id || "");
+  const [isActive, setIsActive] = useState(target.is_active !== false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const body = { name, email, role, is_active: isActive };
+      if (isSuperAdmin) body.tenant_id = tenantId;
+      await apiFetch(`/admin/users/${target.id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      toast.success(`User "${name}" updated`);
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error(err?.message || "Failed to update user");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Edit User</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Name</label>
+            <input type="text" required value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Email</label>
+            <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Role</label>
+              <select value={role} onChange={e => setRole(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
+                {isSuperAdmin && <option value="SuperAdmin">SuperAdmin</option>}
+                <option value="Admin">Admin</option>
+                <option value="Manager">Manager</option>
+                <option value="User">User</option>
+              </select>
+            </div>
+            {isSuperAdmin && tenants.length > 0 && (
+              <div className="flex-1">
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Tenant</label>
+                <select value={tenantId} onChange={e => setTenantId(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
+                  {tenants.map(t => <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Status</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setIsActive(true)} className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg border ${isActive ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                Active
+              </button>
+              <button type="button" onClick={() => setIsActive(false)} className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg border ${!isActive ? "bg-red-50 border-red-300 text-red-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                Disabled
+              </button>
+            </div>
+          </div>
+          <button type="submit" disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save Changes
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
