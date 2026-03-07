@@ -649,6 +649,60 @@ async def cleanup_tenants(
     return preview
 
 
+@router.post(
+    "/reset-imported-data",
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def reset_imported_data(
+    keep_tenant_id: str = "rh",
+    dry_run: bool = True,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Wipe ALL imported sites, devices, and auto-provisioned tenants.
+    Keeps the specified tenant (SuperAdmin's home tenant) and its users.
+    Use dry_run=true to preview, dry_run=false to execute.
+    """
+    from app.models.incident import Incident
+
+    # Count what we'll delete
+    all_sites = (await db.execute(select(Site))).scalars().all()
+    all_devices = (await db.execute(select(Device))).scalars().all()
+    all_incidents = (await db.execute(select(Incident))).scalars().all()
+    all_tenants = (await db.execute(select(Tenant))).scalars().all()
+
+    tenants_to_keep = {keep_tenant_id}
+    tenants_to_delete = [t for t in all_tenants if t.tenant_id not in tenants_to_keep]
+
+    preview = {
+        "dry_run": dry_run,
+        "keep_tenant": keep_tenant_id,
+        "sites_to_delete": len(all_sites),
+        "devices_to_delete": len(all_devices),
+        "incidents_to_delete": len(all_incidents),
+        "tenants_to_delete": len(tenants_to_delete),
+        "tenants_to_keep": list(tenants_to_keep),
+        "tenant_ids_deleting": [t.tenant_id for t in tenants_to_delete],
+    }
+
+    if dry_run:
+        return preview
+
+    # Delete in dependency order
+    for inc in all_incidents:
+        await db.delete(inc)
+    for dev in all_devices:
+        await db.delete(dev)
+    for site in all_sites:
+        await db.delete(site)
+    for t in tenants_to_delete:
+        await db.delete(t)
+
+    await db.commit()
+    preview["status"] = "completed"
+    return preview
+
+
 # ── Auto-Provision Tenants from Imported Sites ─────────────────────────────
 
 def _slugify(name: str) -> str:

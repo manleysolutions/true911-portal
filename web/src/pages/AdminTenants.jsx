@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, setActAsTenant, getActAsTenant } from "@/api/client";
-import { Building2, Plus, Loader2, Pencil, ChevronDown, ArrowLeft, Globe, Shield, Wand2, Check, AlertTriangle } from "lucide-react";
+import { Building2, Plus, Loader2, Pencil, ChevronDown, ArrowLeft, Globe, Shield, Wand2, Check, AlertTriangle, Trash2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -31,6 +31,11 @@ export default function AdminTenants() {
   const [cleanupPreview, setCleanupPreview] = useState(null);
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [cleanupTarget, setCleanupTarget] = useState("");
+
+  // Reset state
+  const [resetPreview, setResetPreview] = useState(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetKeepTenant, setResetKeepTenant] = useState("");
 
   const fetchTenants = useCallback(async () => {
     try {
@@ -130,6 +135,34 @@ export default function AdminTenants() {
       toast.error(err?.message || "Failed to cleanup tenants");
     }
     setCleanupLoading(false);
+  };
+
+  const handleResetPreview = async () => {
+    if (!resetKeepTenant) {
+      toast.error("Select which tenant to keep");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const data = await apiFetch(`/admin/reset-imported-data?keep_tenant_id=${resetKeepTenant}&dry_run=true`, { method: "POST" });
+      setResetPreview(data);
+    } catch (err) {
+      toast.error(err?.message || "Failed to preview reset");
+    }
+    setResetLoading(false);
+  };
+
+  const handleResetCommit = async () => {
+    setResetLoading(true);
+    try {
+      const data = await apiFetch(`/admin/reset-imported-data?keep_tenant_id=${resetKeepTenant}&dry_run=false`, { method: "POST" });
+      toast.success(`Reset complete: deleted ${data.sites_to_delete} sites, ${data.devices_to_delete} devices, ${data.tenants_to_delete} tenants`);
+      setResetPreview(null);
+      fetchTenants();
+    } catch (err) {
+      toast.error(err?.message || "Failed to reset");
+    }
+    setResetLoading(false);
   };
 
   const handleTenantSwitch = (tenantId) => {
@@ -349,6 +382,84 @@ export default function AdminTenants() {
                 >
                   Dismiss
                 </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Reset Imported Data */}
+        {isSuperAdmin && tenants.length > 0 && (
+          <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-red-100 bg-red-50">
+              <Trash2 className="w-4 h-4 text-red-600" />
+              <h2 className="font-semibold text-red-900 text-sm">Reset & Start Fresh</h2>
+              <span className="text-xs text-red-400 ml-auto mr-3">Wipe all imported sites, devices & junk tenants</span>
+            </div>
+            <div className="px-5 py-4 flex items-end gap-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Keep this tenant (your home):</label>
+                <select
+                  value={resetKeepTenant}
+                  onChange={e => setResetKeepTenant(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
+                >
+                  <option value="">Select tenant to keep...</option>
+                  {tenants.map(t => (
+                    <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleResetPreview}
+                disabled={resetLoading || !resetKeepTenant}
+                className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                {resetLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                Preview Reset
+              </button>
+            </div>
+            {resetPreview && (
+              <div className="px-5 pb-5">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-3">
+                  <p className="text-sm text-red-800 font-semibold mb-2">This will permanently delete:</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center mb-3">
+                    <div className="bg-white rounded-lg p-2">
+                      <div className="text-xl font-bold text-red-700">{resetPreview.sites_to_delete}</div>
+                      <div className="text-[11px] text-red-600">Sites</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-2">
+                      <div className="text-xl font-bold text-red-700">{resetPreview.devices_to_delete}</div>
+                      <div className="text-[11px] text-red-600">Devices</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-2">
+                      <div className="text-xl font-bold text-red-700">{resetPreview.incidents_to_delete}</div>
+                      <div className="text-[11px] text-red-600">Incidents</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-2">
+                      <div className="text-xl font-bold text-red-700">{resetPreview.tenants_to_delete}</div>
+                      <div className="text-[11px] text-red-600">Tenants</div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-red-600">
+                    Keeping tenant: <span className="font-mono font-bold">{resetPreview.keep_tenant}</span> (your users and login will be preserved)
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleResetCommit}
+                    disabled={resetLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-60 text-white text-sm font-bold rounded-lg transition-colors"
+                  >
+                    {resetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    Confirm: Delete Everything & Start Fresh
+                  </button>
+                  <button
+                    onClick={() => setResetPreview(null)}
+                    className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>
