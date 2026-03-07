@@ -684,41 +684,65 @@ async def reset_imported_data(
     if dry_run:
         return preview
 
-    # Disable FK checks, wipe data tables, re-enable.
-    # This is the only reliable way to clear interlinked tables fast.
-    await db.execute(text("SET session_replication_role = 'replica'"))
-
-    # Delete from all data tables (order doesn't matter with FKs disabled)
-    data_tables = [
-        "device_sim_assignments", "sim_events", "sim_usage_daily", "sims",
-        "site_vendor_assignments", "service_contracts", "verification_tasks",
-        "command_activities", "command_telemetry", "incidents",
-        "notification_rules", "notifications", "e911_change_log",
-        "telemetry_events", "action_audits", "recordings", "events",
-        "lines", "outbound_webhooks", "automation_rules", "escalation_rules",
-        "devices", "sites", "vendors", "external_subscription_maps",
-        "external_customer_maps", "subscriptions", "customers",
-        "integration_statuses", "integrations", "providers",
+    # Delete in strict FK-safe order: leaf tables first, then parents.
+    # Each wrapped in try/except so missing tables don't block progress.
+    delete_order = [
+        # Leaf tables (no children reference them)
+        "DELETE FROM device_sim_assignments",
+        "DELETE FROM sim_events",
+        "DELETE FROM sim_usage_daily",
+        "DELETE FROM site_vendor_assignments",
+        "DELETE FROM verification_tasks",
+        "DELETE FROM command_activities",
+        "DELETE FROM command_telemetry",
+        "DELETE FROM notification_rules",
+        "DELETE FROM notifications",
+        "DELETE FROM e911_change_log",
+        "DELETE FROM telemetry_events",
+        "DELETE FROM action_audits",
+        "DELETE FROM recordings",
+        "DELETE FROM events",
+        "DELETE FROM outbound_webhooks",
+        "DELETE FROM automation_rules",
+        "DELETE FROM escalation_rules",
+        "DELETE FROM integration_statuses",
+        "DELETE FROM external_subscription_maps",
+        "DELETE FROM external_customer_maps",
+        # Mid-level tables
+        "DELETE FROM service_contracts",
+        "DELETE FROM lines",
+        "DELETE FROM sims",
+        "DELETE FROM incidents",
+        "DELETE FROM devices",
+        "DELETE FROM sites",
+        "DELETE FROM vendors",
+        "DELETE FROM subscriptions",
+        "DELETE FROM customers",
+        "DELETE FROM integrations",
+        "DELETE FROM providers",
     ]
-    for table in data_tables:
+
+    errors = []
+    for sql in delete_order:
         try:
-            await db.execute(text(f"DELETE FROM {table}"))
-        except Exception:
-            pass  # table may not exist
+            async with db.begin_nested():
+                await db.execute(text(sql))
+        except Exception as e:
+            errors.append(f"{sql}: {str(e)[:80]}")
 
     # Delete tenants except the keeper
     try:
-        await db.execute(text(
-            "DELETE FROM tenants WHERE tenant_id != :keep"
-        ).bindparams(keep=keep_tenant_id))
-    except Exception:
-        pass
-
-    # Re-enable FK checks
-    await db.execute(text("SET session_replication_role = 'origin'"))
+        async with db.begin_nested():
+            await db.execute(
+                delete(Tenant).where(Tenant.tenant_id != keep_tenant_id)
+            )
+    except Exception as e:
+        errors.append(f"DELETE tenants: {str(e)[:80]}")
 
     await db.commit()
     preview["status"] = "completed"
+    if errors:
+        preview["errors"] = errors
     return preview
 
 
