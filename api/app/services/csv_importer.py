@@ -8,7 +8,7 @@ import csv
 import io
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,8 +29,10 @@ OPTIONAL_COLUMNS = {
     "poc_name", "poc_phone", "poc_email", "notes",
     "location_name", "subscription_id", "metadata",
     # Device columns
-    "device_serial", "device_model", "device_type", "carrier",
-    "sim_iccid", "phone_number", "firmware_version",
+    "manufacturer", "device_serial", "device_model", "device_type",
+    "carrier", "sim_iccid", "phone_number", "firmware_version",
+    "imei", "msisdn", "mac_address", "sim_id",
+    "activated_at", "term_end_date",
 }
 
 
@@ -197,21 +199,58 @@ async def import_sites_from_csv(
         # Create device if device columns are present
         device_serial = (row.get("device_serial") or "").strip()
         device_model = (row.get("device_model") or "").strip()
+        manufacturer = (row.get("manufacturer") or "").strip()
         device_type = (row.get("device_type") or row.get("kit_type") or "").strip()
-        if device_serial or device_model:
-            device_id = f"DEV-{uuid.uuid4().hex[:8].upper()}"
+        dev_imei = (row.get("imei") or "").strip()
+        dev_msisdn = (row.get("msisdn") or row.get("phone_number") or "").strip()
+        dev_mac = (row.get("mac_address") or "").strip()
+        dev_sim_id = (row.get("sim_id") or row.get("sim_iccid") or "").strip()
+
+        # Parse activation date and auto-calculate 3-year term end
+        activated_at = None
+        term_end_date = None
+        raw_activated = (row.get("activated_at") or "").strip()
+        raw_term_end = (row.get("term_end_date") or "").strip()
+        if raw_activated:
+            try:
+                activated_at = date.fromisoformat(raw_activated)
+            except ValueError:
+                try:
+                    activated_at = datetime.strptime(raw_activated, "%m/%d/%Y").date()
+                except ValueError:
+                    pass
+        if raw_term_end:
+            try:
+                term_end_date = date.fromisoformat(raw_term_end)
+            except ValueError:
+                try:
+                    term_end_date = datetime.strptime(raw_term_end, "%m/%d/%Y").date()
+                except ValueError:
+                    pass
+        elif activated_at:
+            # Auto-calculate 3-year term from activation date
+            term_end_date = activated_at + timedelta(days=1095)
+
+        if device_serial or device_model or manufacturer:
+            device_id_val = f"DEV-{uuid.uuid4().hex[:8].upper()}"
             device = Device(
-                device_id=device_id,
+                device_id=device_id_val,
                 tenant_id=tenant_id,
                 site_id=site_id,
                 status="active",
                 device_type=device_type or None,
+                manufacturer=manufacturer or None,
                 model=device_model or None,
                 serial_number=device_serial or None,
-                iccid=(row.get("sim_iccid") or "").strip() or None,
-                msisdn=(row.get("phone_number") or "").strip() or None,
+                mac_address=dev_mac or None,
+                imei=dev_imei or None,
+                iccid=dev_sim_id or None,
+                msisdn=dev_msisdn or None,
                 carrier=(row.get("carrier") or "").strip() or None,
                 firmware_version=(row.get("firmware_version") or "").strip() or None,
+                sim_id=(row.get("sim_id") or "").strip() or None,
+                activated_at=activated_at,
+                term_end_date=term_end_date,
                 notes=f"Imported with site {site_name}",
             )
             db.add(device)

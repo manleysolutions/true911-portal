@@ -1,7 +1,8 @@
+import datetime as _dt
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -30,7 +31,10 @@ class Device(Base):
     hardware_model_id: Mapped[Optional[str]] = mapped_column(
         String(50), ForeignKey("hardware_models.id"), nullable=True
     )
+    manufacturer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    activated_at: Mapped[Optional[_dt.date]] = mapped_column(Date, nullable=True)
+    term_end_date: Mapped[Optional[_dt.date]] = mapped_column(Date, nullable=True)
     api_key_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     claimed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

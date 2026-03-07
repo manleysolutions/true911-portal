@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ class DeviceOut(BaseModel):
     site_id: Optional[str] = None
     status: str
     device_type: Optional[str] = None
+    manufacturer: Optional[str] = None
     model: Optional[str] = None
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
@@ -24,6 +25,8 @@ class DeviceOut(BaseModel):
     last_heartbeat: Optional[datetime] = None
     heartbeat_interval: Optional[int] = None
     notes: Optional[str] = None
+    activated_at: Optional[date] = None
+    term_end_date: Optional[date] = None
     has_api_key: bool = False
     claimed_at: Optional[datetime] = None
     claimed_by: Optional[str] = None
@@ -39,6 +42,7 @@ class DeviceCreate(BaseModel):
     site_id: Optional[str] = None
     status: str = "provisioning"
     device_type: Optional[str] = None
+    manufacturer: Optional[str] = None
     model: Optional[str] = None
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
@@ -51,6 +55,8 @@ class DeviceCreate(BaseModel):
     provision_code: Optional[str] = None
     last_heartbeat: Optional[datetime] = None
     heartbeat_interval: Optional[int] = None
+    activated_at: Optional[date] = None
+    term_end_date: Optional[date] = None
     notes: Optional[str] = None
 
 
@@ -58,6 +64,7 @@ class DeviceUpdate(BaseModel):
     site_id: Optional[str] = None
     status: Optional[str] = None
     device_type: Optional[str] = None
+    manufacturer: Optional[str] = None
     model: Optional[str] = None
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
@@ -70,6 +77,8 @@ class DeviceUpdate(BaseModel):
     provision_code: Optional[str] = None
     last_heartbeat: Optional[datetime] = None
     heartbeat_interval: Optional[int] = None
+    activated_at: Optional[date] = None
+    term_end_date: Optional[date] = None
     notes: Optional[str] = None
 
 
