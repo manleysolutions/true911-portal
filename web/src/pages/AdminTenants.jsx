@@ -27,6 +27,11 @@ export default function AdminTenants() {
   const [provisionCommitting, setProvisionCommitting] = useState(false);
   const [provisionResult, setProvisionResult] = useState(null);
 
+  // Cleanup state
+  const [cleanupPreview, setCleanupPreview] = useState(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupTarget, setCleanupTarget] = useState("");
+
   const fetchTenants = useCallback(async () => {
     try {
       const data = await apiFetch("/admin/tenants");
@@ -97,6 +102,34 @@ export default function AdminTenants() {
       toast.error(err?.message || "Failed to provision tenants");
     }
     setProvisionCommitting(false);
+  };
+
+  const handleCleanupPreview = async () => {
+    if (!cleanupTarget) {
+      toast.error("Select a target tenant first");
+      return;
+    }
+    setCleanupLoading(true);
+    try {
+      const data = await apiFetch(`/admin/tenants/cleanup?target_tenant_id=${cleanupTarget}&dry_run=true`, { method: "POST" });
+      setCleanupPreview(data);
+    } catch (err) {
+      toast.error(err?.message || "Failed to preview cleanup");
+    }
+    setCleanupLoading(false);
+  };
+
+  const handleCleanupCommit = async () => {
+    setCleanupLoading(true);
+    try {
+      const data = await apiFetch(`/admin/tenants/cleanup?target_tenant_id=${cleanupTarget}&dry_run=false`, { method: "POST" });
+      toast.success(`Deleted ${data.junk_tenant_count} junk tenants, moved ${data.sites_to_move} sites`);
+      setCleanupPreview(null);
+      fetchTenants();
+    } catch (err) {
+      toast.error(err?.message || "Failed to cleanup tenants");
+    }
+    setCleanupLoading(false);
   };
 
   const handleTenantSwitch = (tenantId) => {
@@ -316,6 +349,72 @@ export default function AdminTenants() {
                 >
                   Dismiss
                 </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Cleanup Junk Tenants */}
+        {isSuperAdmin && tenants.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+              <h2 className="font-semibold text-gray-900 text-sm">Cleanup Junk Tenants</h2>
+              <span className="text-xs text-gray-400 ml-auto mr-3">Remove numeric/device-name tenants and move sites back</span>
+            </div>
+            <div className="px-5 py-4 flex items-end gap-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Move orphaned sites to:</label>
+                <select
+                  value={cleanupTarget}
+                  onChange={e => setCleanupTarget(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
+                >
+                  <option value="">Select target tenant...</option>
+                  {tenants.map(t => (
+                    <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleCleanupPreview}
+                disabled={cleanupLoading || !cleanupTarget}
+                className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                {cleanupLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />}
+                Preview Cleanup
+              </button>
+            </div>
+            {cleanupPreview && (
+              <div className="px-5 pb-5">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-3">
+                  <p className="text-sm text-red-800 font-medium mb-2">
+                    Found {cleanupPreview.junk_tenant_count} junk tenants with {cleanupPreview.sites_to_move} sites and {cleanupPreview.devices_to_move} devices to move.
+                  </p>
+                  <div className="max-h-[200px] overflow-y-auto text-xs text-red-700 space-y-0.5">
+                    {cleanupPreview.junk_tenants.map(jt => (
+                      <div key={jt.tenant_id} className="font-mono">
+                        {jt.tenant_id} — {jt.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleCleanupCommit}
+                    disabled={cleanupLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {cleanupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Delete Junk Tenants & Move Sites
+                  </button>
+                  <button
+                    onClick={() => setCleanupPreview(null)}
+                    className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -460,6 +460,58 @@ async def list_tenants(db: AsyncSession = Depends(get_db)):
     return [TenantOut.model_validate(t) for t in result.scalars().all()]
 
 
+@router.get(
+    "/tenants/audit",
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def audit_tenants(db: AsyncSession = Depends(get_db)):
+    """Audit all tenants: show tenant_id, name, site count, and sample customer_names."""
+    t_result = await db.execute(select(Tenant).order_by(Tenant.name))
+    tenants = t_result.scalars().all()
+
+    s_result = await db.execute(select(Site))
+    sites = s_result.scalars().all()
+
+    sites_by_tenant: dict[str, list[Site]] = {}
+    for s in sites:
+        sites_by_tenant.setdefault(s.tenant_id, []).append(s)
+
+    # Also collect all distinct customer_names across all sites
+    all_customer_names = sorted({
+        (s.customer_name or "").strip()
+        for s in sites
+        if (s.customer_name or "").strip()
+    })
+
+    rows = []
+    for t in tenants:
+        t_sites = sites_by_tenant.get(t.tenant_id, [])
+        sample_names = sorted({
+            (s.customer_name or "").strip()
+            for s in t_sites
+            if (s.customer_name or "").strip()
+        })[:5]
+        sample_site_names = sorted({
+            (s.site_name or "").strip()
+            for s in t_sites
+            if (s.site_name or "").strip()
+        })[:5]
+        rows.append({
+            "tenant_id": t.tenant_id,
+            "name": t.name,
+            "site_count": len(t_sites),
+            "sample_customer_names": sample_names,
+            "sample_site_names": sample_site_names,
+        })
+
+    return {
+        "tenants": rows,
+        "total_tenants": len(tenants),
+        "total_sites": len(sites),
+        "all_distinct_customer_names": all_customer_names,
+    }
+
+
 @router.post(
     "/tenants",
     response_model=TenantOut,
@@ -508,6 +560,95 @@ async def update_tenant(
     return TenantOut.model_validate(tenant)
 
 
+@router.post(
+    "/tenants/cleanup",
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def cleanup_tenants(
+    target_tenant_id: str = "rh",
+    dry_run: bool = True,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete junk tenants (numeric IDs, device names, etc.) and move their sites
+    back to a target tenant. Use dry_run=true to preview, dry_run=false to execute.
+
+    A tenant is considered 'junk' if its tenant_id:
+      - is purely numeric (e.g. '849')
+      - looks like a device/model name (e.g. 'facp-1', 'csa-200')
+      - is very short (1-2 chars) unless it's a known slug
+    """
+    t_result = await db.execute(select(Tenant))
+    tenants = t_result.scalars().all()
+
+    # Validate target tenant exists
+    target = None
+    for t in tenants:
+        if t.tenant_id == target_tenant_id:
+            target = t
+            break
+    if not target:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Target tenant '{target_tenant_id}' does not exist",
+        )
+
+    # Patterns that indicate junk tenant IDs
+    device_patterns = re.compile(
+        r"^(facp|csa|das|panel|sensor|unit|device|model|serial|sim|imei|iccid|msisdn)"
+        r"[-_]?\d*$",
+        re.IGNORECASE,
+    )
+
+    def _is_junk_tenant(tid: str) -> bool:
+        cleaned = tid.replace("-", "").replace("_", "")
+        if cleaned.isdigit():
+            return True
+        if device_patterns.match(tid):
+            return True
+        if len(tid) <= 2 and not tid.isalpha():
+            return True
+        return False
+
+    junk_tenants = [t for t in tenants if _is_junk_tenant(t.tenant_id) and t.tenant_id != target_tenant_id]
+
+    # Load sites and devices in junk tenants
+    junk_ids = {t.tenant_id for t in junk_tenants}
+    s_result = await db.execute(select(Site).where(Site.tenant_id.in_(junk_ids)))
+    junk_sites = s_result.scalars().all()
+    d_result = await db.execute(select(Device).where(Device.tenant_id.in_(junk_ids)))
+    junk_devices = d_result.scalars().all()
+
+    preview = {
+        "dry_run": dry_run,
+        "target_tenant": target_tenant_id,
+        "junk_tenants": [{"tenant_id": t.tenant_id, "name": t.name} for t in junk_tenants],
+        "junk_tenant_count": len(junk_tenants),
+        "sites_to_move": len(junk_sites),
+        "devices_to_move": len(junk_devices),
+    }
+
+    if dry_run:
+        return preview
+
+    # Move sites and devices to target
+    for site in junk_sites:
+        site.tenant_id = target_tenant_id
+    for device in junk_devices:
+        device.tenant_id = target_tenant_id
+
+    await db.flush()
+
+    # Delete junk tenants (now empty)
+    for t in junk_tenants:
+        await db.delete(t)
+
+    await db.commit()
+
+    preview["status"] = "completed"
+    return preview
+
+
 # ── Auto-Provision Tenants from Imported Sites ─────────────────────────────
 
 def _slugify(name: str) -> str:
@@ -515,6 +656,32 @@ def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower())
     slug = slug.strip("-")
     return slug[:100] if slug else ""
+
+
+# Patterns that look like device/equipment names, not real companies
+_DEVICE_NAME_RE = re.compile(
+    r"^(facp|csa|das|panel|sensor|unit|device|model|serial|sim|gateway|router|switch|ap|radio)"
+    r"[-_\s]?\d+",
+    re.IGNORECASE,
+)
+
+
+def _is_valid_customer_name(name: str) -> bool:
+    """Return True if name looks like a real company name, not a numeric ID or device label."""
+    stripped = name.strip()
+    if not stripped:
+        return False
+    # Pure numeric
+    cleaned = stripped.replace("-", "").replace("_", "").replace(" ", "")
+    if cleaned.isdigit():
+        return False
+    # Device/equipment pattern
+    if _DEVICE_NAME_RE.match(stripped):
+        return False
+    # Too short to be a real name (single char or 2-letter non-word)
+    if len(stripped) <= 2 and not stripped.isalpha():
+        return False
+    return True
 
 
 class TenantGroupOut(BaseModel):
@@ -579,11 +746,15 @@ async def auto_provision_preview(
     t_result = await db.execute(select(Tenant))
     existing_tenants = {t.tenant_id: t for t in t_result.scalars().all()}
 
-    # Group sites by customer_name
+    # Group sites by customer_name (skip junk names)
     groups: dict[str, list[Site]] = {}
+    skipped_junk = 0
     for site in sites:
         name = (site.customer_name or "").strip()
         if not name:
+            continue
+        if not _is_valid_customer_name(name):
+            skipped_junk += 1
             continue
         groups.setdefault(name, []).append(site)
 
@@ -647,12 +818,12 @@ async def auto_provision_commit(
         if d.site_id:
             devices_by_site.setdefault(d.site_id, []).append(d)
 
-    # Group sites by customer_name
+    # Group sites by customer_name (skip junk names)
     groups: dict[str, list[Site]] = {}
     skipped = 0
     for site in sites:
         name = (site.customer_name or "").strip()
-        if not name:
+        if not name or not _is_valid_customer_name(name):
             skipped += 1
             continue
         groups.setdefault(name, []).append(site)
