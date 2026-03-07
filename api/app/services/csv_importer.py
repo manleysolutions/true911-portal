@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.device import Device
 from ..models.site import Site
 from ..models.site_template import SiteTemplate
 from ..models.command_activity import CommandActivity
@@ -27,6 +28,9 @@ OPTIONAL_COLUMNS = {
     "e911_zip", "building_type", "kit_type", "template_name", "status",
     "poc_name", "poc_phone", "poc_email", "notes",
     "location_name", "subscription_id", "metadata",
+    # Device columns
+    "device_serial", "device_model", "device_type", "carrier",
+    "sim_iccid", "phone_number", "firmware_version",
 }
 
 
@@ -146,6 +150,7 @@ async def import_sites_from_csv(
     rows = list(reader)
     created = 0
     skipped = 0
+    devices_created = 0
     errors = []
 
     for i, row in enumerate(rows, 1):
@@ -189,6 +194,29 @@ async def import_sites_from_csv(
         existing_ids.add(site_id)
         created += 1
 
+        # Create device if device columns are present
+        device_serial = (row.get("device_serial") or "").strip()
+        device_model = (row.get("device_model") or "").strip()
+        device_type = (row.get("device_type") or row.get("kit_type") or "").strip()
+        if device_serial or device_model:
+            device_id = f"DEV-{uuid.uuid4().hex[:8].upper()}"
+            device = Device(
+                device_id=device_id,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                status="active",
+                device_type=device_type or None,
+                model=device_model or None,
+                serial_number=device_serial or None,
+                iccid=(row.get("sim_iccid") or "").strip() or None,
+                msisdn=(row.get("phone_number") or "").strip() or None,
+                carrier=(row.get("carrier") or "").strip() or None,
+                firmware_version=(row.get("firmware_version") or "").strip() or None,
+                notes=f"Imported with site {site_name}",
+            )
+            db.add(device)
+            devices_created += 1
+
         # Apply template if specified
         if template_name and template_name in templates_by_name:
             template = templates_by_name[template_name]
@@ -208,5 +236,6 @@ async def import_sites_from_csv(
         "total_rows": len(rows),
         "created": created,
         "skipped": skipped,
+        "devices_created": devices_created,
         "errors": errors,
     }

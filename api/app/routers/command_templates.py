@@ -195,8 +195,8 @@ async def bulk_import_sites(
 @router.get("/bulk-import/template-csv")
 async def get_csv_template():
     """Return a CSV template for bulk import."""
-    headers = "site_name,site_id,customer_name,e911_street,e911_city,e911_state,e911_zip,building_type,kit_type,template_name,poc_name,poc_phone,poc_email,notes"
-    example = 'Acme Tower Lobby,SITE-100,Acme Corp,100 Main St,Dallas,TX,75201,commercial_office,FACP,Commercial Office Building,John Smith,+12145550100,jsmith@acme.com,Main lobby panel'
+    headers = "site_name,site_id,customer_name,e911_street,e911_city,e911_state,e911_zip,building_type,kit_type,device_serial,device_model,device_type,carrier,sim_iccid,phone_number,firmware_version,poc_name,poc_phone,poc_email,notes"
+    example = 'RH Gallery Dallas,RH-DAL-001,Restoration Hardware,8300 NorthPark Center,Dallas,TX,75225,retail,FACP,MS130-SN-001,MS130v4,Cellular Communicator,T-Mobile,8901260882280000001,+12145559001,4.2.1,Mike Torres,+12145550100,mike@rh.com,Main lobby panel'
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
         f"{headers}\n{example}\n",

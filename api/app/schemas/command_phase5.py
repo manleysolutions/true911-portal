@@ -128,6 +128,7 @@ class BulkImportResult(BaseModel):
     total_rows: int
     created: int
     skipped: int
+    devices_created: int = 0
     errors: list[str]
 
 
