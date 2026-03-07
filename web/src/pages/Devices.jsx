@@ -447,6 +447,9 @@ export default function Devices() {
         (d.serial_number || "").toLowerCase().includes(q) ||
         (d.model || "").toLowerCase().includes(q) ||
         (d.imei || "").toLowerCase().includes(q) ||
+        (d.iccid || "").toLowerCase().includes(q) ||
+        (d.msisdn || "").toLowerCase().includes(q) ||
+        (d.carrier || "").toLowerCase().includes(q) ||
         (site?.site_name || "").toLowerCase().includes(q)
       );
     }
@@ -516,11 +519,14 @@ export default function Devices() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Device ID</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Site</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Model</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">IMEI</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Serial</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">IMEI</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">SIM ICCID</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">MSISDN</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Carrier</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Live</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Last Heartbeat</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Last HB</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-24">Actions</th>
               </tr>
             </thead>
@@ -536,8 +542,11 @@ export default function Devices() {
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{d.device_id}</td>
                     <td className="px-4 py-2.5 text-gray-800">{site?.site_name || d.site_id || "\u2014"}</td>
                     <td className="px-4 py-2.5 text-gray-600">{d.model || "\u2014"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.imei || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.serial_number || "\u2014"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.imei || "\u2014"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.iccid || "\u2014"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.msisdn || "\u2014"}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{d.carrier || "\u2014"}</td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[d.status] || STATUS_BADGE.inactive}`}>
                         {d.status}
@@ -581,7 +590,7 @@ export default function Devices() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">No devices found</td>
+                  <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-400">No devices found</td>
                 </tr>
               )}
             </tbody>

@@ -199,8 +199,8 @@ async def bulk_import_sites(
 @router.get("/bulk-import/template-csv")
 async def get_csv_template():
     """Return a CSV template for bulk import."""
-    headers = "site_name,site_id,customer_name,e911_street,e911_city,e911_state,e911_zip,building_type,kit_type,manufacturer,device_model,device_serial,imei,msisdn,mac_address,sim_id,carrier,firmware_version,activated_at,term_end_date,poc_name,poc_phone,poc_email,notes"
-    example = 'RH Gallery Dallas,RH-DAL-001,Restoration Hardware,8300 NorthPark Center,Dallas,TX,75225,retail,FACP,Napco,StarLink SLE,SL-SN-00001,352656100123456,+12145559001,AA:BB:CC:DD:EE:01,NAP-DEV-001,T-Mobile,3.8.0,2024-06-15,,Mike Torres,+12145550100,mike@rh.com,Main lobby FACP communicator'
+    headers = "site_name,site_id,customer_name,e911_street,e911_city,e911_state,e911_zip,building_type,device_type,manufacturer,device_model,device_serial,imei,sim_iccid,phone_number,mac_address,sim_id,carrier,firmware_version,activated_at,term_end_date,poc_name,poc_phone,poc_email,notes"
+    example = 'RH Gallery Dallas,RH-DAL-001,Restoration Hardware,8300 NorthPark Center,Dallas,TX,75225,retail,FACP,Napco,StarLink SLE,SL-SN-00001,352656100123456,8901260882310000001,+12145559001,AA:BB:CC:DD:EE:01,NAP-DEV-001,T-Mobile,3.8.0,2024-06-15,,Mike Torres,+12145550100,mike@rh.com,Main lobby FACP communicator'
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
         f"{headers}\n{example}\n",

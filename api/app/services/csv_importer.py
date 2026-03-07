@@ -30,7 +30,7 @@ OPTIONAL_COLUMNS = {
     "location_name", "subscription_id", "metadata",
     # Device columns
     "manufacturer", "device_serial", "device_model", "device_type",
-    "carrier", "sim_iccid", "phone_number", "firmware_version",
+    "carrier", "sim_iccid", "iccid", "phone_number", "firmware_version",
     "imei", "msisdn", "mac_address", "sim_id",
     "activated_at", "term_end_date",
 }
@@ -196,15 +196,17 @@ async def import_sites_from_csv(
         existing_ids.add(site_id)
         created += 1
 
-        # Create device if device columns are present
+        # ── Device field extraction ──
         device_serial = (row.get("device_serial") or "").strip()
         device_model = (row.get("device_model") or "").strip()
         manufacturer = (row.get("manufacturer") or "").strip()
         device_type = (row.get("device_type") or row.get("kit_type") or "").strip()
         dev_imei = (row.get("imei") or "").strip()
-        dev_msisdn = (row.get("msisdn") or row.get("phone_number") or "").strip()
+        dev_iccid = (row.get("sim_iccid") or row.get("iccid") or "").strip()
+        dev_msisdn = (row.get("phone_number") or row.get("msisdn") or "").strip()
         dev_mac = (row.get("mac_address") or "").strip()
-        dev_sim_id = (row.get("sim_id") or row.get("sim_iccid") or "").strip()
+        dev_sim_id = (row.get("sim_id") or "").strip()
+        dev_carrier = (row.get("carrier") or "").strip()
 
         # Parse activation date and auto-calculate 3-year term end
         activated_at = None
@@ -231,7 +233,12 @@ async def import_sites_from_csv(
             # Auto-calculate 3-year term from activation date
             term_end_date = activated_at + timedelta(days=1095)
 
-        if device_serial or device_model or manufacturer:
+        # Create device if ANY device-related column has data
+        has_device_data = (
+            device_serial or device_model or manufacturer
+            or dev_imei or dev_iccid or dev_msisdn or dev_mac or dev_sim_id
+        )
+        if has_device_data:
             device_id_val = f"DEV-{uuid.uuid4().hex[:8].upper()}"
             try:
                 device = Device(
@@ -245,11 +252,11 @@ async def import_sites_from_csv(
                     serial_number=device_serial or None,
                     mac_address=dev_mac or None,
                     imei=dev_imei or None,
-                    iccid=dev_sim_id or None,
+                    iccid=dev_iccid or None,
                     msisdn=dev_msisdn or None,
-                    carrier=(row.get("carrier") or "").strip() or None,
+                    carrier=dev_carrier or None,
                     firmware_version=(row.get("firmware_version") or "").strip() or None,
-                    sim_id=(row.get("sim_id") or "").strip() or None,
+                    sim_id=dev_sim_id or None,
                     activated_at=activated_at,
                     term_end_date=term_end_date,
                     notes=f"Imported with site {site_name}",
