@@ -233,28 +233,31 @@ async def import_sites_from_csv(
 
         if device_serial or device_model or manufacturer:
             device_id_val = f"DEV-{uuid.uuid4().hex[:8].upper()}"
-            device = Device(
-                device_id=device_id_val,
-                tenant_id=tenant_id,
-                site_id=site_id,
-                status="active",
-                device_type=device_type or None,
-                manufacturer=manufacturer or None,
-                model=device_model or None,
-                serial_number=device_serial or None,
-                mac_address=dev_mac or None,
-                imei=dev_imei or None,
-                iccid=dev_sim_id or None,
-                msisdn=dev_msisdn or None,
-                carrier=(row.get("carrier") or "").strip() or None,
-                firmware_version=(row.get("firmware_version") or "").strip() or None,
-                sim_id=(row.get("sim_id") or "").strip() or None,
-                activated_at=activated_at,
-                term_end_date=term_end_date,
-                notes=f"Imported with site {site_name}",
-            )
-            db.add(device)
-            devices_created += 1
+            try:
+                device = Device(
+                    device_id=device_id_val,
+                    tenant_id=tenant_id,
+                    site_id=site_id,
+                    status="active",
+                    device_type=device_type or None,
+                    manufacturer=manufacturer or None,
+                    model=device_model or None,
+                    serial_number=device_serial or None,
+                    mac_address=dev_mac or None,
+                    imei=dev_imei or None,
+                    iccid=dev_sim_id or None,
+                    msisdn=dev_msisdn or None,
+                    carrier=(row.get("carrier") or "").strip() or None,
+                    firmware_version=(row.get("firmware_version") or "").strip() or None,
+                    sim_id=(row.get("sim_id") or "").strip() or None,
+                    activated_at=activated_at,
+                    term_end_date=term_end_date,
+                    notes=f"Imported with site {site_name}",
+                )
+                db.add(device)
+                devices_created += 1
+            except Exception as e:
+                errors.append(f"Row {i}: device creation failed: {str(e)[:100]}")
 
         # Apply template if specified
         if template_name and template_name in templates_by_name:

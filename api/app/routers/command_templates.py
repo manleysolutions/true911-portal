@@ -184,10 +184,14 @@ async def bulk_import_sites(
     content = await file.read()
     csv_text = content.decode("utf-8-sig", errors="replace")
 
-    result = await import_sites_from_csv(
-        db, csv_text, current_user.tenant_id, current_user.email,
-    )
-    await db.commit()
+    try:
+        result = await import_sites_from_csv(
+            db, csv_text, current_user.tenant_id, current_user.email,
+        )
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Import failed: {str(e)[:300]}")
 
     return BulkImportResult(**result)
 
