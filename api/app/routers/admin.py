@@ -663,16 +663,12 @@ async def reset_imported_data(
     Keeps the specified tenant (SuperAdmin's home tenant) and its users.
     Use dry_run=true to preview, dry_run=false to execute.
     """
-    from app.models.incident import Incident
-    from app.models.vendor import Vendor
-    from app.models.site_vendor import SiteVendorAssignment
-    from app.models.verification_task import VerificationTask
-    from app.models.command_activity import CommandActivity
+    from sqlalchemy import text
 
-    # Count what we'll delete (use scalar counts, not loading all objects)
+    # Count what we'll delete
     site_count = await db.scalar(select(func.count()).select_from(Site)) or 0
     device_count = await db.scalar(select(func.count()).select_from(Device)) or 0
-    incident_count = await db.scalar(select(func.count()).select_from(Incident)) or 0
+
     tenant_count = await db.scalar(
         select(func.count()).select_from(Tenant).where(Tenant.tenant_id != keep_tenant_id)
     ) or 0
@@ -682,22 +678,51 @@ async def reset_imported_data(
         "keep_tenant": keep_tenant_id,
         "sites_to_delete": site_count,
         "devices_to_delete": device_count,
-        "incidents_to_delete": incident_count,
         "tenants_to_delete": tenant_count,
     }
 
     if dry_run:
         return preview
 
-    # Bulk delete in dependency order using SQL DELETE statements (fast)
-    await db.execute(delete(SiteVendorAssignment))
-    await db.execute(delete(VerificationTask))
-    await db.execute(delete(CommandActivity))
-    await db.execute(delete(Incident))
-    await db.execute(delete(Device))
-    await db.execute(delete(Site))
-    await db.execute(delete(Vendor))
-    await db.execute(delete(Tenant).where(Tenant.tenant_id != keep_tenant_id))
+    # Use raw SQL TRUNCATE CASCADE for speed and to handle all FK deps.
+    # We truncate data tables but DELETE tenants selectively (keep the home one).
+    tables_to_truncate = [
+        "device_sim_assignments",
+        "sim_events",
+        "sim_usage_daily",
+        "sims",
+        "site_vendor_assignments",
+        "service_contracts",
+        "verification_tasks",
+        "command_activities",
+        "command_telemetry",
+        "incidents",
+        "notification_rules",
+        "notifications",
+        "e911_change_log",
+        "telemetry_events",
+        "action_audits",
+        "recordings",
+        "events",
+        "lines",
+        "outbound_webhooks",
+        "automation_rules",
+        "escalation_rules",
+        "devices",
+        "sites",
+        "vendors",
+    ]
+
+    for table in tables_to_truncate:
+        try:
+            await db.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+        except Exception:
+            pass  # table may not exist yet, skip
+
+    # Delete tenants except the keeper
+    await db.execute(
+        delete(Tenant).where(Tenant.tenant_id != keep_tenant_id)
+    )
 
     await db.commit()
     preview["status"] = "completed"
