@@ -10,6 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission, get_current_user
+from app.models.device import Device
+from app.models.site import Site
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.auth import generate_invite_token, hash_password, validate_password_strength
@@ -89,6 +91,7 @@ TENANT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 class TenantOut(BaseModel):
     tenant_id: str
     name: str
+    org_type: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -503,3 +506,200 @@ async def update_tenant(
     await db.commit()
     await db.refresh(tenant)
     return TenantOut.model_validate(tenant)
+
+
+# ── Auto-Provision Tenants from Imported Sites ─────────────────────────────
+
+def _slugify(name: str) -> str:
+    """Convert a customer name to a tenant slug: lowercase, alphanumeric + hyphens."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower())
+    slug = slug.strip("-")
+    return slug[:100] if slug else ""
+
+
+class TenantGroupOut(BaseModel):
+    customer_name: str
+    proposed_tenant_id: str
+    proposed_display_name: str
+    site_count: int
+    device_count: int
+    existing_tenant: Optional[str] = None  # set if tenant already exists
+
+
+class AutoProvisionPreview(BaseModel):
+    total_sites: int
+    unique_customers: int
+    groups: list[TenantGroupOut]
+    tenants_to_create: int
+    tenants_already_exist: int
+
+
+class AutoProvisionCommit(BaseModel):
+    commit: bool = True
+    source_tenant_id: Optional[str] = None  # limit to sites in a specific tenant
+
+
+class AutoProvisionResult(BaseModel):
+    tenants_created: int
+    sites_reassigned: int
+    devices_reassigned: int
+    skipped_empty_name: int
+    details: list[dict]
+
+
+@router.post(
+    "/auto-provision/preview",
+    response_model=AutoProvisionPreview,
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def auto_provision_preview(
+    source_tenant_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Preview tenant auto-provisioning from customer_name groupings. SuperAdmin only."""
+    q = select(Site)
+    if source_tenant_id:
+        q = q.where(Site.tenant_id == source_tenant_id)
+    result = await db.execute(q)
+    sites = result.scalars().all()
+
+    # Load devices for counting
+    dq = select(Device)
+    if source_tenant_id:
+        dq = dq.where(Device.tenant_id == source_tenant_id)
+    dev_result = await db.execute(dq)
+    all_devices = dev_result.scalars().all()
+    devices_by_site: dict[str, int] = {}
+    for d in all_devices:
+        if d.site_id:
+            devices_by_site[d.site_id] = devices_by_site.get(d.site_id, 0) + 1
+
+    # Load existing tenants
+    t_result = await db.execute(select(Tenant))
+    existing_tenants = {t.tenant_id: t for t in t_result.scalars().all()}
+
+    # Group sites by customer_name
+    groups: dict[str, list[Site]] = {}
+    for site in sites:
+        name = (site.customer_name or "").strip()
+        if not name:
+            continue
+        groups.setdefault(name, []).append(site)
+
+    group_list = []
+    tenants_to_create = 0
+    tenants_already_exist = 0
+    for cust_name, cust_sites in sorted(groups.items(), key=lambda x: -len(x[1])):
+        slug = _slugify(cust_name)
+        if not slug:
+            continue
+        dev_count = sum(devices_by_site.get(s.site_id, 0) for s in cust_sites)
+        existing = existing_tenants.get(slug)
+        if existing:
+            tenants_already_exist += 1
+        else:
+            tenants_to_create += 1
+        group_list.append(TenantGroupOut(
+            customer_name=cust_name,
+            proposed_tenant_id=slug,
+            proposed_display_name=cust_name,
+            site_count=len(cust_sites),
+            device_count=dev_count,
+            existing_tenant=slug if existing else None,
+        ))
+
+    return AutoProvisionPreview(
+        total_sites=len(sites),
+        unique_customers=len(groups),
+        groups=group_list,
+        tenants_to_create=tenants_to_create,
+        tenants_already_exist=tenants_already_exist,
+    )
+
+
+@router.post(
+    "/auto-provision/commit",
+    response_model=AutoProvisionResult,
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def auto_provision_commit(
+    body: AutoProvisionCommit,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create tenants from customer_name groupings and reassign sites + devices. SuperAdmin only."""
+    q = select(Site)
+    if body.source_tenant_id:
+        q = q.where(Site.tenant_id == body.source_tenant_id)
+    result = await db.execute(q)
+    sites = result.scalars().all()
+
+    # Load existing tenants
+    t_result = await db.execute(select(Tenant))
+    existing_tenants = {t.tenant_id for t in t_result.scalars().all()}
+
+    # Group sites by customer_name
+    groups: dict[str, list[Site]] = {}
+    skipped = 0
+    for site in sites:
+        name = (site.customer_name or "").strip()
+        if not name:
+            skipped += 1
+            continue
+        groups.setdefault(name, []).append(site)
+
+    tenants_created = 0
+    sites_reassigned = 0
+    devices_reassigned = 0
+    details = []
+
+    for cust_name, cust_sites in sorted(groups.items(), key=lambda x: -len(x[1])):
+        slug = _slugify(cust_name)
+        if not slug:
+            skipped += len(cust_sites)
+            continue
+
+        # Create tenant if it doesn't exist
+        if slug not in existing_tenants:
+            tenant = Tenant(tenant_id=slug, name=cust_name)
+            db.add(tenant)
+            existing_tenants.add(slug)
+            tenants_created += 1
+
+        # Reassign sites
+        site_ids = []
+        for site in cust_sites:
+            if site.tenant_id != slug:
+                site.tenant_id = slug
+                sites_reassigned += 1
+            site_ids.append(site.site_id)
+
+        # Reassign devices that belong to these sites
+        dev_result = await db.execute(
+            select(Device).where(Device.site_id.in_(site_ids))
+        )
+        devs = dev_result.scalars().all()
+        dev_count = 0
+        for d in devs:
+            if d.tenant_id != slug:
+                d.tenant_id = slug
+                dev_count += 1
+                devices_reassigned += 1
+
+        details.append({
+            "customer_name": cust_name,
+            "tenant_id": slug,
+            "sites": len(cust_sites),
+            "devices_moved": dev_count,
+        })
+
+    await db.commit()
+
+    return AutoProvisionResult(
+        tenants_created=tenants_created,
+        sites_reassigned=sites_reassigned,
+        devices_reassigned=devices_reassigned,
+        skipped_empty_name=skipped,
+        details=details,
+    )

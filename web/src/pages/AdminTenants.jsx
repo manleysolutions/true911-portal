@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, setActAsTenant, getActAsTenant } from "@/api/client";
-import { Building2, Plus, Loader2, Pencil, ChevronDown, ArrowLeft, Globe, Shield } from "lucide-react";
+import { Building2, Plus, Loader2, Pencil, ChevronDown, ArrowLeft, Globe, Shield, Wand2, Check, AlertTriangle } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -20,6 +20,12 @@ export default function AdminTenants() {
 
   // Tenant switcher state
   const [activeTenant, setActiveTenant] = useState(getActAsTenant() || "");
+
+  // Auto-provision state
+  const [provisionPreview, setProvisionPreview] = useState(null);
+  const [provisionLoading, setProvisionLoading] = useState(false);
+  const [provisionCommitting, setProvisionCommitting] = useState(false);
+  const [provisionResult, setProvisionResult] = useState(null);
 
   const fetchTenants = useCallback(async () => {
     try {
@@ -62,6 +68,35 @@ export default function AdminTenants() {
       toast.error(err?.message || "Failed to update tenant");
     }
     setSaving(false);
+  };
+
+  const handleProvisionPreview = async () => {
+    setProvisionLoading(true);
+    setProvisionResult(null);
+    try {
+      const data = await apiFetch("/admin/auto-provision/preview", { method: "POST" });
+      setProvisionPreview(data);
+    } catch (err) {
+      toast.error(err?.message || "Failed to load preview");
+    }
+    setProvisionLoading(false);
+  };
+
+  const handleProvisionCommit = async () => {
+    setProvisionCommitting(true);
+    try {
+      const data = await apiFetch("/admin/auto-provision/commit", {
+        method: "POST",
+        body: JSON.stringify({ commit: true }),
+      });
+      setProvisionResult(data);
+      setProvisionPreview(null);
+      toast.success(`Created ${data.tenants_created} tenants, reassigned ${data.sites_reassigned} sites`);
+      fetchTenants();
+    } catch (err) {
+      toast.error(err?.message || "Failed to provision tenants");
+    }
+    setProvisionCommitting(false);
   };
 
   const handleTenantSwitch = (tenantId) => {
@@ -122,6 +157,167 @@ export default function AdminTenants() {
                 <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Auto-Provision Section */}
+        {isSuperAdmin && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+              <Wand2 className="w-4 h-4 text-amber-600" />
+              <h2 className="font-semibold text-gray-900 text-sm">Auto-Provision Tenants from Sites</h2>
+              <span className="text-xs text-gray-400 ml-auto mr-3">Group sites by customer name into tenants</span>
+              {!provisionPreview && !provisionResult && (
+                <button
+                  onClick={handleProvisionPreview}
+                  disabled={provisionLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  {provisionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  Preview
+                </button>
+              )}
+            </div>
+
+            {provisionPreview && (
+              <div className="p-5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-gray-900">{provisionPreview.total_sites}</div>
+                    <div className="text-[11px] text-gray-500 uppercase font-medium">Total Sites</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-gray-900">{provisionPreview.unique_customers}</div>
+                    <div className="text-[11px] text-gray-500 uppercase font-medium">Unique Customers</div>
+                  </div>
+                  <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-emerald-700">{provisionPreview.tenants_to_create}</div>
+                    <div className="text-[11px] text-emerald-600 uppercase font-medium">Tenants to Create</div>
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-blue-700">{provisionPreview.tenants_already_exist}</div>
+                    <div className="text-[11px] text-blue-600 uppercase font-medium">Already Exist</div>
+                  </div>
+                </div>
+
+                <div className="max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50">
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500">Customer Name</th>
+                        <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500">Tenant ID</th>
+                        <th className="text-center px-4 py-2 text-xs font-semibold text-gray-500">Sites</th>
+                        <th className="text-center px-4 py-2 text-xs font-semibold text-gray-500">Devices</th>
+                        <th className="text-center px-4 py-2 text-xs font-semibold text-gray-500">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {provisionPreview.groups.map(g => (
+                        <tr key={g.proposed_tenant_id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-medium text-gray-900">{g.customer_name}</td>
+                          <td className="px-4 py-2 font-mono text-xs text-gray-600">{g.proposed_tenant_id}</td>
+                          <td className="px-4 py-2 text-center text-gray-700">{g.site_count}</td>
+                          <td className="px-4 py-2 text-center text-gray-700">{g.device_count}</td>
+                          <td className="px-4 py-2 text-center">
+                            {g.existing_tenant ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                                <Check className="w-3 h-3" /> Exists
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                <Plus className="w-3 h-3" /> New
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center gap-3 mt-4">
+                  <button
+                    onClick={handleProvisionCommit}
+                    disabled={provisionCommitting}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {provisionCommitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Create Tenants & Reassign Sites
+                  </button>
+                  <button
+                    onClick={() => setProvisionPreview(null)}
+                    className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <span className="text-xs text-gray-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-amber-500" />
+                    This will create tenants and move sites + devices to them
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {provisionResult && (
+              <div className="p-5">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Check className="w-5 h-5 text-emerald-600" />
+                    <span className="text-sm font-semibold text-emerald-800">Auto-Provisioning Complete</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div>
+                      <div className="text-xl font-bold text-emerald-700">{provisionResult.tenants_created}</div>
+                      <div className="text-[11px] text-emerald-600">Tenants Created</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold text-emerald-700">{provisionResult.sites_reassigned}</div>
+                      <div className="text-[11px] text-emerald-600">Sites Moved</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold text-emerald-700">{provisionResult.devices_reassigned}</div>
+                      <div className="text-[11px] text-emerald-600">Devices Moved</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold text-gray-500">{provisionResult.skipped_empty_name}</div>
+                      <div className="text-[11px] text-gray-500">Skipped (no name)</div>
+                    </div>
+                  </div>
+                </div>
+
+                {provisionResult.details.length > 0 && (
+                  <div className="max-h-[300px] overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-gray-50">
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500">Customer</th>
+                          <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500">Tenant ID</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-gray-500">Sites</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-gray-500">Devices Moved</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {provisionResult.details.map(d => (
+                          <tr key={d.tenant_id} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 text-gray-900">{d.customer_name}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-gray-600">{d.tenant_id}</td>
+                            <td className="px-4 py-2 text-center">{d.sites}</td>
+                            <td className="px-4 py-2 text-center">{d.devices_moved}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setProvisionResult(null)}
+                  className="mt-3 px-3 py-1.5 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
           </div>
         )}
 
