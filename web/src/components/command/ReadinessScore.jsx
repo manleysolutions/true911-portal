@@ -79,8 +79,11 @@ export default function ReadinessScore({ readiness = {} }) {
           </div>
         )}
 
-        {factors.length === 0 && (
+        {factors.length === 0 && score >= 85 && (
           <p className="text-center text-xs text-slate-500">All systems nominal</p>
+        )}
+        {factors.length === 0 && score < 85 && (
+          <p className="text-center text-xs text-slate-500">Score reflects current deployment status</p>
         )}
       </div>
     </div>

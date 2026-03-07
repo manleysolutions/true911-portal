@@ -24,6 +24,8 @@ class DeviceOut(BaseModel):
     provision_code: Optional[str] = None
     last_heartbeat: Optional[datetime] = None
     heartbeat_interval: Optional[int] = None
+    carrier: Optional[str] = None
+    sim_id: Optional[str] = None
     notes: Optional[str] = None
     activated_at: Optional[date] = None
     term_end_date: Optional[date] = None
@@ -49,6 +51,7 @@ class DeviceCreate(BaseModel):
     imei: Optional[str] = None
     iccid: Optional[str] = None
     msisdn: Optional[str] = None
+    carrier: Optional[str] = None
     hardware_model_id: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
@@ -71,6 +74,7 @@ class DeviceUpdate(BaseModel):
     imei: Optional[str] = None
     iccid: Optional[str] = None
     msisdn: Optional[str] = None
+    carrier: Optional[str] = None
     hardware_model_id: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None

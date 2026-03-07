@@ -1,4 +1,4 @@
-import { Flame, Phone, Radio, PhoneCall, Zap, Server } from "lucide-react";
+import { Flame, Phone, Radio, PhoneCall, Zap, Server, Shield } from "lucide-react";
 
 const ICONS = {
   fire_alarm: Flame,
@@ -6,6 +6,7 @@ const ICONS = {
   das_radio: Radio,
   call_station: PhoneCall,
   backup_power: Zap,
+  emergency_device: Shield,
   other: Server,
 };
 
@@ -42,6 +43,13 @@ export default function SystemHealthMatrix({ systems = [] }) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 divide-y sm:divide-y-0">
+        {systems.length === 0 && (
+          <div className="px-5 py-8 text-center col-span-full">
+            <Server className="w-6 h-6 text-slate-600 mx-auto mb-2" />
+            <p className="text-sm text-slate-500">No system categories detected yet</p>
+            <p className="text-xs text-slate-600 mt-1">Categories appear automatically based on registered devices</p>
+          </div>
+        )}
         {systems.map((sys) => {
           const Icon = ICONS[sys.key] || Server;
           const ring = STATUS_RING[sys.status] || STATUS_RING.healthy;

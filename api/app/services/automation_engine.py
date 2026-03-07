@@ -32,7 +32,8 @@ def compute_device_staleness(device, now=None):
     interval = device.heartbeat_interval  # minutes
 
     if not last_hb:
-        return {"stale": True, "minutes_overdue": None, "reason": "never_seen"}
+        # Never heartbeated = not stale, just not yet connected
+        return {"stale": False, "minutes_overdue": None, "reason": "never_seen"}
 
     if not interval or interval <= 0:
         interval = 5  # default 5 min

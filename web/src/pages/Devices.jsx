@@ -4,7 +4,6 @@ import { apiFetch } from "@/api/client";
 import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check, Pencil, Trash2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
-import ComputedStatusBadge from "@/components/ui/ComputedStatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -446,6 +445,7 @@ export default function Devices() {
         d.device_id.toLowerCase().includes(q) ||
         (d.serial_number || "").toLowerCase().includes(q) ||
         (d.model || "").toLowerCase().includes(q) ||
+        (d.device_type || "").toLowerCase().includes(q) ||
         (d.imei || "").toLowerCase().includes(q) ||
         (d.iccid || "").toLowerCase().includes(q) ||
         (d.msisdn || "").toLowerCase().includes(q) ||
@@ -518,6 +518,7 @@ export default function Devices() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Device ID</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Site</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Type</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Model</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Serial</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">IMEI</th>
@@ -525,7 +526,6 @@ export default function Devices() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">MSISDN</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Carrier</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Live</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Last HB</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-24">Actions</th>
               </tr>
@@ -541,6 +541,7 @@ export default function Devices() {
                   >
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{d.device_id}</td>
                     <td className="px-4 py-2.5 text-gray-800">{site?.site_name || d.site_id || "\u2014"}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs">{d.device_type || "\u2014"}</td>
                     <td className="px-4 py-2.5 text-gray-600">{d.model || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.serial_number || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.imei || "\u2014"}</td>
@@ -552,10 +553,7 @@ export default function Devices() {
                         {d.status}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <ComputedStatusBadge status={d.computed_status} />
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500">{timeSince(d.last_heartbeat)}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500">{d.last_heartbeat ? timeSince(d.last_heartbeat) : "Awaiting"}</td>
                     <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <button

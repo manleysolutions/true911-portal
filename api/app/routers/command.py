@@ -58,24 +58,48 @@ TRANSITION_PERMISSIONS = {
 }
 
 
-def _system_category(kit_type: str) -> str:
-    mapping = {
-        "FACP": "fire_alarm",
-        "Elevator": "elevator_phone",
-        "Emergency Call Box": "call_station",
-        "SCADA": "backup_power",
-        "Fax": "backup_power",
-    }
-    return mapping.get(kit_type, "other")
+def _system_category(kit_type: str, device_type: str = None) -> str:
+    """Classify a site/device into a system category.
+
+    Checks kit_type first, then device_type for finer classification.
+    """
+    kt = (kit_type or "").strip().lower()
+    dt = (device_type or "").strip().lower()
+
+    # Kit-type mapping (site-level)
+    if kt in ("facp", "fire alarm", "fire"):
+        return "fire_alarm"
+    if "elevator" in kt or "elev" in kt:
+        return "elevator_phone"
+    if "call" in kt or "emergency call" in kt:
+        return "call_station"
+    if kt in ("das", "radio", "bda"):
+        return "das_radio"
+    if kt in ("scada", "backup", "power"):
+        return "backup_power"
+
+    # Device-type fallback
+    if "fire" in dt or "facp" in dt or "alarm" in dt:
+        return "fire_alarm"
+    if "elevator" in dt or "elev" in dt or "phone" in dt:
+        return "elevator_phone"
+    if "call" in dt or "station" in dt:
+        return "call_station"
+    if "das" in dt or "radio" in dt or "bda" in dt:
+        return "das_radio"
+
+    if kt or dt:
+        return "emergency_device"
+    return "emergency_device"
 
 
 SYSTEM_LABELS = {
-    "fire_alarm": "Fire Alarm Systems",
+    "fire_alarm": "Fire Alarm Communicators",
     "elevator_phone": "Elevator Emergency Phones",
     "das_radio": "Responder Radio / DAS",
     "call_station": "Emergency Call Stations",
     "backup_power": "Backup Power / Critical Systems",
-    "other": "Other Systems",
+    "emergency_device": "True911 Emergency Devices",
 }
 
 
@@ -426,24 +450,41 @@ async def command_summary(
         vtasks_by_site.setdefault(t.site_id, []).append(t)
     overdue_tasks = [t for t in vtasks if t.status in ("pending", "in_progress") and t.due_date and t.due_date < now]
 
-    # System health matrix
-    systems = {}
-    for cat_key, cat_label in SYSTEM_LABELS.items():
-        systems[cat_key] = {"key": cat_key, "label": cat_label, "total": 0, "healthy": 0, "warning": 0, "critical": 0}
+    # Site lookup map (used by system health + incident feed)
+    site_map = {s.site_id: s for s in sites}
 
-    for site in sites:
-        cat = _system_category(site.kit_type) if site.kit_type else "other"
+    # System health matrix — based on devices, only shows categories with data
+    systems: dict = {}
+    for d in devices:
+        # Classify by device_type first, then fall back to site kit_type
+        site_obj = site_map.get(d.site_id)
+        kit = site_obj.kit_type if site_obj else None
+        cat = _system_category(kit, d.device_type)
         if cat not in systems:
-            cat = "other"
+            label = SYSTEM_LABELS.get(cat, cat.replace("_", " ").title())
+            systems[cat] = {"key": cat, "label": label, "total": 0, "healthy": 0, "warning": 0, "critical": 0}
         systems[cat]["total"] += 1
-        if site.status == "Connected":
+        if d.status == "active":
             systems[cat]["healthy"] += 1
-        elif site.status == "Attention Needed":
-            systems[cat]["warning"] += 1
-        elif site.status == "Not Connected":
+        elif d.status == "inactive":
             systems[cat]["critical"] += 1
+        else:
+            systems[cat]["warning"] += 1
 
-    # Removed: DAS radio fabrication — only show real data
+    # If no devices exist yet, classify by site kit_type
+    if not devices:
+        for site in sites:
+            cat = _system_category(site.kit_type)
+            if cat not in systems:
+                label = SYSTEM_LABELS.get(cat, cat.replace("_", " ").title())
+                systems[cat] = {"key": cat, "label": label, "total": 0, "healthy": 0, "warning": 0, "critical": 0}
+            systems[cat]["total"] += 1
+            if site.status == "Connected":
+                systems[cat]["healthy"] += 1
+            elif site.status == "Not Connected":
+                systems[cat]["critical"] += 1
+            else:
+                systems[cat]["warning"] += 1
 
     system_health = []
     for cat in systems.values():
@@ -456,7 +497,6 @@ async def command_summary(
     readiness = _compute_readiness(sites, devices, incidents, verification_tasks=vtasks, stale_device_count=total_stale, devices_by_site=devs_by_site)
 
     # Incident feed
-    site_map = {s.site_id: s for s in sites}
     incident_feed = [_serialize_incident(inc, site_map.get(inc.site_id, None) and site_map[inc.site_id].site_name) for inc in incidents[:20]]
 
     # Escalated incident count
@@ -514,6 +554,8 @@ async def command_summary(
 
     monitored_sites = [s for s in sites if s.site_id in devs_by_site]
     imported_only = [s for s in sites if s.site_id not in devs_by_site]
+    devices_with_heartbeat = [d for d in devices if d.last_heartbeat is not None]
+    devices_missing_telemetry = [d for d in devices if d.last_heartbeat is None]
 
     return {
         "portfolio": {
@@ -522,6 +564,8 @@ async def command_summary(
             "imported_only_sites": len(imported_only),
             "total_devices": len(devices),
             "active_devices": len(active_devices),
+            "devices_with_telemetry": len(devices_with_heartbeat),
+            "devices_missing_telemetry": len(devices_missing_telemetry),
             "connected_sites": connected,
             "attention_sites": len([s for s in sites if s.status == "Attention Needed"]),
             "disconnected_sites": len([s for s in sites if s.status == "Not Connected"]),
@@ -631,14 +675,24 @@ async def command_site_detail(
         stale_device_count=staleness["stale_count"],
     )
 
-    cat = _system_category(site.kit_type) if site.kit_type else "other"
-    system_categories = [{
-        "key": cat,
-        "label": SYSTEM_LABELS.get(cat, "Other"),
-        "status": "healthy" if site.status == "Connected" else ("warning" if site.status == "Attention Needed" else "critical"),
-        "device_count": len(devices),
-        "active_count": len(active_devices),
-    }]
+    # Build system categories from actual devices at this site
+    site_cats: dict = {}
+    for d in devices:
+        cat = _system_category(site.kit_type, d.device_type)
+        if cat not in site_cats:
+            label = SYSTEM_LABELS.get(cat, cat.replace("_", " ").title())
+            site_cats[cat] = {"key": cat, "label": label, "device_count": 0, "active_count": 0}
+        site_cats[cat]["device_count"] += 1
+        if d.status == "active":
+            site_cats[cat]["active_count"] += 1
+    if not site_cats:
+        cat = _system_category(site.kit_type)
+        label = SYSTEM_LABELS.get(cat, cat.replace("_", " ").title())
+        site_cats[cat] = {"key": cat, "label": label, "device_count": 0, "active_count": 0}
+    system_categories = []
+    for c in site_cats.values():
+        st = "healthy" if site.status == "Connected" else ("warning" if site.status == "Attention Needed" else "critical")
+        system_categories.append({**c, "status": st})
 
     incident_list = [_serialize_incident(inc) for inc in incidents]
 

@@ -133,7 +133,10 @@ export default function Command() {
               value={p.total_sites}
               icon={Building2}
               color="bg-slate-800 text-slate-400"
-              sub={`${p.monitored_sites || 0} monitored, ${p.imported_only_sites || 0} imported only`}
+              sub={p.total_devices > 0
+                ? `${p.monitored_sites || 0} with devices, ${p.imported_only_sites || 0} pending`
+                : `${p.total_sites} imported`
+              }
             />
             <KPICard
               label="Active Incidents"
@@ -146,31 +149,37 @@ export default function Command() {
                   ? `${data?.critical_incidents || 0} critical, ${escalatedCount} escalated`
                   : data?.critical_incidents > 0
                   ? `${data.critical_incidents} critical`
-                  : "All clear"
+                  : "No active incidents"
               }
             />
             <KPICard
-              label="Needs Attention"
-              value={attentionSites.length}
-              icon={Eye}
-              color="bg-amber-900/30 text-amber-400"
-              sub={
-                (p.stale_devices > 0 || p.overdue_tasks > 0)
-                  ? `${p.stale_devices || 0} stale, ${p.overdue_tasks || 0} overdue`
-                  : "Sites with warnings"
-              }
-            />
-            <KPICard
-              label="Active Devices"
-              value={p.active_devices}
+              label="Registered Devices"
+              value={p.total_devices}
               icon={Cpu}
               color="bg-blue-900/30 text-blue-400"
-              sub={`${p.total_devices} total`}
+              sub={p.devices_with_telemetry > 0
+                ? `${p.devices_with_telemetry} reporting, ${p.devices_missing_telemetry || 0} awaiting`
+                : p.total_devices > 0
+                ? "Telemetry not yet active"
+                : "No devices registered"
+              }
+            />
+            <KPICard
+              label="Telemetry"
+              value={p.devices_with_telemetry || 0}
+              icon={Activity}
+              color={p.devices_with_telemetry > 0 ? "bg-emerald-900/30 text-emerald-400" : "bg-slate-800 text-slate-500"}
+              sub={p.devices_with_telemetry > 0
+                ? `${p.devices_missing_telemetry || 0} devices awaiting first heartbeat`
+                : p.total_devices > 0
+                ? "Awaiting first device heartbeat"
+                : "No devices to monitor"
+              }
             />
             <KPICard
               label="Readiness"
               value={`${readiness.score || 0}%`}
-              icon={Activity}
+              icon={Eye}
               color={readiness.score >= 85 ? "bg-emerald-900/30 text-emerald-400" : readiness.score >= 60 ? "bg-amber-900/30 text-amber-400" : "bg-red-900/30 text-red-400"}
               border={readiness.score < 60 ? "border-red-700/50" : "border-slate-700/50"}
               sub={readiness.risk_label}
@@ -215,7 +224,10 @@ export default function Command() {
                 </div>
                 <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
                   {attentionSites.length === 0 && (
-                    <div className="px-2 py-6 text-center text-sm text-slate-600">All sites operational</div>
+                    <div className="px-2 py-6 text-center">
+                      <p className="text-sm text-emerald-500/80 font-medium">All sites operational</p>
+                      <p className="text-xs text-slate-600 mt-1">No sites require attention at this time</p>
+                    </div>
                   )}
                   {attentionSites.slice(0, 8).map((site) => (
                     <SiteCommandCard key={site.site_id} site={site} />

@@ -6,6 +6,7 @@ const CATEGORY_LABELS = {
   das_radio: "DAS / Radio",
   call_station: "Call Station",
   backup_power: "Backup Power",
+  emergency_device: "Emergency Device",
   other: "Other",
 };
 

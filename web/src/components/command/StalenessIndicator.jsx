@@ -63,9 +63,15 @@ export default function StalenessIndicator({ staleness = {} }) {
           </div>
         )}
 
-        {stale_count === 0 && (
+        {stale_count === 0 && healthyCount > 0 && (
           <div className="text-center py-2">
             <p className="text-xs text-emerald-400">All devices reporting normally</p>
+          </div>
+        )}
+        {stale_count === 0 && healthyCount === 0 && total_devices > 0 && (
+          <div className="text-center py-2">
+            <p className="text-xs text-slate-400">Telemetry not yet active for registered devices</p>
+            <p className="text-[10px] text-slate-600 mt-0.5">Devices will report here once connected</p>
           </div>
         )}
       </div>
