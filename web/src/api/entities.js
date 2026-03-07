@@ -62,6 +62,8 @@ export const Site = {
   ...makeEntity("/sites"),
   missingCoords: () => apiFetch("/sites/missing-coords"),
   geocode: (id) => apiFetch(`/sites/${id}/geocode`, { method: "POST" }),
+  bulkGeocode: () => apiFetch("/sites/bulk-geocode", { method: "POST" }),
+  fixNumericNames: () => apiFetch("/sites/fix-numeric-names", { method: "POST" }),
 };
 export const TelemetryEvent = makeEntity("/telemetry");
 export const ActionAudit = makeEntity("/audits");

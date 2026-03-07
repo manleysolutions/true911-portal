@@ -129,11 +129,11 @@ export default function Command() {
           {/* KPI strip */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <KPICard
-              label="Sites Monitored"
+              label="Total Sites"
               value={p.total_sites}
               icon={Building2}
               color="bg-slate-800 text-slate-400"
-              sub={`${p.connected_sites} connected`}
+              sub={`${p.monitored_sites || 0} monitored, ${p.imported_only_sites || 0} imported only`}
             />
             <KPICard
               label="Active Incidents"

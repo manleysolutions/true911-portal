@@ -66,7 +66,7 @@ export default function Overview() {
 
   const fetchData = useCallback(async () => {
     const [sitesData, eventsData, devData, lineData, eventData, provData] = await Promise.all([
-      Site.list("-last_checkin", 100),
+      Site.list("-last_checkin", 500),
       TelemetryEvent.filter({ severity: "critical" }, "-timestamp", 20),
       Device.list("-created_at", 200),
       Line.list("-created_at", 200),

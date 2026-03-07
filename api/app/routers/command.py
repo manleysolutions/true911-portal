@@ -210,9 +210,18 @@ def _serialize_incident(inc: Incident, site_name: str = None) -> dict:
 # Readiness scoring engine
 # ---------------------------------------------------------------------------
 
-def _compute_readiness(sites, devices, incidents, *, verification_tasks=None, stale_device_count=0):
-    """Compute readiness score with 7-factor weighted model (Phase 4)."""
-    total_sites = len(sites)
+def _compute_readiness(sites, devices, incidents, *, verification_tasks=None, stale_device_count=0, devices_by_site=None):
+    """Compute readiness score with 7-factor weighted model (Phase 4).
+
+    Only evaluates sites that have at least one device assigned.
+    Imported-only sites (no devices) are excluded from readiness.
+    """
+    # Only count sites that have devices for readiness
+    if devices_by_site:
+        monitored_sites = [s for s in sites if s.site_id in devices_by_site]
+    else:
+        monitored_sites = sites
+    total_sites = len(monitored_sites)
     active_devices = [d for d in devices if d.status == "active"]
     active_incidents = [i for i in incidents if i.status in ("new", "open", "acknowledged", "in_progress")]
     critical_incidents = [i for i in active_incidents if i.severity == "critical"]
@@ -221,7 +230,7 @@ def _compute_readiness(sites, devices, incidents, *, verification_tasks=None, st
     factors = []
 
     # Factor 1: Device health (25%)
-    device_pct = (len(active_devices) / len(devices) * 100) if devices else 100
+    device_pct = (len(active_devices) / len(devices) * 100) if devices else 0
     if device_pct < 100:
         penalty = (100 - device_pct) * 0.25
         score -= penalty
@@ -241,8 +250,8 @@ def _compute_readiness(sites, devices, incidents, *, verification_tasks=None, st
             "detail": f"{len(critical_incidents)} critical incident(s) open",
         })
 
-    # Factor 3: Site connectivity (15%)
-    connected = sum(1 for s in sites if s.status == "Connected")
+    # Factor 3: Site connectivity (15%) — only monitored sites
+    connected = sum(1 for s in monitored_sites if s.status == "Connected")
     conn_pct = (connected / total_sites * 100) if total_sites else 100
     if conn_pct < 100:
         penalty = (100 - conn_pct) * 0.15
@@ -434,9 +443,7 @@ async def command_summary(
         elif site.status == "Not Connected":
             systems[cat]["critical"] += 1
 
-    if systems["das_radio"]["total"] == 0:
-        systems["das_radio"]["total"] = max(1, total_sites // 5)
-        systems["das_radio"]["healthy"] = systems["das_radio"]["total"]
+    # Removed: DAS radio fabrication — only show real data
 
     system_health = []
     for cat in systems.values():
@@ -446,7 +453,7 @@ async def command_summary(
         system_health.append({**cat, "health_pct": pct, "status": st})
 
     # Readiness (now with verification + staleness)
-    readiness = _compute_readiness(sites, devices, incidents, verification_tasks=vtasks, stale_device_count=total_stale)
+    readiness = _compute_readiness(sites, devices, incidents, verification_tasks=vtasks, stale_device_count=total_stale, devices_by_site=devs_by_site)
 
     # Incident feed
     site_map = {s.site_id: s for s in sites}
@@ -505,9 +512,14 @@ async def command_summary(
         for a in activities
     ]
 
+    monitored_sites = [s for s in sites if s.site_id in devs_by_site]
+    imported_only = [s for s in sites if s.site_id not in devs_by_site]
+
     return {
         "portfolio": {
             "total_sites": total_sites,
+            "monitored_sites": len(monitored_sites),
+            "imported_only_sites": len(imported_only),
             "total_devices": len(devices),
             "active_devices": len(active_devices),
             "connected_sites": connected,

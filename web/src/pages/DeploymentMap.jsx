@@ -44,9 +44,10 @@ export default function DeploymentMap() {
   const [manualLat, setManualLat] = useState("");
   const [manualLng, setManualLng] = useState("");
   const [savingCoords, setSavingCoords] = useState(false);
+  const [bulkGeocoding, setBulkGeocoding] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const data = await Site.list("-last_checkin", 100);
+    const data = await Site.list("-last_checkin", 500);
     setSites(data);
     setLoading(false);
   }, []);
@@ -351,10 +352,30 @@ export default function DeploymentMap() {
                   </div>
                 ))}
               </div>
-              <div className="px-3 py-2 border-t border-gray-100 bg-amber-50/50 flex-shrink-0">
+              <div className="px-3 py-2 border-t border-gray-100 bg-amber-50/50 flex-shrink-0 space-y-2">
+                {isAdmin && (
+                  <button
+                    onClick={async () => {
+                      setBulkGeocoding(true);
+                      try {
+                        const res = await Site.bulkGeocode();
+                        toast.success(`Geocoded ${res.geocoded} sites (${res.failed} failed, ${res.no_address} have no address)`);
+                        await fetchData();
+                      } catch (err) {
+                        toast.error(err?.message || "Bulk geocoding failed");
+                      }
+                      setBulkGeocoding(false);
+                    }}
+                    disabled={bulkGeocoding}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                  >
+                    {bulkGeocoding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+                    {bulkGeocoding ? "Geocoding..." : "Bulk Geocode All"}
+                  </button>
+                )}
                 <p className="text-[10px] text-amber-700 leading-relaxed">
                   {isAdmin
-                    ? "Use Geocode to resolve from E911 address, or Set Coords to enter manually."
+                    ? "Use Bulk Geocode for all sites, or Geocode/Set Coords individually."
                     : "Click a site to open the drawer and view details."}
                 </p>
               </div>

@@ -39,7 +39,7 @@ async def _site_out(site: Site, db: AsyncSession) -> SiteOut:
 @router.get("", response_model=list[SiteOut])
 async def list_sites(
     sort: str | None = Query("-last_checkin"),
-    limit: int = Query(100, le=500),
+    limit: int = Query(500, le=1000),
     site_id: str | None = None,
     status_filter: str | None = Query(None, alias="status"),
     carrier: str | None = None,
@@ -85,6 +85,117 @@ async def list_sites(
         site_out.computed_status = compute_site_computed_status(device_statuses)
         out.append(site_out)
     return out
+
+
+@router.post(
+    "/bulk-geocode",
+    dependencies=[Depends(require_permission("VIEW_ADMIN"))],
+)
+async def bulk_geocode(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Geocode all tenant sites that have address data but missing coordinates."""
+    result = await db.execute(
+        select(Site).where(Site.tenant_id == current_user.tenant_id)
+    )
+    all_sites = result.scalars().all()
+
+    eligible = [
+        s for s in all_sites
+        if not has_valid_coords(s.lat, s.lng)
+        and any([s.e911_street, s.e911_city, s.e911_state, s.e911_zip])
+    ]
+
+    geocoded = 0
+    failed = 0
+    skipped = len(all_sites) - len(eligible) - sum(
+        1 for s in all_sites if has_valid_coords(s.lat, s.lng)
+    )
+    already_have_coords = sum(1 for s in all_sites if has_valid_coords(s.lat, s.lng))
+
+    for site in eligible:
+        coords = await geocode_address(
+            site.e911_street, site.e911_city, site.e911_state, site.e911_zip
+        )
+        if coords:
+            site.lat, site.lng = coords
+            geocoded += 1
+        else:
+            failed += 1
+
+    if geocoded > 0:
+        await db.commit()
+
+    return {
+        "total_sites": len(all_sites),
+        "already_geocoded": already_have_coords,
+        "eligible": len(eligible),
+        "geocoded": geocoded,
+        "failed": failed,
+        "no_address": len(all_sites) - already_have_coords - len(eligible),
+    }
+
+
+@router.post(
+    "/fix-numeric-names",
+    dependencies=[Depends(require_permission("VIEW_ADMIN"))],
+)
+async def fix_numeric_names(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fix sites whose site_name is a bare numeric ID.
+
+    Replaces numeric names with customer_name if available and non-numeric,
+    or e911 address + city as a readable fallback.
+    """
+    result = await db.execute(
+        select(Site).where(Site.tenant_id == current_user.tenant_id)
+    )
+    all_sites = result.scalars().all()
+
+    fixed = 0
+    for site in all_sites:
+        name = (site.site_name or "").strip()
+        if not name:
+            continue
+        # Check if name looks numeric
+        cleaned = name.replace("-", "").replace("_", "").replace(" ", "")
+        if not cleaned.isdigit():
+            continue
+
+        # Try customer_name
+        cust = (site.customer_name or "").strip()
+        cust_cleaned = cust.replace("-", "").replace("_", "").replace(" ", "")
+        if cust and not cust_cleaned.isdigit():
+            site.site_name = cust
+            fixed += 1
+            continue
+
+        # Try building a name from address
+        parts = [p for p in [site.e911_street, site.e911_city, site.e911_state] if p and p.strip()]
+        if parts:
+            site.site_name = ", ".join(parts)
+            fixed += 1
+            continue
+
+        # Try notes for any useful label
+        if site.notes and len(site.notes) < 100:
+            site.site_name = site.notes.strip()
+            fixed += 1
+
+    if fixed > 0:
+        await db.commit()
+
+    return {
+        "total_sites": len(all_sites),
+        "numeric_names_found": sum(
+            1 for s in all_sites
+            if (s.site_name or "").replace("-", "").replace("_", "").replace(" ", "").isdigit()
+        ),
+        "fixed": fixed,
+    }
 
 
 @router.get("/missing-coords", response_model=list[SiteOut])
