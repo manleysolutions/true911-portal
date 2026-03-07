@@ -684,45 +684,38 @@ async def reset_imported_data(
     if dry_run:
         return preview
 
-    # Use raw SQL TRUNCATE CASCADE for speed and to handle all FK deps.
-    # We truncate data tables but DELETE tenants selectively (keep the home one).
-    tables_to_truncate = [
-        "device_sim_assignments",
-        "sim_events",
-        "sim_usage_daily",
-        "sims",
-        "site_vendor_assignments",
-        "service_contracts",
-        "verification_tasks",
-        "command_activities",
-        "command_telemetry",
-        "incidents",
-        "notification_rules",
-        "notifications",
-        "e911_change_log",
-        "telemetry_events",
-        "action_audits",
-        "recordings",
-        "events",
-        "lines",
-        "outbound_webhooks",
-        "automation_rules",
-        "escalation_rules",
-        "devices",
-        "sites",
-        "vendors",
-    ]
+    # Disable FK checks, wipe data tables, re-enable.
+    # This is the only reliable way to clear interlinked tables fast.
+    await db.execute(text("SET session_replication_role = 'replica'"))
 
-    for table in tables_to_truncate:
+    # Delete from all data tables (order doesn't matter with FKs disabled)
+    data_tables = [
+        "device_sim_assignments", "sim_events", "sim_usage_daily", "sims",
+        "site_vendor_assignments", "service_contracts", "verification_tasks",
+        "command_activities", "command_telemetry", "incidents",
+        "notification_rules", "notifications", "e911_change_log",
+        "telemetry_events", "action_audits", "recordings", "events",
+        "lines", "outbound_webhooks", "automation_rules", "escalation_rules",
+        "devices", "sites", "vendors", "external_subscription_maps",
+        "external_customer_maps", "subscriptions", "customers",
+        "integration_statuses", "integrations", "providers",
+    ]
+    for table in data_tables:
         try:
-            await db.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+            await db.execute(text(f"DELETE FROM {table}"))
         except Exception:
-            pass  # table may not exist yet, skip
+            pass  # table may not exist
 
     # Delete tenants except the keeper
-    await db.execute(
-        delete(Tenant).where(Tenant.tenant_id != keep_tenant_id)
-    )
+    try:
+        await db.execute(text(
+            "DELETE FROM tenants WHERE tenant_id != :keep"
+        ).bindparams(keep=keep_tenant_id))
+    except Exception:
+        pass
+
+    # Re-enable FK checks
+    await db.execute(text("SET session_replication_role = 'origin'"))
 
     await db.commit()
     preview["status"] = "completed"
