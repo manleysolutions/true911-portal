@@ -165,6 +165,16 @@ export default function AdminTenants() {
     setResetLoading(false);
   };
 
+  const handlePurgeEmpty = async () => {
+    try {
+      const data = await apiFetch("/admin/tenants/purge-empty?keep=default", { method: "DELETE" });
+      toast.success(`Purged ${data.deleted_count} empty tenants`);
+      fetchTenants();
+    } catch (err) {
+      toast.error(err?.message || "Failed to purge tenants");
+    }
+  };
+
   const handleTenantSwitch = (tenantId) => {
     setActiveTenant(tenantId);
     setActAsTenant(tenantId || null);
@@ -537,6 +547,14 @@ export default function AdminTenants() {
             <Globe className="w-4 h-4 text-violet-600" />
             <h2 className="font-semibold text-gray-900 text-sm">Tenants</h2>
             <span className="text-xs text-gray-400 ml-auto mr-3">{tenants.length} tenants</span>
+            {isSuperAdmin && tenants.length > 2 && (
+              <button
+                onClick={handlePurgeEmpty}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                <Trash2 className="w-3 h-3" /> Purge Empty
+              </button>
+            )}
             <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors"

@@ -460,6 +460,30 @@ async def list_tenants(db: AsyncSession = Depends(get_db)):
     return [TenantOut.model_validate(t) for t in result.scalars().all()]
 
 
+@router.delete(
+    "/tenants/purge-empty",
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def purge_empty_tenants(
+    keep: str = "default",
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all tenants that have zero sites and zero users (except the keep tenant)."""
+    from sqlalchemy import text
+
+    # Find tenants with no sites and no users (other than the keep tenant)
+    result = await db.execute(text("""
+        DELETE FROM tenants
+        WHERE tenant_id != :keep
+          AND tenant_id NOT IN (SELECT DISTINCT tenant_id FROM users)
+          AND tenant_id NOT IN (SELECT DISTINCT tenant_id FROM sites)
+        RETURNING tenant_id
+    """).bindparams(keep=keep))
+    deleted = [r[0] for r in result.fetchall()]
+    await db.commit()
+    return {"deleted_count": len(deleted), "deleted_tenant_ids": deleted}
+
+
 @router.get(
     "/tenants/audit",
     dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
