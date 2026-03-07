@@ -484,6 +484,62 @@ async def purge_empty_tenants(
     return {"deleted_count": len(deleted), "deleted_tenant_ids": deleted}
 
 
+@router.post(
+    "/cleanup-placeholder-data",
+    dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
+)
+async def cleanup_placeholder_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Wipe all template-generated placeholder data (verification tasks,
+    automation rules, command activities) across all tenants.
+    Also triggers bulk geocode for sites with addresses but no coordinates.
+    """
+    from sqlalchemy import text
+    from app.services.geocoding import geocode_address, has_valid_coords
+
+    results = {}
+
+    # Delete placeholder data
+    for table in ["verification_tasks", "automation_rules", "command_activities", "command_telemetry"]:
+        try:
+            async with db.begin_nested():
+                r = await db.execute(text(f"DELETE FROM {table}"))
+                results[f"{table}_deleted"] = r.rowcount
+        except Exception:
+            results[f"{table}_deleted"] = 0
+
+    # Bulk geocode sites missing coordinates
+    s_result = await db.execute(select(Site))
+    all_sites = s_result.scalars().all()
+
+    geocoded = 0
+    failed = 0
+    no_address = 0
+    for site in all_sites:
+        if has_valid_coords(site.lat, site.lng):
+            continue
+        if not any([site.e911_street, site.e911_city, site.e911_state, site.e911_zip]):
+            no_address += 1
+            continue
+        coords = await geocode_address(
+            site.e911_street, site.e911_city, site.e911_state, site.e911_zip
+        )
+        if coords:
+            site.lat, site.lng = coords
+            geocoded += 1
+        else:
+            failed += 1
+
+    results["geocoded"] = geocoded
+    results["geocode_failed"] = failed
+    results["no_address"] = no_address
+
+    await db.commit()
+    return results
+
+
 @router.get(
     "/tenants/audit",
     dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],

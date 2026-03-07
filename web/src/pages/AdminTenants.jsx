@@ -165,6 +165,24 @@ export default function AdminTenants() {
     setResetLoading(false);
   };
 
+  const [cleaningUp, setCleaningUp] = useState(false);
+
+  const handleCleanupPlaceholders = async () => {
+    setCleaningUp(true);
+    try {
+      const data = await apiFetch("/admin/cleanup-placeholder-data", { method: "POST" });
+      const parts = [];
+      if (data.verification_tasks_deleted) parts.push(`${data.verification_tasks_deleted} tasks`);
+      if (data.automation_rules_deleted) parts.push(`${data.automation_rules_deleted} rules`);
+      if (data.geocoded) parts.push(`${data.geocoded} sites geocoded`);
+      if (data.geocode_failed) parts.push(`${data.geocode_failed} geocode failed`);
+      toast.success(`Cleaned up: ${parts.join(", ") || "nothing to clean"}`);
+    } catch (err) {
+      toast.error(err?.message || "Cleanup failed");
+    }
+    setCleaningUp(false);
+  };
+
   const handlePurgeEmpty = async () => {
     try {
       const data = await apiFetch("/admin/tenants/purge-empty?keep=default", { method: "DELETE" });
@@ -233,6 +251,26 @@ export default function AdminTenants() {
                 <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Cleanup Placeholders + Geocode */}
+        {isSuperAdmin && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Clean Up & Geocode</p>
+              <p className="text-xs text-blue-700 mt-0.5">
+                Remove placeholder verification tasks and auto-geocode sites with addresses.
+              </p>
+            </div>
+            <button
+              onClick={handleCleanupPlaceholders}
+              disabled={cleaningUp}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-xs font-medium"
+            >
+              {cleaningUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+              Clean & Geocode
+            </button>
           </div>
         )}
 
