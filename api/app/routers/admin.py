@@ -639,6 +639,14 @@ async def auto_provision_commit(
     t_result = await db.execute(select(Tenant))
     existing_tenants = {t.tenant_id for t in t_result.scalars().all()}
 
+    # Batch-load ALL devices upfront to avoid N+1 queries
+    dev_result = await db.execute(select(Device))
+    all_devices = dev_result.scalars().all()
+    devices_by_site: dict[str, list[Device]] = {}
+    for d in all_devices:
+        if d.site_id:
+            devices_by_site.setdefault(d.site_id, []).append(d)
+
     # Group sites by customer_name
     groups: dict[str, list[Site]] = {}
     skipped = 0
@@ -649,7 +657,21 @@ async def auto_provision_commit(
             continue
         groups.setdefault(name, []).append(site)
 
+    # Phase 1: Create all missing tenants first, then flush so FKs are valid
     tenants_created = 0
+    for cust_name in groups:
+        slug = _slugify(cust_name)
+        if not slug or slug in existing_tenants:
+            continue
+        tenant = Tenant(tenant_id=slug, name=cust_name)
+        db.add(tenant)
+        existing_tenants.add(slug)
+        tenants_created += 1
+
+    if tenants_created > 0:
+        await db.flush()  # make tenant rows visible for FK constraints
+
+    # Phase 2: Reassign sites and devices
     sites_reassigned = 0
     devices_reassigned = 0
     details = []
@@ -660,32 +682,20 @@ async def auto_provision_commit(
             skipped += len(cust_sites)
             continue
 
-        # Create tenant if it doesn't exist
-        if slug not in existing_tenants:
-            tenant = Tenant(tenant_id=slug, name=cust_name)
-            db.add(tenant)
-            existing_tenants.add(slug)
-            tenants_created += 1
-
         # Reassign sites
-        site_ids = []
         for site in cust_sites:
             if site.tenant_id != slug:
                 site.tenant_id = slug
                 sites_reassigned += 1
-            site_ids.append(site.site_id)
 
-        # Reassign devices that belong to these sites
-        dev_result = await db.execute(
-            select(Device).where(Device.site_id.in_(site_ids))
-        )
-        devs = dev_result.scalars().all()
+        # Reassign devices using pre-loaded data
         dev_count = 0
-        for d in devs:
-            if d.tenant_id != slug:
-                d.tenant_id = slug
-                dev_count += 1
-                devices_reassigned += 1
+        for site in cust_sites:
+            for d in devices_by_site.get(site.site_id, []):
+                if d.tenant_id != slug:
+                    d.tenant_id = slug
+                    dev_count += 1
+                    devices_reassigned += 1
 
         details.append({
             "customer_name": cust_name,
