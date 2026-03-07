@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission, get_current_user
@@ -664,39 +664,40 @@ async def reset_imported_data(
     Use dry_run=true to preview, dry_run=false to execute.
     """
     from app.models.incident import Incident
+    from app.models.vendor import Vendor
+    from app.models.site_vendor import SiteVendorAssignment
+    from app.models.verification_task import VerificationTask
+    from app.models.command_activity import CommandActivity
 
-    # Count what we'll delete
-    all_sites = (await db.execute(select(Site))).scalars().all()
-    all_devices = (await db.execute(select(Device))).scalars().all()
-    all_incidents = (await db.execute(select(Incident))).scalars().all()
-    all_tenants = (await db.execute(select(Tenant))).scalars().all()
-
-    tenants_to_keep = {keep_tenant_id}
-    tenants_to_delete = [t for t in all_tenants if t.tenant_id not in tenants_to_keep]
+    # Count what we'll delete (use scalar counts, not loading all objects)
+    site_count = await db.scalar(select(func.count()).select_from(Site)) or 0
+    device_count = await db.scalar(select(func.count()).select_from(Device)) or 0
+    incident_count = await db.scalar(select(func.count()).select_from(Incident)) or 0
+    tenant_count = await db.scalar(
+        select(func.count()).select_from(Tenant).where(Tenant.tenant_id != keep_tenant_id)
+    ) or 0
 
     preview = {
         "dry_run": dry_run,
         "keep_tenant": keep_tenant_id,
-        "sites_to_delete": len(all_sites),
-        "devices_to_delete": len(all_devices),
-        "incidents_to_delete": len(all_incidents),
-        "tenants_to_delete": len(tenants_to_delete),
-        "tenants_to_keep": list(tenants_to_keep),
-        "tenant_ids_deleting": [t.tenant_id for t in tenants_to_delete],
+        "sites_to_delete": site_count,
+        "devices_to_delete": device_count,
+        "incidents_to_delete": incident_count,
+        "tenants_to_delete": tenant_count,
     }
 
     if dry_run:
         return preview
 
-    # Delete in dependency order
-    for inc in all_incidents:
-        await db.delete(inc)
-    for dev in all_devices:
-        await db.delete(dev)
-    for site in all_sites:
-        await db.delete(site)
-    for t in tenants_to_delete:
-        await db.delete(t)
+    # Bulk delete in dependency order using SQL DELETE statements (fast)
+    await db.execute(delete(SiteVendorAssignment))
+    await db.execute(delete(VerificationTask))
+    await db.execute(delete(CommandActivity))
+    await db.execute(delete(Incident))
+    await db.execute(delete(Device))
+    await db.execute(delete(Site))
+    await db.execute(delete(Vendor))
+    await db.execute(delete(Tenant).where(Tenant.tenant_id != keep_tenant_id))
 
     await db.commit()
     preview["status"] = "completed"
