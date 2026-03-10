@@ -26,6 +26,7 @@ import httpx
 API_URL = os.environ.get("TRUE911_API_URL", "http://localhost:8000").rstrip("/")
 ADMIN_EMAIL = os.environ.get("TRUE911_ADMIN_EMAIL", "")
 ADMIN_PASSWORD = os.environ.get("TRUE911_ADMIN_PASSWORD", "")
+RUN_LIVE_SYNC = os.environ.get("TRUE911_RUN_LIVE_SYNC", "").strip().lower() == "yes"
 
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
@@ -438,6 +439,50 @@ def dry_run_sync(client: httpx.Client, token: str) -> dict | None:
         return None
 
 
+# ── Step 7: Live sync (opt-in only) ──────────────────────────────────────
+
+def live_sync(client: httpx.Client, token: str) -> dict | None:
+    _print_section("Step 7: LIVE SYNC (writing to database)")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.post(
+        f"{API_URL}/api/carriers/verizon/sync",
+        params={"dry_run": "false", "max_results": 500},
+        headers=headers,
+        timeout=httpx.Timeout(120.0, connect=10.0),
+    )
+
+    _print_result("HTTP status", str(resp.status_code), resp.status_code == 200)
+
+    if resp.status_code == 200:
+        data = resp.json()
+        _print_result("Mode", "LIVE (persisted to database)", True)
+        _print_result("Tenant", data.get("tenant_id", "?"))
+        _print_result("Total fetched", str(data.get("total_fetched", 0)))
+        _print_result("Created", str(data.get("created", 0)), True)
+        _print_result("Updated", str(data.get("updated", 0)), True)
+        _print_result("Unchanged", str(data.get("unchanged", 0)))
+        _print_result("Skipped", str(data.get("skipped", 0)), data.get("skipped", 0) == 0)
+
+        conflicts = data.get("conflicts", [])
+        _print_result("Conflicts", str(len(conflicts)), len(conflicts) == 0)
+        for c in conflicts[:10]:
+            print(f"    {c}")
+
+        return data
+    else:
+        try:
+            err = resp.json()
+            detail = err.get("detail", resp.text[:300])
+            if isinstance(detail, dict):
+                _print_result("Error", detail.get("error", "?"), False)
+            else:
+                _print_result("Error", str(detail)[:300], False)
+        except Exception:
+            _print_result("Raw response", resp.text[:300], False)
+        return None
+
+
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -472,6 +517,14 @@ def main():
         sync_result = None
         if devices and devices.get("total", 0) > 0:
             sync_result = dry_run_sync(client, token)
+
+        # Step 7: Live sync (only if dry-run passed clean AND env var opt-in)
+        live_result = None
+        if sync_result and len(sync_result.get("conflicts", [])) == 0:
+            if RUN_LIVE_SYNC:
+                live_result = live_sync(client, token)
+            else:
+                print("\n  Step 7: Live sync SKIPPED (set TRUE911_RUN_LIVE_SYNC=yes to enable)")
 
     # Summary
     _print_section("Summary")
@@ -516,6 +569,15 @@ def main():
             _print_result("READY FOR LIVE SYNC", "Yes — 0 conflicts detected", True)
         else:
             _print_result("LIVE SYNC BLOCKED", f"{len(conflicts)} conflict(s) must be resolved first", False)
+
+    if live_result:
+        _print_result(
+            "LIVE SYNC COMPLETE",
+            f"created={live_result.get('created', 0)} "
+            f"updated={live_result.get('updated', 0)} "
+            f"skipped={live_result.get('skipped', 0)}",
+            True,
+        )
 
     print()
 
