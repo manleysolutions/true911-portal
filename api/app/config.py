@@ -25,6 +25,24 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 
+    # ── Verizon ThingSpace ─────────────────────────────────────────────
+    VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session
+    VERIZON_THINGSPACE_BASE_URL: str = "https://thingspace.verizon.com/api"
+    VERIZON_THINGSPACE_ACCOUNT_NAME: str = ""
+    # oauth_client_credentials
+    VERIZON_THINGSPACE_CLIENT_ID: str = ""
+    VERIZON_THINGSPACE_CLIENT_SECRET: str = ""
+    # api_key_secret_token
+    VERIZON_THINGSPACE_API_KEY: str = ""
+    VERIZON_THINGSPACE_API_SECRET: str = ""
+    VERIZON_THINGSPACE_API_TOKEN: str = ""
+    # legacy_short_key_secret
+    VERIZON_THINGSPACE_SHORT_KEY: str = ""
+    VERIZON_THINGSPACE_SHORT_SECRET: str = ""
+    # username_password_session
+    VERIZON_THINGSPACE_USERNAME: str = ""
+    VERIZON_THINGSPACE_PASSWORD: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
