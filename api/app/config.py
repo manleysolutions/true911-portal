@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # ── Verizon ThingSpace ─────────────────────────────────────────────
     VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session
     VERIZON_THINGSPACE_BASE_URL: str = "https://thingspace.verizon.com/api"
+    VERIZON_THINGSPACE_OAUTH_TOKEN_PATH: str = "/ts/v1/oauth2/token"  # path appended to base_url
     VERIZON_THINGSPACE_ACCOUNT_NAME: str = ""
     # oauth_client_credentials
     VERIZON_THINGSPACE_CLIENT_ID: str = ""

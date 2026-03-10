@@ -92,6 +92,7 @@ class VerizonThingSpaceClient:
         auth_mode: str | None = None,
         base_url: str | None = None,
         account_name: str | None = None,
+        oauth_token_path: str | None = None,
         # oauth_client_credentials
         client_id: str | None = None,
         client_secret: str | None = None,
@@ -109,6 +110,7 @@ class VerizonThingSpaceClient:
         self.auth_mode = (auth_mode or settings.VERIZON_THINGSPACE_AUTH_MODE).strip().lower()
         self.base_url = (base_url or settings.VERIZON_THINGSPACE_BASE_URL).rstrip("/")
         self.account_name = account_name or settings.VERIZON_THINGSPACE_ACCOUNT_NAME
+        self.oauth_token_path = (oauth_token_path or settings.VERIZON_THINGSPACE_OAUTH_TOKEN_PATH).strip()
 
         # Store credentials by mode — only populated for the active mode
         self._creds = {
@@ -175,6 +177,7 @@ class VerizonThingSpaceClient:
         summary: dict[str, Any] = {
             "auth_mode": self.auth_mode,
             "base_url": self.base_url,
+            "oauth_token_url": f"{self.base_url}{self.oauth_token_path}",
             "account_name": self.account_name or "(not set)",
             "is_configured": self.is_configured,
         }
@@ -205,12 +208,12 @@ class VerizonThingSpaceClient:
     # ── Mode: OAuth2 client_credentials ───────────────────────────────
 
     async def _auth_oauth_client_credentials(self) -> str:
-        """OAuth2 client_credentials grant — POST to /oauth2/token.
+        """OAuth2 client_credentials grant — POST to the configured token path.
 
         ThingSpace OAuth endpoint expects HTTP Basic auth (client_id:client_secret)
         with grant_type=client_credentials in the form body.
         """
-        url = f"{self.base_url}/oauth2/token"
+        url = f"{self.base_url}{self.oauth_token_path}"
         client_id = self._creds["client_id"]
         client_secret = self._creds["client_secret"]
 
@@ -262,7 +265,7 @@ class VerizonThingSpaceClient:
 
         Returns the access_token from the OAuth2 response.
         """
-        url = f"{self.base_url}/oauth2/token"
+        url = f"{self.base_url}{self.oauth_token_path}"
         api_key = self._creds["api_key"]
         api_secret = self._creds["api_secret"]
         api_token = self._creds["api_token"]
@@ -467,10 +470,32 @@ class VerizonThingSpaceClient:
         """Authenticate and return basic account info.
 
         This is a safe, read-only call that proves credentials work.
-        Returns rich diagnostics about every step.
+        Returns rich diagnostics about every step, including auth failures.
         """
         self._require_configured()
-        await self.authenticate()
+
+        token_url = f"{self.base_url}{self.oauth_token_path}"
+
+        # Step 1: Authenticate — capture failures with diagnostics
+        try:
+            await self.authenticate()
+        except VerizonThingSpaceError as e:
+            return {
+                "authenticated": False,
+                "auth_mode": self.auth_mode,
+                "account_name": self.account_name,
+                "base_url": self.base_url,
+                "oauth_token_url": token_url,
+                "oauth_token_status": e.status_code,
+                "oauth_token_body": self._safe_body_from_str(
+                    e.body if isinstance(e.body, str) else str(e.body or "")
+                ),
+                "note": (
+                    f"OAuth token exchange failed at {token_url} "
+                    f"(HTTP {e.status_code or '?'}). "
+                    f"Try a different VERIZON_THINGSPACE_OAUTH_TOKEN_PATH."
+                ),
+            }
 
         # Show sanitized header names (not values) so we know what was sent
         probe_headers = self._auth_headers()
@@ -481,13 +506,14 @@ class VerizonThingSpaceClient:
             "auth_mode": self.auth_mode,
             "account_name": self.account_name,
             "base_url": self.base_url,
+            "oauth_token_url": token_url,
             "token_type": "oauth2_access_token" if self.auth_mode in (
                 "oauth_client_credentials", "api_key_secret_token",
             ) else "session",
             "request_headers_sent": safe_header_names,
         }
 
-        # Try to fetch account info if account_name is set
+        # Step 2: Try to fetch account info if account_name is set
         if self.account_name:
             acct_path = f"/m2m/v1/accounts/{self.account_name}"
             acct_url = f"{self.base_url}{acct_path}"

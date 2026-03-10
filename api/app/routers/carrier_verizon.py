@@ -38,6 +38,9 @@ class ConnectionTestResult(BaseModel):
     auth_mode: Optional[str] = None
     token_type: Optional[str] = None
     request_headers_sent: Optional[list[str]] = None
+    oauth_token_url: Optional[str] = None
+    oauth_token_status: Optional[int] = None
+    oauth_token_body: Optional[str] = None
     account_name: Optional[str] = None
     account_info: Optional[dict] = None
     account_info_endpoint: Optional[str] = None
@@ -110,12 +113,24 @@ async def test_verizon_connection(
 
     try:
         result = await client.test_connection()
+
+        # test_connection now returns authenticated=False on auth failure
+        # instead of raising, so we get rich diagnostics either way.
+        authenticated = result.get("authenticated", False)
+
         return ConnectionTestResult(
-            ok=True,
+            ok=authenticated,
             auth_mode=result.get("auth_mode"),
             token_type=result.get("token_type"),
             request_headers_sent=result.get("request_headers_sent"),
-            message="Successfully authenticated to Verizon ThingSpace",
+            oauth_token_url=result.get("oauth_token_url"),
+            oauth_token_status=result.get("oauth_token_status"),
+            oauth_token_body=result.get("oauth_token_body"),
+            message=(
+                "Successfully authenticated to Verizon ThingSpace"
+                if authenticated
+                else result.get("note") or "Authentication failed"
+            ),
             account_name=result.get("account_name"),
             account_info=result.get("account_info"),
             account_info_endpoint=result.get("account_info_endpoint"),

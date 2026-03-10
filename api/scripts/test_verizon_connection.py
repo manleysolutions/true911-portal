@@ -143,6 +143,8 @@ def check_verizon_config(client: httpx.Client, token: str) -> dict | None:
         data = resp.json()
         _print_result("Auth mode", data.get("auth_mode", "(not set)"))
         _print_result("Base URL", data.get("base_url", "?"))
+        if data.get("oauth_token_url"):
+            _print_result("OAuth token URL", data["oauth_token_url"])
         _print_result("Account name", data.get("account_name", "(not set)"))
         _print_result("Configured", str(data.get("is_configured", False)), data.get("is_configured", False))
 
@@ -177,6 +179,12 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
         ok = data.get("ok", False)
         _print_result("Connection OK", str(ok), ok)
         _print_result("Auth mode", data.get("auth_mode", "?"))
+        if data.get("oauth_token_url"):
+            _print_result("OAuth token URL", data["oauth_token_url"])
+        if data.get("oauth_token_status"):
+            _print_result("OAuth token HTTP", str(data["oauth_token_status"]), False)
+        if data.get("oauth_token_body"):
+            _print_result("OAuth token body", data["oauth_token_body"][:300], False)
         if data.get("token_type"):
             _print_result("Token type", data["token_type"])
         if data.get("request_headers_sent"):

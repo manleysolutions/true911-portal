@@ -219,6 +219,30 @@ class TestAuthModeConfig:
         assert summary["account_name"] == "acct-001"
         assert summary["is_configured"] is True
 
+    def test_config_summary_shows_oauth_token_url(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k",
+            api_secret="s",
+            api_token="t",
+            base_url="https://example.com/api",
+        )
+        summary = client.config_summary()
+        assert summary["oauth_token_url"] == "https://example.com/api/ts/v1/oauth2/token"
+
+    def test_custom_oauth_token_path(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k",
+            api_secret="s",
+            api_token="t",
+            base_url="https://example.com/api",
+            oauth_token_path="/oauth2/token",
+        )
+        assert client.oauth_token_path == "/oauth2/token"
+        summary = client.config_summary()
+        assert summary["oauth_token_url"] == "https://example.com/api/oauth2/token"
+
     def test_config_summary_missing_vars(self):
         client = VerizonThingSpaceClient(
             auth_mode="oauth_client_credentials",
@@ -317,7 +341,7 @@ class TestAuthDispatch:
             # Verify OAuth endpoint was called with correct auth and VZ-M2M-Token
             mock_ctx.post.assert_called_once()
             call_kwargs = mock_ctx.post.call_args
-            assert call_kwargs[0][0] == "https://test.example.com/api/oauth2/token"
+            assert call_kwargs[0][0] == "https://test.example.com/api/ts/v1/oauth2/token"
             assert call_kwargs[1]["auth"] == ("my-api-key", "my-api-secret")
             assert call_kwargs[1]["headers"]["VZ-M2M-Token"] == "my-api-token"
 
@@ -390,6 +414,35 @@ class TestAuthDispatch:
         client = VerizonThingSpaceClient(auth_mode="bogus")
         with pytest.raises(VerizonThingSpaceError, match="Unsupported"):
             await client.authenticate()
+
+    @pytest.mark.asyncio
+    async def test_test_connection_returns_diagnostics_on_auth_failure(self):
+        """test_connection() should return structured diagnostics (not raise) on auth failure."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k",
+            api_secret="s",
+            api_token="t",
+            base_url="https://test.example.com/api",
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.text = "Not Found"
+
+        with patch("app.services.verizon_thingspace.httpx.AsyncClient") as MockClient:
+            mock_ctx = AsyncMock()
+            mock_ctx.post.return_value = mock_response
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_ctx
+
+            result = await client.test_connection()
+
+        assert result["authenticated"] is False
+        assert result["oauth_token_url"] == "https://test.example.com/api/ts/v1/oauth2/token"
+        assert result["oauth_token_status"] == 404
+        assert "VERIZON_THINGSPACE_OAUTH_TOKEN_PATH" in result["note"]
 
 
 # ── Auth headers tests ───────────────────────────────────────────────────
