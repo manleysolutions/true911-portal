@@ -2,22 +2,18 @@
 
 Supports multiple auth modes via VERIZON_THINGSPACE_AUTH_MODE:
     oauth_client_credentials  — OAuth2 client_credentials grant (client_id + client_secret)
-    api_key_secret_token      — static API key + secret + token headers
+    api_key_secret_token      — OAuth2 exchange using API key/secret/token from
+                                ThingSpace Key Management
     legacy_short_key_secret   — short key + secret (older ThingSpace accounts)
     username_password_session — session login with username/password (legacy fallback)
 
-For api_key_secret_token mode, VERIZON_THINGSPACE_API_HEADER_STYLE controls
-which headers are sent on M2M requests:
-    bearer_token       — Authorization: Bearer <token>  (default, required by M2M gateway)
-    hybrid             — Bearer token + X-API-Key + X-API-Secret
-    x_api_key_secret   — X-API-Key + X-API-Secret + VZ-M2M-Token
-    vz_m2m_only        — VZ-M2M-Token only (legacy)
+Both oauth_client_credentials and api_key_secret_token obtain a real OAuth2
+access_token and use Authorization: Bearer on M2M requests.
 
 Environment variables (via Settings):
     VERIZON_THINGSPACE_AUTH_MODE       — one of the modes above
     VERIZON_THINGSPACE_BASE_URL        — API base (default: https://thingspace.verizon.com/api)
     VERIZON_THINGSPACE_ACCOUNT_NAME    — M2M account (e.g. "0123456789-00001")
-    VERIZON_THINGSPACE_API_HEADER_STYLE — header style for api_key_secret_token mode
     + mode-specific credential vars (see config.py / .env.example)
 """
 
@@ -43,14 +39,6 @@ AUTH_MODES = frozenset({
     "api_key_secret_token",
     "legacy_short_key_secret",
     "username_password_session",
-})
-
-# Header styles for api_key_secret_token mode
-HEADER_STYLES = frozenset({
-    "bearer_token",
-    "hybrid",
-    "x_api_key_secret",
-    "vz_m2m_only",
 })
 
 # Required env vars per auth mode (Settings field names)
@@ -104,7 +92,6 @@ class VerizonThingSpaceClient:
         auth_mode: str | None = None,
         base_url: str | None = None,
         account_name: str | None = None,
-        header_style: str | None = None,
         # oauth_client_credentials
         client_id: str | None = None,
         client_secret: str | None = None,
@@ -122,7 +109,6 @@ class VerizonThingSpaceClient:
         self.auth_mode = (auth_mode or settings.VERIZON_THINGSPACE_AUTH_MODE).strip().lower()
         self.base_url = (base_url or settings.VERIZON_THINGSPACE_BASE_URL).rstrip("/")
         self.account_name = account_name or settings.VERIZON_THINGSPACE_ACCOUNT_NAME
-        self.header_style = (header_style or settings.VERIZON_THINGSPACE_API_HEADER_STYLE).strip().lower() or "bearer_token"
 
         # Store credentials by mode — only populated for the active mode
         self._creds = {
@@ -188,7 +174,6 @@ class VerizonThingSpaceClient:
         """Return a safe (no secrets) summary for diagnostics."""
         summary: dict[str, Any] = {
             "auth_mode": self.auth_mode,
-            "header_style": self.header_style if self.auth_mode == "api_key_secret_token" else "(n/a)",
             "base_url": self.base_url,
             "account_name": self.account_name or "(not set)",
             "is_configured": self.is_configured,
@@ -262,20 +247,64 @@ class VerizonThingSpaceClient:
     # ── Mode: API key + secret + token ────────────────────────────────
 
     async def _auth_api_key_secret_token(self) -> str:
-        """Static API key / secret / token — no token exchange needed.
+        """Exchange API key/secret/token for an OAuth2 Bearer access_token.
 
-        These are passed directly as headers on every request.
-        authenticate() validates the credentials are present and returns
-        a sentinel; the actual headers are built in _auth_headers().
+        ThingSpace Key Management credentials (API key, API secret, API token)
+        are NOT static Bearer tokens — they are credentials used to obtain a
+        real OAuth2 access_token via the /oauth2/token endpoint.
 
-        NOTE: The exact header names may vary by ThingSpace account type.
-        Current mapping uses VZ-M2M-Token for the token value plus
-        standard API key headers. Adjust after first live test if needed.
+        Flow:
+            POST /oauth2/token
+            Authorization: Basic base64(api_key:api_secret)
+            VZ-M2M-Token: <api_token>
+            Content-Type: application/x-www-form-urlencoded
+            Body: grant_type=client_credentials
+
+        Returns the access_token from the OAuth2 response.
         """
-        # No network call needed — credentials are static
-        self._session_token = self._creds["api_token"]
-        logger.info("Verizon API key/secret/token mode — credentials loaded (no token exchange)")
-        return self._session_token
+        url = f"{self.base_url}/oauth2/token"
+        api_key = self._creds["api_key"]
+        api_secret = self._creds["api_secret"]
+        api_token = self._creds["api_token"]
+
+        logger.info(
+            "Verizon API key/secret/token OAuth2 exchange at %s (key=%s)",
+            url, _redact(api_key),
+        )
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT)) as http:
+            resp = await http.post(
+                url,
+                data={"grant_type": "client_credentials"},
+                auth=(api_key, api_secret),
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "VZ-M2M-Token": api_token,
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.error(
+                "Verizon API-key OAuth2 exchange failed: status=%d",
+                resp.status_code,
+            )
+            raise VerizonThingSpaceError(
+                f"API-key OAuth2 token exchange failed (HTTP {resp.status_code})",
+                status_code=resp.status_code,
+                body=self._safe_body(resp),
+            )
+
+        data = resp.json()
+        token = data.get("access_token")
+        if not token:
+            raise VerizonThingSpaceError(
+                "API-key OAuth2 response did not contain access_token",
+                body={k: v for k, v in data.items() if k != "access_token"},
+            )
+
+        self._session_token = token
+        logger.info("Verizon API-key OAuth2 exchange successful")
+        return token
 
     # ── Mode: Legacy short key + secret ───────────────────────────────
 
@@ -348,26 +377,9 @@ class VerizonThingSpaceClient:
             headers["Authorization"] = f"Bearer {self._session_token}"
 
         elif self.auth_mode == "api_key_secret_token":
-            # Header style selects which combination of headers to send.
-            # The M2M API gateway requires "Authorization: Bearer <token>" for
-            # most accounts; other styles exist for legacy/edge cases.
-            style = self.header_style
-            if style == "bearer_token":
-                headers["Authorization"] = f"Bearer {self._session_token}"
-            elif style == "hybrid":
-                headers["Authorization"] = f"Bearer {self._session_token}"
-                headers["X-API-Key"] = self._creds["api_key"]
-                headers["X-API-Secret"] = self._creds["api_secret"]
-            elif style == "x_api_key_secret":
-                headers["VZ-M2M-Token"] = self._session_token
-                headers["X-API-Key"] = self._creds["api_key"]
-                headers["X-API-Secret"] = self._creds["api_secret"]
-            elif style == "vz_m2m_only":
-                headers["VZ-M2M-Token"] = self._session_token
-            else:
-                # Fall back to bearer_token for any unrecognized style
-                logger.warning("Unknown header_style '%s', falling back to bearer_token", style)
-                headers["Authorization"] = f"Bearer {self._session_token}"
+            # After the OAuth2 token exchange, _session_token is a real
+            # access_token — always sent as Bearer.
+            headers["Authorization"] = f"Bearer {self._session_token}"
 
         elif self.auth_mode == "legacy_short_key_secret":
             headers["Authorization"] = f"Basic {self._session_token}"
@@ -402,7 +414,11 @@ class VerizonThingSpaceClient:
     @property
     def _can_reauth(self) -> bool:
         """True if the auth mode supports re-authentication on 401."""
-        return self.auth_mode in ("oauth_client_credentials", "username_password_session")
+        return self.auth_mode in (
+            "oauth_client_credentials",
+            "api_key_secret_token",
+            "username_password_session",
+        )
 
     # ── Generic request wrapper ───────────────────────────────────────
 
@@ -432,9 +448,10 @@ class VerizonThingSpaceClient:
                 resp = await http.request(method, url, headers=headers, json=json, params=params)
 
         if resp.status_code >= 400:
+            header_names = sorted(headers.keys())
             logger.error(
-                "ThingSpace request failed: %s %s status=%d",
-                method, path, resp.status_code,
+                "ThingSpace request failed: %s %s status=%d headers=%s",
+                method, path, resp.status_code, header_names,
             )
             raise VerizonThingSpaceError(
                 f"ThingSpace API error: {method} {path} returned {resp.status_code}",
@@ -450,36 +467,45 @@ class VerizonThingSpaceClient:
         """Authenticate and return basic account info.
 
         This is a safe, read-only call that proves credentials work.
+        Returns rich diagnostics about every step.
         """
         self._require_configured()
         await self.authenticate()
 
+        # Show sanitized header names (not values) so we know what was sent
+        probe_headers = self._auth_headers()
+        safe_header_names = sorted(probe_headers.keys())
+
         result: dict[str, Any] = {
             "authenticated": True,
             "auth_mode": self.auth_mode,
-            "header_style": self.header_style if self.auth_mode == "api_key_secret_token" else None,
             "account_name": self.account_name,
             "base_url": self.base_url,
+            "token_type": "oauth2_access_token" if self.auth_mode in (
+                "oauth_client_credentials", "api_key_secret_token",
+            ) else "session",
+            "request_headers_sent": safe_header_names,
         }
 
         # Try to fetch account info if account_name is set
         if self.account_name:
             acct_path = f"/m2m/v1/accounts/{self.account_name}"
+            acct_url = f"{self.base_url}{acct_path}"
             try:
                 acct = await self._request("GET", acct_path)
                 result["account_info"] = acct
             except VerizonThingSpaceError as e:
                 result["account_info"] = None
-                result["account_info_endpoint"] = f"GET {self.base_url}{acct_path}"
+                result["account_info_endpoint"] = f"GET {acct_url}"
                 result["account_info_status"] = e.status_code
                 result["account_info_body"] = self._safe_body_from_str(
                     e.body if isinstance(e.body, str) else str(e.body or "")
                 )
                 result["note"] = (
-                    f"Auth succeeded but account info endpoint returned "
+                    f"Auth token obtained but M2M endpoint returned "
                     f"HTTP {e.status_code or '?'}. "
-                    f"Account name '{self.account_name}' may need adjustment, "
-                    f"or this endpoint may not be available for your auth mode."
+                    f"Headers sent: {safe_header_names}. "
+                    f"Account name '{self.account_name}' may need adjustment."
                 )
 
         return result
