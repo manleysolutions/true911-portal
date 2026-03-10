@@ -33,12 +33,21 @@ logger = logging.getLogger("true911.verizon")
 _CONNECT_TIMEOUT = 10.0
 _READ_TIMEOUT = 30.0
 
-# Supported auth modes
+# Supported auth modes (how we obtain a token)
 AUTH_MODES = frozenset({
     "oauth_client_credentials",
     "api_key_secret_token",
     "legacy_short_key_secret",
     "username_password_session",
+})
+
+# M2M auth modes (how we present credentials on protected M2M requests)
+M2M_AUTH_MODES = frozenset({
+    "oauth_plus_vz_m2m",       # Bearer + VZ-M2M-Token
+    "oauth_plus_app_token",    # Bearer + App-Token
+    "oauth_plus_both",         # Bearer + VZ-M2M-Token + App-Token (diagnostic)
+    "bearer_only",             # Bearer only (control test)
+    "session_token_legacy",    # legacy session-token flow (requires username/password)
 })
 
 # Required env vars per auth mode (Settings field names)
@@ -81,13 +90,19 @@ class VerizonThingSpaceError(Exception):
         request_method: str | None = None,
         request_url: str | None = None,
         request_headers: list[str] | None = None,
+        actual_headers_sent: list[str] | None = None,
+        request_params: list[str] | None = None,
+        request_body_keys: list[str] | None = None,
     ):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
         self.request_method = request_method
         self.request_url = request_url
-        self.request_headers = request_headers
+        self.request_headers = request_headers          # what we put in the dict
+        self.actual_headers_sent = actual_headers_sent  # what httpx actually sent
+        self.request_params = request_params
+        self.request_body_keys = request_body_keys
 
 
 class VerizonThingSpaceClient:
@@ -104,6 +119,8 @@ class VerizonThingSpaceClient:
         account_name: str | None = None,
         oauth_token_path: str | None = None,
         app_token_header: str | None = None,
+        m2m_auth_mode: str | None = None,
+        m2m_account_id: str | None = None,
         # oauth_client_credentials
         client_id: str | None = None,
         client_secret: str | None = None,
@@ -123,6 +140,11 @@ class VerizonThingSpaceClient:
         self.account_name = account_name or settings.VERIZON_THINGSPACE_ACCOUNT_NAME
         self.oauth_token_path = (oauth_token_path or settings.VERIZON_THINGSPACE_OAUTH_TOKEN_PATH).strip()
         self.app_token_header = (app_token_header or settings.VERIZON_THINGSPACE_APP_TOKEN_HEADER).strip() or "VZ-M2M-Token"
+        # M2M endpoint auth strategy — defaults to oauth_plus_vz_m2m
+        raw_m2m = (m2m_auth_mode or settings.VERIZON_THINGSPACE_M2M_AUTH_MODE).strip().lower()
+        self.m2m_auth_mode = raw_m2m if raw_m2m in M2M_AUTH_MODES else "oauth_plus_vz_m2m"
+        # Optional override for M2M account identifier (may differ from keyset name)
+        self.m2m_account_id = (m2m_account_id or settings.VERIZON_THINGSPACE_M2M_ACCOUNT_ID).strip()
 
         # Store credentials by mode — only populated for the active mode
         self._creds = {
@@ -190,8 +212,10 @@ class VerizonThingSpaceClient:
             "auth_mode": self.auth_mode,
             "base_url": self.base_url,
             "oauth_token_url": f"{self.base_url}{self.oauth_token_path}",
+            "m2m_auth_mode": self.m2m_auth_mode if self.auth_mode == "api_key_secret_token" else "(n/a)",
             "app_token_header": self.app_token_header if self.auth_mode == "api_key_secret_token" else "(n/a)",
             "account_name": self.account_name or "(not set)",
+            "m2m_account_id": self.m2m_account_id or "(not set — using account_name)",
             "is_configured": self.is_configured,
         }
         if not self.is_configured:
@@ -393,11 +417,35 @@ class VerizonThingSpaceClient:
             headers["Authorization"] = f"Bearer {self._session_token}"
 
         elif self.auth_mode == "api_key_secret_token":
-            # M2M endpoints require BOTH:
-            #   Authorization: Bearer <access_token>   (from OAuth exchange)
-            #   VZ-M2M-Token: <original api_token>     (app identity)
+            # M2M endpoints require Authorization: Bearer + an app token header.
+            # The exact header(s) depend on m2m_auth_mode.
             headers["Authorization"] = f"Bearer {self._session_token}"
-            headers[self.app_token_header] = self._creds["api_token"]
+            m2m = self.m2m_auth_mode
+            app_token_value = self._creds["api_token"]
+            if m2m == "oauth_plus_vz_m2m":
+                headers["VZ-M2M-Token"] = app_token_value
+            elif m2m == "oauth_plus_app_token":
+                headers["App-Token"] = app_token_value
+            elif m2m == "oauth_plus_both":
+                # Send BOTH headers — eliminates header-name ambiguity
+                headers["VZ-M2M-Token"] = app_token_value
+                headers["App-Token"] = app_token_value
+            elif m2m == "bearer_only":
+                pass  # control test — Bearer only
+            elif m2m == "session_token_legacy":
+                # Plug point for legacy session-token M2M auth.
+                # Would require a session login (POST /ts/v1/session/login)
+                # to obtain a sessionToken, then send it as VZ-M2M-Token.
+                # For now, falls back to VZ-M2M-Token with the api_token.
+                headers["VZ-M2M-Token"] = app_token_value
+                logger.warning(
+                    "session_token_legacy M2M mode: using api_token as VZ-M2M-Token. "
+                    "Full session-login flow not yet implemented — set "
+                    "username_password_session auth_mode if you need session-based auth."
+                )
+            else:
+                # Fallback: use the configured app_token_header
+                headers[self.app_token_header] = app_token_value
 
         elif self.auth_mode == "legacy_short_key_secret":
             headers["Authorization"] = f"Basic {self._session_token}"
@@ -473,10 +521,21 @@ class VerizonThingSpaceClient:
 
         if resp.status_code >= 400:
             header_names = sorted(headers.keys())
+            # Capture what httpx ACTUALLY sent on the wire (may differ from our dict)
+            actual_sent: list[str] | None = None
+            if resp.request is not None:
+                try:
+                    # httpx Headers stores (name, value) pairs — extract names
+                    actual_sent = sorted(set(resp.request.headers.keys()))
+                except Exception:
+                    pass
+            body_keys = sorted(json.keys()) if json else None
+            param_keys = sorted(params.keys()) if params else None
             logger.error(
-                "ThingSpace request failed: %s %s status=%d headers=%s body=%s",
+                "ThingSpace request failed: %s %s status=%d "
+                "intended_headers=%s actual_wire_headers=%s body=%s",
                 method, url, resp.status_code, header_names,
-                self._safe_body(resp),
+                actual_sent, self._safe_body(resp),
             )
             raise VerizonThingSpaceError(
                 f"ThingSpace API error: {method} {path} returned {resp.status_code}",
@@ -485,6 +544,9 @@ class VerizonThingSpaceClient:
                 request_method=method,
                 request_url=url,
                 request_headers=header_names,
+                actual_headers_sent=actual_sent,
+                request_params=param_keys,
+                request_body_keys=body_keys,
             )
 
         return resp.json()
@@ -529,7 +591,9 @@ class VerizonThingSpaceClient:
         result: dict[str, Any] = {
             "authenticated": True,
             "auth_mode": self.auth_mode,
+            "m2m_auth_mode": self.m2m_auth_mode,
             "account_name": self.account_name,
+            "m2m_account_id": self.m2m_account_id or None,
             "base_url": self.base_url,
             "oauth_token_url": token_url,
             "token_type": "oauth2_access_token" if self.auth_mode in (
@@ -538,30 +602,45 @@ class VerizonThingSpaceClient:
             "request_headers_sent": safe_header_names,
         }
 
-        # Step 2: Try to fetch account info if account_name is set
-        if self.account_name:
-            acct_path = f"/m2m/v1/accounts/{self.account_name}"
+        # Step 2: Try to fetch account info
+        # Use m2m_account_id if set, otherwise fall back to account_name
+        acct_id = self.m2m_account_id or self.account_name
+        if acct_id:
+            acct_path = f"/m2m/v1/accounts/{acct_id}"
             acct_url = f"{self.base_url}{acct_path}"
             try:
                 acct = await self._request("GET", acct_path)
                 result["account_info"] = acct
             except VerizonThingSpaceError as e:
                 result["account_info"] = None
-                result["account_info_endpoint"] = e.request_url or f"GET {acct_url}"
+                result["account_info_endpoint"] = e.request_url or acct_url
                 result["account_info_status"] = e.status_code
                 result["account_info_body"] = self._safe_body_from_str(
                     e.body if isinstance(e.body, str) else str(e.body or "")
                 )
-                # Surface the exact headers that were on the failing M2M request
-                m2m_headers = e.request_headers or safe_header_names
+                # Intended headers vs actual wire headers — critical diagnostic
                 result["m2m_request_method"] = e.request_method or "GET"
                 result["m2m_request_url"] = e.request_url or acct_url
-                result["m2m_request_headers"] = m2m_headers
+                result["m2m_request_headers"] = e.request_headers or safe_header_names
+                result["m2m_actual_headers_sent"] = e.actual_headers_sent
+                result["m2m_request_params"] = e.request_params
+                result["m2m_request_body_keys"] = e.request_body_keys
+                # Build diagnostic note
+                intended = e.request_headers or safe_header_names
+                actual = e.actual_headers_sent
+                header_mismatch = ""
+                if actual and set(intended) != set(actual):
+                    header_mismatch = (
+                        f" WARNING: intended headers {intended} differ from "
+                        f"actual wire headers {actual} — httpx may be altering headers."
+                    )
                 result["note"] = (
                     f"Auth token obtained but M2M endpoint returned "
                     f"HTTP {e.status_code or '?'}. "
-                    f"Outbound M2M headers: {m2m_headers}. "
-                    f"Account name '{self.account_name}' may need adjustment."
+                    f"M2M auth mode: {self.m2m_auth_mode}. "
+                    f"Intended headers: {intended}. "
+                    f"Actual wire headers: {actual}. "
+                    f"Account ID used: '{acct_id}'.{header_mismatch}"
                 )
 
         return result
@@ -578,10 +657,11 @@ class VerizonThingSpaceClient:
 
         Uses POST /m2m/v1/devices/actions/list which supports filtering.
         """
-        acct = account_name or self.account_name
+        acct = account_name or self.m2m_account_id or self.account_name
         if not acct:
             raise VerizonThingSpaceError(
-                "Account name required. Set VERIZON_THINGSPACE_ACCOUNT_NAME."
+                "Account name required. Set VERIZON_THINGSPACE_M2M_ACCOUNT_ID "
+                "or VERIZON_THINGSPACE_ACCOUNT_NAME."
             )
 
         all_devices: list[dict] = []
@@ -634,7 +714,7 @@ class VerizonThingSpaceClient:
         account_name: str | None = None,
     ) -> dict[str, Any] | None:
         """Fetch a single device by ICCID, IMEI, MDN, or MSISDN."""
-        acct = account_name or self.account_name
+        acct = account_name or self.m2m_account_id or self.account_name
         if not acct:
             raise VerizonThingSpaceError("Account name required.")
 

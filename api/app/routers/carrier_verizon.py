@@ -36,12 +36,14 @@ class ConnectionTestResult(BaseModel):
     ok: bool
     message: str
     auth_mode: Optional[str] = None
+    m2m_auth_mode: Optional[str] = None
     token_type: Optional[str] = None
     request_headers_sent: Optional[list[str]] = None
     oauth_token_url: Optional[str] = None
     oauth_token_status: Optional[int] = None
     oauth_token_body: Optional[str] = None
     account_name: Optional[str] = None
+    m2m_account_id: Optional[str] = None
     account_info: Optional[dict] = None
     account_info_endpoint: Optional[str] = None
     account_info_status: Optional[int] = None
@@ -49,6 +51,9 @@ class ConnectionTestResult(BaseModel):
     m2m_request_method: Optional[str] = None
     m2m_request_url: Optional[str] = None
     m2m_request_headers: Optional[list[str]] = None
+    m2m_actual_headers_sent: Optional[list[str]] = None
+    m2m_request_params: Optional[list[str]] = None
+    m2m_request_body_keys: Optional[list[str]] = None
     note: Optional[str] = None
 
 
@@ -124,6 +129,7 @@ async def test_verizon_connection(
         return ConnectionTestResult(
             ok=authenticated,
             auth_mode=result.get("auth_mode"),
+            m2m_auth_mode=result.get("m2m_auth_mode"),
             token_type=result.get("token_type"),
             request_headers_sent=result.get("request_headers_sent"),
             oauth_token_url=result.get("oauth_token_url"),
@@ -135,6 +141,7 @@ async def test_verizon_connection(
                 else result.get("note") or "Authentication failed"
             ),
             account_name=result.get("account_name"),
+            m2m_account_id=result.get("m2m_account_id"),
             account_info=result.get("account_info"),
             account_info_endpoint=result.get("account_info_endpoint"),
             account_info_status=result.get("account_info_status"),
@@ -142,6 +149,9 @@ async def test_verizon_connection(
             m2m_request_method=result.get("m2m_request_method"),
             m2m_request_url=result.get("m2m_request_url"),
             m2m_request_headers=result.get("m2m_request_headers"),
+            m2m_actual_headers_sent=result.get("m2m_actual_headers_sent"),
+            m2m_request_params=result.get("m2m_request_params"),
+            m2m_request_body_keys=result.get("m2m_request_body_keys"),
             note=result.get("note"),
         )
     except VerizonThingSpaceError as e:
@@ -179,9 +189,19 @@ async def list_verizon_devices(
     try:
         raw_devices = await client.fetch_devices(max_results=max_results)
     except VerizonThingSpaceError as e:
+        detail = {
+            "error": str(e),
+            "status_code": e.status_code,
+            "body": e.body,
+            "request_method": e.request_method,
+            "request_url": e.request_url,
+            "request_headers": e.request_headers,
+            "actual_headers_sent": e.actual_headers_sent,
+            "request_body_keys": e.request_body_keys,
+        }
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
-            f"ThingSpace API error: {e}",
+            detail=detail,
         )
 
     normalized = [normalize_verizon_device(d) for d in raw_devices]

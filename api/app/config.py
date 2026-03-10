@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     VERIZON_THINGSPACE_API_SECRET: str = ""
     VERIZON_THINGSPACE_API_TOKEN: str = ""
     VERIZON_THINGSPACE_APP_TOKEN_HEADER: str = "VZ-M2M-Token"  # or "App-Token"
+    # M2M endpoint auth strategy (controls how headers are sent on protected requests)
+    # oauth_plus_vz_m2m (default) | oauth_plus_app_token | oauth_plus_both | bearer_only | session_token_legacy
+    VERIZON_THINGSPACE_M2M_AUTH_MODE: str = ""
+    # Override account ID for M2M endpoints (falls back to ACCOUNT_NAME)
+    # ThingSpace Key Management keyset IDs are NOT the same as M2M account names.
+    # M2M account names are typically "NNNNNNNNNN-NNNNN" format.
+    VERIZON_THINGSPACE_M2M_ACCOUNT_ID: str = ""
     # legacy_short_key_secret
     VERIZON_THINGSPACE_SHORT_KEY: str = ""
     VERIZON_THINGSPACE_SHORT_SECRET: str = ""

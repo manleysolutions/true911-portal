@@ -142,12 +142,18 @@ def check_verizon_config(client: httpx.Client, token: str) -> dict | None:
     if resp.status_code == 200:
         data = resp.json()
         _print_result("Auth mode", data.get("auth_mode", "(not set)"))
+        m2m_mode = data.get("m2m_auth_mode", "(n/a)")
+        if m2m_mode and m2m_mode != "(n/a)":
+            _print_result("M2M auth mode", m2m_mode)
         _print_result("Base URL", data.get("base_url", "?"))
         if data.get("oauth_token_url"):
             _print_result("OAuth token URL", data["oauth_token_url"])
         if data.get("app_token_header") and data["app_token_header"] != "(n/a)":
             _print_result("App token header", data["app_token_header"])
         _print_result("Account name", data.get("account_name", "(not set)"))
+        m2m_acct = data.get("m2m_account_id", "(n/a)")
+        if m2m_acct and m2m_acct != "(not set — using account_name)":
+            _print_result("M2M account ID", m2m_acct)
         _print_result("Configured", str(data.get("is_configured", False)), data.get("is_configured", False))
 
         if not data.get("is_configured"):
@@ -181,6 +187,8 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
         ok = data.get("ok", False)
         _print_result("Connection OK", str(ok), ok)
         _print_result("Auth mode", data.get("auth_mode", "?"))
+        if data.get("m2m_auth_mode"):
+            _print_result("M2M auth mode", data["m2m_auth_mode"])
         if data.get("oauth_token_url"):
             _print_result("OAuth token URL", data["oauth_token_url"])
         if data.get("oauth_token_status"):
@@ -195,6 +203,8 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
 
         if data.get("account_name"):
             _print_result("Account", data["account_name"])
+        if data.get("m2m_account_id"):
+            _print_result("M2M account ID", data["m2m_account_id"])
         if data.get("note"):
             _print_result("Note", data["note"], False)
         if data.get("account_info_endpoint"):
@@ -209,7 +219,19 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
             print("\n  M2M Request Diagnostics:")
             _print_result("  M2M method", data["m2m_request_method"], False)
             _print_result("  M2M URL", data.get("m2m_request_url", "?"), False)
-            _print_result("  M2M headers", ", ".join(data.get("m2m_request_headers", [])), False)
+            _print_result("  Intended headers", ", ".join(data.get("m2m_request_headers", [])), False)
+            actual = data.get("m2m_actual_headers_sent")
+            if actual:
+                _print_result("  Actual wire headers", ", ".join(actual), False)
+                # Flag mismatch between intended and actual
+                intended_set = set(data.get("m2m_request_headers", []))
+                actual_set = set(actual)
+                if intended_set != actual_set:
+                    _print_result("  HEADER MISMATCH", f"intended={intended_set - actual_set} actual_extra={actual_set - intended_set}", False)
+            if data.get("m2m_request_params"):
+                _print_result("  Query params", ", ".join(data["m2m_request_params"]), False)
+            if data.get("m2m_request_body_keys"):
+                _print_result("  Body keys", ", ".join(data["m2m_request_body_keys"]), False)
 
         if data.get("account_info"):
             print("\n  Account info (sanitized):")
@@ -280,18 +302,23 @@ def preview_verizon_devices(client: httpx.Client, token: str) -> dict | None:
         try:
             err = resp.json()
             detail = err.get("detail", resp.text[:300])
+            # If detail is a dict (structured error), show it nicely
+            if isinstance(detail, dict):
+                _print_result("Error", detail.get("error", "?"), False)
+                if detail.get("body"):
+                    _print_result("Verizon body", str(detail["body"])[:300], False)
+                if detail.get("request_method"):
+                    _print_result("Request", f"{detail['request_method']} {detail.get('request_url', '?')}", False)
+                if detail.get("request_headers"):
+                    _print_result("Intended headers", ", ".join(detail["request_headers"]), False)
+                if detail.get("actual_headers_sent"):
+                    _print_result("Actual wire headers", ", ".join(detail["actual_headers_sent"]), False)
+                if detail.get("request_body_keys"):
+                    _print_result("Body keys", ", ".join(detail["request_body_keys"]), False)
+            else:
+                _print_result("Error", str(detail)[:300], False)
         except Exception:
-            detail = resp.text[:300]
-        _print_result("Error", detail, False)
-
-        # Print response headers for debugging (exclude auth/cookie)
-        safe_headers = {
-            k: v for k, v in resp.headers.items()
-            if k.lower() not in ("authorization", "set-cookie")
-        }
-        print("\n  Response headers:")
-        for k, v in safe_headers.items():
-            print(f"    {k}: {v}")
+            _print_result("Raw response", resp.text[:300], False)
 
         return None
 

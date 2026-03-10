@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.services.verizon_thingspace import (
     AUTH_MODES,
+    M2M_AUTH_MODES,
     VerizonThingSpaceClient,
     VerizonThingSpaceError,
     normalize_verizon_device,
@@ -230,6 +231,7 @@ class TestAuthModeConfig:
         summary = client.config_summary()
         assert summary["oauth_token_url"] == "https://example.com/api/ts/v1/oauth2/token"
         assert summary["app_token_header"] == "VZ-M2M-Token"
+        assert summary["m2m_auth_mode"] == "oauth_plus_vz_m2m"
 
     def test_config_summary_app_token_header_na_for_other_modes(self):
         client = VerizonThingSpaceClient(
@@ -239,6 +241,7 @@ class TestAuthModeConfig:
         )
         summary = client.config_summary()
         assert summary["app_token_header"] == "(n/a)"
+        assert summary["m2m_auth_mode"] == "(n/a)"
 
     def test_custom_oauth_token_path(self):
         client = VerizonThingSpaceClient(
@@ -471,8 +474,8 @@ class TestAuthHeaders:
         assert headers["Authorization"] == "Bearer oauth-token"
         assert "VZ-M2M-Token" not in headers
 
-    def test_api_key_headers_bearer_plus_app_token(self):
-        """After OAuth exchange, sends Bearer + VZ-M2M-Token (original api_token)."""
+    def test_api_key_headers_default_vz_m2m(self):
+        """Default m2m_auth_mode sends Bearer + VZ-M2M-Token."""
         client = VerizonThingSpaceClient(
             auth_mode="api_key_secret_token",
             api_key="mykey",
@@ -480,25 +483,56 @@ class TestAuthHeaders:
             api_token="original-app-token",
         )
         client._session_token = "real-access-token-from-exchange"
+        assert client.m2m_auth_mode == "oauth_plus_vz_m2m"
         headers = client._auth_headers()
         assert headers["Authorization"] == "Bearer real-access-token-from-exchange"
         assert headers["VZ-M2M-Token"] == "original-app-token"
-        assert "X-API-Key" not in headers
+        assert "App-Token" not in headers
 
-    def test_api_key_headers_custom_app_token_header(self):
-        """app_token_header can be overridden to App-Token."""
+    def test_api_key_headers_m2m_app_token(self):
+        """oauth_plus_app_token sends Bearer + App-Token."""
         client = VerizonThingSpaceClient(
             auth_mode="api_key_secret_token",
             api_key="mykey",
             api_secret="mysecret",
             api_token="original-app-token",
-            app_token_header="App-Token",
+            m2m_auth_mode="oauth_plus_app_token",
         )
         client._session_token = "real-access-token"
         headers = client._auth_headers()
         assert headers["Authorization"] == "Bearer real-access-token"
         assert headers["App-Token"] == "original-app-token"
         assert "VZ-M2M-Token" not in headers
+
+    def test_api_key_headers_m2m_both(self):
+        """oauth_plus_both sends Bearer + VZ-M2M-Token + App-Token."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="mykey",
+            api_secret="mysecret",
+            api_token="the-token",
+            m2m_auth_mode="oauth_plus_both",
+        )
+        client._session_token = "real-access-token"
+        headers = client._auth_headers()
+        assert headers["Authorization"] == "Bearer real-access-token"
+        assert headers["VZ-M2M-Token"] == "the-token"
+        assert headers["App-Token"] == "the-token"
+
+    def test_api_key_headers_bearer_only(self):
+        """bearer_only sends only Authorization Bearer."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k",
+            api_secret="s",
+            api_token="t",
+            m2m_auth_mode="bearer_only",
+        )
+        client._session_token = "access-tok"
+        headers = client._auth_headers()
+        assert headers["Authorization"] == "Bearer access-tok"
+        assert "VZ-M2M-Token" not in headers
+        assert "App-Token" not in headers
 
     def test_legacy_headers(self):
         client = VerizonThingSpaceClient(
@@ -666,13 +700,70 @@ class TestErrorDiagnostics:
             request_method="POST",
             request_url="https://example.com/api/m2m/v1/devices/actions/list",
             request_headers=["Authorization", "Content-Type", "VZ-M2M-Token"],
+            actual_headers_sent=["authorization", "content-type", "vz-m2m-token"],
+            request_body_keys=["accountName", "resourceType"],
         )
         assert err.request_method == "POST"
         assert err.request_url == "https://example.com/api/m2m/v1/devices/actions/list"
         assert "VZ-M2M-Token" in err.request_headers
+        assert err.actual_headers_sent is not None
+        assert err.request_body_keys == ["accountName", "resourceType"]
 
     def test_error_defaults_none(self):
         err = VerizonThingSpaceError("basic error")
         assert err.request_method is None
         assert err.request_url is None
         assert err.request_headers is None
+        assert err.actual_headers_sent is None
+        assert err.request_body_keys is None
+
+
+# ── M2M auth mode tests ────────────────────────────────────────────────
+
+
+class TestM2MAuthModes:
+    """Tests for M2M auth mode configuration."""
+
+    def test_supported_m2m_modes(self):
+        assert "oauth_plus_vz_m2m" in M2M_AUTH_MODES
+        assert "oauth_plus_app_token" in M2M_AUTH_MODES
+        assert "oauth_plus_both" in M2M_AUTH_MODES
+        assert "bearer_only" in M2M_AUTH_MODES
+        assert "session_token_legacy" in M2M_AUTH_MODES
+
+    def test_default_m2m_mode(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k", api_secret="s", api_token="t",
+        )
+        assert client.m2m_auth_mode == "oauth_plus_vz_m2m"
+
+    def test_invalid_m2m_mode_falls_back(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k", api_secret="s", api_token="t",
+            m2m_auth_mode="bogus",
+        )
+        assert client.m2m_auth_mode == "oauth_plus_vz_m2m"
+
+    def test_m2m_account_id_used(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k", api_secret="s", api_token="t",
+            account_name="keyset_12345",
+            m2m_account_id="0123456789-00001",
+        )
+        assert client.m2m_account_id == "0123456789-00001"
+        summary = client.config_summary()
+        assert summary["m2m_account_id"] == "0123456789-00001"
+
+    def test_m2m_account_id_empty_fallback(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="k", api_secret="s", api_token="t",
+            account_name="keyset_12345",
+            m2m_account_id="",
+        )
+        assert client.m2m_account_id == ""
+        summary = client.config_summary()
+        assert "using account_name" in summary["m2m_account_id"]
