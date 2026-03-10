@@ -465,17 +465,22 @@ class VerizonThingSpaceClient:
             url, _redact(username),
         )
 
+        # The session login endpoint requires the OAuth Bearer token
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self._session_token:
+            headers["Authorization"] = f"Bearer {self._session_token}"
+
         async with httpx.AsyncClient(timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT)) as http:
             resp = await http.post(
                 url,
                 json={"username": username, "password": password},
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
 
         if resp.status_code != 200:
             logger.error(
-                "M2M session login failed: status=%d url=%s",
-                resp.status_code, url,
+                "M2M session login failed: status=%d url=%s bearer_sent=%s",
+                resp.status_code, url, bool(self._session_token),
             )
             raise VerizonThingSpaceError(
                 f"M2M session login failed (HTTP {resp.status_code})",
