@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
@@ -82,11 +82,14 @@ class DeviceListResult(BaseModel):
 
 
 class SyncResult(BaseModel):
+    dry_run: bool
     created: int
     updated: int
     unchanged: int
-    errors: int
+    skipped: int
+    conflicts: list[dict]
     total_fetched: int
+    tenant_id: str
     details: list[dict]
 
 
@@ -284,7 +287,11 @@ async def sync_verizon_devices(
     - dry_run=true (default): preview what would be created/updated
     - dry_run=false: actually persist to the sims table
 
-    Matching is done by ICCID. Existing SIMs are updated; new ones are created.
+    Matching is done by ICCID (globally unique).  The sync checks for:
+    - ICCIDs that already exist under a *different* tenant (conflict)
+    - MSISDNs that already exist on another SIM row (unique-index conflict)
+    - Duplicate MSISDNs within the incoming Verizon batch
+
     Lines are not auto-attached to customers or devices — that requires a
     separate manual mapping step.
     """
@@ -299,53 +306,128 @@ async def sync_verizon_devices(
     normalized = [normalize_verizon_device(d) for d in raw_devices]
     tenant_id = current_user.tenant_id
 
-    # Load existing SIMs by ICCID for this tenant
-    existing_result = await db.execute(
-        select(Sim).where(Sim.tenant_id == tenant_id, Sim.carrier == "verizon")
-    )
-    existing_sims = {s.iccid: s for s in existing_result.scalars().all()}
+    # ── Pre-flight: load ALL existing SIMs whose ICCID or MSISDN appears
+    #    in the incoming batch, regardless of tenant.  This lets us detect
+    #    cross-tenant ICCID conflicts and MSISDN unique-index violations
+    #    *before* they would crash a live sync.
+    incoming_iccids = {d["iccid"] for d in normalized if d.get("iccid")}
+    incoming_msisdns = {d["msisdn"] for d in normalized if d.get("msisdn")}
+
+    filters = []
+    if incoming_iccids:
+        filters.append(Sim.iccid.in_(incoming_iccids))
+    if incoming_msisdns:
+        filters.append(Sim.msisdn.in_(incoming_msisdns))
+
+    existing_by_iccid: dict[str, Sim] = {}
+    existing_by_msisdn: dict[str, Sim] = {}
+    if filters:
+        existing_result = await db.execute(select(Sim).where(or_(*filters)))
+        for sim in existing_result.scalars().all():
+            if sim.iccid:
+                existing_by_iccid[sim.iccid] = sim
+            if sim.msisdn:
+                existing_by_msisdn[sim.msisdn] = sim
+
+    # Track MSISDNs we plan to insert in this batch to catch intra-batch dupes
+    batch_msisdns: dict[str, str] = {}  # msisdn → iccid that claimed it first
 
     created = 0
     updated = 0
     unchanged = 0
-    errors = 0
+    skipped = 0
+    conflicts: list[dict] = []
     details: list[dict] = []
 
     for device in normalized:
         iccid = device.get("iccid")
+        msisdn = device.get("msisdn")
+
         if not iccid:
-            errors += 1
-            details.append({"action": "skip", "reason": "no_iccid", "external_id": device.get("external_id")})
+            skipped += 1
+            details.append({"action": "skip", "reason": "no_iccid",
+                            "external_id": device.get("external_id")})
             continue
 
-        sim = existing_sims.get(iccid)
-        if sim:
+        # ── Conflict check: ICCID exists under a different tenant ────
+        existing_sim = existing_by_iccid.get(iccid)
+        if existing_sim and existing_sim.tenant_id != tenant_id:
+            skipped += 1
+            conflicts.append({
+                "type": "iccid_cross_tenant",
+                "iccid": iccid,
+                "existing_tenant_id": existing_sim.tenant_id,
+                "your_tenant_id": tenant_id,
+            })
+            details.append({"action": "skip", "reason": "iccid_owned_by_other_tenant",
+                            "iccid": iccid})
+            continue
+
+        # ── Conflict check: MSISDN already on a *different* SIM row ──
+        if msisdn:
+            msisdn_owner = existing_by_msisdn.get(msisdn)
+            if msisdn_owner and msisdn_owner.iccid != iccid:
+                skipped += 1
+                conflicts.append({
+                    "type": "msisdn_collision",
+                    "msisdn": msisdn,
+                    "iccid": iccid,
+                    "existing_iccid": msisdn_owner.iccid,
+                })
+                details.append({"action": "skip", "reason": "msisdn_on_other_sim",
+                                "iccid": iccid, "msisdn": msisdn})
+                continue
+
+            # Intra-batch duplicate MSISDN
+            if msisdn in batch_msisdns and batch_msisdns[msisdn] != iccid:
+                skipped += 1
+                conflicts.append({
+                    "type": "msisdn_batch_duplicate",
+                    "msisdn": msisdn,
+                    "iccid": iccid,
+                    "first_iccid": batch_msisdns[msisdn],
+                })
+                details.append({"action": "skip", "reason": "msisdn_duplicate_in_batch",
+                                "iccid": iccid, "msisdn": msisdn})
+                continue
+
+            batch_msisdns[msisdn] = iccid
+
+        # ── Update existing SIM (same tenant) ────────────────────────
+        if existing_sim:
             changed = False
-            if device.get("msisdn") and sim.msisdn != device["msisdn"]:
+            changes: dict[str, list] = {}
+            if msisdn and existing_sim.msisdn != msisdn:
+                changes["msisdn"] = [existing_sim.msisdn, msisdn]
                 if not dry_run:
-                    sim.msisdn = device["msisdn"]
+                    existing_sim.msisdn = msisdn
                 changed = True
             new_status = _map_verizon_status(device.get("activation_status"))
-            if new_status and sim.status != new_status:
+            if new_status and existing_sim.status != new_status:
+                changes["status"] = [existing_sim.status, new_status]
                 if not dry_run:
-                    sim.status = new_status
+                    existing_sim.status = new_status
                 changed = True
 
             if changed:
                 updated += 1
-                details.append({"action": "update", "iccid": iccid, "msisdn": device.get("msisdn")})
+                details.append({"action": "update", "iccid": iccid,
+                                "msisdn": msisdn, "changes": changes})
             else:
                 unchanged += 1
         else:
+            # ── Create new SIM ────────────────────────────────────────
             created += 1
-            details.append({"action": "create", "iccid": iccid, "msisdn": device.get("msisdn")})
+            mapped_status = _map_verizon_status(device.get("activation_status")) or "inventory"
+            details.append({"action": "create", "iccid": iccid,
+                            "msisdn": msisdn, "status": mapped_status})
             if not dry_run:
                 new_sim = Sim(
                     tenant_id=tenant_id,
                     iccid=iccid,
-                    msisdn=device.get("msisdn"),
+                    msisdn=msisdn,
                     carrier="verizon",
-                    status=_map_verizon_status(device.get("activation_status")) or "inventory",
+                    status=mapped_status,
                     provider_sim_id=device.get("external_id"),
                     meta={"raw_payload": device.get("raw_payload")},
                 )
@@ -354,13 +436,24 @@ async def sync_verizon_devices(
     if not dry_run:
         await db.commit()
 
+    logger.info(
+        "Verizon sync %s: tenant=%s fetched=%d created=%d updated=%d "
+        "unchanged=%d skipped=%d conflicts=%d",
+        "DRY-RUN" if dry_run else "LIVE",
+        tenant_id, len(normalized), created, updated, unchanged,
+        skipped, len(conflicts),
+    )
+
     return SyncResult(
+        dry_run=dry_run,
         created=created,
         updated=updated,
         unchanged=unchanged,
-        errors=errors,
+        skipped=skipped,
+        conflicts=conflicts,
         total_fetched=len(normalized),
-        details=details[:50],
+        tenant_id=tenant_id,
+        details=details[:100],
     )
 
 

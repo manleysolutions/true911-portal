@@ -353,6 +353,91 @@ def preview_verizon_devices(client: httpx.Client, token: str, display: int = 5) 
         return None
 
 
+# ── Step 6: Dry-run sync ─────────────────────────────────────────────────
+
+def dry_run_sync(client: httpx.Client, token: str) -> dict | None:
+    _print_section("Step 6: Dry-Run Sync (safe — no DB writes)")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.post(
+        f"{API_URL}/api/carriers/verizon/sync",
+        params={"dry_run": "true", "max_results": 500},
+        headers=headers,
+        timeout=httpx.Timeout(120.0, connect=10.0),
+    )
+
+    _print_result("HTTP status", str(resp.status_code), resp.status_code == 200)
+
+    if resp.status_code == 200:
+        data = resp.json()
+        _print_result("Mode", "DRY-RUN (nothing persisted)", True)
+        _print_result("Tenant", data.get("tenant_id", "?"))
+        _print_result("Total fetched from Verizon", str(data.get("total_fetched", 0)))
+        _print_result("Would create", str(data.get("created", 0)))
+        _print_result("Would update", str(data.get("updated", 0)))
+        _print_result("Unchanged", str(data.get("unchanged", 0)))
+        _print_result("Skipped", str(data.get("skipped", 0)))
+
+        conflicts = data.get("conflicts", [])
+        if conflicts:
+            _print_result("CONFLICTS", str(len(conflicts)), False)
+            for c in conflicts[:10]:
+                ctype = c.get("type", "?")
+                if ctype == "iccid_cross_tenant":
+                    print(f"    ICCID {c.get('iccid')} owned by tenant "
+                          f"'{c.get('existing_tenant_id')}' (not yours)")
+                elif ctype == "msisdn_collision":
+                    print(f"    MSISDN {c.get('msisdn')} already on ICCID "
+                          f"{c.get('existing_iccid')} (incoming: {c.get('iccid')})")
+                elif ctype == "msisdn_batch_duplicate":
+                    print(f"    MSISDN {c.get('msisdn')} duplicated in batch: "
+                          f"{c.get('first_iccid')} vs {c.get('iccid')}")
+                else:
+                    print(f"    {c}")
+            if len(conflicts) > 10:
+                print(f"    ... plus {len(conflicts) - 10} more")
+        else:
+            _print_result("Conflicts", "0 (clean)", True)
+
+        # Show first few detail actions
+        details = data.get("details", [])
+        if details:
+            creates = [d for d in details if d.get("action") == "create"]
+            updates = [d for d in details if d.get("action") == "update"]
+            skips = [d for d in details if d.get("action") == "skip"]
+
+            if creates:
+                print(f"\n  Sample creates (first 3 of {len(creates)}):")
+                for d in creates[:3]:
+                    print(f"    ICCID={d.get('iccid')}  MSISDN={d.get('msisdn') or '(none)'}  "
+                          f"status={d.get('status', '?')}")
+
+            if updates:
+                print(f"\n  Sample updates (first 3 of {len(updates)}):")
+                for d in updates[:3]:
+                    changes = d.get("changes", {})
+                    parts = [f"{k}: {v[0]} -> {v[1]}" for k, v in changes.items()]
+                    print(f"    ICCID={d.get('iccid')}  {', '.join(parts)}")
+
+            if skips:
+                print(f"\n  Skipped ({len(skips)}):")
+                for d in skips[:5]:
+                    print(f"    ICCID={d.get('iccid', '?')}  reason={d.get('reason', '?')}")
+
+        return data
+    else:
+        try:
+            err = resp.json()
+            detail = err.get("detail", resp.text[:300])
+            if isinstance(detail, dict):
+                _print_result("Error", detail.get("error", "?"), False)
+            else:
+                _print_result("Error", str(detail)[:300], False)
+        except Exception:
+            _print_result("Raw response", resp.text[:300], False)
+        return None
+
+
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -383,6 +468,11 @@ def main():
         if result and result.get("ok"):
             devices = preview_verizon_devices(client, token)
 
+        # Step 6: Dry-run sync (only if devices were fetched)
+        sync_result = None
+        if devices and devices.get("total", 0) > 0:
+            sync_result = dry_run_sync(client, token)
+
     # Summary
     _print_section("Summary")
     _print_result("API reachable", "YES")
@@ -410,6 +500,22 @@ def main():
         _print_result("Devices fetched", str(total), total > 0)
     elif result and result.get("ok"):
         _print_result("Devices fetched", "FAILED", False)
+
+    if sync_result:
+        conflicts = sync_result.get("conflicts", [])
+        safe = len(conflicts) == 0
+        _print_result(
+            "Dry-run sync",
+            f"create={sync_result.get('created', 0)} "
+            f"update={sync_result.get('updated', 0)} "
+            f"skip={sync_result.get('skipped', 0)} "
+            f"conflicts={len(conflicts)}",
+            safe,
+        )
+        if safe:
+            _print_result("READY FOR LIVE SYNC", "Yes — 0 conflicts detected", True)
+        else:
+            _print_result("LIVE SYNC BLOCKED", f"{len(conflicts)} conflict(s) must be resolved first", False)
 
     print()
 
