@@ -142,6 +142,8 @@ def check_verizon_config(client: httpx.Client, token: str) -> dict | None:
     if resp.status_code == 200:
         data = resp.json()
         _print_result("Auth mode", data.get("auth_mode", "(not set)"))
+        if data.get("header_style") and data["header_style"] != "(n/a)":
+            _print_result("Header style", data["header_style"])
         _print_result("Base URL", data.get("base_url", "?"))
         _print_result("Account name", data.get("account_name", "(not set)"))
         _print_result("Configured", str(data.get("is_configured", False)), data.get("is_configured", False))
@@ -177,6 +179,8 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
         ok = data.get("ok", False)
         _print_result("Connection OK", str(ok), ok)
         _print_result("Auth mode", data.get("auth_mode", "?"))
+        if data.get("header_style"):
+            _print_result("Header style", data["header_style"])
         _print_result("Message", data.get("message", "?"), ok)
 
         if data.get("account_name"):

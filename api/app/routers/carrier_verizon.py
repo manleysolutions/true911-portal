@@ -36,6 +36,7 @@ class ConnectionTestResult(BaseModel):
     ok: bool
     message: str
     auth_mode: Optional[str] = None
+    header_style: Optional[str] = None
     account_name: Optional[str] = None
     account_info: Optional[dict] = None
     account_info_endpoint: Optional[str] = None
@@ -103,6 +104,7 @@ async def test_verizon_connection(
         return ConnectionTestResult(
             ok=False,
             auth_mode=client.auth_mode,
+            header_style=client.header_style if client.auth_mode == "api_key_secret_token" else None,
             message=f"Verizon ThingSpace not configured. {detail}",
         )
 
@@ -111,6 +113,7 @@ async def test_verizon_connection(
         return ConnectionTestResult(
             ok=True,
             auth_mode=result.get("auth_mode"),
+            header_style=result.get("header_style"),
             message="Successfully authenticated to Verizon ThingSpace",
             account_name=result.get("account_name"),
             account_info=result.get("account_info"),
@@ -124,6 +127,7 @@ async def test_verizon_connection(
         return ConnectionTestResult(
             ok=False,
             auth_mode=client.auth_mode,
+            header_style=client.header_style if client.auth_mode == "api_key_secret_token" else None,
             message=f"Connection failed: {e}",
         )
     except Exception as e:
@@ -131,6 +135,7 @@ async def test_verizon_connection(
         return ConnectionTestResult(
             ok=False,
             auth_mode=client.auth_mode,
+            header_style=client.header_style if client.auth_mode == "api_key_secret_token" else None,
             message=f"Unexpected error: {type(e).__name__}",
         )
 

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.services.verizon_thingspace import (
     AUTH_MODES,
+    HEADER_STYLES,
     VerizonThingSpaceClient,
     VerizonThingSpaceError,
     normalize_verizon_device,
@@ -102,6 +103,12 @@ class TestAuthModeConfig:
         assert "api_key_secret_token" in AUTH_MODES
         assert "legacy_short_key_secret" in AUTH_MODES
         assert "username_password_session" in AUTH_MODES
+
+    def test_supported_header_styles(self):
+        assert "bearer_token" in HEADER_STYLES
+        assert "hybrid" in HEADER_STYLES
+        assert "x_api_key_secret" in HEADER_STYLES
+        assert "vz_m2m_only" in HEADER_STYLES
 
     def test_unsupported_auth_mode(self):
         client = VerizonThingSpaceClient(auth_mode="bogus_mode")
@@ -216,8 +223,18 @@ class TestAuthModeConfig:
         summary_str = str(summary)
         assert "SUPER-SECRET" not in summary_str
         assert summary["auth_mode"] == "api_key_secret_token"
+        assert summary["header_style"] == "bearer_token"
         assert summary["account_name"] == "acct-001"
         assert summary["is_configured"] is True
+
+    def test_config_summary_header_style_na_for_other_modes(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="oauth_client_credentials",
+            client_id="cid",
+            client_secret="csec",
+        )
+        summary = client.config_summary()
+        assert summary["header_style"] == "(n/a)"
 
     def test_config_summary_missing_vars(self):
         client = VerizonThingSpaceClient(
@@ -363,7 +380,70 @@ class TestAuthHeaders:
         assert headers["Authorization"] == "Bearer oauth-token"
         assert "VZ-M2M-Token" not in headers
 
-    def test_api_key_headers(self):
+    def test_api_key_headers_bearer_token(self):
+        """Default bearer_token style sends Authorization: Bearer."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="mykey",
+            api_secret="mysecret",
+            api_token="mytoken",
+            header_style="bearer_token",
+        )
+        client._session_token = "mytoken"
+        headers = client._auth_headers()
+        assert headers["Authorization"] == "Bearer mytoken"
+        assert "VZ-M2M-Token" not in headers
+        assert "X-API-Key" not in headers
+
+    def test_api_key_headers_hybrid(self):
+        """hybrid style sends Bearer + key headers."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="mykey",
+            api_secret="mysecret",
+            api_token="mytoken",
+            header_style="hybrid",
+        )
+        client._session_token = "mytoken"
+        headers = client._auth_headers()
+        assert headers["Authorization"] == "Bearer mytoken"
+        assert headers["X-API-Key"] == "mykey"
+        assert headers["X-API-Secret"] == "mysecret"
+        assert "VZ-M2M-Token" not in headers
+
+    def test_api_key_headers_x_api_key_secret(self):
+        """x_api_key_secret style sends VZ-M2M-Token + key headers."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="mykey",
+            api_secret="mysecret",
+            api_token="mytoken",
+            header_style="x_api_key_secret",
+        )
+        client._session_token = "mytoken"
+        headers = client._auth_headers()
+        assert headers["VZ-M2M-Token"] == "mytoken"
+        assert headers["X-API-Key"] == "mykey"
+        assert headers["X-API-Secret"] == "mysecret"
+        assert "Authorization" not in headers
+
+    def test_api_key_headers_vz_m2m_only(self):
+        """vz_m2m_only style sends only VZ-M2M-Token."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="mykey",
+            api_secret="mysecret",
+            api_token="mytoken",
+            header_style="vz_m2m_only",
+        )
+        client._session_token = "mytoken"
+        headers = client._auth_headers()
+        assert headers["VZ-M2M-Token"] == "mytoken"
+        assert "Authorization" not in headers
+        assert "X-API-Key" not in headers
+
+    def test_api_key_headers_default_is_bearer(self):
+        """Without explicit header_style, defaults to bearer_token."""
         client = VerizonThingSpaceClient(
             auth_mode="api_key_secret_token",
             api_key="mykey",
@@ -372,10 +452,7 @@ class TestAuthHeaders:
         )
         client._session_token = "mytoken"
         headers = client._auth_headers()
-        assert headers["VZ-M2M-Token"] == "mytoken"
-        assert headers["X-API-Key"] == "mykey"
-        assert headers["X-API-Secret"] == "mysecret"
-        assert "Authorization" not in headers
+        assert headers["Authorization"] == "Bearer mytoken"
 
     def test_legacy_headers(self):
         client = VerizonThingSpaceClient(

@@ -6,10 +6,18 @@ Supports multiple auth modes via VERIZON_THINGSPACE_AUTH_MODE:
     legacy_short_key_secret   — short key + secret (older ThingSpace accounts)
     username_password_session — session login with username/password (legacy fallback)
 
+For api_key_secret_token mode, VERIZON_THINGSPACE_API_HEADER_STYLE controls
+which headers are sent on M2M requests:
+    bearer_token       — Authorization: Bearer <token>  (default, required by M2M gateway)
+    hybrid             — Bearer token + X-API-Key + X-API-Secret
+    x_api_key_secret   — X-API-Key + X-API-Secret + VZ-M2M-Token
+    vz_m2m_only        — VZ-M2M-Token only (legacy)
+
 Environment variables (via Settings):
     VERIZON_THINGSPACE_AUTH_MODE       — one of the modes above
     VERIZON_THINGSPACE_BASE_URL        — API base (default: https://thingspace.verizon.com/api)
     VERIZON_THINGSPACE_ACCOUNT_NAME    — M2M account (e.g. "0123456789-00001")
+    VERIZON_THINGSPACE_API_HEADER_STYLE — header style for api_key_secret_token mode
     + mode-specific credential vars (see config.py / .env.example)
 """
 
@@ -35,6 +43,14 @@ AUTH_MODES = frozenset({
     "api_key_secret_token",
     "legacy_short_key_secret",
     "username_password_session",
+})
+
+# Header styles for api_key_secret_token mode
+HEADER_STYLES = frozenset({
+    "bearer_token",
+    "hybrid",
+    "x_api_key_secret",
+    "vz_m2m_only",
 })
 
 # Required env vars per auth mode (Settings field names)
@@ -88,6 +104,7 @@ class VerizonThingSpaceClient:
         auth_mode: str | None = None,
         base_url: str | None = None,
         account_name: str | None = None,
+        header_style: str | None = None,
         # oauth_client_credentials
         client_id: str | None = None,
         client_secret: str | None = None,
@@ -105,6 +122,7 @@ class VerizonThingSpaceClient:
         self.auth_mode = (auth_mode or settings.VERIZON_THINGSPACE_AUTH_MODE).strip().lower()
         self.base_url = (base_url or settings.VERIZON_THINGSPACE_BASE_URL).rstrip("/")
         self.account_name = account_name or settings.VERIZON_THINGSPACE_ACCOUNT_NAME
+        self.header_style = (header_style or settings.VERIZON_THINGSPACE_API_HEADER_STYLE).strip().lower() or "bearer_token"
 
         # Store credentials by mode — only populated for the active mode
         self._creds = {
@@ -170,6 +188,7 @@ class VerizonThingSpaceClient:
         """Return a safe (no secrets) summary for diagnostics."""
         summary: dict[str, Any] = {
             "auth_mode": self.auth_mode,
+            "header_style": self.header_style if self.auth_mode == "api_key_secret_token" else "(n/a)",
             "base_url": self.base_url,
             "account_name": self.account_name or "(not set)",
             "is_configured": self.is_configured,
@@ -329,11 +348,26 @@ class VerizonThingSpaceClient:
             headers["Authorization"] = f"Bearer {self._session_token}"
 
         elif self.auth_mode == "api_key_secret_token":
-            # NOTE: exact header names may need adjustment after first live test.
-            # Common ThingSpace patterns use VZ-M2M-Token or X-VZ-Token.
-            headers["VZ-M2M-Token"] = self._session_token
-            headers["X-API-Key"] = self._creds["api_key"]
-            headers["X-API-Secret"] = self._creds["api_secret"]
+            # Header style selects which combination of headers to send.
+            # The M2M API gateway requires "Authorization: Bearer <token>" for
+            # most accounts; other styles exist for legacy/edge cases.
+            style = self.header_style
+            if style == "bearer_token":
+                headers["Authorization"] = f"Bearer {self._session_token}"
+            elif style == "hybrid":
+                headers["Authorization"] = f"Bearer {self._session_token}"
+                headers["X-API-Key"] = self._creds["api_key"]
+                headers["X-API-Secret"] = self._creds["api_secret"]
+            elif style == "x_api_key_secret":
+                headers["VZ-M2M-Token"] = self._session_token
+                headers["X-API-Key"] = self._creds["api_key"]
+                headers["X-API-Secret"] = self._creds["api_secret"]
+            elif style == "vz_m2m_only":
+                headers["VZ-M2M-Token"] = self._session_token
+            else:
+                # Fall back to bearer_token for any unrecognized style
+                logger.warning("Unknown header_style '%s', falling back to bearer_token", style)
+                headers["Authorization"] = f"Bearer {self._session_token}"
 
         elif self.auth_mode == "legacy_short_key_secret":
             headers["Authorization"] = f"Basic {self._session_token}"
@@ -423,6 +457,7 @@ class VerizonThingSpaceClient:
         result: dict[str, Any] = {
             "authenticated": True,
             "auth_mode": self.auth_mode,
+            "header_style": self.header_style if self.auth_mode == "api_key_secret_token" else None,
             "account_name": self.account_name,
             "base_url": self.base_url,
         }
