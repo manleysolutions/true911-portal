@@ -26,6 +26,8 @@ class DeviceOut(BaseModel):
     heartbeat_interval: Optional[int] = None
     carrier: Optional[str] = None
     sim_id: Optional[str] = None
+    starlink_id: Optional[str] = None
+    identifier_type: Optional[str] = None
     notes: Optional[str] = None
     activated_at: Optional[date] = None
     term_end_date: Optional[date] = None
@@ -53,6 +55,8 @@ class DeviceCreate(BaseModel):
     msisdn: Optional[str] = None
     carrier: Optional[str] = None
     hardware_model_id: Optional[str] = None
+    starlink_id: Optional[str] = None
+    identifier_type: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
     provision_code: Optional[str] = None
@@ -76,6 +80,8 @@ class DeviceUpdate(BaseModel):
     msisdn: Optional[str] = None
     carrier: Optional[str] = None
     hardware_model_id: Optional[str] = None
+    starlink_id: Optional[str] = None
+    identifier_type: Optional[str] = None
     firmware_version: Optional[str] = None
     container_version: Optional[str] = None
     provision_code: Optional[str] = None

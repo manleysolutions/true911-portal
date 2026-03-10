@@ -32,6 +32,8 @@ class Device(Base):
         String(50), ForeignKey("hardware_models.id"), nullable=True
     )
     manufacturer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    starlink_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    identifier_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # cellular, ata, starlink
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     activated_at: Mapped[Optional[_dt.date]] = mapped_column(Date, nullable=True)
     term_end_date: Mapped[Optional[_dt.date]] = mapped_column(Date, nullable=True)

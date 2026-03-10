@@ -121,6 +121,18 @@ function ConfirmDeleteModal({ device, onClose, onConfirm }) {
   );
 }
 
+/* ── Identity type helpers ── */
+const STARLINK_MODELS = new Set(["napco-slelte", "napco-sle5g"]);
+const ATA_MODELS = new Set(["cisco-ata191", "cisco-ata192"]);
+const CARRIER_OPTIONS_DEV = ["Verizon", "AT&T", "T-Mobile", "Telnyx"];
+
+function identityTypeForModel(hwModelId) {
+  if (STARLINK_MODELS.has(hwModelId)) return "starlink";
+  if (ATA_MODELS.has(hwModelId)) return "ata";
+  if (hwModelId) return "cellular";
+  return "";
+}
+
 /* ── Device form modal (create or edit) ── */
 function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }) {
   const isEdit = !!editDevice;
@@ -129,11 +141,15 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
     imei: editDevice?.imei || "",
     iccid: editDevice?.iccid || "",
     msisdn: editDevice?.msisdn || "",
+    carrier: editDevice?.carrier || "",
     site_id: editDevice?.site_id || "",
     serial_number: editDevice?.serial_number || "",
+    mac_address: editDevice?.mac_address || "",
+    starlink_id: editDevice?.starlink_id || "",
     hardware_model_id: editDevice?.hardware_model_id || "",
     device_type: editDevice?.device_type || "",
     model: editDevice?.model || "",
+    identifier_type: editDevice?.identifier_type || "",
     notes: editDevice?.notes || "",
     status: editDevice?.status || "provisioning",
   });
@@ -143,44 +159,74 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
+  // Derive identity type from selected hardware model
+  const idType = form.identifier_type || identityTypeForModel(form.hardware_model_id);
+  const isCellular = idType === "cellular" || idType === "";
+  const isStarlink = idType === "starlink";
+  const isAta = idType === "ata";
+
   // Group hardware models by manufacturer
   const mfrs = [...new Set(hardwareModels.map(m => m.manufacturer))].sort();
+
+  const handleModelChange = (e) => {
+    const id = e.target.value;
+    const hm = hardwareModels.find(m => m.id === id);
+    const newIdType = identityTypeForModel(id);
+    setForm(f => ({
+      ...f,
+      hardware_model_id: id,
+      device_type: hm?.device_type || f.device_type,
+      model: hm?.model_name || f.model,
+      identifier_type: newIdType,
+      // Clear fields that don't apply to the new type
+      ...(newIdType === "starlink" ? { imei: "", iccid: "", msisdn: "", carrier: "" } : {}),
+      ...(newIdType === "ata" ? { imei: "", iccid: "", msisdn: "", carrier: "", starlink_id: "" } : {}),
+      ...(newIdType === "cellular" ? { starlink_id: "" } : {}),
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    // Validate required fields per identity type
+    if (isStarlink && !form.starlink_id.trim()) {
+      setError("StarLink ID is required for Napco devices.");
+      return;
+    }
+
     setSaving(true);
     try {
-      if (isEdit) {
-        await Device.update(editDevice.id, {
+      const payload = {
+        device_id: form.device_id,
+        site_id: form.site_id || undefined,
+        hardware_model_id: form.hardware_model_id || undefined,
+        device_type: form.device_type || "Other",
+        model: form.model || form.device_type,
+        identifier_type: idType || undefined,
+        serial_number: form.serial_number || undefined,
+        mac_address: form.mac_address || undefined,
+        notes: form.notes || undefined,
+        // Cellular fields
+        ...(isCellular ? {
           imei: form.imei || undefined,
           iccid: form.iccid || undefined,
           msisdn: form.msisdn || undefined,
-          site_id: form.site_id || undefined,
-          serial_number: form.serial_number || undefined,
-          hardware_model_id: form.hardware_model_id || undefined,
-          device_type: form.device_type || undefined,
-          model: form.model || undefined,
-          notes: form.notes || undefined,
-          status: form.status,
-        });
+          carrier: form.carrier || undefined,
+        } : {}),
+        // StarLink fields
+        ...(isStarlink ? {
+          starlink_id: form.starlink_id || undefined,
+        } : {}),
+      };
+
+      if (isEdit) {
+        await Device.update(editDevice.id, { ...payload, status: form.status });
         toast.success(`Device ${form.device_id} updated`);
         onSaved();
         onClose();
       } else {
-        const result = await Device.create({
-          device_id: form.device_id,
-          imei: form.imei || undefined,
-          iccid: form.iccid || undefined,
-          msisdn: form.msisdn || undefined,
-          site_id: form.site_id || undefined,
-          serial_number: form.serial_number || undefined,
-          hardware_model_id: form.hardware_model_id || undefined,
-          device_type: form.device_type || "Other",
-          model: form.model || form.device_type,
-          notes: form.notes || undefined,
-          status: "provisioning",
-        });
+        const result = await Device.create({ ...payload, status: "provisioning" });
         setCreated(result);
         onSaved();
       }
@@ -241,6 +287,7 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Device ID + Hardware Model */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device ID *</label>
@@ -254,26 +301,17 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model *</label>
               <select
                 value={form.hardware_model_id}
-                onChange={e => {
-                  const id = e.target.value;
-                  const hm = hardwareModels.find(m => m.id === id);
-                  setForm(f => ({
-                    ...f,
-                    hardware_model_id: id,
-                    device_type: hm?.device_type || f.device_type,
-                    model: hm?.model_name || f.model,
-                  }));
-                }}
+                onChange={handleModelChange}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
               >
                 <option value="">-- Select model --</option>
                 {mfrs.map(mfr => (
                   <optgroup key={mfr} label={mfr}>
                     {hardwareModels.filter(m => m.manufacturer === mfr).map(m => (
-                      <option key={m.id} value={m.id}>{m.model_name} ({m.device_type})</option>
+                      <option key={m.id} value={m.id}>{m.model_name}</option>
                     ))}
                   </optgroup>
                 ))}
@@ -281,39 +319,79 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">IMEI</label>
-              <input
-                value={form.imei}
-                onChange={set("imei")}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="15-digit IMEI"
-                maxLength={15}
-              />
+          {/* Identity type hint */}
+          {idType && (
+            <div className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+              {isStarlink && "Napco StarLink device — StarLink ID required. No SIM or IMEI needed."}
+              {isAta && "ATA / appliance device — Serial and MAC fields shown. No SIM or IMEI needed."}
+              {isCellular && "Cellular device — IMEI, SIM ICCID, and carrier fields shown."}
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">ICCID</label>
-              <input
-                value={form.iccid}
-                onChange={set("iccid")}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="SIM ICCID"
-                maxLength={22}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">MSISDN</label>
-              <input
-                value={form.msisdn}
-                onChange={set("msisdn")}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="Phone number"
-                maxLength={15}
-              />
-            </div>
-          </div>
+          )}
 
+          {/* ── Cellular fields (IMEI / SIM / MSISDN / Carrier) ── */}
+          {isCellular && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">IMEI</label>
+                  <input
+                    value={form.imei}
+                    onChange={set("imei")}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    placeholder="15-digit IMEI"
+                    maxLength={15}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">SIM ICCID</label>
+                  <input
+                    value={form.iccid}
+                    onChange={set("iccid")}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    placeholder="SIM ICCID"
+                    maxLength={22}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">MSISDN</label>
+                  <input
+                    value={form.msisdn}
+                    onChange={set("msisdn")}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    placeholder="Phone number"
+                    maxLength={15}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Carrier</label>
+                <select
+                  value={form.carrier}
+                  onChange={set("carrier")}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                >
+                  <option value="">-- Select carrier --</option>
+                  {CARRIER_OPTIONS_DEV.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* ── StarLink fields ── */}
+          {isStarlink && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">StarLink ID *</label>
+              <input
+                value={form.starlink_id}
+                onChange={set("starlink_id")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="Napco StarLink panel ID"
+                required
+              />
+            </div>
+          )}
+
+          {/* ── Common fields: serial, MAC, site ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Serial Number</label>
@@ -324,19 +402,32 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
                 placeholder="Board serial"
               />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Assign to Site</label>
-              <select
-                value={form.site_id}
-                onChange={set("site_id")}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              >
-                <option value="">— No site yet —</option>
-                {sites.map(s => (
-                  <option key={s.site_id} value={s.site_id}>{s.site_name} ({s.site_id})</option>
-                ))}
-              </select>
-            </div>
+            {(isAta || isStarlink || !idType) && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">MAC Address</label>
+                <input
+                  value={form.mac_address}
+                  onChange={set("mac_address")}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="AA:BB:CC:DD:EE:FF"
+                  maxLength={17}
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Assign to Site</label>
+            <select
+              value={form.site_id}
+              onChange={set("site_id")}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="">-- Select site --</option>
+              {sites.map(s => (
+                <option key={s.site_id} value={s.site_id}>{s.site_name} ({s.site_id})</option>
+              ))}
+            </select>
           </div>
 
           {isEdit && (
@@ -450,6 +541,7 @@ export default function Devices() {
         (d.iccid || "").toLowerCase().includes(q) ||
         (d.msisdn || "").toLowerCase().includes(q) ||
         (d.carrier || "").toLowerCase().includes(q) ||
+        (d.starlink_id || "").toLowerCase().includes(q) ||
         (site?.site_name || "").toLowerCase().includes(q)
       );
     }
@@ -518,12 +610,9 @@ export default function Devices() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Device ID</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Site</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Type</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Model</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Serial</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">IMEI</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">SIM ICCID</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">MSISDN</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Identifier</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Carrier</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Last HB</th>
@@ -533,21 +622,33 @@ export default function Devices() {
             <tbody className="divide-y divide-gray-100">
               {filtered.map(d => {
                 const site = siteMap[d.site_id];
+                // Build identifier cell based on device type
+                let idLabel = null;
+                if (d.starlink_id) {
+                  idLabel = <><span className="text-[10px] text-gray-400 uppercase">SL </span>{d.starlink_id}</>;
+                } else if (d.imei) {
+                  idLabel = <><span className="text-[10px] text-gray-400 uppercase">IMEI </span>{d.imei}</>;
+                } else if (d.iccid) {
+                  idLabel = <><span className="text-[10px] text-gray-400 uppercase">ICCID </span>{d.iccid}</>;
+                } else if (d.mac_address) {
+                  idLabel = <><span className="text-[10px] text-gray-400 uppercase">MAC </span>{d.mac_address}</>;
+                }
+
                 return (
                   <tr
                     key={d.id}
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => site && setSelectedSite(site)}
                   >
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{d.device_id}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="font-mono text-xs text-gray-600">{d.device_id}</div>
+                      <div className="text-[10px] text-gray-400">{d.device_type}</div>
+                    </td>
                     <td className="px-4 py-2.5 text-gray-800">{site?.site_name || d.site_id || "\u2014"}</td>
-                    <td className="px-4 py-2.5 text-gray-600 text-xs">{d.device_type || "\u2014"}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{d.model || "\u2014"}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs">{d.model || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.serial_number || "\u2014"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.imei || "\u2014"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.iccid || "\u2014"}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.msisdn || "\u2014"}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{d.carrier || "\u2014"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{idLabel || "\u2014"}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">{d.carrier || "\u2014"}</td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[d.status] || STATUS_BADGE.inactive}`}>
                         {d.status}
@@ -588,7 +689,7 @@ export default function Devices() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-400">No devices found</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">No devices found</td>
                 </tr>
               )}
             </tbody>

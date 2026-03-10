@@ -257,12 +257,22 @@ for _idx, _s in enumerate(SITES):
 
 
 HARDWARE_MODELS = [
-    {"id": "flyingvoice-pr12", "manufacturer": "Flying Voice", "model_name": "PR12", "device_type": "Cellular Router"},
-    {"id": "flyingvoice-pr08", "manufacturer": "Flying Voice", "model_name": "PR08", "device_type": "Cellular Router"},
-    {"id": "atel-v810v", "manufacturer": "Atel", "model_name": "V810V", "device_type": "Fixed Wireless Terminal"},
-    {"id": "atel-v810vd", "manufacturer": "Atel", "model_name": "V810VD", "device_type": "Fixed Wireless Terminal"},
-    {"id": "cisco-ata191", "manufacturer": "Cisco", "model_name": "ATA191", "device_type": "ATA"},
-    {"id": "cisco-ata192", "manufacturer": "Cisco", "model_name": "ATA192", "device_type": "ATA"},
+    # Cellular modem devices (IMEI / SIM required)
+    {"id": "etross-ms130v4",   "manufacturer": "ETROSS",        "model_name": "MS130v4 (ETROSS 8848)",      "device_type": "Cellular Modem"},
+    {"id": "atel-ms130v5",     "manufacturer": "ATEL",          "model_name": "MS130v5 (ATEL V810V)",       "device_type": "Cellular Modem"},
+    {"id": "flyingvoice-pr12", "manufacturer": "Flying Voice",  "model_name": "PR12 (Flying Voice / Vola)", "device_type": "Cellular Router"},
+    {"id": "inseego-fw3100",   "manufacturer": "Inseego",       "model_name": "Inseego FW3100",             "device_type": "Cellular Router"},
+    # Napco StarLink devices (StarLink ID — no SIM/IMEI)
+    {"id": "napco-slelte",     "manufacturer": "Napco",         "model_name": "SLELTE",                     "device_type": "StarLink Communicator"},
+    {"id": "napco-sle5g",      "manufacturer": "Napco",         "model_name": "SLE5G",                      "device_type": "StarLink Communicator"},
+    # ATA / appliance devices (serial + MAC — no SIM/IMEI)
+    {"id": "cisco-ata191",     "manufacturer": "Cisco",         "model_name": "ATA191",                     "device_type": "ATA"},
+    {"id": "cisco-ata192",     "manufacturer": "Cisco",         "model_name": "ATA192",                     "device_type": "ATA"},
+    # CSA units
+    {"id": "rtl-csa-v1",       "manufacturer": "Red Tag Lines", "model_name": "CSA v1",                     "device_type": "CSA"},
+    {"id": "rtl-csa-v1-4p",    "manufacturer": "Red Tag Lines", "model_name": "CSA v1 4-Port",              "device_type": "CSA"},
+    # Catch-all
+    {"id": "other",            "manufacturer": "Other",         "model_name": "Other",                      "device_type": "Other"},
 ]
 
 INTEGRATIONS = [
