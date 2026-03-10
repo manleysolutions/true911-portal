@@ -40,8 +40,13 @@ class ConnectionTestResult(BaseModel):
     token_type: Optional[str] = None
     request_headers_sent: Optional[list[str]] = None
     oauth_token_url: Optional[str] = None
+    oauth_token_obtained: Optional[bool] = None
     oauth_token_status: Optional[int] = None
     oauth_token_body: Optional[str] = None
+    m2m_session_login_url: Optional[str] = None
+    m2m_session_token_obtained: Optional[bool] = None
+    m2m_session_login_status: Optional[int] = None
+    m2m_session_login_body: Optional[str] = None
     account_name: Optional[str] = None
     m2m_account_id: Optional[str] = None
     account_info: Optional[dict] = None
@@ -126,18 +131,30 @@ async def test_verizon_connection(
         # instead of raising, so we get rich diagnostics either way.
         authenticated = result.get("authenticated", False)
 
+        # Determine overall OK status:
+        # - Must be authenticated
+        # - If session token mode, session token must be obtained
+        # - If account_info was fetched, that's a bonus success indicator
+        m2m_session_ok = result.get("m2m_session_token_obtained")
+        ok = authenticated and (m2m_session_ok is not False)
+
         return ConnectionTestResult(
-            ok=authenticated,
+            ok=ok,
             auth_mode=result.get("auth_mode"),
             m2m_auth_mode=result.get("m2m_auth_mode"),
             token_type=result.get("token_type"),
             request_headers_sent=result.get("request_headers_sent"),
             oauth_token_url=result.get("oauth_token_url"),
+            oauth_token_obtained=result.get("oauth_token_obtained"),
             oauth_token_status=result.get("oauth_token_status"),
             oauth_token_body=result.get("oauth_token_body"),
+            m2m_session_login_url=result.get("m2m_session_login_url"),
+            m2m_session_token_obtained=result.get("m2m_session_token_obtained"),
+            m2m_session_login_status=result.get("m2m_session_login_status"),
+            m2m_session_login_body=result.get("m2m_session_login_body"),
             message=(
                 "Successfully authenticated to Verizon ThingSpace"
-                if authenticated
+                if ok
                 else result.get("note") or "Authentication failed"
             ),
             account_name=result.get("account_name"),

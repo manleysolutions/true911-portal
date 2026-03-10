@@ -148,6 +148,14 @@ def check_verizon_config(client: httpx.Client, token: str) -> dict | None:
         _print_result("Base URL", data.get("base_url", "?"))
         if data.get("oauth_token_url"):
             _print_result("OAuth token URL", data["oauth_token_url"])
+        if data.get("m2m_session_login_url"):
+            _print_result("M2M session login URL", data["m2m_session_login_url"])
+        if data.get("m2m_session_credentials_set") is not None:
+            _print_result(
+                "Session credentials set",
+                "YES" if data["m2m_session_credentials_set"] else "NO",
+                data["m2m_session_credentials_set"],
+            )
         if data.get("app_token_header") and data["app_token_header"] != "(n/a)":
             _print_result("App token header", data["app_token_header"])
         _print_result("Account name", data.get("account_name", "(not set)"))
@@ -191,10 +199,28 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
             _print_result("M2M auth mode", data["m2m_auth_mode"])
         if data.get("oauth_token_url"):
             _print_result("OAuth token URL", data["oauth_token_url"])
+        if data.get("oauth_token_obtained") is not None:
+            _print_result(
+                "OAuth token obtained",
+                "YES" if data["oauth_token_obtained"] else "NO",
+                data["oauth_token_obtained"],
+            )
         if data.get("oauth_token_status"):
             _print_result("OAuth token HTTP", str(data["oauth_token_status"]), False)
         if data.get("oauth_token_body"):
             _print_result("OAuth token body", data["oauth_token_body"][:300], False)
+        if data.get("m2m_session_login_url"):
+            _print_result("M2M session login URL", data["m2m_session_login_url"])
+        if data.get("m2m_session_token_obtained") is not None:
+            _print_result(
+                "M2M session token obtained",
+                "YES" if data["m2m_session_token_obtained"] else "NO",
+                data["m2m_session_token_obtained"],
+            )
+        if data.get("m2m_session_login_status"):
+            _print_result("M2M session login HTTP", str(data["m2m_session_login_status"]), False)
+        if data.get("m2m_session_login_body"):
+            _print_result("M2M session login body", data["m2m_session_login_body"][:300], False)
         if data.get("token_type"):
             _print_result("Token type", data["token_type"])
         if data.get("request_headers_sent"):
