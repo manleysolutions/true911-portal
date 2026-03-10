@@ -285,13 +285,16 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
 
 # ── Step 5: Device preview ───────────────────────────────────────────────
 
-def preview_verizon_devices(client: httpx.Client, token: str) -> dict | None:
-    _print_section("Step 5: Verizon Device Preview (max 5)")
+def preview_verizon_devices(client: httpx.Client, token: str, display: int = 5) -> dict | None:
+    # Verizon requires maxNumberOfDevices between 500 and 2000.
+    # We request the minimum (500) from our API, then display only the
+    # first `display` devices in the test output.
+    _print_section(f"Step 5: Verizon Device Preview (showing first {display})")
 
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get(
         f"{API_URL}/api/carriers/verizon/devices",
-        params={"max_results": 5},
+        params={"max_results": 500},
         headers=headers,
     )
 
@@ -301,7 +304,8 @@ def preview_verizon_devices(client: httpx.Client, token: str) -> dict | None:
         data = resp.json()
         total = data.get("total", 0)
         devices = data.get("devices", [])
-        _print_result("Devices returned", str(total), total > 0)
+        _print_result("Devices returned (from Verizon)", str(total), total > 0)
+        _print_result("Showing first", str(min(display, total)))
 
         if devices:
             d = devices[0]

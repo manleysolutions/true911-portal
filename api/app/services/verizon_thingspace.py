@@ -781,15 +781,28 @@ class VerizonThingSpaceClient:
 
     # ── Device / line inventory ───────────────────────────────────────
 
+    # Verizon ThingSpace API enforces maxNumberOfDevices between 500 and 2000.
+    # We always request at least VZ_MIN_PAGE_SIZE from Verizon, then trim
+    # the results to the caller's requested display_count on our side.
+    VZ_MIN_PAGE_SIZE = 500
+    VZ_MAX_PAGE_SIZE = 2000
+
     async def fetch_devices(
         self,
         *,
         account_name: str | None = None,
-        max_results: int = 500,
+        display_count: int = 500,
     ) -> list[dict[str, Any]]:
         """Fetch device list from ThingSpace Connectivity Management API.
 
         Uses POST /m2m/v1/devices/actions/list which supports filtering.
+
+        Args:
+            account_name: Override account identifier.
+            display_count: How many devices the *caller* wants back.  Verizon's
+                API requires maxNumberOfDevices between 500 and 2000, so we may
+                fetch more from Verizon than we return.  The caller receives at
+                most ``display_count`` devices.
         """
         acct = account_name or self.m2m_account_id or self.account_name
         if not acct:
@@ -797,6 +810,9 @@ class VerizonThingSpaceClient:
                 "Account name required. Set VERIZON_THINGSPACE_M2M_ACCOUNT_ID "
                 "or VERIZON_THINGSPACE_ACCOUNT_NAME."
             )
+
+        # Clamp the Verizon page size to their allowed range (500–2000).
+        vz_page_size = max(self.VZ_MIN_PAGE_SIZE, min(display_count, self.VZ_MAX_PAGE_SIZE))
 
         all_devices: list[dict] = []
         last_seen_id: str | None = None
@@ -806,7 +822,7 @@ class VerizonThingSpaceClient:
             body: dict[str, Any] = {
                 "accountName": acct,
                 "resourceType": "device",
-                "maxNumberOfDevices": min(max_results - len(all_devices), 200),
+                "maxNumberOfDevices": vz_page_size,
             }
             if last_seen_id:
                 body["lastSeenDeviceId"] = last_seen_id
@@ -822,7 +838,7 @@ class VerizonThingSpaceClient:
             page += 1
 
             has_more = data.get("hasMoreData", False)
-            if not has_more or len(all_devices) >= max_results or not devices:
+            if not has_more or len(all_devices) >= display_count or not devices:
                 break
 
             last_device = devices[-1]
@@ -834,9 +850,12 @@ class VerizonThingSpaceClient:
             if not last_seen_id:
                 break
 
+        # Trim to the caller's requested count (may be less than Verizon's page)
+        all_devices = all_devices[:display_count]
+
         logger.info(
-            "Fetched %d devices from ThingSpace (account=%s, pages=%d)",
-            len(all_devices), acct, page,
+            "Fetched %d devices from ThingSpace (account=%s, pages=%d, vz_page_size=%d)",
+            len(all_devices), acct, page, vz_page_size,
         )
         return all_devices
 

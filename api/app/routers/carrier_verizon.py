@@ -193,7 +193,11 @@ async def test_verizon_connection(
     dependencies=[Depends(require_permission("MANAGE_INTEGRATIONS"))],
 )
 async def list_verizon_devices(
-    max_results: int = Query(200, le=500),
+    max_results: int = Query(500, ge=1, le=2000, description=(
+        "How many normalized devices to return.  Verizon requires fetching "
+        "500–2000 per page, so the API may request more from Verizon than "
+        "it returns to you."
+    )),
     current_user: User = Depends(get_current_user),
 ):
     """Fetch Verizon device inventory and return normalized results. Admin only.
@@ -204,7 +208,7 @@ async def list_verizon_devices(
     _require_client_configured(client)
 
     try:
-        raw_devices = await client.fetch_devices(max_results=max_results)
+        raw_devices = await client.fetch_devices(display_count=max_results)
     except VerizonThingSpaceError as e:
         detail = {
             "error": str(e),
@@ -269,7 +273,9 @@ async def get_verizon_device(
 )
 async def sync_verizon_devices(
     dry_run: bool = Query(True, description="Preview only — set false to persist"),
-    max_results: int = Query(500, le=1000),
+    max_results: int = Query(500, ge=500, le=2000, description=(
+        "How many devices to fetch from Verizon (500–2000, per Verizon API limits)."
+    )),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -286,7 +292,7 @@ async def sync_verizon_devices(
     _require_client_configured(client)
 
     try:
-        raw_devices = await client.fetch_devices(max_results=max_results)
+        raw_devices = await client.fetch_devices(display_count=max_results)
     except VerizonThingSpaceError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"ThingSpace API error: {e}")
 
