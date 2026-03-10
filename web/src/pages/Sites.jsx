@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Site, ActionAudit } from "@/api/entities";
-import { Search, Filter, ChevronDown, Building2, RefreshCw, ArrowRight, X } from "lucide-react";
+import { Search, Filter, ChevronDown, Building2, RefreshCw, ArrowRight, X, Plus } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import StatusBadge from "@/components/ui/StatusBadge";
 import KitTypeBadge from "@/components/ui/KitTypeBadge";
 import ServiceClassBadge from "@/components/ui/ServiceClassBadge";
 import SiteDrawer from "@/components/SiteDrawer";
+import { useAuth } from "@/contexts/AuthContext";
 
 function timeSince(iso) {
   if (!iso) return "—";
@@ -38,7 +39,26 @@ function SelectFilter({ label, value, onChange, options }) {
   );
 }
 
+const ENDPOINT_TYPE_OPTIONS = ["Elevator", "FACP", "Fax", "SCADA", "Emergency Call Box", "Other"];
+const SERVICE_CLASS_OPTIONS = ["E911", "POTS", "SIP", "PRI", "Analog", "Digital"];
+
+const EMPTY_FORM = {
+  site_name: "",
+  customer_name: "",
+  e911_street: "",
+  e911_city: "",
+  e911_state: "",
+  e911_zip: "",
+  endpoint_type: "",
+  service_class: "",
+  carrier: "",
+  notes: "",
+};
+
 export default function Sites() {
+  const { can } = useAuth();
+  const isAdmin = can("VIEW_ADMIN");
+
   const [sites, setSites] = useState([]);
   const [audits, setAudits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +68,11 @@ export default function Sites() {
   const [filterKit, setFilterKit] = useState("");
   const [filterCarrier, setFilterCarrier] = useState("");
   const [filterState, setFilterState] = useState("");
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState(EMPTY_FORM);
+  const [addError, setAddError] = useState("");
+  const [addSaving, setAddSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
     const [sitesData, auditData] = await Promise.all([
@@ -104,6 +129,41 @@ export default function Sites() {
     setSearch("");
   };
 
+  const handleAddSite = async (e) => {
+    e.preventDefault();
+    setAddError("");
+
+    if (!addForm.site_name.trim()) {
+      setAddError("Site name is required.");
+      return;
+    }
+
+    setAddSaving(true);
+    try {
+      await Site.create({
+        site_id: `SITE-${Date.now()}`,
+        site_name: addForm.site_name.trim(),
+        customer_name: addForm.site_name.trim(),
+        status: "Unknown",
+        e911_street: addForm.e911_street.trim() || undefined,
+        e911_city: addForm.e911_city.trim() || undefined,
+        e911_state: addForm.e911_state.trim() || undefined,
+        e911_zip: addForm.e911_zip.trim() || undefined,
+        endpoint_type: addForm.endpoint_type || undefined,
+        service_class: addForm.service_class || undefined,
+        carrier: addForm.carrier || undefined,
+        notes: addForm.notes.trim() || undefined,
+      });
+      setShowAddModal(false);
+      setAddForm(EMPTY_FORM);
+      fetchData();
+    } catch (err) {
+      setAddError(err?.message || "Failed to create site.");
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
   return (
     <PageWrapper>
       <div className="p-6 max-w-7xl mx-auto">
@@ -113,9 +173,19 @@ export default function Sites() {
             <h1 className="text-2xl font-bold text-gray-900">Sites</h1>
             <p className="text-sm text-gray-500 mt-0.5">{sites.length} monitored sites</p>
           </div>
-          <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
-            <RefreshCw className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => { setAddForm(EMPTY_FORM); setAddError(""); setShowAddModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold"
+              >
+                <Plus className="w-4 h-4" /> Add Site
+              </button>
+            )}
+            <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -240,6 +310,148 @@ export default function Sites() {
         onClose={() => setSelectedSite(null)}
         onSiteUpdated={fetchData}
       />
+
+      {/* Add Site Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-gray-900">Add Site</h2>
+              <button onClick={() => setShowAddModal(false)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSite} className="space-y-4">
+              {/* Site Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Site Name *</label>
+                <input
+                  value={addForm.site_name}
+                  onChange={e => setAddForm(f => ({ ...f, site_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                  placeholder="e.g. 123 Main St Elevator"
+                />
+              </div>
+
+              {/* Address row */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input
+                  value={addForm.e911_street}
+                  onChange={e => setAddForm(f => ({ ...f, e911_street: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                  placeholder="Street address"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                  <input
+                    value={addForm.e911_city}
+                    onChange={e => setAddForm(f => ({ ...f, e911_city: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    placeholder="City"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <input
+                    value={addForm.e911_state}
+                    onChange={e => setAddForm(f => ({ ...f, e911_state: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    placeholder="NY"
+                    maxLength={2}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP</label>
+                  <input
+                    value={addForm.e911_zip}
+                    onChange={e => setAddForm(f => ({ ...f, e911_zip: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    placeholder="10001"
+                    maxLength={10}
+                  />
+                </div>
+              </div>
+
+              {/* Endpoint Type + Service Class */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Endpoint Type</label>
+                  <select
+                    value={addForm.endpoint_type}
+                    onChange={e => setAddForm(f => ({ ...f, endpoint_type: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white"
+                  >
+                    <option value="">Select...</option>
+                    {ENDPOINT_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Class</label>
+                  <select
+                    value={addForm.service_class}
+                    onChange={e => setAddForm(f => ({ ...f, service_class: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white"
+                  >
+                    <option value="">Select...</option>
+                    {SERVICE_CLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Carrier */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
+                <select
+                  value={addForm.carrier}
+                  onChange={e => setAddForm(f => ({ ...f, carrier: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white"
+                >
+                  <option value="">Select...</option>
+                  {CARRIER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={addForm.notes}
+                  onChange={e => setAddForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 resize-none"
+                  placeholder="Optional notes..."
+                />
+              </div>
+
+              {addError && (
+                <p className="text-sm text-red-600">{addError}</p>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addSaving}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold"
+                >
+                  {addSaving ? "Creating..." : "Create Site"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </PageWrapper>
   );
 }
