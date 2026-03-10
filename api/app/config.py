@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     VERIZON_THINGSPACE_API_KEY: str = ""
     VERIZON_THINGSPACE_API_SECRET: str = ""
     VERIZON_THINGSPACE_API_TOKEN: str = ""
+    VERIZON_THINGSPACE_APP_TOKEN_HEADER: str = "VZ-M2M-Token"  # or "App-Token"
     # legacy_short_key_secret
     VERIZON_THINGSPACE_SHORT_KEY: str = ""
     VERIZON_THINGSPACE_SHORT_SECRET: str = ""

@@ -229,6 +229,16 @@ class TestAuthModeConfig:
         )
         summary = client.config_summary()
         assert summary["oauth_token_url"] == "https://example.com/api/ts/v1/oauth2/token"
+        assert summary["app_token_header"] == "VZ-M2M-Token"
+
+    def test_config_summary_app_token_header_na_for_other_modes(self):
+        client = VerizonThingSpaceClient(
+            auth_mode="oauth_client_credentials",
+            client_id="cid",
+            client_secret="csec",
+        )
+        summary = client.config_summary()
+        assert summary["app_token_header"] == "(n/a)"
 
     def test_custom_oauth_token_path(self):
         client = VerizonThingSpaceClient(
@@ -461,21 +471,34 @@ class TestAuthHeaders:
         assert headers["Authorization"] == "Bearer oauth-token"
         assert "VZ-M2M-Token" not in headers
 
-    def test_api_key_headers_uses_bearer(self):
-        """After OAuth exchange, api_key_secret_token sends Bearer with the access_token."""
+    def test_api_key_headers_bearer_plus_app_token(self):
+        """After OAuth exchange, sends Bearer + VZ-M2M-Token (original api_token)."""
         client = VerizonThingSpaceClient(
             auth_mode="api_key_secret_token",
             api_key="mykey",
             api_secret="mysecret",
-            api_token="mytoken",
+            api_token="original-app-token",
         )
-        # Simulate post-exchange: _session_token is a real OAuth access_token
         client._session_token = "real-access-token-from-exchange"
         headers = client._auth_headers()
         assert headers["Authorization"] == "Bearer real-access-token-from-exchange"
-        assert "VZ-M2M-Token" not in headers
+        assert headers["VZ-M2M-Token"] == "original-app-token"
         assert "X-API-Key" not in headers
-        assert "X-API-Secret" not in headers
+
+    def test_api_key_headers_custom_app_token_header(self):
+        """app_token_header can be overridden to App-Token."""
+        client = VerizonThingSpaceClient(
+            auth_mode="api_key_secret_token",
+            api_key="mykey",
+            api_secret="mysecret",
+            api_token="original-app-token",
+            app_token_header="App-Token",
+        )
+        client._session_token = "real-access-token"
+        headers = client._auth_headers()
+        assert headers["Authorization"] == "Bearer real-access-token"
+        assert headers["App-Token"] == "original-app-token"
+        assert "VZ-M2M-Token" not in headers
 
     def test_legacy_headers(self):
         client = VerizonThingSpaceClient(

@@ -145,6 +145,8 @@ def check_verizon_config(client: httpx.Client, token: str) -> dict | None:
         _print_result("Base URL", data.get("base_url", "?"))
         if data.get("oauth_token_url"):
             _print_result("OAuth token URL", data["oauth_token_url"])
+        if data.get("app_token_header") and data["app_token_header"] != "(n/a)":
+            _print_result("App token header", data["app_token_header"])
         _print_result("Account name", data.get("account_name", "(not set)"))
         _print_result("Configured", str(data.get("is_configured", False)), data.get("is_configured", False))
 

@@ -93,6 +93,7 @@ class VerizonThingSpaceClient:
         base_url: str | None = None,
         account_name: str | None = None,
         oauth_token_path: str | None = None,
+        app_token_header: str | None = None,
         # oauth_client_credentials
         client_id: str | None = None,
         client_secret: str | None = None,
@@ -111,6 +112,7 @@ class VerizonThingSpaceClient:
         self.base_url = (base_url or settings.VERIZON_THINGSPACE_BASE_URL).rstrip("/")
         self.account_name = account_name or settings.VERIZON_THINGSPACE_ACCOUNT_NAME
         self.oauth_token_path = (oauth_token_path or settings.VERIZON_THINGSPACE_OAUTH_TOKEN_PATH).strip()
+        self.app_token_header = (app_token_header or settings.VERIZON_THINGSPACE_APP_TOKEN_HEADER).strip() or "VZ-M2M-Token"
 
         # Store credentials by mode — only populated for the active mode
         self._creds = {
@@ -178,6 +180,7 @@ class VerizonThingSpaceClient:
             "auth_mode": self.auth_mode,
             "base_url": self.base_url,
             "oauth_token_url": f"{self.base_url}{self.oauth_token_path}",
+            "app_token_header": self.app_token_header if self.auth_mode == "api_key_secret_token" else "(n/a)",
             "account_name": self.account_name or "(not set)",
             "is_configured": self.is_configured,
         }
@@ -380,9 +383,11 @@ class VerizonThingSpaceClient:
             headers["Authorization"] = f"Bearer {self._session_token}"
 
         elif self.auth_mode == "api_key_secret_token":
-            # After the OAuth2 token exchange, _session_token is a real
-            # access_token — always sent as Bearer.
+            # M2M endpoints require BOTH:
+            #   Authorization: Bearer <access_token>   (from OAuth exchange)
+            #   VZ-M2M-Token: <original api_token>     (app identity)
             headers["Authorization"] = f"Bearer {self._session_token}"
+            headers[self.app_token_header] = self._creds["api_token"]
 
         elif self.auth_mode == "legacy_short_key_secret":
             headers["Authorization"] = f"Basic {self._session_token}"
