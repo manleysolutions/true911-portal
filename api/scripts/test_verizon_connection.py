@@ -203,6 +203,14 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
             _print_result("Acct endpoint HTTP", str(data["account_info_status"]), False)
         if data.get("account_info_body"):
             _print_result("Acct endpoint body", data["account_info_body"][:300], False)
+
+        # M2M request-level diagnostics (shows exact outbound request details)
+        if data.get("m2m_request_method"):
+            print("\n  M2M Request Diagnostics:")
+            _print_result("  M2M method", data["m2m_request_method"], False)
+            _print_result("  M2M URL", data.get("m2m_request_url", "?"), False)
+            _print_result("  M2M headers", ", ".join(data.get("m2m_request_headers", [])), False)
+
         if data.get("account_info"):
             print("\n  Account info (sanitized):")
             _print_json(_sanitize_payload(data["account_info"]))

@@ -73,11 +73,21 @@ def _redact(value: str) -> str:
 class VerizonThingSpaceError(Exception):
     """Raised when the ThingSpace API returns an unexpected response."""
 
-    def __init__(self, message: str, status_code: int | None = None, body: Any = None):
-        # Scrub message to avoid accidental secret leakage
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        body: Any = None,
+        request_method: str | None = None,
+        request_url: str | None = None,
+        request_headers: list[str] | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+        self.request_method = request_method
+        self.request_url = request_url
+        self.request_headers = request_headers
 
 
 class VerizonThingSpaceClient:
@@ -402,21 +412,27 @@ class VerizonThingSpaceClient:
 
     @staticmethod
     def _safe_body(resp: httpx.Response) -> str:
-        """Extract response body for error context without exposing tokens."""
+        """Extract response body for error context without exposing tokens.
+
+        Only redacts when the response appears to contain an actual secret
+        value (JSON key patterns like "access_token":"..."). Does NOT
+        redact Verizon error messages that mention header names like
+        VZ-M2M-Token or App-Token.
+        """
         text = resp.text[:500] if resp.text else ""
-        for secret_key in ("access_token", "sessionToken", "token", "secret"):
-            if secret_key in text:
-                text = f"(response contained '{secret_key}' — redacted for safety)"
-                break
+        # Check for JSON keys that hold actual secret values
+        for secret_pattern in ('"access_token"', '"sessionToken"', '"refresh_token"'):
+            if secret_pattern in text:
+                return f"(response contained {secret_pattern} value — redacted)"
         return text
 
     @staticmethod
     def _safe_body_from_str(text: str) -> str:
         """Sanitize an already-extracted body string."""
         text = text[:500]
-        for secret_key in ("access_token", "sessionToken", "token", "secret"):
-            if secret_key in text:
-                return f"(response contained '{secret_key}' — redacted for safety)"
+        for secret_pattern in ('"access_token"', '"sessionToken"', '"refresh_token"'):
+            if secret_pattern in text:
+                return f"(response contained {secret_pattern} value — redacted)"
         return text
 
     @property
@@ -458,13 +474,17 @@ class VerizonThingSpaceClient:
         if resp.status_code >= 400:
             header_names = sorted(headers.keys())
             logger.error(
-                "ThingSpace request failed: %s %s status=%d headers=%s",
-                method, path, resp.status_code, header_names,
+                "ThingSpace request failed: %s %s status=%d headers=%s body=%s",
+                method, url, resp.status_code, header_names,
+                self._safe_body(resp),
             )
             raise VerizonThingSpaceError(
                 f"ThingSpace API error: {method} {path} returned {resp.status_code}",
                 status_code=resp.status_code,
                 body=self._safe_body(resp),
+                request_method=method,
+                request_url=url,
+                request_headers=header_names,
             )
 
         return resp.json()
@@ -527,15 +547,20 @@ class VerizonThingSpaceClient:
                 result["account_info"] = acct
             except VerizonThingSpaceError as e:
                 result["account_info"] = None
-                result["account_info_endpoint"] = f"GET {acct_url}"
+                result["account_info_endpoint"] = e.request_url or f"GET {acct_url}"
                 result["account_info_status"] = e.status_code
                 result["account_info_body"] = self._safe_body_from_str(
                     e.body if isinstance(e.body, str) else str(e.body or "")
                 )
+                # Surface the exact headers that were on the failing M2M request
+                m2m_headers = e.request_headers or safe_header_names
+                result["m2m_request_method"] = e.request_method or "GET"
+                result["m2m_request_url"] = e.request_url or acct_url
+                result["m2m_request_headers"] = m2m_headers
                 result["note"] = (
                     f"Auth token obtained but M2M endpoint returned "
                     f"HTTP {e.status_code or '?'}. "
-                    f"Headers sent: {safe_header_names}. "
+                    f"Outbound M2M headers: {m2m_headers}. "
                     f"Account name '{self.account_name}' may need adjustment."
                 )
 

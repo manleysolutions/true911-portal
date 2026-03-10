@@ -46,6 +46,9 @@ class ConnectionTestResult(BaseModel):
     account_info_endpoint: Optional[str] = None
     account_info_status: Optional[int] = None
     account_info_body: Optional[str] = None
+    m2m_request_method: Optional[str] = None
+    m2m_request_url: Optional[str] = None
+    m2m_request_headers: Optional[list[str]] = None
     note: Optional[str] = None
 
 
@@ -136,6 +139,9 @@ async def test_verizon_connection(
             account_info_endpoint=result.get("account_info_endpoint"),
             account_info_status=result.get("account_info_status"),
             account_info_body=result.get("account_info_body"),
+            m2m_request_method=result.get("m2m_request_method"),
+            m2m_request_url=result.get("m2m_request_url"),
+            m2m_request_headers=result.get("m2m_request_headers"),
             note=result.get("note"),
         )
     except VerizonThingSpaceError as e:

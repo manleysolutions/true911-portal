@@ -594,6 +594,24 @@ class TestSecretSafety:
         assert "secret123" not in result
         assert "redacted" in result.lower()
 
+    def test_safe_body_does_not_redact_error_messages(self):
+        """Error messages mentioning header names like VZ-M2M-Token should NOT be redacted."""
+        mock_resp = MagicMock()
+        mock_resp.text = (
+            '{"error":"Required request header \'VZ-M2M-Token\' or '
+            '\'App-Token\' is not present in the request"}'
+        )
+        result = VerizonThingSpaceClient._safe_body(mock_resp)
+        assert "VZ-M2M-Token" in result
+        assert "App-Token" in result
+        assert "redacted" not in result.lower()
+
+    def test_safe_body_from_str_does_not_redact_error_messages(self):
+        text = "Required request header 'VZ-M2M-Token' or 'App-Token' is not present"
+        result = VerizonThingSpaceClient._safe_body_from_str(text)
+        assert "VZ-M2M-Token" in result
+        assert "redacted" not in result.lower()
+
 
 # ── Sync status mapping tests ────────────────────────────────────────────
 
@@ -632,3 +650,29 @@ class TestStatusMapping:
         from app.routers.carrier_verizon import _map_verizon_status
 
         assert _map_verizon_status("weird_status") == "inventory"
+
+
+# ── Error diagnostics tests ──────────────────────────────────────────────
+
+
+class TestErrorDiagnostics:
+    """Tests for request-level diagnostics on VerizonThingSpaceError."""
+
+    def test_error_carries_request_info(self):
+        err = VerizonThingSpaceError(
+            "test error",
+            status_code=400,
+            body="some body",
+            request_method="POST",
+            request_url="https://example.com/api/m2m/v1/devices/actions/list",
+            request_headers=["Authorization", "Content-Type", "VZ-M2M-Token"],
+        )
+        assert err.request_method == "POST"
+        assert err.request_url == "https://example.com/api/m2m/v1/devices/actions/list"
+        assert "VZ-M2M-Token" in err.request_headers
+
+    def test_error_defaults_none(self):
+        err = VerizonThingSpaceError("basic error")
+        assert err.request_method is None
+        assert err.request_url is None
+        assert err.request_headers is None
