@@ -350,11 +350,19 @@ class VerizonThingSpaceClient:
     def _safe_body(resp: httpx.Response) -> str:
         """Extract response body for error context without exposing tokens."""
         text = resp.text[:500] if resp.text else ""
-        # Strip anything that looks like a token/key value
         for secret_key in ("access_token", "sessionToken", "token", "secret"):
             if secret_key in text:
                 text = f"(response contained '{secret_key}' — redacted for safety)"
                 break
+        return text
+
+    @staticmethod
+    def _safe_body_from_str(text: str) -> str:
+        """Sanitize an already-extracted body string."""
+        text = text[:500]
+        for secret_key in ("access_token", "sessionToken", "token", "secret"):
+            if secret_key in text:
+                return f"(response contained '{secret_key}' — redacted for safety)"
         return text
 
     @property
@@ -421,17 +429,22 @@ class VerizonThingSpaceClient:
 
         # Try to fetch account info if account_name is set
         if self.account_name:
+            acct_path = f"/m2m/v1/accounts/{self.account_name}"
             try:
-                acct = await self._request(
-                    "GET",
-                    f"/m2m/v1/accounts/{self.account_name}",
-                )
+                acct = await self._request("GET", acct_path)
                 result["account_info"] = acct
-            except VerizonThingSpaceError:
+            except VerizonThingSpaceError as e:
                 result["account_info"] = None
+                result["account_info_endpoint"] = f"GET {self.base_url}{acct_path}"
+                result["account_info_status"] = e.status_code
+                result["account_info_body"] = self._safe_body_from_str(
+                    e.body if isinstance(e.body, str) else str(e.body or "")
+                )
                 result["note"] = (
-                    "Auth succeeded but account info endpoint returned an error. "
-                    "Account name may need adjustment."
+                    f"Auth succeeded but account info endpoint returned "
+                    f"HTTP {e.status_code or '?'}. "
+                    f"Account name '{self.account_name}' may need adjustment, "
+                    f"or this endpoint may not be available for your auth mode."
                 )
 
         return result

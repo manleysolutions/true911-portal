@@ -38,6 +38,9 @@ class ConnectionTestResult(BaseModel):
     auth_mode: Optional[str] = None
     account_name: Optional[str] = None
     account_info: Optional[dict] = None
+    account_info_endpoint: Optional[str] = None
+    account_info_status: Optional[int] = None
+    account_info_body: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -111,6 +114,9 @@ async def test_verizon_connection(
             message="Successfully authenticated to Verizon ThingSpace",
             account_name=result.get("account_name"),
             account_info=result.get("account_info"),
+            account_info_endpoint=result.get("account_info_endpoint"),
+            account_info_status=result.get("account_info_status"),
+            account_info_body=result.get("account_info_body"),
             note=result.get("note"),
         )
     except VerizonThingSpaceError as e:

@@ -183,6 +183,12 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
             _print_result("Account", data["account_name"])
         if data.get("note"):
             _print_result("Note", data["note"], False)
+        if data.get("account_info_endpoint"):
+            _print_result("Acct endpoint", data["account_info_endpoint"], False)
+        if data.get("account_info_status"):
+            _print_result("Acct endpoint HTTP", str(data["account_info_status"]), False)
+        if data.get("account_info_body"):
+            _print_result("Acct endpoint body", data["account_info_body"][:300], False)
         if data.get("account_info"):
             print("\n  Account info (sanitized):")
             _print_json(_sanitize_payload(data["account_info"]))
@@ -196,6 +202,67 @@ def test_verizon_connection(client: httpx.Client, token: str) -> dict | None:
             _print_result("Raw response", resp.text[:300], False)
 
         # Print headers for debugging (no auth headers)
+        safe_headers = {
+            k: v for k, v in resp.headers.items()
+            if k.lower() not in ("authorization", "set-cookie")
+        }
+        print("\n  Response headers:")
+        for k, v in safe_headers.items():
+            print(f"    {k}: {v}")
+
+        return None
+
+
+# ── Step 5: Device preview ───────────────────────────────────────────────
+
+def preview_verizon_devices(client: httpx.Client, token: str) -> dict | None:
+    _print_section("Step 5: Verizon Device Preview (max 5)")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.get(
+        f"{API_URL}/api/carriers/verizon/devices",
+        params={"max_results": 5},
+        headers=headers,
+    )
+
+    _print_result("HTTP status", str(resp.status_code), resp.status_code == 200)
+
+    if resp.status_code == 200:
+        data = resp.json()
+        total = data.get("total", 0)
+        devices = data.get("devices", [])
+        _print_result("Devices returned", str(total), total > 0)
+
+        if devices:
+            d = devices[0]
+            print("\n  First device (normalized):")
+            _print_result("  carrier", d.get("carrier", "?"))
+            _print_result("  external_id", d.get("external_id") or "(none)")
+            _print_result("  imei", d.get("imei") or "(none)")
+            _print_result("  iccid", d.get("iccid") or "(none)")
+            _print_result("  msisdn", d.get("msisdn") or "(none)")
+            _print_result("  sim_status", d.get("sim_status") or "(none)")
+            _print_result("  line_status", d.get("line_status") or "(none)")
+            _print_result("  activation_status", d.get("activation_status") or "(none)")
+            _print_result("  last_seen_at", d.get("last_seen_at") or "(none)")
+            usage = d.get("usage_data_mb")
+            _print_result("  usage_data_mb", str(usage) if usage is not None else "(none)")
+
+            if total > 1:
+                print(f"\n  ... plus {total - 1} more device(s)")
+        else:
+            _print_result("Devices", "API returned 0 devices", False)
+
+        return data
+    else:
+        try:
+            err = resp.json()
+            detail = err.get("detail", resp.text[:300])
+        except Exception:
+            detail = resp.text[:300]
+        _print_result("Error", detail, False)
+
+        # Print response headers for debugging (exclude auth/cookie)
         safe_headers = {
             k: v for k, v in resp.headers.items()
             if k.lower() not in ("authorization", "set-cookie")
@@ -232,6 +299,11 @@ def main():
         # Step 4: Connection test
         result = test_verizon_connection(client, token)
 
+        # Step 5: Device preview (only if connection succeeded)
+        devices = None
+        if result and result.get("ok"):
+            devices = preview_verizon_devices(client, token)
+
     # Summary
     _print_section("Summary")
     _print_result("API reachable", "YES")
@@ -253,6 +325,12 @@ def main():
                 print(f"  Missing: {', '.join(config['missing_vars'])}")
     else:
         _print_result("Verizon connected", "FAILED", False)
+
+    if devices:
+        total = devices.get("total", 0)
+        _print_result("Devices fetched", str(total), total > 0)
+    elif result and result.get("ok"):
+        _print_result("Devices fetched", "FAILED", False)
 
     print()
 
