@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/api/client";
 import {
   Building2, Users, Cpu, Disc3, ShieldCheck, CheckCircle2, ChevronRight, ChevronLeft,
-  Loader2, AlertTriangle, Plus, Trash2, MapPin, Phone, X, Search,
+  Loader2, AlertTriangle, Plus, Trash2, MapPin, Phone, Search, Info, Star,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 const STEPS = [
-  { key: "customer", label: "Customer", icon: Users },
+  { key: "account", label: "Account", icon: Users },
   { key: "site", label: "Site", icon: Building2 },
   { key: "units", label: "Service Units", icon: Phone },
   { key: "sims", label: "SIMs", icon: Disc3 },
@@ -45,63 +45,139 @@ function StepBar({ current }) {
 const INPUT = "w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent";
 const LABEL = "block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide";
 
-/* ── Step 1: Customer ── */
-function StepCustomer({ data, setData, customers }) {
+
+/* ═══════════════════════════════════════════════════════════════════
+   Step 1 — Account / Customer / Reseller
+   ═══════════════════════════════════════════════════════════════════ */
+function StepAccount({ data, setData, tenants, customers, isSuperAdmin }) {
+  const [mode, setMode] = useState(data.tenant_id ? "existing" : "new");
+
+  // Filter sites for the selected tenant
+  const tenantsForDisplay = tenants || [];
+  const customersForTenant = (customers || []).filter(
+    c => !data.tenant_id || c.tenant_id === data.tenant_id
+  );
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Customer / Reseller</h2>
-      <p className="text-sm text-gray-500">Who is this site for?</p>
+    <div className="space-y-5">
       <div>
-        <label className={LABEL}>Customer Name</label>
+        <h2 className="text-lg font-bold text-gray-900">Account</h2>
+        <p className="text-sm text-gray-500">Which customer or reseller account owns this site?</p>
+      </div>
+
+      {/* Tenant selection (SuperAdmin only) */}
+      {isSuperAdmin && tenantsForDisplay.length > 0 && (
+        <div>
+          <label className={LABEL}>Tenant Account</label>
+          <div className="flex gap-3 mb-3">
+            <button onClick={() => setMode("existing")}
+              className={`flex-1 p-2.5 rounded-xl border text-sm font-medium transition-all ${mode === "existing" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+              Select Existing
+            </button>
+            <button onClick={() => setMode("new")}
+              className={`flex-1 p-2.5 rounded-xl border text-sm font-medium transition-all ${mode === "new" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+              New Account
+            </button>
+          </div>
+
+          {mode === "existing" ? (
+            <select value={data.tenant_id || ""} onChange={e => {
+              const t = tenantsForDisplay.find(x => x.tenant_id === e.target.value);
+              setData(d => ({ ...d, tenant_id: e.target.value, customer_name: t?.name || d.customer_name }));
+            }} className={INPUT}>
+              <option value="">-- Select account --</option>
+              {tenantsForDisplay.map(t => (
+                <option key={t.tenant_id} value={t.tenant_id}>
+                  {t.name} ({t.tenant_id})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL}>Account Slug *</label>
+                <input value={data.new_tenant_id || ""} onChange={e => setData(d => ({ ...d, new_tenant_id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
+                  placeholder="e.g. benson-systems" className={INPUT} />
+              </div>
+              <div>
+                <label className={LABEL}>Display Name *</label>
+                <input value={data.new_tenant_name || ""} onChange={e => setData(d => ({ ...d, new_tenant_name: e.target.value, customer_name: e.target.value }))}
+                  placeholder="e.g. Benson Systems" className={INPUT} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Customer name */}
+      <div>
+        <label className={LABEL}>Customer / Company Name</label>
         <input value={data.customer_name || ""} onChange={e => setData(d => ({ ...d, customer_name: e.target.value }))}
-          placeholder="e.g. Benson Systems" className={INPUT} list="customer-list" />
-        <datalist id="customer-list">
-          {customers.map(c => <option key={c.id} value={c.name} />)}
+          placeholder="e.g. Benson Systems LLC" className={INPUT} list="cust-list" />
+        <datalist id="cust-list">
+          {customersForTenant.map(c => <option key={c.id} value={c.name} />)}
         </datalist>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={LABEL}>Contact Name</label>
+
+      {/* Contact info */}
+      <div>
+        <label className={LABEL}>Primary Contact</label>
+        <div className="grid grid-cols-3 gap-2">
           <input value={data.poc_name || ""} onChange={e => setData(d => ({ ...d, poc_name: e.target.value }))}
-            placeholder="Optional" className={INPUT} />
-        </div>
-        <div>
-          <label className={LABEL}>Contact Phone</label>
+            placeholder="Name" className={INPUT} />
           <input value={data.poc_phone || ""} onChange={e => setData(d => ({ ...d, poc_phone: e.target.value }))}
-            placeholder="Optional" className={INPUT} />
+            placeholder="Phone" className={INPUT} />
+          <input value={data.poc_email || ""} onChange={e => setData(d => ({ ...d, poc_email: e.target.value }))}
+            placeholder="Email" className={INPUT} />
         </div>
       </div>
     </div>
   );
 }
 
-/* ── Step 2: Site ── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Step 2 — Site Details
+   ═══════════════════════════════════════════════════════════════════ */
 function StepSite({ data, setData, sites }) {
   const [mode, setMode] = useState(data.existing_site_id ? "existing" : "new");
+  const filteredSites = data.tenant_id
+    ? sites.filter(s => s.tenant_id === data.tenant_id)
+    : sites;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Site</h2>
-      <p className="text-sm text-gray-500">Create a new site or select an existing one.</p>
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">Site Details</h2>
+        <p className="text-sm text-gray-500">Where is this equipment being installed?</p>
+      </div>
 
       <div className="flex gap-3">
         <button onClick={() => setMode("new")}
-          className={`flex-1 p-3 rounded-xl border text-sm font-medium transition-all ${mode === "new" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
-          Create New
+          className={`flex-1 p-2.5 rounded-xl border text-sm font-medium transition-all ${mode === "new" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+          New Site
         </button>
         <button onClick={() => setMode("existing")}
-          className={`flex-1 p-3 rounded-xl border text-sm font-medium transition-all ${mode === "existing" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
-          Select Existing
+          className={`flex-1 p-2.5 rounded-xl border text-sm font-medium transition-all ${mode === "existing" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+          Existing Site
         </button>
       </div>
 
       {mode === "existing" ? (
         <select value={data.existing_site_id || ""} onChange={e => {
           const s = sites.find(x => x.site_id === e.target.value);
-          setData(d => ({ ...d, existing_site_id: e.target.value, site_name: s?.site_name || "", customer_name: d.customer_name || s?.customer_name || "" }));
+          setData(d => ({
+            ...d,
+            existing_site_id: e.target.value,
+            site_name: s?.site_name || "",
+            e911_street: s?.e911_street || d.e911_street,
+            e911_city: s?.e911_city || d.e911_city,
+            e911_state: s?.e911_state || d.e911_state,
+            e911_zip: s?.e911_zip || d.e911_zip,
+          }));
         }} className={INPUT}>
           <option value="">-- Select a site --</option>
-          {sites.map(s => <option key={s.site_id} value={s.site_id}>{s.site_name} ({s.site_id})</option>)}
+          {filteredSites.map(s => <option key={s.site_id} value={s.site_id}>{s.site_name} ({s.site_id})</option>)}
         </select>
       ) : (
         <div className="space-y-3">
@@ -114,21 +190,34 @@ function StepSite({ data, setData, sites }) {
             <div>
               <label className={LABEL}>Site Name *</label>
               <input value={data.site_name || ""} onChange={e => setData(d => ({ ...d, site_name: e.target.value }))}
-                placeholder="e.g. Benson HQ Elevator" className={INPUT} />
+                placeholder="e.g. Benson Tower — Main Elevators" className={INPUT} />
             </div>
           </div>
-          <div>
-            <label className={LABEL}>Street Address</label>
+
+          {/* Address */}
+          <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <MapPin className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Service Address</span>
+              <span className="text-[10px] text-gray-400 ml-auto">Can be completed later</span>
+            </div>
             <input value={data.e911_street || ""} onChange={e => setData(d => ({ ...d, e911_street: e.target.value }))}
-              placeholder="Optional — can be added later" className={INPUT} />
+              placeholder="Street address" className={INPUT} />
+            <div className="grid grid-cols-3 gap-2">
+              <input value={data.e911_city || ""} onChange={e => setData(d => ({ ...d, e911_city: e.target.value }))}
+                placeholder="City" className={INPUT} />
+              <input value={data.e911_state || ""} onChange={e => setData(d => ({ ...d, e911_state: e.target.value }))}
+                placeholder="ST" maxLength={2} className={`${INPUT} uppercase`} />
+              <input value={data.e911_zip || ""} onChange={e => setData(d => ({ ...d, e911_zip: e.target.value }))}
+                placeholder="ZIP" className={INPUT} />
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <input value={data.e911_city || ""} onChange={e => setData(d => ({ ...d, e911_city: e.target.value }))}
-              placeholder="City" className={INPUT} />
-            <input value={data.e911_state || ""} onChange={e => setData(d => ({ ...d, e911_state: e.target.value }))}
-              placeholder="ST" maxLength={2} className={`${INPUT} uppercase`} />
-            <input value={data.e911_zip || ""} onChange={e => setData(d => ({ ...d, e911_zip: e.target.value }))}
-              placeholder="ZIP" className={INPUT} />
+
+          {/* Notes */}
+          <div>
+            <label className={LABEL}>Site Notes</label>
+            <textarea value={data.site_notes || ""} onChange={e => setData(d => ({ ...d, site_notes: e.target.value }))}
+              placeholder="Building access instructions, parking info, etc." className={`${INPUT} resize-none`} rows={2} />
           </div>
         </div>
       )}
@@ -136,7 +225,10 @@ function StepSite({ data, setData, sites }) {
   );
 }
 
-/* ── Step 3: Service Units ── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Step 3 — Service Units (unchanged from prior version)
+   ═══════════════════════════════════════════════════════════════════ */
 const UNIT_TYPES = [
   { value: "elevator_phone", label: "Elevator Emergency Phone" },
   { value: "fire_alarm", label: "Fire Alarm Communicator" },
@@ -174,11 +266,13 @@ function StepUnits({ data, setData }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Service Units</h2>
-      <p className="text-sm text-gray-500">Add the emergency communications endpoints at this site.</p>
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">Service Units</h2>
+        <p className="text-sm text-gray-500">What emergency communications endpoints are at this site?</p>
+      </div>
 
       {units.length === 0 && (
-        <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+        <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-300">
           <Phone className="w-6 h-6 text-gray-300 mx-auto mb-2" />
           <p className="text-sm text-gray-400 mb-3">No service units added yet.</p>
           <button onClick={addUnit} className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold">
@@ -232,19 +326,23 @@ function StepUnits({ data, setData }) {
   );
 }
 
-/* ── Step 4: Assign SIMs ── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Step 4 — SIMs with tenant-aware grouping
+   ═══════════════════════════════════════════════════════════════════ */
 function StepSims({ data, setData }) {
-  const [sims, setSims] = useState([]);
+  const [allSims, setAllSims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const selected = new Set(data.selected_sim_ids || []);
+  const tenantId = data.tenant_id || data.new_tenant_id;
 
   useEffect(() => {
     (async () => {
       try {
-        const result = await apiFetch("/sims?has_site=false&limit=200");
-        setSims(result);
-      } catch { setSims([]); }
+        const result = await apiFetch("/sims?has_site=false&limit=300");
+        setAllSims(result);
+      } catch { setAllSims([]); }
       setLoading(false);
     })();
   }, []);
@@ -255,16 +353,36 @@ function StepSims({ data, setData }) {
     setData(d => ({ ...d, selected_sim_ids: [...next] }));
   };
 
-  const filtered = sims.filter(s => {
+  const filtered = allSims.filter(s => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return (s.iccid || "").toLowerCase().includes(q) || (s.msisdn || "").toLowerCase().includes(q) || (s.carrier || "").toLowerCase().includes(q);
+    return (s.iccid || "").toLowerCase().includes(q) || (s.msisdn || "").toLowerCase().includes(q) ||
+           (s.carrier || "").toLowerCase().includes(q) || (s.imei || "").toLowerCase().includes(q);
   });
+
+  // Split into recommended (same tenant) and other
+  const recommended = tenantId ? filtered.filter(s => s.tenant_id === tenantId) : [];
+  const other = tenantId ? filtered.filter(s => s.tenant_id !== tenantId) : filtered;
+
+  const SimRow = ({ s }) => (
+    <label className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selected.has(s.id) ? "bg-red-50" : "hover:bg-gray-50"}`}>
+      <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-mono text-gray-700">{s.iccid}</div>
+        <div className="text-[10px] text-gray-500">{s.carrier} {s.msisdn ? `| ${s.msisdn}` : ""} {s.imei ? `| IMEI ${s.imei}` : ""}</div>
+      </div>
+      {s.data_source === "carrier_sync" && (
+        <span className="text-[9px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold">sync</span>
+      )}
+    </label>
+  );
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Assign SIMs</h2>
-      <p className="text-sm text-gray-500">Select SIMs from the inventory pool to assign to this site. You can skip this step.</p>
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">Assign SIMs</h2>
+        <p className="text-sm text-gray-500">Select SIMs from the inventory pool. This step is optional.</p>
+      </div>
 
       {selected.size > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 font-semibold">
@@ -274,43 +392,55 @@ function StepSims({ data, setData }) {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search ICCID, MSISDN, carrier..."
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search ICCID, MSISDN, carrier, IMEI..."
           className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm" />
       </div>
 
-      <div className="max-h-64 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
+      <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-xl">
         {loading ? (
-          <div className="flex items-center gap-2 text-xs text-gray-400 py-4 justify-center"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
+          <div className="flex items-center gap-2 text-xs text-gray-400 py-6 justify-center"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-xs text-gray-400 text-center py-4">No unassigned SIMs available.</div>
-        ) : filtered.map(s => (
-          <label key={s.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selected.has(s.id) ? "bg-red-50" : "hover:bg-gray-50"}`}>
-            <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-mono text-gray-700">{s.iccid}</div>
-              <div className="text-[10px] text-gray-500">{s.carrier} {s.msisdn ? `| ${s.msisdn}` : ""} | {s.status}</div>
-            </div>
-          </label>
-        ))}
+          <div className="text-xs text-gray-400 text-center py-6">No unassigned SIMs available.</div>
+        ) : (
+          <div className="p-2 space-y-0.5">
+            {recommended.length > 0 && (
+              <>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold text-amber-700 uppercase">
+                  <Star className="w-3 h-3 text-amber-500" /> Recommended for this account
+                </div>
+                {recommended.map(s => <SimRow key={s.id} s={s} />)}
+                {other.length > 0 && (
+                  <div className="px-2 py-1.5 text-[10px] font-bold text-gray-400 uppercase border-t border-gray-100 mt-2 pt-2">
+                    Other Available SIMs
+                  </div>
+                )}
+              </>
+            )}
+            {other.map(s => <SimRow key={s.id} s={s} />)}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-/* ── Step 5: Assign Devices ── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Step 5 — Devices with tenant-aware grouping
+   ═══════════════════════════════════════════════════════════════════ */
 function StepDevices({ data, setData }) {
-  const [devices, setDevices] = useState([]);
+  const [allDevices, setAllDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const selected = new Set(data.selected_device_ids || []);
+  const tenantId = data.tenant_id || data.new_tenant_id;
 
   useEffect(() => {
     (async () => {
       try {
-        const result = await apiFetch("/devices?limit=200");
-        // Show devices without a site or all devices
-        setDevices(result.filter(d => !d.site_id || d.site_id === ""));
-      } catch { setDevices([]); }
+        const result = await apiFetch("/devices?limit=300");
+        setAllDevices(result.filter(d => !d.site_id));
+      } catch { setAllDevices([]); }
       setLoading(false);
     })();
   }, []);
@@ -321,16 +451,32 @@ function StepDevices({ data, setData }) {
     setData(d => ({ ...d, selected_device_ids: [...next] }));
   };
 
-  const filtered = devices.filter(d => {
+  const filtered = allDevices.filter(d => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return (d.device_id || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) || (d.serial_number || "").toLowerCase().includes(q);
+    return (d.device_id || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) ||
+           (d.serial_number || "").toLowerCase().includes(q) || (d.imei || "").toLowerCase().includes(q);
   });
+
+  const recommended = tenantId ? filtered.filter(d => d.tenant_id === tenantId) : [];
+  const other = tenantId ? filtered.filter(d => d.tenant_id !== tenantId) : filtered;
+
+  const DevRow = ({ d }) => (
+    <label className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selected.has(d.id) ? "bg-red-50" : "hover:bg-gray-50"}`}>
+      <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggle(d.id)} className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-mono text-gray-700">{d.device_id}</div>
+        <div className="text-[10px] text-gray-500">{d.device_type || d.model || "—"} | {d.status} {d.imei ? `| IMEI ${d.imei}` : ""}</div>
+      </div>
+    </label>
+  );
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Assign Devices</h2>
-      <p className="text-sm text-gray-500">Select devices to assign to this site. You can skip this step.</p>
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">Assign Devices</h2>
+        <p className="text-sm text-gray-500">Select devices to assign to this site. This step is optional.</p>
+      </div>
 
       {selected.size > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 font-semibold">
@@ -340,103 +486,144 @@ function StepDevices({ data, setData }) {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search device ID, model, serial..."
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search device ID, model, serial, IMEI..."
           className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm" />
       </div>
 
-      <div className="max-h-64 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
+      <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-xl">
         {loading ? (
-          <div className="flex items-center gap-2 text-xs text-gray-400 py-4 justify-center"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
+          <div className="flex items-center gap-2 text-xs text-gray-400 py-6 justify-center"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-xs text-gray-400 text-center py-4">No unassigned devices available.</div>
-        ) : filtered.map(d => (
-          <label key={d.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selected.has(d.id) ? "bg-red-50" : "hover:bg-gray-50"}`}>
-            <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggle(d.id)} className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-mono text-gray-700">{d.device_id}</div>
-              <div className="text-[10px] text-gray-500">{d.device_type || d.model || "—"} | {d.status}</div>
-            </div>
-          </label>
-        ))}
+          <div className="text-xs text-gray-400 text-center py-6">No unassigned devices available.</div>
+        ) : (
+          <div className="p-2 space-y-0.5">
+            {recommended.length > 0 && (
+              <>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold text-amber-700 uppercase">
+                  <Star className="w-3 h-3 text-amber-500" /> Recommended for this account
+                </div>
+                {recommended.map(d => <DevRow key={d.id} d={d} />)}
+                {other.length > 0 && (
+                  <div className="px-2 py-1.5 text-[10px] font-bold text-gray-400 uppercase border-t border-gray-100 mt-2 pt-2">
+                    Other Available Devices
+                  </div>
+                )}
+              </>
+            )}
+            {other.map(d => <DevRow key={d.id} d={d} />)}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-/* ── Step 6: Review ── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Step 6 — Review with executive summary
+   ═══════════════════════════════════════════════════════════════════ */
 function StepReview({ data, sites }) {
   const siteLabel = data.existing_site_id
     ? (sites.find(s => s.site_id === data.existing_site_id)?.site_name || data.existing_site_id)
     : (data.site_name || "New Site");
-  const hasAddress = !!(data.e911_street && data.e911_city);
+  const hasAddress = !!(data.e911_street && data.e911_city && data.e911_state);
   const units = data.service_units || [];
   const simCount = (data.selected_sim_ids || []).length;
   const devCount = (data.selected_device_ids || []).length;
   const hasInfra = units.length > 0 || simCount > 0 || devCount > 0;
+  const elevatorUnits = units.filter(u => u.unit_type === "elevator_phone");
+  const missingInstallType = elevatorUnits.some(u => !u.install_type);
+
+  // Determine compliance review status
+  let complianceLabel = "N/A";
+  let complianceBadge = "bg-gray-100 text-gray-500";
+  if (elevatorUnits.length > 0) {
+    if (missingInstallType || !hasAddress) {
+      complianceLabel = "Review Needed";
+      complianceBadge = "bg-amber-50 text-amber-700 border-amber-200";
+    } else {
+      complianceLabel = "Ready for Review";
+      complianceBadge = "bg-blue-50 text-blue-700 border-blue-200";
+    }
+  }
+
+  const Row = ({ label, value, badge, badgeClass }) => (
+    <div className="flex items-center justify-between px-4 py-3">
+      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</span>
+      {badge ? (
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${badgeClass}`}>{badge}</span>
+      ) : (
+        <span className="text-sm text-gray-800 font-medium">{value}</span>
+      )}
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Review & Complete</h2>
-      <p className="text-sm text-gray-500">Review your configuration. Missing fields can be updated later.</p>
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">Review & Complete</h2>
+        <p className="text-sm text-gray-500">Confirm the setup. Missing details can always be completed later.</p>
+      </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase">Customer</span>
-          <span className="text-sm text-gray-800">{data.customer_name || "Not set"}</span>
+      {/* Executive summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-gray-50 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-900">{units.length}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-semibold">Service Units</div>
         </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase">Site</span>
-          <span className="text-sm text-gray-800">{siteLabel}</span>
+        <div className="bg-gray-50 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-900">{simCount}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-semibold">SIMs</div>
         </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase">Service Units</span>
-          <span className="text-sm text-gray-800">{units.length} unit(s)</span>
-        </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase">SIMs</span>
-          <span className="text-sm text-gray-800">{simCount} SIM(s)</span>
-        </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase">Devices</span>
-          <span className="text-sm text-gray-800">{devCount} device(s)</span>
-        </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase">E911 Address</span>
-          <span className="text-sm text-gray-800">{hasAddress ? `${data.e911_street}, ${data.e911_city}` : "Not set"}</span>
+        <div className="bg-gray-50 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-900">{devCount}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-semibold">Devices</div>
         </div>
       </div>
 
-      {/* Warnings */}
+      {/* Detail rows */}
+      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+        <Row label="Account" value={data.customer_name || data.new_tenant_name || "—"} />
+        <Row label="Site" value={siteLabel} />
+        <Row label="Contact" value={data.poc_name ? `${data.poc_name}${data.poc_phone ? ` | ${data.poc_phone}` : ""}` : "Not set"} />
+        <Row label="E911 Address" badge={hasAddress ? "Provided" : "Missing"} badgeClass={hasAddress ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"} />
+        <Row label="Compliance" badge={complianceLabel} badgeClass={complianceBadge} />
+      </div>
+
+      {/* Soft warnings */}
       <div className="space-y-2">
         {!hasAddress && hasInfra && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <span className="text-xs text-amber-700">E911 address not set — emergency routing cannot be confirmed. You can update this later.</span>
+            <span className="text-xs text-amber-700">E911 address not set — emergency routing cannot be confirmed. You can update this after onboarding.</span>
           </div>
         )}
-        {units.some(u => u.unit_type === "elevator_phone" && !u.install_type) && (
+        {missingInstallType && (
           <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5">
-            <AlertTriangle className="w-4 h-4 text-blue-500 flex-shrink-0" />
-            <span className="text-xs text-blue-700">Some elevator units have no install type set. Compliance review may be needed later.</span>
+            <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            <span className="text-xs text-blue-700">Some elevator units have no install type set. Compliance review will be needed.</span>
           </div>
         )}
       </div>
 
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-700">
-        <strong>Ready to save.</strong> The site, service units, and assignments will be created. Missing details can be completed later.
+        <strong>Ready to save.</strong> All relationships will be created. The site will appear in your fleet immediately.
       </div>
     </div>
   );
 }
 
 
-/* ── Main Wizard ── */
+/* ═══════════════════════════════════════════════════════════════════
+   Main Wizard
+   ═══════════════════════════════════════════════════════════════════ */
 export default function SiteOnboarding() {
-  const { can } = useAuth();
+  const { can, isSuperAdmin, user } = useAuth();
   const [step, setStep] = useState(0);
-  const [data, setData] = useState({ service_units: [] });
+  const [data, setData] = useState({ service_units: [], tenant_id: user?.tenant_id || "" });
   const [sites, setSites] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [tenants, setTenants] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
@@ -446,14 +633,21 @@ export default function SiteOnboarding() {
     (async () => {
       try {
         const [s, c] = await Promise.all([
-          apiFetch("/sites?limit=200"),
-          apiFetch("/customers?limit=200").catch(() => []),
+          apiFetch("/sites?limit=300"),
+          apiFetch("/customers?limit=300").catch(() => []),
         ]);
         setSites(s);
         setCustomers(c);
+        // SuperAdmin can see all tenants
+        if (isSuperAdmin) {
+          try {
+            const t = await apiFetch("/admin/tenants");
+            setTenants(t);
+          } catch { /* ok — not SuperAdmin or endpoint unavailable */ }
+        }
       } catch { /* ok */ }
     })();
-  }, []);
+  }, [isSuperAdmin]);
 
   const handleNext = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
   const handleBack = () => setStep(s => Math.max(s - 1, 0));
@@ -462,6 +656,16 @@ export default function SiteOnboarding() {
     setError("");
     setSubmitting(true);
     try {
+      // 0. Create tenant if new (SuperAdmin only)
+      let tenantId = data.tenant_id;
+      if (!tenantId && data.new_tenant_id && isSuperAdmin) {
+        await apiFetch("/admin/tenants", {
+          method: "POST",
+          body: JSON.stringify({ tenant_id: data.new_tenant_id, name: data.new_tenant_name || data.new_tenant_id }),
+        });
+        tenantId = data.new_tenant_id;
+      }
+
       // 1. Create site if new
       let siteId = data.existing_site_id;
       if (!siteId && data.new_site_id) {
@@ -478,13 +682,15 @@ export default function SiteOnboarding() {
             e911_zip: data.e911_zip || undefined,
             poc_name: data.poc_name || undefined,
             poc_phone: data.poc_phone || undefined,
+            poc_email: data.poc_email || undefined,
+            notes: data.site_notes || undefined,
           }),
         });
         siteId = site.site_id;
       }
 
       if (!siteId) {
-        setError("No site selected or created.");
+        setError("No site selected or created. Go back to the Site step.");
         setSubmitting(false);
         return;
       }
@@ -530,23 +736,32 @@ export default function SiteOnboarding() {
   };
 
   if (complete) {
+    const units = data.service_units || [];
+    const simCount = (data.selected_sim_ids || []).length;
+    const devCount = (data.selected_device_ids || []).length;
+
     return (
       <PageWrapper>
-        <div className="p-6 max-w-2xl mx-auto text-center py-20">
+        <div className="p-6 max-w-2xl mx-auto text-center py-16">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4">
             <CheckCircle2 className="w-8 h-8 text-emerald-600" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Site Onboarded</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            {data.site_name || createdSiteId} has been set up with {(data.service_units || []).length} service unit(s),
-            {" "}{(data.selected_sim_ids || []).length} SIM(s), and {(data.selected_device_ids || []).length} device(s).
+          <p className="text-sm text-gray-500 mb-2">
+            <span className="font-semibold text-gray-800">{data.site_name || createdSiteId}</span>
+            {data.customer_name && <> for <span className="font-semibold text-gray-800">{data.customer_name}</span></>}
           </p>
+          <div className="flex justify-center gap-6 text-center mb-8">
+            <div><div className="text-xl font-bold text-gray-900">{units.length}</div><div className="text-[10px] text-gray-500 uppercase">Units</div></div>
+            <div><div className="text-xl font-bold text-gray-900">{simCount}</div><div className="text-[10px] text-gray-500 uppercase">SIMs</div></div>
+            <div><div className="text-xl font-bold text-gray-900">{devCount}</div><div className="text-[10px] text-gray-500 uppercase">Devices</div></div>
+          </div>
           <div className="flex justify-center gap-3">
-            <a href="/Sites" className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold">
+            <a href="/Sites" className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold">
               View Sites
             </a>
-            <button onClick={() => { setComplete(false); setStep(0); setData({ service_units: [] }); setCreatedSiteId(null); }}
-              className="px-4 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-medium">
+            <button onClick={() => { setComplete(false); setStep(0); setData({ service_units: [], tenant_id: user?.tenant_id || "" }); setCreatedSiteId(null); }}
+              className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-medium">
               Onboard Another
             </button>
           </div>
@@ -556,12 +771,12 @@ export default function SiteOnboarding() {
   }
 
   const stepComponents = [
-    <StepCustomer data={data} setData={setData} customers={customers} />,
-    <StepSite data={data} setData={setData} sites={sites} />,
-    <StepUnits data={data} setData={setData} />,
-    <StepSims data={data} setData={setData} />,
-    <StepDevices data={data} setData={setData} />,
-    <StepReview data={data} sites={sites} />,
+    <StepAccount key="account" data={data} setData={setData} tenants={tenants} customers={customers} isSuperAdmin={isSuperAdmin} />,
+    <StepSite key="site" data={data} setData={setData} sites={sites} />,
+    <StepUnits key="units" data={data} setData={setData} />,
+    <StepSims key="sims" data={data} setData={setData} />,
+    <StepDevices key="devices" data={data} setData={setData} />,
+    <StepReview key="review" data={data} sites={sites} />,
   ];
 
   return (
@@ -571,7 +786,7 @@ export default function SiteOnboarding() {
           <Building2 className="w-5 h-5 text-red-600" />
           <h1 className="text-2xl font-bold text-gray-900">Site Onboarding</h1>
         </div>
-        <p className="text-sm text-gray-500 mb-6">Set up a new site with service units, SIMs, and devices in one guided flow.</p>
+        <p className="text-sm text-gray-500 mb-6">Provision a customer site with service units, SIMs, and devices.</p>
 
         <StepBar current={step} />
 
