@@ -1,5 +1,8 @@
+import hashlib
+import logging
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
@@ -12,11 +15,13 @@ from app.models.tenant import Tenant
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    ForgotPasswordRequest,
     InviteAcceptRequest,
     InviteInfoResponse,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserOut,
 )
@@ -28,6 +33,8 @@ from app.services.auth import (
     validate_password_strength,
     verify_password,
 )
+
+logger = logging.getLogger("true911.auth")
 
 router = APIRouter()
 
@@ -212,3 +219,78 @@ async def change_password(
     user.must_change_password = False
     await db.commit()
     return {"detail": "Password changed successfully"}
+
+
+# ── Forgot / Reset Password ─────────────────────────────────────
+
+RESET_TOKEN_EXPIRE_MINUTES = 30
+
+
+def _hash_reset_token(token: str) -> str:
+    """One-way hash for storing reset tokens (not reversible)."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Request a password reset. Always returns 200 to prevent email enumeration."""
+    email = body.email.strip().lower()
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == email)
+    )
+    user = result.scalar_one_or_none()
+
+    if user and user.is_active:
+        # Generate a secure reset token
+        raw_token = secrets.token_urlsafe(48)
+        user.invite_token = _hash_reset_token(raw_token)
+        user.invite_expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
+        await db.commit()
+
+        # Log the token — in production this would be emailed instead
+        logger.info(
+            "Password reset token generated for %s — "
+            "reset URL: /AuthGate?reset=%s",
+            email, raw_token,
+        )
+        # TODO: Send email with reset link when email service is configured
+
+    # Always return the same message regardless of whether user exists
+    return {
+        "detail": "If that email exists, a reset link has been sent.",
+        "message": "If that email exists, a reset link has been sent.",
+    }
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Reset password using a token from forgot-password flow."""
+    token_hash = _hash_reset_token(body.token)
+
+    result = await db.execute(
+        select(User).where(User.invite_token == token_hash)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired reset link")
+
+    if user.invite_expires_at and user.invite_expires_at < datetime.now(timezone.utc):
+        # Clear the expired token
+        user.invite_token = None
+        user.invite_expires_at = None
+        await db.commit()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Reset link has expired. Please request a new one.")
+
+    pwd_err = validate_password_strength(body.new_password)
+    if pwd_err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
+
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+    user.invite_token = None
+    user.invite_expires_at = None
+    await db.commit()
+
+    logger.info("Password reset completed for %s", user.email)
+    return {"detail": "Your password has been updated. You can now sign in."}

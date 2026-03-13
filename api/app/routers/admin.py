@@ -409,6 +409,41 @@ async def delete_user(
     await db.commit()
 
 
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+@router.post(
+    "/users/{user_id}/reset-password",
+    response_model=AdminUserOut,
+    dependencies=[Depends(require_permission("MANAGE_USERS"))],
+)
+async def admin_reset_password(
+    user_id: uuid.UUID,
+    body: AdminResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Admin resets a user's password. User must change password on next login."""
+    q = select(User).where(User.id == user_id)
+    if current_user.role != "SuperAdmin":
+        q = q.where(User.tenant_id == current_user.tenant_id)
+    result = await db.execute(q)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    pwd_err = validate_password_strength(body.new_password)
+    if pwd_err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, pwd_err)
+
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = True
+    await db.commit()
+    await db.refresh(user)
+    return AdminUserOut.from_user(user)
+
+
 @router.put(
     "/users/{user_id}/role",
     response_model=AdminUserOut,

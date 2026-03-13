@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPageUrl } from "@/utils";
-import { Shield, Eye, EyeOff, Lock, AlertTriangle, UserPlus, Mail, CheckCircle } from "lucide-react";
+import { Shield, Eye, EyeOff, Lock, AlertTriangle, UserPlus, Mail, CheckCircle, ArrowLeft, KeyRound } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isDemo } from "@/config";
 import { apiFetch, setTokens } from "@/api/client";
@@ -62,14 +62,28 @@ export default function AuthGate() {
   const [newPassword, setNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
 
-  // Check for invite token in URL
+  // Forgot / Reset password flow
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [resetToken, setResetToken] = useState(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState(false);
+
+  // Check for invite token or reset token in URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("invite");
-    if (token) {
-      setInviteToken(token);
+    const invite = params.get("invite");
+    const reset = params.get("reset");
+    if (invite) {
+      setInviteToken(invite);
       setInviteLoading(true);
-      apiFetch(`/auth/invite/${token}`)
+      apiFetch(`/auth/invite/${invite}`)
         .then((info) => {
           setInviteInfo(info);
           setInviteName(info.name);
@@ -78,6 +92,8 @@ export default function AuthGate() {
           setInviteError(err?.message || "Invalid or expired invite link");
         })
         .finally(() => setInviteLoading(false));
+    } else if (reset) {
+      setResetToken(reset);
     }
   }, []);
 
@@ -137,6 +153,42 @@ export default function AuthGate() {
     }
   };
 
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setForgotLoading(true);
+    try {
+      await apiFetch("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      setForgotSent(true);
+    } catch (err) {
+      setError(err?.message || "Something went wrong. Please try again.");
+    }
+    setForgotLoading(false);
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setResetError("");
+    if (resetPassword !== resetConfirm) {
+      setResetError("Passwords do not match.");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      await apiFetch("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token: resetToken, new_password: resetPassword }),
+      });
+      setResetSuccess(true);
+    } catch (err) {
+      setResetError(err?.message || "Failed to reset password. The link may have expired.");
+    }
+    setResetLoading(false);
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
@@ -183,6 +235,114 @@ export default function AuthGate() {
       setQuickLoading(null);
     }
   };
+
+  // ── Reset password view (from URL token) ──
+  if (resetToken) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col justify-center items-center px-4">
+        <div className="w-full max-w-lg">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-2xl shadow-2xl mb-4 ring-4 ring-red-500/20">
+              <Shield className="w-8 h-8 text-white" />
+            </div>
+            <div className="text-3xl font-bold text-white tracking-tight">
+              True911<span className="text-red-500">+</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-2xl p-7">
+            {resetSuccess ? (
+              <div className="text-center py-6">
+                <div className="inline-flex items-center justify-center w-12 h-12 bg-emerald-50 rounded-full mb-4">
+                  <CheckCircle className="w-6 h-6 text-emerald-500" />
+                </div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">Password Updated</h2>
+                <p className="text-sm text-gray-500 mb-4">Your password has been updated. You can now sign in.</p>
+                <a href="/AuthGate" className="inline-flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                </a>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <KeyRound className="w-4 h-4 text-red-500" />
+                  <h2 className="text-base font-semibold text-gray-900">Set New Password</h2>
+                </div>
+                <p className="text-sm text-gray-500 mb-5">Enter your new password below.</p>
+
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showResetPassword ? "text" : "password"}
+                        value={resetPassword}
+                        onChange={e => setResetPassword(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all pr-12"
+                        placeholder="Min 12 chars, uppercase, lowercase, digit"
+                        required
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowResetPassword(!showResetPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">At least 12 characters with uppercase, lowercase, and a digit.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Confirm Password</label>
+                    <input
+                      type={showResetPassword ? "text" : "password"}
+                      value={resetConfirm}
+                      onChange={e => setResetConfirm(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                      placeholder="Re-enter password"
+                      required
+                      autoComplete="new-password"
+                    />
+                  </div>
+
+                  {resetError && (
+                    <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                      {resetError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-3 px-4 rounded-xl transition-colors text-sm shadow-sm"
+                  >
+                    {resetLoading ? "Updating..." : "Set New Password"}
+                  </button>
+                </form>
+
+                <div className="mt-4 text-center">
+                  <a href="/AuthGate" className="text-xs text-gray-500 hover:text-gray-700">
+                    Back to Sign In
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="text-center mt-6 flex items-center justify-center gap-3">
+            <span className="text-blue-400 text-xs font-bold">Made in USA</span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-500 text-xs font-medium">NDAA-TAA Compliant</span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-500 text-xs">© 2026 Manley Solutions</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Invite acceptance view ──
   if (inviteToken) {
@@ -432,6 +592,73 @@ export default function AuthGate() {
             </div>
           )}
 
+          {/* Forgot password view */}
+          {showForgot ? (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Mail className="w-4 h-4 text-gray-400" />
+                <h2 className="text-base font-semibold text-gray-900">Forgot Password?</h2>
+              </div>
+
+              {forgotSent ? (
+                <div className="py-4">
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs px-4 py-3 rounded-xl mb-4">
+                    <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    If that email exists, a reset link has been sent. Check your inbox.
+                  </div>
+                  <p className="text-xs text-gray-500 mb-4">
+                    Note: In demo/dev mode, the reset link is logged to the server console. Check the API logs for the reset URL.
+                  </p>
+                  <button
+                    onClick={() => { setShowForgot(false); setForgotSent(false); setForgotEmail(""); setError(""); }}
+                    className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500 mb-5">Enter your email and we'll send you a link to reset your password.</p>
+                  <form onSubmit={handleForgotPassword} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Email Address</label>
+                      <input
+                        type="email"
+                        value={forgotEmail}
+                        onChange={e => setForgotEmail(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                        placeholder="you@true911.com"
+                        required
+                        autoComplete="email"
+                      />
+                    </div>
+
+                    {error && (
+                      <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        {error}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-3 px-4 rounded-xl transition-colors text-sm shadow-sm"
+                    >
+                      {forgotLoading ? "Sending..." : "Send Reset Link"}
+                    </button>
+                  </form>
+                  <button
+                    onClick={() => { setShowForgot(false); setError(""); }}
+                    className="mt-4 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                  >
+                    <ArrowLeft className="w-3 h-3" /> Back to Sign In
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+          <>
           {/* Login form */}
           <form onSubmit={handleLogin} className="space-y-4 mb-6">
             <div>
@@ -447,7 +674,16 @@ export default function AuthGate() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Password</label>
+                <button
+                  type="button"
+                  onClick={() => { setShowForgot(true); setError(""); }}
+                  className="text-xs text-red-600 hover:text-red-700 font-medium"
+                >
+                  Forgot Password?
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -483,6 +719,8 @@ export default function AuthGate() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
+          </>
+          )}
 
           {/* Demo role picker */}
           {isDemo && (

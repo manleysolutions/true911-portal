@@ -30,7 +30,11 @@ export function setTokens(access, refresh) {
 }
 
 export function clearTokens() {
-  setTokens(null, null);
+  _accessToken = null;
+  _refreshToken = null;
+  _actAsTenantId = null;
+  localStorage.removeItem("t911_token");
+  localStorage.removeItem("t911_refresh");
 }
 
 export function getAccessToken() {

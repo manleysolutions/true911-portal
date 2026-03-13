@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users, KeyRound, Eye, EyeOff, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
+import { apiFetch } from "@/api/client";
+import { toast } from "sonner";
 import { config } from "@/config";
 
 const NAV_ITEMS = [
@@ -50,7 +52,121 @@ const FEATURE_FLAGS = {
   samantha: config.featureSamantha,
 };
 
-function Sidebar({ currentPageName, onClose }) {
+function ChangePasswordModal({ onClose }) {
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (newPwd !== confirmPwd) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: currentPwd, new_password: newPwd }),
+      });
+      setSuccess(true);
+      toast.success("Password changed successfully");
+      setTimeout(onClose, 1500);
+    } catch (err) {
+      setError(err?.message || "Failed to change password");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-red-600" /> Change Password
+          </h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+        </div>
+
+        {success ? (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs px-4 py-3 rounded-xl">
+            <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            Password changed successfully.
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Current Password</label>
+              <input
+                type={showPwd ? "text" : "password"}
+                value={currentPwd}
+                onChange={e => setCurrentPwd(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">New Password</label>
+              <input
+                type={showPwd ? "text" : "password"}
+                value={newPwd}
+                onChange={e => setNewPwd(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="Min 12 chars"
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Confirm New Password</label>
+              <input
+                type={showPwd ? "text" : "password"}
+                value={confirmPwd}
+                onChange={e => setConfirmPwd(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPwd(!showPwd)}
+              className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1"
+            >
+              {showPwd ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              {showPwd ? "Hide passwords" : "Show passwords"}
+            </button>
+
+            {error && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-xs px-3 py-2.5 rounded-lg">
+                <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              Change Password
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function Sidebar({ currentPageName, onClose, onChangePassword }) {
   const { user, logout, can } = useAuth();
   const visibleNav = NAV_ITEMS.filter(item => {
     if (item.section && !item.adminOnly) return true;
@@ -128,13 +244,22 @@ function Sidebar({ currentPageName, onClose }) {
 
       <div className="px-4 py-4 border-t border-gray-100">
         {user && (
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Sign Out
-          </button>
+          <div className="space-y-0.5">
+            <button
+              onClick={onChangePassword}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              Change Password
+            </button>
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
+            </button>
+          </div>
         )}
         <div className="mt-3 flex items-center gap-1.5 justify-center">
           <span className="text-[10px] text-blue-800 font-bold">Made in USA</span>
@@ -152,6 +277,7 @@ const PUBLIC_PAGES = ["AuthGate"];
 function AppLayout({ children, currentPageName }) {
   const { user, ready } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
 
   if (PUBLIC_PAGES.includes(currentPageName)) {
     return (
@@ -172,17 +298,19 @@ function AppLayout({ children, currentPageName }) {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <div className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 z-30">
-        <Sidebar currentPageName={currentPageName} />
+        <Sidebar currentPageName={currentPageName} onChangePassword={() => setShowChangePwd(true)} />
       </div>
 
       {mobileOpen && (
         <>
           <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />
           <div className="fixed inset-y-0 left-0 w-60 z-40 flex flex-col lg:hidden shadow-xl">
-            <Sidebar currentPageName={currentPageName} onClose={() => setMobileOpen(false)} />
+            <Sidebar currentPageName={currentPageName} onClose={() => setMobileOpen(false)} onChangePassword={() => { setShowChangePwd(true); setMobileOpen(false); }} />
           </div>
         </>
       )}
+
+      {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
 
       <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
