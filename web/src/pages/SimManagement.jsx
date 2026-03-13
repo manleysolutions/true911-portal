@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/api/client";
 import {
   Cpu, RefreshCw, Search, Play, Pause, RotateCcw, Loader2,
-  AlertTriangle, Plus, X, Pencil, Trash2, Link2, Unlink, CloudDownload, Info,
+  AlertTriangle, Plus, X, Pencil, Trash2, Link2, Unlink, CloudDownload, Info, Building2,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
+import SitePickerModal from "@/components/SitePickerModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { config } from "@/config";
 import { toast } from "sonner";
@@ -358,8 +359,41 @@ export default function SimManagement() {
   const [deleteSim, setDeleteSim] = useState(null);
   const [assignSim, setAssignSim] = useState(null);
   const [syncing, setSyncing] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [showSitePicker, setShowSitePicker] = useState(false);
 
   const carrierWriteEnabled = config.featureCarrierWriteOps;
+
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map(s => s.id)));
+    }
+  };
+
+  const handleBulkAssignSite = async (siteId) => {
+    try {
+      const result = await apiFetch("/sims/bulk-assign-site", {
+        method: "POST",
+        body: JSON.stringify({ sim_ids: [...selected], site_id: siteId }),
+      });
+      toast.success(`${result.assigned} SIM(s) assigned to site`);
+      setSelected(new Set());
+      setShowSitePicker(false);
+      fetchSims();
+    } catch (err) {
+      toast.error(err?.message || "Failed to assign SIMs to site");
+    }
+  };
 
   const handleSimAction = async (simId, action) => {
     if (!carrierWriteEnabled) {
@@ -560,12 +594,43 @@ export default function SimManagement() {
           </div>
         )}
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && can("MANAGE_SIMS") && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+            <span className="text-red-800 text-xs font-semibold">{selected.size} SIM(s) selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowSitePicker(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold"
+              >
+                <Building2 className="w-3.5 h-3.5" /> Assign Selected to Site
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-white"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
+                  {can("MANAGE_SIMS") && (
+                    <th className="px-3 py-2.5 w-8">
+                      <input
+                        type="checkbox"
+                        checked={filtered.length > 0 && selected.size === filtered.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                      />
+                    </th>
+                  )}
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">ICCID</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">MSISDN</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">IMSI</th>
@@ -607,7 +672,17 @@ export default function SimManagement() {
                   </tr>
                 ) : (
                   filtered.map(s => (
-                    <tr key={s.id} className="hover:bg-gray-50">
+                    <tr key={s.id} className={`hover:bg-gray-50 ${selected.has(s.id) ? "bg-red-50/50" : ""}`}>
+                      {can("MANAGE_SIMS") && (
+                        <td className="px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(s.id)}
+                            onChange={() => toggleSelect(s.id)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{s.iccid}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{s.msisdn || "\u2014"}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.imsi || "\u2014"}</td>
@@ -724,6 +799,15 @@ export default function SimManagement() {
           sim={assignSim}
           onClose={() => setAssignSim(null)}
           onAssigned={fetchSims}
+        />
+      )}
+      {showSitePicker && (
+        <SitePickerModal
+          title="Assign SIMs to Site"
+          count={selected.size}
+          entityLabel="SIM(s)"
+          onClose={() => setShowSitePicker(false)}
+          onConfirm={handleBulkAssignSite}
         />
       )}
     </PageWrapper>

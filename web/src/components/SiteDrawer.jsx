@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2, Navigation, Crosshair, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2, Navigation, Crosshair, AlertTriangle, Cpu, Disc3, PhoneCall } from "lucide-react";
 import { Incident, Site } from "@/api/entities";
+import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
 import { uid } from "./actions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -266,6 +267,142 @@ function E911CoordsSection({ site, onSiteUpdated }) {
   );
 }
 
+function InfrastructureSection({ site }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchInfra = useCallback(async () => {
+    try {
+      const result = await apiFetch(`/sites/${site.id}/infrastructure`);
+      setData(result);
+    } catch { /* endpoint may not exist yet */ }
+    setLoading(false);
+  }, [site.id]);
+
+  useEffect(() => { fetchInfra(); }, [fetchInfra]);
+
+  if (loading) {
+    return (
+      <Section title="Infrastructure" defaultOpen={true}>
+        <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+          <Loader2 className="w-3 h-3 animate-spin" /> Loading...
+        </div>
+      </Section>
+    );
+  }
+
+  if (!data) return null;
+
+  const { devices, sims, lines, counts, e911 } = data;
+
+  return (
+    <Section title="Infrastructure" defaultOpen={true}>
+      {/* E911 warning */}
+      {e911?.warning && (
+        <div className="flex items-center gap-1.5 mb-3 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <span className="text-[10px] font-medium text-amber-700">E911 address needed — infrastructure assigned but no validated address on file.</span>
+        </div>
+      )}
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-gray-50 rounded-lg px-3 py-2 text-center">
+          <div className="flex items-center justify-center gap-1 mb-0.5">
+            <Cpu className="w-3 h-3 text-gray-400" />
+            <span className="text-lg font-bold text-gray-900">{counts.devices}</span>
+          </div>
+          <div className="text-[10px] text-gray-500">Devices</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg px-3 py-2 text-center">
+          <div className="flex items-center justify-center gap-1 mb-0.5">
+            <Disc3 className="w-3 h-3 text-gray-400" />
+            <span className="text-lg font-bold text-gray-900">{counts.sims}</span>
+          </div>
+          <div className="text-[10px] text-gray-500">SIMs</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg px-3 py-2 text-center">
+          <div className="flex items-center justify-center gap-1 mb-0.5">
+            <PhoneCall className="w-3 h-3 text-gray-400" />
+            <span className="text-lg font-bold text-gray-900">{counts.lines}</span>
+          </div>
+          <div className="text-[10px] text-gray-500">Lines</div>
+        </div>
+      </div>
+
+      {/* Devices list */}
+      {devices.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Devices</div>
+          <div className="space-y-1">
+            {devices.map(d => (
+              <div key={d.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5">
+                <div>
+                  <div className="text-xs font-mono text-gray-700">{d.device_id}</div>
+                  <div className="text-[10px] text-gray-500">{d.device_type || d.model || "—"}</div>
+                </div>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                  d.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                  d.status === "provisioning" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                  "bg-gray-100 text-gray-500 border-gray-200"
+                }`}>{d.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SIMs list */}
+      {sims.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">SIMs</div>
+          <div className="space-y-1">
+            {sims.map(s => (
+              <div key={s.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5">
+                <div>
+                  <div className="text-xs font-mono text-gray-700">{s.iccid}</div>
+                  <div className="text-[10px] text-gray-500">{s.carrier}{s.msisdn ? ` | ${s.msisdn}` : ""}</div>
+                </div>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                  s.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                  s.status === "inventory" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                  "bg-gray-100 text-gray-500 border-gray-200"
+                }`}>{s.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lines list */}
+      {lines.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Lines</div>
+          <div className="space-y-1">
+            {lines.map(l => (
+              <div key={l.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5">
+                <div>
+                  <div className="text-xs text-gray-700">{l.did || l.line_id}</div>
+                  <div className="text-[10px] text-gray-500">{l.provider} | {l.protocol}</div>
+                </div>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                  l.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                  "bg-gray-100 text-gray-500 border-gray-200"
+                }`}>{l.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {counts.devices === 0 && counts.sims === 0 && counts.lines === 0 && (
+        <div className="text-xs text-gray-400 text-center py-3">No infrastructure assigned to this site yet.</div>
+      )}
+    </Section>
+  );
+}
+
+
 export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
   const [lastActionResult, setLastActionResult] = useState(null);
   const [showE911, setShowE911] = useState(false);
@@ -300,6 +437,8 @@ export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
               onCreateIncident={() => setShowCreateIncident(true)}
             />
           </div>
+
+          <InfrastructureSection site={site} />
 
           <Section title="Health Snapshot">
             <HealthSnapshot site={site} />

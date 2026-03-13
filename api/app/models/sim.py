@@ -14,6 +14,7 @@ class Sim(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(100), index=True)
+    site_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     iccid: Mapped[str] = mapped_column(String(30), unique=True, index=True)
     msisdn: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     imsi: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)

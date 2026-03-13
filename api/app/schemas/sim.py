@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class SimOut(BaseModel):
     id: int
     tenant_id: str
+    site_id: Optional[str] = None
     iccid: str
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
@@ -27,6 +28,7 @@ class SimCreate(BaseModel):
     carrier: str
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
+    site_id: Optional[str] = None
     status: str = "inventory"
     plan: Optional[str] = None
     apn: Optional[str] = None
@@ -37,6 +39,7 @@ class SimCreate(BaseModel):
 class SimUpdate(BaseModel):
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
+    site_id: Optional[str] = None
     carrier: Optional[str] = None
     status: Optional[str] = None
     plan: Optional[str] = None
@@ -48,6 +51,11 @@ class SimUpdate(BaseModel):
 class SimAssign(BaseModel):
     device_id: int
     slot: int = 1
+
+
+class SimBulkSiteAssign(BaseModel):
+    sim_ids: list[int]
+    site_id: str
 
 
 class SimActionOut(BaseModel):

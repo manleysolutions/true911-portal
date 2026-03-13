@@ -12,7 +12,8 @@ from app.models.device_sim import DeviceSim
 from app.models.sim import Sim
 from app.models.user import User
 from app.routers.helpers import apply_sort
-from app.schemas.sim import SimActionOut, SimAssign, SimCreate, SimOut, SimUpdate
+from app.models.site import Site
+from app.schemas.sim import SimActionOut, SimAssign, SimBulkSiteAssign, SimCreate, SimOut, SimUpdate
 
 logger = logging.getLogger("true911.sims")
 
@@ -329,6 +330,55 @@ async def resume_sim(
         from app.services.sim_service import enqueue_sim_action
         return await enqueue_sim_action(db, pk, "resume", current_user)
     return await _direct_sim_action(db, pk, "resume", current_user)
+
+
+# ── Bulk Site Assignment ──────────────────────────────────────────
+
+@router.post(
+    "/bulk-assign-site",
+    response_model=dict,
+    dependencies=[Depends(require_permission("MANAGE_SIMS"))],
+)
+async def bulk_assign_sims_to_site(
+    body: SimBulkSiteAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Assign multiple SIMs to a site in one operation."""
+    # Verify site exists and is accessible
+    site_q = select(Site).where(Site.site_id == body.site_id)
+    if current_user.role != "SuperAdmin":
+        site_q = site_q.where(Site.tenant_id == current_user.tenant_id)
+    site_result = await db.execute(site_q)
+    site = site_result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
+
+    # Fetch SIMs
+    sim_result = await db.execute(
+        select(Sim).where(Sim.id.in_(body.sim_ids))
+    )
+    sims = sim_result.scalars().all()
+
+    # Tenant check for non-SuperAdmin
+    assigned = 0
+    skipped = 0
+    for sim in sims:
+        if current_user.role != "SuperAdmin" and sim.tenant_id != current_user.tenant_id:
+            skipped += 1
+            continue
+        sim.site_id = body.site_id
+        # Align tenant_id with the site if currently different
+        if sim.tenant_id != site.tenant_id:
+            sim.tenant_id = site.tenant_id
+        assigned += 1
+
+    await db.commit()
+    logger.info(
+        "Bulk SIM site assign: %d assigned, %d skipped, site=%s, user=%s",
+        assigned, skipped, body.site_id, current_user.email,
+    )
+    return {"assigned": assigned, "skipped": skipped, "site_id": body.site_id}
 
 
 # ── Carrier Sync ─────────────────────────────────────────────────

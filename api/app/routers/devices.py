@@ -386,3 +386,54 @@ async def list_device_sims(
         )
     )
     return [SimOut.model_validate(s) for s in sim_result.scalars().all()]
+
+
+# ── Bulk Site Assignment ──────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+
+class DeviceBulkSiteAssign(_BaseModel):
+    device_ids: list[int]
+    site_id: str
+
+
+@router.post(
+    "/bulk-assign-site",
+    response_model=dict,
+    dependencies=[Depends(require_permission("MANAGE_DEVICES"))],
+)
+async def bulk_assign_devices_to_site(
+    body: DeviceBulkSiteAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Assign multiple devices to a site in one operation."""
+    # Verify site exists and is accessible
+    site_q = select(Site).where(Site.site_id == body.site_id)
+    if current_user.role != "SuperAdmin":
+        site_q = site_q.where(Site.tenant_id == current_user.tenant_id)
+    site_result = await db.execute(site_q)
+    site = site_result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
+
+    # Fetch devices
+    dev_result = await db.execute(
+        select(Device).where(Device.id.in_(body.device_ids))
+    )
+    devices = dev_result.scalars().all()
+
+    assigned = 0
+    skipped = 0
+    for device in devices:
+        if current_user.role != "SuperAdmin" and device.tenant_id != current_user.tenant_id:
+            skipped += 1
+            continue
+        device.site_id = body.site_id
+        if device.tenant_id != site.tenant_id:
+            device.tenant_id = site.tenant_id
+        assigned += 1
+
+    await db.commit()
+    return {"assigned": assigned, "skipped": skipped, "site_id": body.site_id}

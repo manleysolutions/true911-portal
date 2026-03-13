@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, require_permission
 from app.models.device import Device
 from app.models.incident import Incident
+from app.models.line import Line
+from app.models.sim import Sim
 from app.models.site import Site
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -298,6 +300,76 @@ async def get_site(
     if not site:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
     return await _site_out(site, db)
+
+
+@router.get("/{site_pk}/infrastructure")
+async def get_site_infrastructure(
+    site_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all devices, SIMs, and lines attached to a site."""
+    result = await db.execute(
+        select(Site).where(Site.id == site_pk, Site.tenant_id == current_user.tenant_id)
+    )
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
+
+    sid = site.site_id
+
+    dev_result = await db.execute(
+        select(Device).where(Device.site_id == sid).order_by(Device.created_at.desc())
+    )
+    devices = dev_result.scalars().all()
+
+    sim_result = await db.execute(
+        select(Sim).where(Sim.site_id == sid).order_by(Sim.created_at.desc())
+    )
+    sims = sim_result.scalars().all()
+
+    line_result = await db.execute(
+        select(Line).where(Line.site_id == sid).order_by(Line.created_at.desc())
+    )
+    lines = line_result.scalars().all()
+
+    has_e911 = bool(site.e911_street and site.e911_city and site.e911_state and site.e911_zip)
+    e911_warning = (len(devices) > 0 or len(sims) > 0) and not has_e911
+
+    return {
+        "site_id": sid,
+        "site_name": site.site_name,
+        "devices": [
+            {"id": d.id, "device_id": d.device_id, "device_type": d.device_type, "model": d.model,
+             "status": d.status, "serial_number": d.serial_number, "imei": d.imei, "carrier": d.carrier,
+             "last_heartbeat": d.last_heartbeat.isoformat() if d.last_heartbeat else None}
+            for d in devices
+        ],
+        "sims": [
+            {"id": s.id, "iccid": s.iccid, "msisdn": s.msisdn, "carrier": s.carrier,
+             "status": s.status, "plan": s.plan, "imsi": s.imsi}
+            for s in sims
+        ],
+        "lines": [
+            {"id": l.id, "line_id": l.line_id, "did": l.did, "provider": l.provider,
+             "protocol": l.protocol, "status": l.status, "e911_status": l.e911_status}
+            for l in lines
+        ],
+        "counts": {
+            "devices": len(devices),
+            "sims": len(sims),
+            "lines": len(lines),
+        },
+        "e911": {
+            "has_address": has_e911,
+            "street": site.e911_street,
+            "city": site.e911_city,
+            "state": site.e911_state,
+            "zip": site.e911_zip,
+            "status": site.e911_status,
+            "warning": e911_warning,
+        },
+    }
 
 
 @router.post("", response_model=SiteOut, status_code=201)

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { Device, Site, HardwareModel } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check, Pencil, Trash2, Loader2, Link2, Unlink } from "lucide-react";
+import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check, Pencil, Trash2, Loader2, Link2, Unlink, Building2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
+import SitePickerModal from "@/components/SitePickerModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -650,6 +651,31 @@ export default function Devices() {
   const [editDevice, setEditDevice] = useState(null);
   const [deleteDevice, setDeleteDevice] = useState(null);
   const [rotateKeyResult, setRotateKeyResult] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [showSitePicker, setShowSitePicker] = useState(false);
+
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkAssignSite = async (siteId) => {
+    try {
+      const result = await apiFetch("/devices/bulk-assign-site", {
+        method: "POST",
+        body: JSON.stringify({ device_ids: [...selected], site_id: siteId }),
+      });
+      toast.success(`${result.assigned} device(s) assigned to site`);
+      setSelected(new Set());
+      setShowSitePicker(false);
+      fetchData();
+    } catch (err) {
+      toast.error(err?.message || "Failed to assign devices to site");
+    }
+  };
 
   const fetchData = useCallback(async () => {
     const [devData, siteData, hmData] = await Promise.all([
@@ -764,11 +790,43 @@ export default function Devices() {
           </select>
         </div>
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+            <span className="text-red-800 text-xs font-semibold">{selected.size} device(s) selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowSitePicker(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold"
+              >
+                <Building2 className="w-3.5 h-3.5" /> Assign Selected to Site
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-white"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && selected.size === filtered.length}
+                    onChange={() => {
+                      if (selected.size === filtered.length) setSelected(new Set());
+                      else setSelected(new Set(filtered.map(d => d.id)));
+                    }}
+                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                </th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Device ID</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Site</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Model</th>
@@ -799,9 +857,17 @@ export default function Devices() {
                 return (
                   <tr
                     key={d.id}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className={`hover:bg-gray-50 cursor-pointer ${selected.has(d.id) ? "bg-red-50/50" : ""}`}
                     onClick={() => site && setSelectedSite(site)}
                   >
+                    <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(d.id)}
+                        onChange={() => toggleSelect(d.id)}
+                        className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                      />
+                    </td>
                     <td className="px-4 py-2.5">
                       <div className="font-mono text-xs text-gray-600">{d.device_id}</div>
                       <div className="text-[10px] text-gray-400">{d.device_type}</div>
@@ -900,6 +966,16 @@ export default function Devices() {
           deviceId={rotateKeyResult.device_id}
           apiKey={rotateKeyResult.api_key}
           onClose={() => setRotateKeyResult(null)}
+        />
+      )}
+
+      {showSitePicker && (
+        <SitePickerModal
+          title="Assign Devices to Site"
+          count={selected.size}
+          entityLabel="device(s)"
+          onClose={() => setShowSitePicker(false)}
+          onConfirm={handleBulkAssignSite}
         />
       )}
     </PageWrapper>
