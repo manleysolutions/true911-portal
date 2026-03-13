@@ -11,12 +11,18 @@ class CarrierSim:
     carrier: str
     msisdn: str | None = None
     imsi: str | None = None
+    imei: str | None = None
     status: str = "inventory"
+    activation_status: str | None = None
+    network_status: str | None = None
     plan: str | None = None
     apn: str | None = None
     external_id: str | None = None
-    imei: str | None = None
     raw: dict | None = None
+    # Carrier-inferred location (NOT E911-valid)
+    inferred_lat: float | None = None
+    inferred_lng: float | None = None
+    inferred_location_source: str | None = None
 
 
 @dataclass
@@ -48,11 +54,7 @@ class CarrierProvider(ABC):
 
     @abstractmethod
     async def fetch_sims(self, max_results: int = 500) -> list[CarrierSim]:
-        """Fetch SIM inventory from the carrier API.
-
-        Returns a list of normalized CarrierSim objects.
-        Raises CarrierProviderError if the API call fails.
-        """
+        """Fetch SIM inventory from the carrier API."""
         ...
 
     def config_summary(self) -> dict:

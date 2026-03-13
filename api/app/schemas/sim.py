@@ -8,14 +8,23 @@ class SimOut(BaseModel):
     id: int
     tenant_id: str
     site_id: Optional[str] = None
+    device_id: Optional[str] = None
     iccid: str
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
+    imei: Optional[str] = None
     carrier: str
     status: str
+    activation_status: Optional[str] = None
+    network_status: Optional[str] = None
     plan: Optional[str] = None
     apn: Optional[str] = None
     provider_sim_id: Optional[str] = None
+    data_source: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
+    inferred_lat: Optional[float] = None
+    inferred_lng: Optional[float] = None
+    inferred_location_source: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -28,7 +37,9 @@ class SimCreate(BaseModel):
     carrier: str
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
+    imei: Optional[str] = None
     site_id: Optional[str] = None
+    device_id: Optional[str] = None
     status: str = "inventory"
     plan: Optional[str] = None
     apn: Optional[str] = None
@@ -39,7 +50,9 @@ class SimCreate(BaseModel):
 class SimUpdate(BaseModel):
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
+    imei: Optional[str] = None
     site_id: Optional[str] = None
+    device_id: Optional[str] = None
     carrier: Optional[str] = None
     status: Optional[str] = None
     plan: Optional[str] = None

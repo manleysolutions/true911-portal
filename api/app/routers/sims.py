@@ -19,6 +19,31 @@ logger = logging.getLogger("true911.sims")
 
 router = APIRouter()
 
+def _upsert_sim_from_carrier(sim: Sim, cs, now) -> bool:
+    """Update a SIM record from carrier data. Returns True if any field changed."""
+    changed = False
+    for attr, val in [
+        ("msisdn", cs.msisdn),
+        ("imsi", cs.imsi),
+        ("imei", cs.imei),
+        ("status", cs.status),
+        ("activation_status", cs.activation_status),
+        ("network_status", cs.network_status),
+        ("plan", cs.plan),
+        ("apn", cs.apn),
+        ("provider_sim_id", cs.external_id),
+        ("inferred_lat", cs.inferred_lat),
+        ("inferred_lng", cs.inferred_lng),
+        ("inferred_location_source", cs.inferred_location_source),
+    ]:
+        if val is not None and getattr(sim, attr) != val:
+            setattr(sim, attr, val)
+            changed = True
+    sim.last_synced_at = now
+    sim.data_source = "carrier_sync"
+    return changed
+
+
 _CONSTRAINT_MESSAGES = {
     "uq_sims_iccid": "A SIM with this ICCID already exists",
     "uq_sims_msisdn": "A SIM with this MSISDN already exists",
@@ -43,6 +68,10 @@ async def list_sims(
     carrier: str | None = None,
     status_filter: str | None = Query(None, alias="status"),
     unassigned: bool | None = Query(None),
+    assigned_to_site: str | None = Query(None, description="Filter by site_id"),
+    has_site: bool | None = Query(None, description="true=assigned to any site, false=no site"),
+    has_device: bool | None = Query(None, description="true=assigned to any device, false=no device"),
+    data_source: str | None = Query(None, description="manual or carrier_sync"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -54,6 +83,18 @@ async def list_sims(
     if unassigned:
         active_link = select(DeviceSim.sim_id).where(DeviceSim.active == True).subquery()
         q = q.where(~Sim.id.in_(select(active_link)))
+    if assigned_to_site:
+        q = q.where(Sim.site_id == assigned_to_site)
+    if has_site is True:
+        q = q.where(Sim.site_id.isnot(None))
+    elif has_site is False:
+        q = q.where(Sim.site_id.is_(None))
+    if has_device is True:
+        q = q.where(Sim.device_id.isnot(None))
+    elif has_device is False:
+        q = q.where(Sim.device_id.is_(None))
+    if data_source:
+        q = q.where(Sim.data_source == data_source)
     q = apply_sort(q, Sim, sort)
     q = q.limit(limit)
     result = await db.execute(q)
@@ -439,6 +480,7 @@ async def sync_carrier(
     created = updated = unchanged = skipped = 0
     errors: list[str] = []
 
+    now = datetime.now(timezone.utc)
     for cs in carrier_sims:
         existing = existing_by_iccid.get(cs.iccid)
         if existing:
@@ -446,16 +488,7 @@ async def sync_carrier(
                 skipped += 1
                 errors.append(f"ICCID {cs.iccid} belongs to another tenant")
                 continue
-            changed = False
-            if cs.msisdn and existing.msisdn != cs.msisdn:
-                existing.msisdn = cs.msisdn
-                changed = True
-            if cs.status and existing.status != cs.status:
-                existing.status = cs.status
-                changed = True
-            if cs.plan and existing.plan != cs.plan:
-                existing.plan = cs.plan
-                changed = True
+            changed = _upsert_sim_from_carrier(existing, cs, now)
             if changed:
                 updated += 1
             else:
@@ -466,11 +499,20 @@ async def sync_carrier(
                 iccid=cs.iccid,
                 msisdn=cs.msisdn,
                 imsi=cs.imsi,
+                imei=cs.imei,
                 carrier=cs.carrier,
                 status=cs.status,
+                activation_status=cs.activation_status,
+                network_status=cs.network_status,
                 plan=cs.plan,
                 apn=cs.apn,
                 provider_sim_id=cs.external_id,
+                data_source="carrier_sync",
+                last_synced_at=now,
+                inferred_lat=cs.inferred_lat,
+                inferred_lng=cs.inferred_lng,
+                inferred_location_source=cs.inferred_location_source,
+                meta={"raw_payload": cs.raw} if cs.raw else None,
             )
             db.add(new_sim)
             created += 1
@@ -538,19 +580,14 @@ async def sync_all_carriers(
         created = updated = unchanged = skipped = 0
         errors: list[str] = []
 
+        now = datetime.now(timezone.utc)
         for cs in carrier_sims:
             existing = existing_by_iccid.get(cs.iccid)
             if existing:
                 if existing.tenant_id != tenant_id:
                     skipped += 1
                     continue
-                changed = False
-                if cs.msisdn and existing.msisdn != cs.msisdn:
-                    existing.msisdn = cs.msisdn
-                    changed = True
-                if cs.status and existing.status != cs.status:
-                    existing.status = cs.status
-                    changed = True
+                changed = _upsert_sim_from_carrier(existing, cs, now)
                 if changed:
                     updated += 1
                 else:
@@ -561,11 +598,20 @@ async def sync_all_carriers(
                     iccid=cs.iccid,
                     msisdn=cs.msisdn,
                     imsi=cs.imsi,
+                    imei=cs.imei,
                     carrier=cs.carrier,
                     status=cs.status,
+                    activation_status=cs.activation_status,
+                    network_status=cs.network_status,
                     plan=cs.plan,
                     apn=cs.apn,
                     provider_sim_id=cs.external_id,
+                    data_source="carrier_sync",
+                    last_synced_at=now,
+                    inferred_lat=cs.inferred_lat,
+                    inferred_lng=cs.inferred_lng,
+                    inferred_location_source=cs.inferred_location_source,
+                    meta={"raw_payload": cs.raw} if cs.raw else None,
                 ))
                 created += 1
 

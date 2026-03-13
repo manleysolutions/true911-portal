@@ -284,27 +284,31 @@ INTEGRATIONS = [
 # Demo SIMs — one per first 10 devices
 SIMS = []
 _sim_configs = [
-    # carrier, msisdn, iccid, imsi, status, plan, apn, notes
-    ("verizon",  "+12145550201", "8914800000000000001", "311480000000001", "active",    "ThingSpace IoT 1GB",  "vzwinternet",       "Verizon primary SIM - Dallas site"),
-    ("verizon",  "+15125550202", "8914800000000000002", "311480000000002", "active",    "ThingSpace IoT 1GB",  "vzwinternet",       "Verizon SIM - Austin site"),
-    ("verizon",  "+17135550203", "8914800000000000003", "311480000000003", "inventory", "ThingSpace IoT 500MB","vzwinternet",       "Verizon spare SIM - unassigned"),
-    ("tmobile",  "+12105550204", "8901260882902000004", "310260000000004", "active",    "T-Mobile IoT 500MB",  "fast.t-mobile.com", "T-Mobile SIM - San Antonio site"),
-    ("tmobile",  "+18175550205", "8901260882902000005", "310260000000005", "suspended", "T-Mobile IoT 500MB",  "fast.t-mobile.com", "T-Mobile SIM - suspended for billing"),
-    ("att",      "+19155550206", "8901410000000000006", "310410000000006", "active",    "AT&T IoT DataConnect", "broadband",        "AT&T SIM - El Paso site"),
-    ("verizon",  "+14695550207", "8914800000000000007", "311480000000007", "active",    "ThingSpace IoT 1GB",  "vzwinternet",       None),
-    ("tmobile",  "+18175550208", "8901260882902000008", "310260000000008", "active",    "T-Mobile IoT 1GB",    "fast.t-mobile.com", None),
-    ("telnyx",   "+13615550209", "8942110000000000009", None,              "active",    "Global IoT",          None,                None),
-    ("tmobile",  "+18065550210", "8901260882902000010", "310260000000010", "inventory", "T-Mobile IoT 500MB",  "fast.t-mobile.com", "Spare SIM for field kit"),
+    # carrier, msisdn, iccid, imsi, imei, status, plan, apn, data_source, activation_status, network_status, notes
+    ("verizon",  "+12145550201", "8914800000000000001", "311480000000001", "353456789012345", "active",    "ThingSpace IoT 1GB",  "vzwinternet",       "carrier_sync", "activated", "connected",    "Verizon primary SIM - Dallas site"),
+    ("verizon",  "+15125550202", "8914800000000000002", "311480000000002", "353456789012346", "active",    "ThingSpace IoT 1GB",  "vzwinternet",       "carrier_sync", "activated", "connected",    "Verizon SIM - Austin site"),
+    ("verizon",  "+17135550203", "8914800000000000003", "311480000000003", "353456789012347", "inventory", "ThingSpace IoT 500MB","vzwinternet",       "carrier_sync", "preactive", None,           "Verizon spare SIM - unassigned"),
+    ("tmobile",  "+12105550204", "8901260882902000004", "310260000000004", "862345678901234", "active",    "T-Mobile IoT 500MB",  "fast.t-mobile.com", "carrier_sync", "activated", "attached",     "T-Mobile SIM - San Antonio site"),
+    ("tmobile",  "+18175550205", "8901260882902000005", "310260000000005", "862345678901235", "suspended", "T-Mobile IoT 500MB",  "fast.t-mobile.com", "carrier_sync", "suspended", "disconnected", "T-Mobile SIM - suspended for billing"),
+    ("att",      "+19155550206", "8901410000000000006", "310410000000006", "014561234567890", "active",    "AT&T IoT DataConnect", "broadband",        "manual",       None,        None,           "AT&T SIM - El Paso site"),
+    ("verizon",  "+14695550207", "8914800000000000007", "311480000000007", "353456789012348", "active",    "ThingSpace IoT 1GB",  "vzwinternet",       "carrier_sync", "activated", "connected",    None),
+    ("tmobile",  "+18175550208", "8901260882902000008", "310260000000008", None,              "active",    "T-Mobile IoT 1GB",    "fast.t-mobile.com", "manual",       None,        None,           None),
+    ("telnyx",   "+13615550209", "8942110000000000009", None,              None,              "active",    "Global IoT",          None,                "manual",       None,        None,           None),
+    ("tmobile",  "+18065550210", "8901260882902000010", "310260000000010", None,              "inventory", "T-Mobile IoT 500MB",  "fast.t-mobile.com", "manual",       None,        None,           "Spare SIM for field kit"),
 ]
-for _i, (_carrier, _msisdn, _iccid, _imsi, _st, _plan, _apn, _notes) in enumerate(_sim_configs):
+for _i, (_carrier, _msisdn, _iccid, _imsi, _imei, _st, _plan, _apn, _src, _act, _net, _notes) in enumerate(_sim_configs):
     SIMS.append({
         "iccid": _iccid,
         "msisdn": _msisdn,
         "imsi": _imsi,
+        "imei": _imei,
         "carrier": _carrier,
         "status": _st,
         "plan": _plan,
         "apn": _apn or None,
+        "data_source": _src,
+        "activation_status": _act,
+        "network_status": _net,
         "notes": _notes,
     })
 

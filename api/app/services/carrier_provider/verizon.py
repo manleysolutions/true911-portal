@@ -44,14 +44,25 @@ class VerizonProvider(CarrierProvider):
             iccid = norm.get("iccid")
             if not iccid:
                 continue
+
+            raw_payload = norm.get("raw_payload") or {}
+            activation = norm.get("activation_status")
+
             results.append(CarrierSim(
                 iccid=iccid,
                 carrier="verizon",
                 msisdn=norm.get("msisdn"),
-                status=_map_status(norm.get("activation_status")),
-                external_id=norm.get("external_id"),
                 imei=norm.get("imei"),
-                raw=norm.get("raw_payload"),
+                status=_map_status(activation),
+                activation_status=activation,
+                network_status=norm.get("line_status") or norm.get("sim_status"),
+                plan=raw_payload.get("servicePlan"),
+                external_id=norm.get("external_id"),
+                raw=raw_payload,
+                # Verizon may include location data in extended device info
+                inferred_lat=_safe_float(raw_payload.get("latitude")),
+                inferred_lng=_safe_float(raw_payload.get("longitude")),
+                inferred_location_source="verizon_thingspace" if raw_payload.get("latitude") else None,
             ))
         return results
 
@@ -70,5 +81,15 @@ def _map_status(raw: str | None) -> str:
     if s in ("suspended", "suspend"):
         return "suspended"
     if s in ("deactivated", "deactive", "terminated", "disconnected"):
-        return "terminated"
+        return "deactivated"
     return "inventory"
+
+
+def _safe_float(val) -> float | None:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        return f if f != 0.0 else None
+    except (ValueError, TypeError):
+        return None

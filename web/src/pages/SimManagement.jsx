@@ -353,6 +353,7 @@ export default function SimManagement() {
   const [search, setSearch] = useState("");
   const [carrierFilter, setCarrierFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [assignmentFilter, setAssignmentFilter] = useState("");
   const [actionLoading, setActionLoading] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editSim, setEditSim] = useState(null);
@@ -452,6 +453,11 @@ export default function SimManagement() {
       const params = new URLSearchParams();
       if (carrierFilter) params.set("carrier", carrierFilter);
       if (statusFilter) params.set("status", statusFilter);
+      if (assignmentFilter === "unassigned") { params.set("has_site", "false"); params.set("has_device", "false"); }
+      if (assignmentFilter === "assigned_site") params.set("has_site", "true");
+      if (assignmentFilter === "assigned_device") params.set("has_device", "true");
+      if (assignmentFilter === "carrier_sync") params.set("data_source", "carrier_sync");
+      if (assignmentFilter === "manual") params.set("data_source", "manual");
       params.set("limit", "500");
       const data = await apiFetch(`/sims?${params}`);
       setSims(data);
@@ -459,7 +465,7 @@ export default function SimManagement() {
       toast.error("Failed to load SIMs");
     }
     setLoading(false);
-  }, [carrierFilter, statusFilter]);
+  }, [carrierFilter, statusFilter, assignmentFilter]);
 
   useEffect(() => { fetchSims(); }, [fetchSims]);
 
@@ -579,7 +585,20 @@ export default function SimManagement() {
             <option value="active">Active</option>
             <option value="assigned">Assigned</option>
             <option value="suspended">Suspended</option>
-            <option value="terminated">Terminated</option>
+            <option value="deactivated">Deactivated</option>
+            <option value="error">Error</option>
+          </select>
+          <select
+            value={assignmentFilter}
+            onChange={e => setAssignmentFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          >
+            <option value="">All Assignment</option>
+            <option value="unassigned">Unassigned (Pool)</option>
+            <option value="assigned_site">Assigned to Site</option>
+            <option value="assigned_device">Assigned to Device</option>
+            <option value="carrier_sync">Carrier Synced</option>
+            <option value="manual">Manual Entry</option>
           </select>
         </div>
 
@@ -637,7 +656,8 @@ export default function SimManagement() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Carrier</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Plan</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Created</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Site</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Source</th>
                   {can("MANAGE_SIMS") && (
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-36">Actions</th>
                   )}
@@ -697,8 +717,21 @@ export default function SimManagement() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs">{s.plan || "\u2014"}</td>
-                      <td className="px-4 py-2.5 text-gray-400 text-xs">
-                        {s.created_at ? new Date(s.created_at).toLocaleDateString() : "\u2014"}
+                      <td className="px-4 py-2.5 text-xs">
+                        {s.site_id ? (
+                          <span className="text-gray-700 font-medium">{s.site_id}</span>
+                        ) : (
+                          <span className="text-gray-400">Pool</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {s.data_source === "carrier_sync" ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                            <CloudDownload className="w-2.5 h-2.5" /> sync
+                          </span>
+                        ) : (
+                          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-gray-50 text-gray-500 border-gray-200">manual</span>
+                        )}
                       </td>
                       {can("MANAGE_SIMS") && (
                         <td className="px-4 py-2.5">
