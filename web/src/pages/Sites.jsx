@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { Site, ActionAudit } from "@/api/entities";
 import { Search, Filter, ChevronDown, Building2, RefreshCw, ArrowRight, X, Plus } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
@@ -58,6 +60,7 @@ const EMPTY_FORM = {
 export default function Sites() {
   const { can } = useAuth();
   const isAdmin = can("VIEW_ADMIN");
+  const navigate = useNavigate();
 
   const [sites, setSites] = useState([]);
   const [audits, setAudits] = useState([]);
@@ -255,7 +258,7 @@ export default function Sites() {
                       <tr
                         key={site.id}
                         className="hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => setSelectedSite(site)}
+                        onClick={() => navigate(`${createPageUrl("SiteDetail")}?id=${site.site_id}`)}
                       >
                         <td className="px-5 py-3.5">
                           <div className="font-medium text-gray-900">{site.site_name}</div>

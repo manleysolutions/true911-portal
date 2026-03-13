@@ -81,6 +81,7 @@ import SimManagement from './pages/SimManagement';
 import SiteImport from './pages/SiteImport';
 import DeviceAssignment from './pages/DeviceAssignment';
 import SiteOnboarding from './pages/SiteOnboarding';
+import SiteDetail from './pages/SiteDetail';
 import __Layout from './Layout.jsx';
 
 
@@ -119,6 +120,7 @@ export const PAGES = {
     "SiteImport": SiteImport,
     "DeviceAssignment": DeviceAssignment,
     "SiteOnboarding": SiteOnboarding,
+    "SiteDetail": SiteDetail,
 }
 
 export const pagesConfig = {
