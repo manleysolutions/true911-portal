@@ -77,6 +77,7 @@ class SiteOut(BaseModel):
     uptime_percent: Optional[float] = None
     update_channel: Optional[str] = None
     computed_status: Optional[str] = None
+    health_status: Optional[str] = None
 
     @computed_field
     @property

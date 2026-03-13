@@ -56,6 +56,7 @@ import BulkDeploy from './pages/BulkDeploy';
 import Command from './pages/Command';
 import CommandSite from './pages/CommandSite';
 import Containers from './pages/Containers';
+import Customers from './pages/Customers';
 import Devices from './pages/Devices';
 import DeploymentMap from './pages/DeploymentMap';
 import E911 from './pages/E911';
@@ -76,7 +77,9 @@ import Sites from './pages/Sites';
 import SyncStatus from './pages/SyncStatus';
 import NetworkDashboard from './pages/NetworkDashboard';
 import AutoOps from './pages/AutoOps';
+import SimManagement from './pages/SimManagement';
 import SiteImport from './pages/SiteImport';
+import DeviceAssignment from './pages/DeviceAssignment';
 import __Layout from './Layout.jsx';
 
 
@@ -90,6 +93,7 @@ export const PAGES = {
     "Command": Command,
     "CommandSite": CommandSite,
     "Containers": Containers,
+    "Customers": Customers,
     "Devices": Devices,
     "DeploymentMap": DeploymentMap,
     "E911": E911,
@@ -110,7 +114,9 @@ export const PAGES = {
     "SyncStatus": SyncStatus,
     "NetworkDashboard": NetworkDashboard,
     "AutoOps": AutoOps,
+    "SimManagement": SimManagement,
     "SiteImport": SiteImport,
+    "DeviceAssignment": DeviceAssignment,
 }
 
 export const pagesConfig = {

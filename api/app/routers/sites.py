@@ -13,6 +13,7 @@ from app.services.continuity import (
     compute_device_computed_status,
     compute_site_computed_status,
 )
+from app.services.health_scoring import compute_device_health, compute_site_health
 from app.services.geocoding import geocode_address, has_valid_coords
 
 router = APIRouter()
@@ -83,6 +84,17 @@ async def list_sites(
             for d in site_devices
         ]
         site_out.computed_status = compute_site_computed_status(device_statuses)
+        device_healths = [
+            compute_device_health(
+                last_heartbeat=d.last_heartbeat,
+                heartbeat_interval=d.heartbeat_interval,
+                network_status=d.network_status,
+                last_network_event=d.last_network_event,
+                device_status=d.status,
+            )
+            for d in site_devices
+        ]
+        site_out.health_status = compute_site_health(device_healths)
         out.append(site_out)
     return out
 

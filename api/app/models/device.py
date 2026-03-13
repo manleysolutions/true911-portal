@@ -49,3 +49,4 @@ class Device(Base):
     network_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     data_usage_mb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     last_network_event: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    telemetry_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)

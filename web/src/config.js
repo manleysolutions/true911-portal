@@ -15,6 +15,9 @@ export const config = {
   appMode: import.meta.env.VITE_APP_MODE || "production",
   /** Feature flag: show AI / Samantha nav item. */
   featureSamantha: import.meta.env.VITE_FEATURE_SAMANTHA === "true",
+  /** Feature flag: enable carrier write operations (activate/suspend/resume SIMs via carrier API).
+   *  Default OFF — these actions only update local DB status until carrier APIs are wired. */
+  featureCarrierWriteOps: import.meta.env.VITE_FEATURE_CARRIER_WRITE_OPS === "true",
 };
 
 export const isDemo = config.appMode === "demo";

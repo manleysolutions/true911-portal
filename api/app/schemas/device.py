@@ -37,6 +37,12 @@ class DeviceOut(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     computed_status: Optional[str] = None
+    network_status: Optional[str] = None
+    data_usage_mb: Optional[float] = None
+    last_network_event: Optional[datetime] = None
+    health_status: Optional[str] = None
+    signal_dbm: Optional[float] = None
+    telemetry_source: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

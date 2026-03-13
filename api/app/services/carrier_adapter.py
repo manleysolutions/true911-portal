@@ -159,6 +159,7 @@ async def ingest_carrier_telemetry(
     device.network_status = telemetry.network_status
     device.data_usage_mb = telemetry.data_usage_mb
     device.last_network_event = now
+    device.telemetry_source = f"{telemetry.carrier}_carrier"
 
     # Store telemetry sample
     ct = CommandTelemetry(
@@ -167,6 +168,7 @@ async def ingest_carrier_telemetry(
         site_id=device.site_id,
         signal_strength=telemetry.signal_dbm,
         metadata_json=json.dumps({
+            "source": f"{telemetry.carrier}_carrier",
             "carrier": telemetry.carrier,
             "network_status": telemetry.network_status,
             "roaming": telemetry.roaming,

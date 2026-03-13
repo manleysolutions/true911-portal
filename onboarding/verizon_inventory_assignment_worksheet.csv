@@ -1,0 +1,5 @@
+iccid,imei,msisdn,customer_name,site_name,e911_street,e911_city,e911_state,e911_zip,system_type,notes
+8901260882310000001,353456789012345,2145551001,R&R Technologies,100 Main St Elevator,100 Main St,Dallas,TX,75201,elevator_phone,Floor 1
+8901260882310000002,353456789012346,2145551002,R&R Technologies,200 Oak Ave FACP,200 Oak Ave,Dallas,TX,75201,fire_alarm,Main panel
+8901260882310000003,353456789012347,5125551001,Benson Systems,300 Elm St Elevator,300 Elm St,Austin,TX,78701,elevator_phone,Lobby
+8901260882310000004,353456789012348,5125551002,Benson Systems,400 Pine Rd FACP,400 Pine Rd,Austin,TX,78701,fire_alarm,Bldg A

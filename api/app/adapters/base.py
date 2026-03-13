@@ -16,8 +16,16 @@ DEVICE_WRITABLE_FIELDS: frozenset[str] = frozenset({
 # These end up in Event.metadata_json / TelemetryEvent.raw_json only.
 METADATA_KEYS: frozenset[str] = frozenset({
     "signal_dbm",
+    "signal_rssi",
+    "signal_sinr",
+    "signal_rsrq",
     "ip_address",
     "uptime_seconds",
+    "sip_status",
+    "carrier_id",
+    "network_type",
+    "connection_status",
+    "board_temp_c",
 })
 
 

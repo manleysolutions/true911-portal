@@ -38,6 +38,7 @@ async def list_sims(
     limit: int = Query(100, le=500),
     carrier: str | None = None,
     status_filter: str | None = Query(None, alias="status"),
+    unassigned: bool | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -46,6 +47,9 @@ async def list_sims(
         q = q.where(Sim.carrier == carrier)
     if status_filter:
         q = q.where(Sim.status == status_filter)
+    if unassigned:
+        active_link = select(DeviceSim.sim_id).where(DeviceSim.active == True).subquery()
+        q = q.where(~Sim.id.in_(select(active_link)))
     q = apply_sort(q, Sim, sort)
     q = q.limit(limit)
     result = await db.execute(q)

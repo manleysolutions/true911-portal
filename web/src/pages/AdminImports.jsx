@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, FileSpreadsheet, Upload, Building2, Cpu, Users, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet, Upload, Building2, Cpu, Users, ClipboardCheck, LinkIcon } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { createPageUrl } from "@/utils";
@@ -80,6 +80,29 @@ export default function AdminImports() {
               One row per site, no device or vendor data.
             </p>
             <div className="flex flex-wrap gap-1.5">
+              <ImportBadge icon={Building2} label="Sites" />
+            </div>
+          </Link>
+          {/* Bulk Device Assignment */}
+          <Link
+            to={createPageUrl("DeviceAssignment")}
+            className="bg-white border border-gray-200 rounded-xl p-5 hover:border-amber-300 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center group-hover:bg-amber-100 transition-colors">
+                <LinkIcon className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Device Assignment</h3>
+                <p className="text-xs text-gray-500">Bulk device-to-site mapping</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-600 mb-3">
+              Assign Verizon-synced devices to customer sites in bulk using a CSV worksheet.
+              Match by ICCID, IMEI, or MSISDN.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <ImportBadge icon={Cpu} label="Devices" />
               <ImportBadge icon={Building2} label="Sites" />
             </div>
           </Link>

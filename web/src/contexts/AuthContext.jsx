@@ -41,6 +41,8 @@ const PERMISSIONS = {
   ROTATE_DEVICE_KEY: ["Admin"],
   MANAGE_USERS: ["Admin"],
   MANAGE_SIMS: ["Admin"],
+  MANAGE_CUSTOMERS: ["Admin"],
+  VIEW_CUSTOMERS: ["Admin", "Manager"],
   VIEW_JOBS: ["Admin", "Manager"],
   MANAGE_INTEGRATIONS: ["Admin"],
   VIEW_INTEGRATIONS: ["Admin", "Manager"],

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Device, Site, HardwareModel } from "@/api/entities";
 import { apiFetch } from "@/api/client";
-import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check, Pencil, Trash2 } from "lucide-react";
+import { Cpu, RefreshCw, Search, Plus, X, CheckCircle2, Radio, KeyRound, Copy, Check, Pencil, Trash2, Loader2, Link2, Unlink } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
 import { useAuth } from "@/contexts/AuthContext";
@@ -131,6 +131,157 @@ function identityTypeForModel(hwModelId) {
   if (ATA_MODELS.has(hwModelId)) return "ata";
   if (hwModelId) return "cellular";
   return "";
+}
+
+/* ── Assigned SIMs panel (shown inside edit modal) ── */
+function DeviceSimPanel({ deviceId }) {
+  const { can } = useAuth();
+  const [sims, setSims] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [unassigning, setUnassigning] = useState(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [availableSims, setAvailableSims] = useState([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [selectedSimId, setSelectedSimId] = useState("");
+
+  const fetchSims = useCallback(async () => {
+    try {
+      const data = await apiFetch(`/devices/${deviceId}/sims`);
+      setSims(data);
+    } catch { /* silently fail — endpoint may not exist yet */ }
+    setLoading(false);
+  }, [deviceId]);
+
+  useEffect(() => { fetchSims(); }, [fetchSims]);
+
+  const handleUnassign = async (simId) => {
+    setUnassigning(simId);
+    try {
+      await apiFetch(`/sims/${simId}/unassign`, { method: "POST" });
+      toast.success("SIM unassigned");
+      fetchSims();
+    } catch (err) {
+      toast.error(err?.message || "Failed to unassign SIM");
+    }
+    setUnassigning(null);
+  };
+
+  const handleOpenPicker = async () => {
+    setShowPicker(true);
+    setPickerLoading(true);
+    try {
+      const data = await apiFetch("/sims?unassigned=true&limit=200");
+      setAvailableSims(data);
+    } catch {
+      setAvailableSims([]);
+    }
+    setPickerLoading(false);
+  };
+
+  const handleAssign = async () => {
+    if (!selectedSimId) return;
+    setAssigning(true);
+    try {
+      await apiFetch(`/sims/${selectedSimId}/assign`, {
+        method: "POST",
+        body: JSON.stringify({ device_id: deviceId, slot: 1 }),
+      });
+      toast.success("SIM assigned to device");
+      setShowPicker(false);
+      setSelectedSimId("");
+      fetchSims();
+    } catch (err) {
+      toast.error(err?.message || "Failed to assign SIM");
+    }
+    setAssigning(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+        <Loader2 className="w-3 h-3 animate-spin" /> Loading SIMs...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {sims.map(s => (
+        <div key={s.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+          <div className="flex-1 min-w-0">
+            <div className="font-mono text-xs text-gray-700 truncate">{s.iccid}</div>
+            <div className="text-[10px] text-gray-500">
+              {s.carrier} {s.msisdn ? `| ${s.msisdn}` : ""} | {s.status}
+            </div>
+          </div>
+          <button
+            onClick={() => handleUnassign(s.id)}
+            disabled={unassigning === s.id}
+            className="ml-2 p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+            title="Unassign SIM"
+          >
+            {unassigning === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      ))}
+
+      {sims.length === 0 && !showPicker && (
+        <div className="text-xs text-gray-400 py-1">No SIMs assigned to this device.</div>
+      )}
+
+      {/* SIM Assign Picker */}
+      {can("MANAGE_SIMS") && !showPicker && (
+        <button
+          onClick={handleOpenPicker}
+          className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium mt-1"
+        >
+          <Link2 className="w-3 h-3" /> Link SIM
+        </button>
+      )}
+
+      {showPicker && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+          <div className="text-xs font-semibold text-gray-700">Assign a SIM</div>
+          {pickerLoading ? (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading available SIMs...
+            </div>
+          ) : availableSims.length === 0 ? (
+            <div className="text-xs text-gray-400">No unassigned SIMs available.</div>
+          ) : (
+            <select
+              value={selectedSimId}
+              onChange={e => setSelectedSimId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              <option value="">-- Select a SIM --</option>
+              {availableSims.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.iccid} ({s.carrier}{s.msisdn ? ` | ${s.msisdn}` : ""})
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowPicker(false); setSelectedSimId(""); }}
+              className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAssign}
+              disabled={!selectedSimId || assigning}
+              className="px-3 py-1.5 text-xs text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-lg font-medium"
+            >
+              {assigning ? "Assigning..." : "Assign"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ── Device form modal (create or edit) ── */
@@ -457,6 +608,16 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
             />
           </div>
 
+          {/* Assigned SIMs (edit mode only) */}
+          {isEdit && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                <span className="flex items-center gap-1"><Link2 className="w-3 h-3" /> Assigned SIMs</span>
+              </label>
+              <DeviceSimPanel deviceId={editDevice.id} />
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">{error}</div>
           )}
@@ -614,6 +775,7 @@ export default function Devices() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Serial</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Identifier</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Carrier</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Health</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Last HB</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-24">Actions</th>
@@ -649,6 +811,9 @@ export default function Devices() {
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.serial_number || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{idLabel || "\u2014"}</td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{d.carrier || "\u2014"}</td>
+                    <td className="px-4 py-2.5">
+                      <HealthBadge health={d.health_status} signal={d.signal_dbm} networkStatus={d.network_status} source={d.telemetry_source} />
+                    </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[d.status] || STATUS_BADGE.inactive}`}>
                         {d.status}
@@ -738,5 +903,47 @@ export default function Devices() {
         />
       )}
     </PageWrapper>
+  );
+}
+
+const HEALTH_STYLES = {
+  healthy:  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  warning:  "bg-amber-50 text-amber-700 border-amber-200",
+  critical: "bg-red-50 text-red-700 border-red-200",
+  unknown:  "bg-gray-100 text-gray-500 border-gray-200",
+};
+
+const HEALTH_DOT = {
+  healthy: "bg-emerald-500",
+  warning: "bg-amber-500",
+  critical: "bg-red-500",
+  unknown: "bg-gray-400",
+};
+
+const SOURCE_LABELS = {
+  pr12_heartbeat: "PR12",
+  inseego_heartbeat: "Inseego",
+  device_heartbeat: "Device",
+  verizon_carrier: "Verizon API",
+  "t-mobile_carrier": "T-Mobile API",
+  att_carrier: "AT&T API",
+};
+
+function HealthBadge({ health, signal, networkStatus, source }) {
+  const h = health || "unknown";
+  const parts = [h];
+  if (signal != null) parts.push(`${signal} dBm`);
+  if (networkStatus) parts.push(networkStatus);
+  if (source) parts.push(`via ${SOURCE_LABELS[source] || source}`);
+  const title = parts.join(" | ");
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${HEALTH_STYLES[h] || HEALTH_STYLES.unknown}`}
+      title={title}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${HEALTH_DOT[h] || HEALTH_DOT.unknown}`} />
+      {h}
+    </span>
   );
 }

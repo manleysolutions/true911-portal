@@ -1,0 +1,3 @@
+site_name,customer_name,e911_street,e911_city,e911_state,e911_zip,system_type,device_serial,device_model,carrier,sim_iccid,phone_number,poc_name,poc_phone,poc_email,notes
+"100 Main St Elevator","R&R Technologies","100 Main St","Dallas","TX","75201","elevator_phone","SN-001","cradlepoint-ibr600c","verizon","8901260882310000001","2145551001","John Smith","2145559000","jsmith@rrtechnologies.com","Floor 1 elevator"
+"200 Oak Ave FACP","R&R Technologies","200 Oak Ave","Austin","TX","78701","fire_alarm","SN-002","cradlepoint-ibr600c","verizon","8901260882310000002","5125551002","Jane Doe","5125559001","jdoe@rrtechnologies.com","Main fire panel"

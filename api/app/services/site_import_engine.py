@@ -33,7 +33,7 @@ REQUIRED_COLUMNS = {"site_name", "system_type"}
 # Accept Zoho aliases for site_name
 SITE_NAME_ALIASES = {"location_name", "customer_name", "subscription_id"}
 ALL_COLUMNS = {
-    "site_name", "site_code", "address", "city", "state", "zip", "country",
+    "site_name", "customer_name", "site_code", "address", "city", "state", "zip", "country",
     "building_type", "floors", "elevator_count",
     "system_type", "device_type", "device_model", "carrier",
     "sim_iccid", "phone_number", "device_serial", "firmware_version",
@@ -533,7 +533,7 @@ async def commit_import(
 def generate_template_csv() -> str:
     """Return a CSV template string with headers and one example row."""
     headers = [
-        "site_name", "site_code", "address", "city", "state", "zip", "country",
+        "site_name", "customer_name", "site_code", "address", "city", "state", "zip", "country",
         "building_type", "floors", "elevator_count",
         "system_type", "device_type", "device_model", "carrier",
         "sim_iccid", "phone_number", "device_serial", "firmware_version",
@@ -546,7 +546,7 @@ def generate_template_csv() -> str:
         "e911_confirmed",
     ]
     example_1 = [
-        "RH Gallery Dallas", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
+        "RH Gallery Dallas", "R&R Technologies", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
         "retail", "3", "2",
         "elevator_phone", "Cellular Communicator", "MS130v4", "T-Mobile",
         "8901260882280000001", "+12145559001", "MS130-SN-00001", "4.2.1",
@@ -559,7 +559,7 @@ def generate_template_csv() -> str:
         "yes",
     ]
     example_2 = [
-        "RH Gallery Dallas", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
+        "RH Gallery Dallas", "R&R Technologies", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
         "retail", "3", "",
         "fire_alarm_communicator", "Cellular Communicator", "Napco StarLink", "T-Mobile",
         "8901260882280000002", "+12145559002", "SL-SN-00001", "3.8.0",

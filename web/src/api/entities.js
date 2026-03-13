@@ -76,3 +76,5 @@ export const Recording = makeEntity("/recordings");
 export const Event = makeEntity("/events");
 export const Provider = makeEntity("/providers");
 export const HardwareModel = makeEntity("/hardware-models");
+export const Customer = makeEntity("/customers");
+export const Sim = makeEntity("/sims");

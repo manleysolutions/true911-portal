@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site, TelemetryEvent, Device, Line, Event as EventEntity, Provider } from "@/api/entities";
-import { Building2, Wifi, WifiOff, AlertTriangle, HelpCircle, RefreshCw, Bell, TrendingUp, Rocket, Cpu, Phone, Activity, Link2, ChevronRight } from "lucide-react";
+import { apiFetch } from "@/api/client";
+import { Building2, Wifi, WifiOff, AlertTriangle, HelpCircle, RefreshCw, Bell, TrendingUp, Rocket, Cpu, Phone, Activity, Link2, ChevronRight, HeartPulse, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import PageWrapper from "@/components/PageWrapper";
@@ -63,6 +64,8 @@ export default function Overview() {
   const [selectedSite, setSelectedSite] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [triageFilter, setTriageFilter] = useState(null);
+  const [customerFilter, setCustomerFilter] = useState("");
+  const [healthSummary, setHealthSummary] = useState(null);
 
   const fetchData = useCallback(async () => {
     const [sitesData, eventsData, devData, lineData, eventData, provData] = await Promise.all([
@@ -79,6 +82,7 @@ export default function Overview() {
     setLines(lineData);
     setEvents(eventData);
     setProviders(provData);
+    apiFetch("/devices/health-summary").then(setHealthSummary).catch(() => {});
     setLastRefresh(new Date());
     setLoading(false);
   }, []);
@@ -89,16 +93,24 @@ export default function Overview() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const customerNames = [...new Set(sites.map(s => s.customer_name).filter(Boolean))].sort();
+  const filteredSites = customerFilter
+    ? sites.filter(s => s.customer_name === customerFilter)
+    : sites;
+  const filteredSiteIds = new Set(filteredSites.map(s => s.site_id));
+
   const counts = {
-    total: sites.length,
-    connected: sites.filter(s => s.status === "Connected").length,
-    attention: sites.filter(s => s.status === "Attention Needed").length,
-    notConnected: sites.filter(s => s.status === "Not Connected").length,
-    unknown: sites.filter(s => s.status === "Unknown").length,
+    total: filteredSites.length,
+    connected: filteredSites.filter(s => s.status === "Connected").length,
+    attention: filteredSites.filter(s => s.status === "Attention Needed").length,
+    notConnected: filteredSites.filter(s => s.status === "Not Connected").length,
+    unknown: filteredSites.filter(s => s.status === "Unknown").length,
   };
 
   const uptimePct = counts.total > 0 ? Math.round((counts.connected / counts.total) * 100) : 0;
   const siteById = Object.fromEntries(sites.map(s => [s.site_id, s]));
+  const filteredDevices = customerFilter ? devices.filter(d => filteredSiteIds.has(d.site_id)) : devices;
+  const filteredLines = customerFilter ? lines.filter(l => filteredSiteIds.has(l.site_id)) : lines;
 
   if (loading) {
     return (
@@ -123,6 +135,16 @@ export default function Overview() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {customerNames.length > 0 && (
+              <select
+                value={customerFilter}
+                onChange={e => setCustomerFilter(e.target.value)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs"
+              >
+                <option value="">All Customers</option>
+                {customerNames.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
             <span className="text-xs text-gray-400 hidden sm:block">Updated {timeSince(lastRefresh.toISOString())}</span>
             <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
               <RefreshCw className="w-4 h-4" />
@@ -186,16 +208,49 @@ export default function Overview() {
 
         {/* Secondary KPIs */}
         <div className="grid grid-cols-3 gap-3">
-          <KPICard label="Devices" value={devices.length} icon={Cpu}
+          <KPICard label="Devices" value={filteredDevices.length} icon={Cpu}
             colorClass="bg-blue-100 text-blue-700" borderClass="border-blue-200"
-            sub={`${devices.filter(d => d.status === "active").length} active`} />
-          <KPICard label="Voice Lines" value={lines.length} icon={Phone}
+            sub={`${filteredDevices.filter(d => d.status === "active").length} active`} />
+          <KPICard label="Voice Lines" value={filteredLines.length} icon={Phone}
             colorClass="bg-purple-100 text-purple-700" borderClass="border-purple-200"
-            sub={`${lines.filter(l => l.status === "active").length} active`} />
+            sub={`${filteredLines.filter(l => l.status === "active").length} active`} />
           <KPICard label="Critical Events" value={events.length} icon={Activity}
             colorClass="bg-red-100 text-red-700" borderClass="border-red-200"
             sub="Last 24h" />
         </div>
+
+        {/* Device Health Summary */}
+        {healthSummary && healthSummary.total > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <HeartPulse className="w-4 h-4 text-red-600" />
+              <h3 className="text-sm font-semibold text-gray-900">Device Health</h3>
+              <span className="text-xs text-gray-400 ml-auto">{healthSummary.total} devices</span>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="text-center p-2.5 rounded-lg bg-emerald-50">
+                <ShieldCheck className="w-4 h-4 mx-auto mb-1 text-emerald-600" />
+                <p className="text-xl font-bold text-emerald-700">{healthSummary.healthy}</p>
+                <p className="text-[10px] text-emerald-600 uppercase">Healthy</p>
+              </div>
+              <div className="text-center p-2.5 rounded-lg bg-amber-50">
+                <AlertTriangle className="w-4 h-4 mx-auto mb-1 text-amber-600" />
+                <p className="text-xl font-bold text-amber-700">{healthSummary.warning}</p>
+                <p className="text-[10px] text-amber-600 uppercase">Warning</p>
+              </div>
+              <div className="text-center p-2.5 rounded-lg bg-red-50">
+                <ShieldAlert className="w-4 h-4 mx-auto mb-1 text-red-600" />
+                <p className="text-xl font-bold text-red-700">{healthSummary.critical}</p>
+                <p className="text-[10px] text-red-600 uppercase">Critical</p>
+              </div>
+              <div className="text-center p-2.5 rounded-lg bg-gray-50">
+                <ShieldQuestion className="w-4 h-4 mx-auto mb-1 text-gray-500" />
+                <p className="text-xl font-bold text-gray-600">{healthSummary.unknown}</p>
+                <p className="text-[10px] text-gray-500 uppercase">Unknown</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Integration Status */}
         {providers.length > 0 && (
@@ -269,7 +324,7 @@ export default function Overview() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Triage Queue — 2/3 width */}
           <div className="lg:col-span-2">
-            <TriageQueue sites={sites} onOpenSite={setSelectedSite} defaultTab={triageFilter} />
+            <TriageQueue sites={filteredSites} onOpenSite={setSelectedSite} defaultTab={triageFilter} />
           </div>
 
           {/* Right column */}

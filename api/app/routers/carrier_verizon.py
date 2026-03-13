@@ -9,6 +9,7 @@ Provides:
 """
 
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,6 +18,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.device import Device
+from app.models.device_sim import DeviceSim
+from app.models.event import Event
 from app.models.sim import Sim
 from app.models.user import User
 from app.services.verizon_thingspace import (
@@ -91,6 +95,9 @@ class SyncResult(BaseModel):
     total_fetched: int
     tenant_id: str
     details: list[dict]
+    devices_created: int = 0
+    devices_linked: int = 0
+    carrier_set: int = 0
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -433,16 +440,192 @@ async def sync_verizon_devices(
                 )
                 db.add(new_sim)
 
+    # ── Phase 2: Auto-create devices and link DeviceSim records ──────
+    devices_created = 0
+    devices_linked = 0
+    carrier_set = 0
+
     if not dry_run:
+        # Flush SIM inserts so we can reference their .id values
+        await db.flush()
+
+        # Reload all SIMs for this tenant that have an ICCID in this batch
+        sim_result = await db.execute(
+            select(Sim).where(
+                Sim.tenant_id == tenant_id,
+                Sim.iccid.in_(incoming_iccids),
+            )
+        )
+        sims_by_iccid: dict[str, Sim] = {
+            s.iccid: s for s in sim_result.scalars().all()
+        }
+
+        # Build a lookup of normalized data keyed by ICCID for IMEI access
+        norm_by_iccid: dict[str, dict] = {
+            d["iccid"]: d for d in normalized if d.get("iccid")
+        }
+
+        # Pre-load existing devices by IMEI for this tenant
+        incoming_imeis = {
+            d["imei"] for d in normalized if d.get("imei")
+        }
+        existing_devices_by_imei: dict[str, Device] = {}
+        if incoming_imeis:
+            dev_result = await db.execute(
+                select(Device).where(
+                    Device.tenant_id == tenant_id,
+                    Device.imei.in_(incoming_imeis),
+                )
+            )
+            for dev in dev_result.scalars().all():
+                if dev.imei:
+                    existing_devices_by_imei[dev.imei] = dev
+
+        # Pre-load existing active DeviceSim links for the SIMs in this batch
+        sim_ids_in_batch = [s.id for s in sims_by_iccid.values()]
+        existing_links: set[tuple[int, int]] = set()  # (device.id, sim.id)
+        if sim_ids_in_batch:
+            link_result = await db.execute(
+                select(DeviceSim).where(
+                    DeviceSim.sim_id.in_(sim_ids_in_batch),
+                    DeviceSim.active == True,
+                )
+            )
+            for link in link_result.scalars().all():
+                existing_links.add((link.device_id, link.sim_id))
+
+        for iccid, sim in sims_by_iccid.items():
+            norm = norm_by_iccid.get(iccid)
+            if not norm:
+                continue
+            imei = norm.get("imei")
+            if not imei:
+                continue
+
+            # Find or create Device
+            device = existing_devices_by_imei.get(imei)
+            if not device:
+                device_id = f"VZ-{uuid.uuid4().hex[:8].upper()}"
+                device = Device(
+                    device_id=device_id,
+                    tenant_id=tenant_id,
+                    status="provisioning",
+                    device_type="Cellular Gateway",
+                    identifier_type="cellular",
+                    imei=imei,
+                    iccid=sim.iccid,
+                    msisdn=sim.msisdn,
+                    carrier="verizon",
+                )
+                db.add(device)
+                await db.flush()  # get device.id
+                existing_devices_by_imei[imei] = device
+                devices_created += 1
+            else:
+                # Set carrier if empty
+                if not device.carrier:
+                    device.carrier = "verizon"
+                    carrier_set += 1
+                elif device.carrier.lower() != "verizon":
+                    # Don't overwrite existing non-verizon carrier; report it
+                    details.append({
+                        "action": "carrier_mismatch",
+                        "device_id": device.device_id,
+                        "imei": imei,
+                        "existing_carrier": device.carrier,
+                        "verizon_iccid": iccid,
+                    })
+
+            # Create DeviceSim link if not already linked
+            if (device.id, sim.id) not in existing_links:
+                link = DeviceSim(
+                    device_id=device.id,
+                    sim_id=sim.id,
+                    slot=1,
+                    active=True,
+                    assigned_by="verizon-sync",
+                )
+                db.add(link)
+                existing_links.add((device.id, sim.id))
+                devices_linked += 1
+
         await db.commit()
+    else:
+        # Dry-run: estimate device creation / linking
+        for device_data in normalized:
+            imei = device_data.get("imei")
+            iccid = device_data.get("iccid")
+            if not imei or not iccid:
+                continue
+            # Check if device with this IMEI exists
+            dev_result = await db.execute(
+                select(Device.id, Device.carrier).where(
+                    Device.tenant_id == tenant_id,
+                    Device.imei == imei,
+                )
+            )
+            row = dev_result.first()
+            if not row:
+                devices_created += 1
+                devices_linked += 1
+            else:
+                if not row.carrier:
+                    carrier_set += 1
+                # Check if link already exists
+                sim_result = await db.execute(
+                    select(Sim.id).where(
+                        Sim.tenant_id == tenant_id,
+                        Sim.iccid == iccid,
+                    )
+                )
+                sim_row = sim_result.first()
+                if sim_row:
+                    link_result = await db.execute(
+                        select(DeviceSim.id).where(
+                            DeviceSim.device_id == row.id,
+                            DeviceSim.sim_id == sim_row.id,
+                            DeviceSim.active == True,
+                        )
+                    )
+                    if not link_result.first():
+                        devices_linked += 1
 
     logger.info(
         "Verizon sync %s: tenant=%s fetched=%d created=%d updated=%d "
-        "unchanged=%d skipped=%d conflicts=%d",
+        "unchanged=%d skipped=%d conflicts=%d devices_created=%d "
+        "devices_linked=%d carrier_set=%d",
         "DRY-RUN" if dry_run else "LIVE",
         tenant_id, len(normalized), created, updated, unchanged,
-        skipped, len(conflicts),
+        skipped, len(conflicts), devices_created, devices_linked,
+        carrier_set,
     )
+
+    # Emit audit event for sync run
+    sync_event = Event(
+        event_id=f"evt-vzsync-{uuid.uuid4().hex[:12]}",
+        tenant_id=tenant_id,
+        event_type="integration.verizon_sync",
+        severity="info",
+        message=(
+            f"Verizon sync {'preview' if dry_run else 'live'}: "
+            f"{created} created, {updated} updated, {skipped} skipped"
+        ),
+        metadata_json={
+            "mode": "preview" if dry_run else "live",
+            "total_fetched": len(normalized),
+            "sims_created": created,
+            "sims_updated": updated,
+            "unchanged": unchanged,
+            "skipped": skipped,
+            "conflicts": len(conflicts),
+            "devices_created": devices_created,
+            "devices_linked": devices_linked,
+            "carrier_set": carrier_set,
+            "initiated_by": current_user.email,
+        },
+    )
+    db.add(sync_event)
+    await db.commit()
 
     return SyncResult(
         dry_run=dry_run,
@@ -454,7 +637,66 @@ async def sync_verizon_devices(
         total_fetched=len(normalized),
         tenant_id=tenant_id,
         details=details[:100],
+        devices_created=devices_created,
+        devices_linked=devices_linked,
+        carrier_set=carrier_set,
     )
+
+
+@router.get(
+    "/sync-history",
+    dependencies=[Depends(require_permission("MANAGE_INTEGRATIONS"))],
+)
+async def verizon_sync_history(
+    limit: int = Query(10, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return recent Verizon sync events for operational visibility."""
+    result = await db.execute(
+        select(Event)
+        .where(
+            Event.tenant_id == current_user.tenant_id,
+            Event.event_type == "integration.verizon_sync",
+        )
+        .order_by(Event.created_at.desc())
+        .limit(limit)
+    )
+    events = result.scalars().all()
+    return [
+        {
+            "id": e.id,
+            "event_id": e.event_id,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+            "message": e.message,
+            "metadata": e.metadata_json,
+        }
+        for e in events
+    ]
+
+
+# ── Telemetry Poll ──────────────────────────────────────────────────────────
+
+@router.post(
+    "/poll-telemetry",
+    dependencies=[Depends(require_permission("MANAGE_INTEGRATIONS"))],
+)
+async def poll_verizon_telemetry_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch latest device state from Verizon and update telemetry.
+
+    This re-reads the Verizon inventory and pushes activation_status,
+    usage, and last_seen through the carrier telemetry pipeline for
+    every Verizon device belonging to the current tenant.
+    """
+    from app.services.telemetry_poller import poll_verizon_telemetry
+
+    result = await poll_verizon_telemetry(
+        db, current_user.tenant_id, current_user.email,
+    )
+    return result
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

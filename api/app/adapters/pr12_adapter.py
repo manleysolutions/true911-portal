@@ -52,6 +52,21 @@ _KEY_MAP: dict[str, str] = {
     "uptime": "uptime_seconds",
     "uptime_sec": "uptime_seconds",
     "uptime_seconds": "uptime_seconds",
+    # SIP / voice registration
+    "sip_status": "sip_status",
+    "sip_registered": "sip_status",
+    "sip_reg_status": "sip_status",
+    # carrier / network
+    "carrier_id": "carrier_id",
+    "network_type": "network_type",
+    "connection_status": "connection_status",
+    # temperature
+    "board_temp_c": "board_temp_c",
+    "temperature_c": "board_temp_c",
+    # secondary signal metrics (stored in metadata for diagnostics)
+    "rssi": "signal_rssi",
+    "sinr": "signal_sinr",
+    "rsrq": "signal_rsrq",
 }
 
 

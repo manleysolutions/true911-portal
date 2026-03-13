@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { Site, Device, Line, Event, HardwareModel } from "@/api/entities";
-import { Rocket, Building2, Cpu, Phone, MapPin, Bell, CheckCircle2, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
+import { apiFetch } from "@/api/client";
+import { Rocket, Building2, Cpu, Phone, MapPin, Bell, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Radio, Wifi, WifiOff, Play } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-const STEPS = [
+const BASE_STEPS = [
   { key: "site", label: "Site", icon: Building2, desc: "Customer location" },
   { key: "device", label: "Device", icon: Cpu, desc: "Edge hardware" },
+  { key: "verizon", label: "Verizon", icon: Radio, desc: "Carrier sync", optional: true },
   { key: "line", label: "Line", icon: Phone, desc: "Voice line / DID" },
   { key: "e911", label: "E911", icon: MapPin, desc: "Emergency address" },
   { key: "alerts", label: "Alerts", icon: Bell, desc: "Notification rules" },
@@ -238,6 +240,118 @@ function StepDevice({ data, setData, hardwareModels }) {
   );
 }
 
+function StepVerizon({ data, setData }) {
+  const [vzStatus, setVzStatus] = useState(null); // null=loading, object=result
+  const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/carriers/verizon/config")
+      .then(cfg => setVzStatus({ configured: true, ...cfg }))
+      .catch(() => setVzStatus({ configured: false }));
+  }, []);
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      const res = await apiFetch("/carriers/verizon/test-connection", { method: "POST" });
+      setVzStatus(s => ({ ...s, connected: res.success }));
+    } catch {
+      setVzStatus(s => ({ ...s, connected: false }));
+    }
+    setTesting(false);
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await apiFetch("/carriers/verizon/sync", { method: "POST" });
+      setSyncResult(res);
+    } catch (err) {
+      setSyncResult({ error: err?.message || "Sync failed" });
+    }
+    setSyncing(false);
+  };
+
+  if (vzStatus === null) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-lg font-bold text-gray-900">Verizon Carrier Sync</h2>
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <Loader2 className="w-4 h-4 animate-spin" /> Checking Verizon configuration...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-900">Verizon Carrier Sync</h2>
+      <p className="text-sm text-gray-500">
+        {vzStatus.configured
+          ? "Verizon ThingSpace is configured. Test the connection and optionally sync devices & SIMs."
+          : "Verizon ThingSpace is not configured. You can skip this step and configure it later in Integration Sync."}
+      </p>
+
+      {/* Config Status */}
+      <div className={`flex items-center gap-3 p-3 rounded-xl border ${vzStatus.configured ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}>
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${vzStatus.configured ? "bg-emerald-100" : "bg-gray-200"}`}>
+          {vzStatus.configured ? <Wifi className="w-4 h-4 text-emerald-600" /> : <WifiOff className="w-4 h-4 text-gray-400" />}
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-gray-900">{vzStatus.configured ? "Configured" : "Not Configured"}</div>
+          <div className="text-xs text-gray-500">{vzStatus.configured ? "API credentials are set" : "Set up in Integration Sync page"}</div>
+        </div>
+        {vzStatus.configured && (
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-white transition-colors"
+          >
+            {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : "Test Connection"}
+          </button>
+        )}
+      </div>
+
+      {vzStatus.connected !== undefined && (
+        <div className={`text-xs px-3 py-2 rounded-lg ${vzStatus.connected ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+          {vzStatus.connected ? "Connection successful" : "Connection failed — check credentials in Integration Sync"}
+        </div>
+      )}
+
+      {/* Sync trigger */}
+      {vzStatus.configured && (
+        <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="text-sm font-semibold text-gray-900">Sync Devices & SIMs</div>
+          <p className="text-xs text-gray-500">
+            Pull devices and SIMs from Verizon ThingSpace. This will create new devices and link SIMs automatically.
+          </p>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-xl"
+          >
+            {syncing ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing...</> : <><Play className="w-4 h-4" /> Run Sync</>}
+          </button>
+          {syncResult && !syncResult.error && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-700">
+              Sync complete: {syncResult.sims_created ?? 0} SIMs created, {syncResult.devices_created ?? 0} devices created, {syncResult.devices_linked ?? 0} linked.
+            </div>
+          )}
+          {syncResult?.error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">{syncResult.error}</div>
+          )}
+        </div>
+      )}
+
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
+        <strong>Optional step.</strong> You can skip this and sync Verizon devices later from the Integration Sync page.
+      </div>
+    </div>
+  );
+}
+
 function StepLine({ data, setData }) {
   return (
     <div className="space-y-4">
@@ -413,6 +527,11 @@ export default function OnboardingWizard() {
   const [hardwareModels, setHardwareModels] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [vzConfigured, setVzConfigured] = useState(false);
+
+  const STEPS = vzConfigured
+    ? BASE_STEPS
+    : BASE_STEPS.filter(s => s.key !== "verizon");
 
   const fetchData = useCallback(async () => {
     const [s, hm] = await Promise.all([
@@ -421,6 +540,13 @@ export default function OnboardingWizard() {
     ]);
     setSites(s);
     setHardwareModels(hm);
+    // Check if Verizon is configured
+    try {
+      await apiFetch("/carriers/verizon/config");
+      setVzConfigured(true);
+    } catch {
+      setVzConfigured(false);
+    }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -498,14 +624,16 @@ export default function OnboardingWizard() {
     }
   };
 
-  const stepComponents = [
-    <StepSite data={data} setData={setData} existingSites={sites} />,
-    <StepDevice data={data} setData={setData} hardwareModels={hardwareModels} />,
-    <StepLine data={data} setData={setData} />,
-    <StepE911 data={data} setData={setData} />,
-    <StepAlerts data={data} setData={setData} />,
-    <StepReview data={data} existingSites={sites} />,
-  ];
+  const allStepComponents = {
+    site: <StepSite data={data} setData={setData} existingSites={sites} />,
+    device: <StepDevice data={data} setData={setData} hardwareModels={hardwareModels} />,
+    verizon: <StepVerizon data={data} setData={setData} />,
+    line: <StepLine data={data} setData={setData} />,
+    e911: <StepE911 data={data} setData={setData} />,
+    alerts: <StepAlerts data={data} setData={setData} />,
+    review: <StepReview data={data} existingSites={sites} />,
+  };
+  const stepComponents = STEPS.map(s => allStepComponents[s.key]);
 
   return (
     <PageWrapper>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload } from "lucide-react";
+import { Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut, AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug, ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { config } from "@/config";
@@ -10,8 +10,10 @@ const NAV_ITEMS = [
   { name: "Command", page: "Command", icon: ShieldCheck },
   { name: "Operator View", page: "OperatorView", icon: Building2 },
   { name: "Overview", page: "Overview", icon: LayoutDashboard },
+  { name: "Customers", page: "Customers", icon: Users, adminOnly: true },
   { name: "Sites", page: "Sites", icon: Building2 },
   { name: "Devices", page: "Devices", icon: Cpu },
+  { name: "SIMs", page: "SimManagement", icon: Disc3, adminOnly: true },
   { name: "Lines", page: "Lines", icon: Phone },
   { name: "E911", page: "E911", icon: MapPin, adminOnly: true },
   { name: "Alerts", page: "Notifications", icon: Bell, adminOnly: true },

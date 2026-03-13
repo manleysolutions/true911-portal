@@ -1,3 +1,4 @@
+import json
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -9,10 +10,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.command_telemetry import CommandTelemetry
 from app.models.device import Device
+from app.models.device_sim import DeviceSim
 from app.models.event import Event
+from app.models.sim import Sim
 from app.models.site import Site
 from app.models.user import User
+from sqlalchemy import func as sa_func
+
 from app.routers.helpers import apply_sort
 from app.schemas.device import (
     DeviceCreate,
@@ -22,7 +28,9 @@ from app.schemas.device import (
     DeviceOut,
     DeviceUpdate,
 )
+from app.schemas.sim import SimOut
 from app.services.continuity import compute_device_computed_status
+from app.services.health_scoring import compute_device_health
 
 router = APIRouter()
 
@@ -51,13 +59,80 @@ def _generate_device_key() -> tuple[str, str]:
     return raw, hashed
 
 
-def _device_out(device: Device) -> DeviceOut:
-    """Build DeviceOut with computed_status and has_api_key injected."""
+def _device_out(device: Device, snap: _TelemetrySnapshot | None = None) -> DeviceOut:
+    """Build DeviceOut with computed_status, health_status, and has_api_key."""
+    snap = snap or _TelemetrySnapshot()
     out = DeviceOut.model_validate(device)
     out.computed_status = compute_device_computed_status(
         device.last_heartbeat, device.heartbeat_interval,
     )
     out.has_api_key = device.api_key_hash is not None
+    out.health_status = compute_device_health(
+        last_heartbeat=device.last_heartbeat,
+        heartbeat_interval=device.heartbeat_interval,
+        network_status=device.network_status,
+        signal_dbm=snap.signal_dbm,
+        last_network_event=device.last_network_event,
+        device_status=device.status,
+        sip_status=snap.sip_status,
+    )
+    out.signal_dbm = snap.signal_dbm
+    out.telemetry_source = device.telemetry_source or snap.source
+    return out
+
+
+class _TelemetrySnapshot:
+    """Latest telemetry values for a device, extracted from CommandTelemetry."""
+    __slots__ = ("signal_dbm", "sip_status", "source")
+
+    def __init__(self, signal_dbm: float | None = None, sip_status: str | None = None, source: str | None = None):
+        self.signal_dbm = signal_dbm
+        self.sip_status = sip_status
+        self.source = source
+
+
+async def _latest_telemetry(
+    db: AsyncSession, tenant_id: str, device_ids: list[str],
+) -> dict[str, _TelemetrySnapshot]:
+    """Return {device_id: TelemetrySnapshot} from the most recent command_telemetry."""
+    if not device_ids:
+        return {}
+    # Subquery: max recorded_at per device
+    sub = (
+        select(
+            CommandTelemetry.device_id,
+            sa_func.max(CommandTelemetry.recorded_at).label("max_ts"),
+        )
+        .where(
+            CommandTelemetry.tenant_id == tenant_id,
+            CommandTelemetry.device_id.in_(device_ids),
+        )
+        .group_by(CommandTelemetry.device_id)
+        .subquery()
+    )
+    q = (
+        select(
+            CommandTelemetry.device_id,
+            CommandTelemetry.signal_strength,
+            CommandTelemetry.metadata_json,
+        )
+        .join(sub, (CommandTelemetry.device_id == sub.c.device_id) & (CommandTelemetry.recorded_at == sub.c.max_ts))
+        .where(CommandTelemetry.tenant_id == tenant_id)
+    )
+    result = await db.execute(q)
+    out: dict[str, _TelemetrySnapshot] = {}
+    for row in result.all():
+        meta = {}
+        if row.metadata_json:
+            try:
+                meta = json.loads(row.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        out[row.device_id] = _TelemetrySnapshot(
+            signal_dbm=row.signal_strength,
+            sip_status=meta.get("sip_status"),
+            source=meta.get("source"),
+        )
     return out
 
 
@@ -81,7 +156,41 @@ async def list_devices(
     q = apply_sort(q, Device, sort)
     q = q.limit(limit)
     result = await db.execute(q)
-    return [_device_out(r) for r in result.scalars().all()]
+    devices = result.scalars().all()
+
+    # Batch-load latest telemetry from command_telemetry
+    telem_map = await _latest_telemetry(db, current_user.tenant_id, [d.device_id for d in devices])
+
+    return [_device_out(d, telem_map.get(d.device_id)) for d in devices]
+
+
+@router.get("/health-summary")
+async def device_health_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return health status counts across all tenant devices."""
+    result = await db.execute(
+        select(Device).where(Device.tenant_id == current_user.tenant_id)
+    )
+    devices = result.scalars().all()
+    telem_map = await _latest_telemetry(db, current_user.tenant_id, [d.device_id for d in devices])
+
+    counts = {"healthy": 0, "warning": 0, "critical": 0, "unknown": 0}
+    for d in devices:
+        snap = telem_map.get(d.device_id) or _TelemetrySnapshot()
+        h = compute_device_health(
+            last_heartbeat=d.last_heartbeat,
+            heartbeat_interval=d.heartbeat_interval,
+            network_status=d.network_status,
+            signal_dbm=snap.signal_dbm,
+            last_network_event=d.last_network_event,
+            device_status=d.status,
+            sip_status=snap.sip_status,
+        )
+        counts[h] = counts.get(h, 0) + 1
+
+    return {"total": len(devices), **counts}
 
 
 @router.get("/{device_pk}", response_model=DeviceOut)
@@ -96,7 +205,8 @@ async def get_device(
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
-    return _device_out(device)
+    telem_map = await _latest_telemetry(db, current_user.tenant_id, [device.device_id])
+    return _device_out(device, telem_map.get(device.device_id))
 
 
 @router.post("", response_model=DeviceCreateOut, status_code=201)
@@ -250,3 +360,29 @@ async def device_heartbeat(
     await db.commit()
     await db.refresh(device)
     return _device_out(device)
+
+
+@router.get("/{device_pk}/sims", response_model=list[SimOut])
+async def list_device_sims(
+    device_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List active SIMs assigned to a device."""
+    result = await db.execute(
+        select(Device).where(
+            Device.id == device_pk, Device.tenant_id == current_user.tenant_id
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
+
+    sim_result = await db.execute(
+        select(Sim)
+        .join(DeviceSim, DeviceSim.sim_id == Sim.id)
+        .where(
+            DeviceSim.device_id == device_pk,
+            DeviceSim.active == True,
+        )
+    )
+    return [SimOut.model_validate(s) for s in sim_result.scalars().all()]
