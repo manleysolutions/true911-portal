@@ -42,6 +42,7 @@ from app.models.infra_test_result import InfraTestResult
 from app.models.audit_log_entry import AuditLogEntry
 from app.models.autonomous_action import AutonomousAction
 from app.models.operational_digest import OperationalDigest
+from app.models.service_unit import ServiceUnit
 
 __all__ = [
     "Tenant",
@@ -89,4 +90,5 @@ __all__ = [
     "AuditLogEntry",
     "AutonomousAction",
     "OperationalDigest",
+    "ServiceUnit",
 ]

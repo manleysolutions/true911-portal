@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2, Navigation, Crosshair, AlertTriangle, Cpu, Disc3, PhoneCall } from "lucide-react";
+import { X, MapPin, Phone, Mail, User, ChevronDown, ChevronUp, Pencil, Save, Loader2, Navigation, Crosshair, AlertTriangle, Cpu, Disc3, PhoneCall, ShieldCheck, Video, MessageSquare, Mic, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 import { Incident, Site } from "@/api/entities";
 import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
@@ -403,6 +403,107 @@ function InfrastructureSection({ site }) {
 }
 
 
+const COMPLIANCE_BADGE = {
+  compliant: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", icon: CheckCircle2, label: "Compliant" },
+  partially_compliant: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", icon: AlertTriangle, label: "Partially Compliant" },
+  review_required: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: HelpCircle, label: "Review Required" },
+  non_compliant: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: XCircle, label: "Non-Compliant" },
+  no_units: { bg: "bg-gray-50", text: "text-gray-500", border: "border-gray-200", icon: HelpCircle, label: "No Units" },
+};
+
+function ComplianceSection({ site }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCompliance = useCallback(async () => {
+    try {
+      const result = await apiFetch(`/service-units/site/${site.site_id}/compliance`);
+      setData(result);
+    } catch { /* endpoint may not be deployed yet */ }
+    setLoading(false);
+  }, [site.site_id]);
+
+  useEffect(() => { fetchCompliance(); }, [fetchCompliance]);
+
+  if (loading) {
+    return (
+      <Section title="Compliance" defaultOpen={true}>
+        <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+          <Loader2 className="w-3 h-3 animate-spin" /> Loading...
+        </div>
+      </Section>
+    );
+  }
+
+  if (!data) return null;
+
+  const badge = COMPLIANCE_BADGE[data.status] || COMPLIANCE_BADGE.no_units;
+  const BadgeIcon = badge.icon;
+
+  return (
+    <Section title="Compliance" defaultOpen={true}>
+      {/* Overall status badge */}
+      <div className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border mb-3 ${badge.bg} ${badge.border}`}>
+        <BadgeIcon className={`w-4 h-4 ${badge.text} flex-shrink-0`} />
+        <div>
+          <div className={`text-xs font-bold ${badge.text}`}>{badge.label}</div>
+          <div className="text-[10px] text-gray-500">{data.summary}</div>
+        </div>
+      </div>
+
+      {/* Capability summary */}
+      {data.unit_count > 0 && (
+        <div className="grid grid-cols-2 gap-1.5 mb-3">
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <Mic className="w-3 h-3 text-emerald-500" />
+            <span className="text-gray-600">Voice</span>
+            <CheckCircle2 className="w-3 h-3 text-emerald-400 ml-auto" />
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <Video className="w-3 h-3 text-gray-400" />
+            <span className="text-gray-600">Video</span>
+            {data.status === "no_units" ? null : (
+              <span className="ml-auto text-[9px] text-gray-400">varies</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <MessageSquare className="w-3 h-3 text-gray-400" />
+            <span className="text-gray-600">Text/Visual</span>
+            <span className="ml-auto text-[9px] text-gray-400">varies</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <MapPin className="w-3 h-3 text-gray-400" />
+            <span className="text-gray-600">E911</span>
+            {data.e911?.has_address ? (
+              <CheckCircle2 className="w-3 h-3 text-emerald-400 ml-auto" />
+            ) : (
+              <AlertTriangle className="w-3 h-3 text-amber-400 ml-auto" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings */}
+      {data.warnings?.length > 0 && (
+        <div className="space-y-1.5">
+          {data.warnings.slice(0, 5).map((w, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-[10px] text-amber-700 bg-amber-50/50 rounded px-2 py-1.5">
+              <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
+              <span>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Disclaimer */}
+      <div className="mt-3 text-[9px] text-gray-400 italic">
+        Operational guidance only — not a legal compliance determination.
+      </div>
+    </Section>
+  );
+}
+
+
 export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
   const [lastActionResult, setLastActionResult] = useState(null);
   const [showE911, setShowE911] = useState(false);
@@ -439,6 +540,8 @@ export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
           </div>
 
           <InfrastructureSection site={site} />
+
+          <ComplianceSection site={site} />
 
           <Section title="Health Snapshot">
             <HealthSnapshot site={site} />
