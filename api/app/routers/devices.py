@@ -59,6 +59,16 @@ def _generate_device_key() -> tuple[str, str]:
     return raw, hashed
 
 
+class _TelemetrySnapshot:
+    """Latest telemetry values for a device, extracted from CommandTelemetry."""
+    __slots__ = ("signal_dbm", "sip_status", "source")
+
+    def __init__(self, signal_dbm: float | None = None, sip_status: str | None = None, source: str | None = None):
+        self.signal_dbm = signal_dbm
+        self.sip_status = sip_status
+        self.source = source
+
+
 def _device_out(device: Device, snap: _TelemetrySnapshot | None = None) -> DeviceOut:
     """Build DeviceOut with computed_status, health_status, and has_api_key."""
     snap = snap or _TelemetrySnapshot()
@@ -79,16 +89,6 @@ def _device_out(device: Device, snap: _TelemetrySnapshot | None = None) -> Devic
     out.signal_dbm = snap.signal_dbm
     out.telemetry_source = device.telemetry_source or snap.source
     return out
-
-
-class _TelemetrySnapshot:
-    """Latest telemetry values for a device, extracted from CommandTelemetry."""
-    __slots__ = ("signal_dbm", "sip_status", "source")
-
-    def __init__(self, signal_dbm: float | None = None, sip_status: str | None = None, source: str | None = None):
-        self.signal_dbm = signal_dbm
-        self.sip_status = sip_status
-        self.source = source
 
 
 async def _latest_telemetry(
