@@ -18,18 +18,30 @@ app = FastAPI(title="TRUE911 API", version="1.0.0")
 async def startup():
     await ensure_bootstrap_admin()
 
-# CORS — wildcard origins and allow_credentials=True are mutually exclusive
-# per the Fetch spec.  Browsers silently reject the response when both are set.
-# When CORS_ORIGINS is ["*"] we must set allow_credentials=False.
-_allow_creds = not settings.cors_is_wildcard
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=_allow_creds,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS — when CORS_ORIGINS is "*" (the default), we use allow_origin_regex
+# to match any origin.  This lets Starlette echo the actual origin back
+# (instead of "*"), which is required for credentialed requests (requests
+# that include Authorization headers).
+#
+# When specific origins are configured, we pass them directly and enable
+# allow_credentials=True.
+if settings.cors_is_wildcard:
+    # Dev/unconfigured: allow any origin but echo it back for auth headers
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.exception_handler(Exception)
@@ -104,6 +116,7 @@ async def debug_cors():
     Only exposes non-sensitive values (origin list and credential flag)."""
     return {
         "allow_origins": settings.cors_origin_list,
-        "allow_credentials": _allow_creds,
+        "allow_credentials": True,
         "cors_is_wildcard": settings.cors_is_wildcard,
+        "mode": "regex_any" if settings.cors_is_wildcard else "explicit_origins",
     }
