@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 
+    # ── Zoho CRM ───────────────────────────────────────────────────────
+    ZOHO_CRM_CLIENT_ID: str = ""
+    ZOHO_CRM_CLIENT_SECRET: str = ""
+    ZOHO_CRM_REFRESH_TOKEN: str = ""
+    ZOHO_CRM_API_DOMAIN: str = "https://www.zohoapis.com"
+    ZOHO_CRM_ACCOUNTS_DOMAIN: str = "https://accounts.zoho.com"
+    ZOHO_CRM_ORG_ID: str = ""  # optional — for multi-org Zoho setups
+    ZOHO_CRM_DEFAULT_TENANT: str = "default"  # tenant_id for accounts without explicit mapping
+
     # ── Verizon ThingSpace ─────────────────────────────────────────────
     VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session
     VERIZON_THINGSPACE_BASE_URL: str = "https://thingspace.verizon.com/api"

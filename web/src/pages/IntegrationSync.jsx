@@ -715,6 +715,127 @@ function VerizonTab() {
 
 
 /* ── Main Page ── */
+/* ── Zoho CRM Tab ── */
+function ZohoCRMTab() {
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(null);
+  const [lastResult, setLastResult] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiFetch("/zoho-crm/config");
+        setConfig(data);
+      } catch { setConfig({ configured: false }); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const handleSync = async (type) => {
+    setSyncing(type);
+    try {
+      const result = await apiFetch(`/zoho-crm/sync/${type}`, { method: "POST" });
+      setLastResult({ type, ...result, time: new Date().toISOString() });
+      toast.success(`Zoho ${type} sync: ${result.created || 0} created, ${result.updated || 0} updated`);
+    } catch (err) {
+      toast.error(err?.message || `Zoho ${type} sync failed`);
+      setLastResult({ type, error: err?.message, time: new Date().toISOString() });
+    }
+    setSyncing(null);
+  };
+
+  const handleTest = async () => {
+    setSyncing("test");
+    try {
+      const result = await apiFetch("/zoho-crm/test-connection", { method: "POST" });
+      if (result.ok) toast.success("Zoho CRM connected successfully");
+      else toast.error(result.message || "Connection failed");
+    } catch (err) {
+      toast.error(err?.message || "Connection test failed");
+    }
+    setSyncing(null);
+  };
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-sm text-gray-400 py-8 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Connection status */}
+      <div className={`rounded-xl border p-5 ${config?.configured ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config?.configured ? "bg-emerald-100" : "bg-amber-100"}`}>
+              {config?.configured ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
+            </div>
+            <div>
+              <div className={`text-sm font-bold ${config?.configured ? "text-emerald-800" : "text-amber-800"}`}>
+                Zoho CRM {config?.configured ? "Connected" : "Not Configured"}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {config?.configured ? `API: ${config.api_domain}` : "Set ZOHO_CRM_CLIENT_ID, ZOHO_CRM_CLIENT_SECRET, ZOHO_CRM_REFRESH_TOKEN"}
+              </div>
+            </div>
+          </div>
+          {config?.configured && (
+            <button onClick={handleTest} disabled={syncing === "test"}
+              className="px-3 py-1.5 border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-xs font-medium text-gray-700">
+              {syncing === "test" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Test Connection"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Sync actions */}
+      {config?.configured && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="text-sm font-bold text-gray-800 mb-1">Accounts → Customers</div>
+            <p className="text-xs text-gray-500 mb-3">Pull Zoho CRM Accounts and create/update True911 Customer records.</p>
+            <button onClick={() => handleSync("accounts")} disabled={!!syncing}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-xs font-semibold">
+              {syncing === "accounts" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowDownUp className="w-3.5 h-3.5" />}
+              Sync Accounts
+            </button>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="text-sm font-bold text-gray-800 mb-1">Contacts → Customer Details</div>
+            <p className="text-xs text-gray-500 mb-3">Pull Zoho CRM Contacts and update primary contact info on linked Customers.</p>
+            <button onClick={() => handleSync("contacts")} disabled={!!syncing}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-xs font-semibold">
+              {syncing === "contacts" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowDownUp className="w-3.5 h-3.5" />}
+              Sync Contacts
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Last result */}
+      {lastResult && (
+        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+          <div className="text-xs font-bold text-gray-500 uppercase mb-2">Last Sync Result</div>
+          <div className="text-sm text-gray-800">
+            <span className="font-semibold">{lastResult.type}</span>
+            {lastResult.error ? (
+              <span className="text-red-600 ml-2">Error: {lastResult.error}</span>
+            ) : (
+              <span className="text-gray-600 ml-2">
+                {lastResult.created != null && `${lastResult.created} created`}
+                {lastResult.updated != null && `, ${lastResult.updated} updated`}
+                {lastResult.skipped != null && `, ${lastResult.skipped} skipped`}
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-gray-400 mt-1">{timeSince(lastResult.time)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function IntegrationSync() {
   const [tab, setTab] = useState("verizon");
 
@@ -727,7 +848,7 @@ export default function IntegrationSync() {
               <ArrowDownUp className="w-6 h-6 text-red-600" />
               Integration Sync
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Carrier sync, webhook events, and billing reconciliation</p>
+            <p className="text-sm text-gray-500 mt-1">Carrier sync, CRM sync, webhook events, and billing reconciliation</p>
           </div>
         </div>
 
@@ -735,6 +856,7 @@ export default function IntegrationSync() {
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
           {[
             { key: "verizon", label: "Verizon Sync" },
+            { key: "zoho", label: "Zoho CRM" },
             { key: "events", label: "Latest Events" },
             { key: "reconciliation", label: "Reconciliation" },
           ].map(({ key, label }) => (
@@ -753,6 +875,7 @@ export default function IntegrationSync() {
         </div>
 
         {tab === "verizon" && <VerizonTab />}
+        {tab === "zoho" && <ZohoCRMTab />}
         {tab === "events" && <EventsTab />}
         {tab === "reconciliation" && <ReconciliationTab />}
       </div>

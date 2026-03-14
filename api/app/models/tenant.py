@@ -20,6 +20,7 @@ class Tenant(Base):
     primary_color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     contact_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     contact_phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    zoho_account_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true")
     settings_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
