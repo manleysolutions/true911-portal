@@ -936,7 +936,7 @@ def normalize_verizon_device(raw: dict[str, Any]) -> dict[str, Any]:
             if isinstance(cf, dict):
                 k = (cf.get("key") or "").lower()
                 v = cf.get("value") or ""
-                if k in ("label", "name", "location", "site", "description", "customername") and v:
+                if k in ("costcenter", "costcentername", "label", "name", "location", "site", "description", "customername") and v:
                     custom_label = v
                     break
         # Fallback: use the first non-empty custom field value
@@ -948,9 +948,10 @@ def normalize_verizon_device(raw: dict[str, Any]) -> dict[str, Any]:
     elif isinstance(custom_fields, dict):
         custom_label = custom_fields.get("label") or custom_fields.get("name") or custom_fields.get("location")
 
-    # Also check groupName, deviceName, deviceLabel — common ThingSpace fields
+    # Check top-level ThingSpace fields — costCenterName is where users
+    # typically enter customer/site names (e.g. "Benson Systems", "R&R Realty")
     if not custom_label:
-        for field in ("groupName", "deviceName", "deviceLabel", "billingName", "customerName"):
+        for field in ("costCenterName", "costCenter", "groupName", "deviceName", "deviceLabel", "billingName", "customerName"):
             if raw.get(field):
                 custom_label = raw[field]
                 break
