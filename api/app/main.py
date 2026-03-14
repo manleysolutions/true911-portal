@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning
 
 logger = logging.getLogger("true911")
 
@@ -81,6 +81,7 @@ app.include_router(command_site_import.router,   prefix="/api/command",      tag
 app.include_router(command_device_assignment.router, prefix="/api/command",  tags=["command"])
 app.include_router(customers.router,              prefix="/api/customers",        tags=["customers"])
 app.include_router(service_units.router,          prefix="/api/service-units",    tags=["service-units"])
+app.include_router(provisioning.router,           prefix="/api/provisioning",     tags=["provisioning"])
 app.include_router(carrier_verizon.router,       prefix="/api/carriers/verizon", tags=["carriers"])
 
 

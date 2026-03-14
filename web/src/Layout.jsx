@@ -6,7 +6,7 @@ import {
   AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug,
   ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users,
   KeyRound, Eye, EyeOff, AlertTriangle, CheckCircle, Loader2, HelpCircle, Home,
-  UserCog, XCircle,
+  UserCog, XCircle, Zap,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -67,6 +67,7 @@ const NOC_NAV = [
   { name: "Auto Ops",     page: "AutoOps",            icon: Bot },
   { name: "Providers",    page: "Providers",           icon: Plug },
   { name: "Integrations", page: "IntegrationSync",    icon: ArrowDownUp },
+  { name: "Provisioning",  page: "ProvisioningQueue",   icon: Zap },
   { name: "Site Onboard",  page: "SiteOnboarding",     icon: Building2 },
   { name: "Device Setup", page: "OnboardingWizard",   icon: Rocket },
   { name: "Organization", page: "OrgSettings",        icon: Globe },

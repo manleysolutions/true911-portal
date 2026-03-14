@@ -43,6 +43,7 @@ from app.models.audit_log_entry import AuditLogEntry
 from app.models.autonomous_action import AutonomousAction
 from app.models.operational_digest import OperationalDigest
 from app.models.service_unit import ServiceUnit
+from app.models.provisioning_queue import ProvisioningQueueItem
 
 __all__ = [
     "Tenant",
@@ -91,4 +92,5 @@ __all__ = [
     "AutonomousAction",
     "OperationalDigest",
     "ServiceUnit",
+    "ProvisioningQueueItem",
 ]

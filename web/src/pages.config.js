@@ -82,6 +82,7 @@ import SiteImport from './pages/SiteImport';
 import DeviceAssignment from './pages/DeviceAssignment';
 import SiteOnboarding from './pages/SiteOnboarding';
 import SiteDetail from './pages/SiteDetail';
+import ProvisioningQueue from './pages/ProvisioningQueue';
 import __Layout from './Layout.jsx';
 
 
@@ -121,6 +122,7 @@ export const PAGES = {
     "DeviceAssignment": DeviceAssignment,
     "SiteOnboarding": SiteOnboarding,
     "SiteDetail": SiteDetail,
+    "ProvisioningQueue": ProvisioningQueue,
 }
 
 export const pagesConfig = {
