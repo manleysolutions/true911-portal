@@ -16,10 +16,10 @@ const BASE_STEPS = [
   { key: "review", label: "Review", icon: CheckCircle2, desc: "Activate" },
 ];
 
-function StepIndicator({ current }) {
+function StepIndicator({ current, steps }) {
   return (
     <div className="flex items-center gap-1 mb-8">
-      {STEPS.map((s, i) => {
+      {(steps || []).map((s, i) => {
         const Icon = s.icon;
         const done = i < current;
         const active = i === current;
@@ -33,7 +33,7 @@ function StepIndicator({ current }) {
               {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">{s.label}</span>
             </div>
-            {i < STEPS.length - 1 && <ChevronRight className="w-3 h-3 text-gray-300" />}
+            {i < steps.length - 1 && <ChevronRight className="w-3 h-3 text-gray-300" />}
           </div>
         );
       })}
@@ -644,7 +644,7 @@ export default function OnboardingWizard() {
         </div>
         <p className="text-sm text-gray-500 mb-6">Set up a new site with device, voice line, E911, and alerts in one go.</p>
 
-        <StepIndicator current={step} />
+        <StepIndicator current={step} steps={STEPS} />
 
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
           {stepComponents[step]}
