@@ -79,8 +79,6 @@ async def scan_and_enqueue(
             source_provider=sim.carrier if sim.data_source == "carrier_sync" else "manual",
             current_site_id=sim.site_id,
             current_device_id=sim.device_id,
-            missing_site=True,
-            missing_e911=True,  # no site = no E911
             missing_customer=not bool(sim.tenant_id),
             **suggestion,
         )
@@ -108,8 +106,6 @@ async def scan_and_enqueue(
             external_ref=dev.device_id,
             source_provider=dev.carrier or "manual",
             current_site_id=dev.site_id,
-            missing_site=True,
-            missing_e911=True,
             **suggestion,
         )
         db.add(item)
@@ -137,8 +133,6 @@ async def scan_and_enqueue(
             source_provider=line.provider or "manual",
             current_site_id=line.site_id,
             current_device_id=line.device_id,
-            missing_site=True,
-            missing_e911=True,
             **suggestion,
         )
         db.add(item)
@@ -153,16 +147,22 @@ async def scan_and_enqueue(
     return {"created": created, "skipped": skipped, "tenant_id": tenant_id}
 
 
+def _base_flags() -> dict:
+    """Default flags for a new queue item (unlinked = missing site and E911)."""
+    return {"missing_site": True, "missing_e911": True}
+
+
 def _suggest_for_sim(sim: Sim, sites: list[Site]) -> dict:
     """Generate suggestion fields for an unlinked SIM."""
+    flags = _base_flags()
     if not sites:
-        return {"status": "new", "suggestion_confidence": None}
+        return {**flags, "status": "new", "suggestion_confidence": None}
 
-    # Rule 1: If there's only one site, suggest it (high confidence)
     if len(sites) == 1:
         s = sites[0]
         has_e911 = bool(s.e911_street and s.e911_city)
         return {
+            **flags,
             "status": "suggested",
             "suggested_site_id": s.site_id,
             "suggested_site_name": s.site_name,
@@ -174,13 +174,13 @@ def _suggest_for_sim(sim: Sim, sites: list[Site]) -> dict:
             "needs_compliance_review": True,
         }
 
-    # Rule 2: If SIM has carrier info, find sites with matching carrier
     if sim.carrier:
         carrier_match = [s for s in sites if (s.carrier or "").lower() == sim.carrier.lower()]
         if len(carrier_match) == 1:
             s = carrier_match[0]
             has_e911 = bool(s.e911_street and s.e911_city)
             return {
+                **flags,
                 "status": "suggested",
                 "suggested_site_id": s.site_id,
                 "suggested_site_name": s.site_name,
@@ -191,8 +191,8 @@ def _suggest_for_sim(sim: Sim, sites: list[Site]) -> dict:
                 "needs_compliance_review": True,
             }
 
-    # No strong match — needs review
     return {
+        **flags,
         "status": "needs_review",
         "suggestion_confidence": None,
         "suggestion_reason": f"{len(sites)} sites available — manual assignment needed",
@@ -202,13 +202,15 @@ def _suggest_for_sim(sim: Sim, sites: list[Site]) -> dict:
 
 def _suggest_for_device(dev: Device, sites: list[Site]) -> dict:
     """Generate suggestion fields for an unlinked device."""
+    flags = _base_flags()
     if not sites:
-        return {"status": "new", "suggestion_confidence": None}
+        return {**flags, "status": "new", "suggestion_confidence": None}
 
     if len(sites) == 1:
         s = sites[0]
         has_e911 = bool(s.e911_street and s.e911_city)
         return {
+            **flags,
             "status": "suggested",
             "suggested_site_id": s.site_id,
             "suggested_site_name": s.site_name,
@@ -219,6 +221,7 @@ def _suggest_for_device(dev: Device, sites: list[Site]) -> dict:
         }
 
     return {
+        **flags,
         "status": "needs_review",
         "suggestion_confidence": None,
         "suggestion_reason": f"{len(sites)} sites available — manual assignment needed",
@@ -227,13 +230,15 @@ def _suggest_for_device(dev: Device, sites: list[Site]) -> dict:
 
 def _suggest_for_line(line: Line, sites: list[Site]) -> dict:
     """Generate suggestion fields for an unlinked line."""
+    flags = _base_flags()
     if not sites:
-        return {"status": "new", "suggestion_confidence": None}
+        return {**flags, "status": "new", "suggestion_confidence": None}
 
     if len(sites) == 1:
         s = sites[0]
         has_e911 = bool(s.e911_street and s.e911_city)
         return {
+            **flags,
             "status": "suggested",
             "suggested_site_id": s.site_id,
             "suggested_site_name": s.site_name,
@@ -244,6 +249,7 @@ def _suggest_for_line(line: Line, sites: list[Site]) -> dict:
         }
 
     return {
+        **flags,
         "status": "needs_review",
         "suggestion_confidence": None,
         "suggestion_reason": f"{len(sites)} sites available — manual assignment needed",
