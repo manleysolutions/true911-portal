@@ -19,6 +19,8 @@ class CarrierSim:
     apn: str | None = None
     external_id: str | None = None
     raw: dict | None = None
+    # User-defined label from carrier portal (e.g., site name, customer name)
+    carrier_label: str | None = None
     # Carrier-inferred location (NOT E911-valid)
     inferred_lat: float | None = None
     inferred_lng: float | None = None

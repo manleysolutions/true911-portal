@@ -927,6 +927,34 @@ def normalize_verizon_device(raw: dict[str, Any]) -> dict[str, Any]:
             last_seen = raw[ts_field]
             break
 
+    # Extract user-defined label from ThingSpace customFields
+    # Verizon stores these as [{"key": "...", "value": "..."}] or as a flat dict
+    custom_label = None
+    custom_fields = raw.get("customFields") or raw.get("custom") or []
+    if isinstance(custom_fields, list):
+        for cf in custom_fields:
+            if isinstance(cf, dict):
+                k = (cf.get("key") or "").lower()
+                v = cf.get("value") or ""
+                if k in ("label", "name", "location", "site", "description", "customername") and v:
+                    custom_label = v
+                    break
+        # Fallback: use the first non-empty custom field value
+        if not custom_label:
+            for cf in custom_fields:
+                if isinstance(cf, dict) and cf.get("value"):
+                    custom_label = cf["value"]
+                    break
+    elif isinstance(custom_fields, dict):
+        custom_label = custom_fields.get("label") or custom_fields.get("name") or custom_fields.get("location")
+
+    # Also check groupName, deviceName, deviceLabel — common ThingSpace fields
+    if not custom_label:
+        for field in ("groupName", "deviceName", "deviceLabel", "billingName", "customerName"):
+            if raw.get(field):
+                custom_label = raw[field]
+                break
+
     return {
         "carrier": "verizon",
         "external_id": id_map.get("MDN") or id_map.get("IMEI") or raw.get("id", ""),
@@ -938,6 +966,7 @@ def normalize_verizon_device(raw: dict[str, Any]) -> dict[str, Any]:
         "activation_status": activation_status,
         "usage_data_mb": usage_mb,
         "last_seen_at": last_seen,
+        "custom_label": custom_label,
         "raw_payload": raw,
     }
 

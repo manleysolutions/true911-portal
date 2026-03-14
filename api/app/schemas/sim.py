@@ -20,6 +20,7 @@ class SimOut(BaseModel):
     plan: Optional[str] = None
     apn: Optional[str] = None
     provider_sim_id: Optional[str] = None
+    carrier_label: Optional[str] = None
     data_source: Optional[str] = None
     last_synced_at: Optional[datetime] = None
     inferred_lat: Optional[float] = None

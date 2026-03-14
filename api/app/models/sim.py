@@ -42,6 +42,8 @@ class Sim(Base):
 
     # ── Provenance ───────────────────────────────────────────────
     provider_sim_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    carrier_label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # User-defined label from carrier portal (e.g., site/customer name entered in ThingSpace)
     data_source: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, default="manual")  # manual | carrier_sync
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

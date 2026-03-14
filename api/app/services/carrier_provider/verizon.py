@@ -1,6 +1,7 @@
 """Verizon ThingSpace carrier provider.
 
 Delegates to the existing VerizonThingSpaceClient for actual API calls.
+Only returns active and suspended lines — deactivated/terminated are excluded.
 """
 
 import logging
@@ -8,6 +9,9 @@ import logging
 from .base import CarrierProvider, CarrierProviderError, CarrierSim
 
 logger = logging.getLogger("true911.carrier_provider.verizon")
+
+# Statuses we want to ingest — skip deactivated/terminated
+_ACTIVE_STATUSES = {"active", "suspended", "inventory"}
 
 
 class VerizonProvider(CarrierProvider):
@@ -47,19 +51,24 @@ class VerizonProvider(CarrierProvider):
 
             raw_payload = norm.get("raw_payload") or {}
             activation = norm.get("activation_status")
+            mapped_status = _map_status(activation)
+
+            # Skip deactivated/terminated lines
+            if mapped_status not in _ACTIVE_STATUSES:
+                continue
 
             results.append(CarrierSim(
                 iccid=iccid,
                 carrier="verizon",
                 msisdn=norm.get("msisdn"),
                 imei=norm.get("imei"),
-                status=_map_status(activation),
+                status=mapped_status,
                 activation_status=activation,
                 network_status=norm.get("line_status") or norm.get("sim_status"),
                 plan=raw_payload.get("servicePlan"),
                 external_id=norm.get("external_id"),
+                carrier_label=norm.get("custom_label"),
                 raw=raw_payload,
-                # Verizon may include location data in extended device info
                 inferred_lat=_safe_float(raw_payload.get("latitude")),
                 inferred_lng=_safe_float(raw_payload.get("longitude")),
                 inferred_location_source="verizon_thingspace" if raw_payload.get("latitude") else None,

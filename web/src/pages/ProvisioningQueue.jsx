@@ -147,7 +147,10 @@ export default function ProvisioningQueue() {
   const filtered = items.filter(i => {
     if (!search) return true;
     const q = search.toLowerCase();
+    const label = i.meta?.carrier_label || "";
     return (i.external_ref || "").toLowerCase().includes(q) ||
+           label.toLowerCase().includes(q) ||
+           (i.meta?.iccid || "").toLowerCase().includes(q) ||
            (i.suggested_site_name || "").toLowerCase().includes(q) ||
            (i.source_provider || "").toLowerCase().includes(q) ||
            (i.suggestion_reason || "").toLowerCase().includes(q) ||
@@ -306,6 +309,16 @@ export default function ProvisioningQueue() {
                       )}
                       <span className="text-[10px] text-gray-400">{item.tenant_id}</span>
                     </div>
+                    {/* Carrier label — the user-defined name from Verizon/ThingSpace */}
+                    {item.meta?.carrier_label && (
+                      <div className="text-xs text-purple-700 font-medium mt-0.5">
+                        {item.meta.carrier_label}
+                      </div>
+                    )}
+                    {/* ICCID subtitle for SIMs (since external_ref is now MSISDN) */}
+                    {item.item_type === "sim" && item.meta?.iccid && (
+                      <div className="text-[10px] text-gray-400 font-mono">{item.meta.iccid}</div>
+                    )}
                     {/* Suggestion or reason */}
                     {item.suggested_site_name ? (
                       <div className="text-xs text-gray-600 mt-0.5">
