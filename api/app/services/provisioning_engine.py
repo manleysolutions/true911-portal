@@ -1,15 +1,7 @@
 """Provisioning suggestion engine — rules-based matching for unlinked infrastructure.
 
-Scans SIMs, devices, and lines that are not yet assigned to a site and generates
-queue items with suggested linkages based on:
-  - tenant ownership (same tenant = likely match)
-  - carrier/provider matching
-  - naming conventions
-  - prior assignments on related records
-  - missing data flags
-
-This is a first-pass rules engine.  Future versions can incorporate AI/ML
-for more sophisticated matching.
+Scans SIMs, devices, and lines not yet assigned to a site, creates queue items
+with suggested linkages.  SuperAdmin scans all tenants; tenant admins scan their own.
 """
 
 from __future__ import annotations
@@ -17,7 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
@@ -31,48 +23,52 @@ logger = logging.getLogger("true911.provisioning")
 
 async def scan_and_enqueue(
     db: AsyncSession,
-    tenant_id: str,
+    tenant_id: str | None,
     initiated_by: str,
+    is_superadmin: bool = False,
 ) -> dict:
-    """Scan for unlinked SIMs/devices/lines and create queue items with suggestions.
+    """Scan for unlinked SIMs/devices/lines and create queue items.
 
-    Returns a summary of items created/updated.
+    If is_superadmin=True, scans ALL tenants. Otherwise scopes to tenant_id.
     """
     created = 0
     skipped = 0
 
-    # Load existing queue item_ids to avoid duplicates
-    existing_q = await db.execute(
-        select(ProvisioningQueueItem.item_type, ProvisioningQueueItem.item_id).where(
-            ProvisioningQueueItem.tenant_id == tenant_id,
-            ProvisioningQueueItem.status.in_(["new", "suggested", "needs_review"]),
-        )
+    # Load existing queue keys to avoid duplicates
+    eq = select(ProvisioningQueueItem.item_type, ProvisioningQueueItem.item_id).where(
+        ProvisioningQueueItem.status.in_(["new", "suggested", "needs_review"]),
     )
+    if not is_superadmin:
+        eq = eq.where(ProvisioningQueueItem.tenant_id == tenant_id)
+    existing_q = await db.execute(eq)
     existing_keys = {(r[0], r[1]) for r in existing_q.all()}
 
-    # Load all sites for this tenant (for suggestion matching)
-    site_result = await db.execute(
-        select(Site).where(Site.tenant_id == tenant_id)
-    )
-    tenant_sites = site_result.scalars().all()
-    sites_by_id = {s.site_id: s for s in tenant_sites}
+    # Load ALL sites (grouped by tenant for suggestion matching)
+    sq = select(Site)
+    if not is_superadmin:
+        sq = sq.where(Site.tenant_id == tenant_id)
+    site_result = await db.execute(sq)
+    all_sites = site_result.scalars().all()
+    sites_by_tenant: dict[str, list[Site]] = {}
+    for s in all_sites:
+        sites_by_tenant.setdefault(s.tenant_id, []).append(s)
 
     # ── Unlinked SIMs ────────────────────────────────────────────
-    sim_result = await db.execute(
-        select(Sim).where(
-            Sim.tenant_id == tenant_id,
-            Sim.site_id.is_(None),
-            Sim.status.notin_(["terminated", "deactivated"]),
-        )
+    sim_q = select(Sim).where(
+        Sim.site_id.is_(None),
+        Sim.status.notin_(["terminated", "deactivated"]),
     )
+    if not is_superadmin:
+        sim_q = sim_q.where(Sim.tenant_id == tenant_id)
+    sim_result = await db.execute(sim_q)
     for sim in sim_result.scalars().all():
         if ("sim", sim.id) in existing_keys:
             skipped += 1
             continue
-
-        suggestion = _suggest_for_sim(sim, tenant_sites)
+        tenant_sites = sites_by_tenant.get(sim.tenant_id, [])
+        suggestion = _suggest(sim.carrier, tenant_sites)
         item = ProvisioningQueueItem(
-            tenant_id=tenant_id,
+            tenant_id=sim.tenant_id,
             item_type="sim",
             item_id=sim.id,
             external_ref=sim.iccid,
@@ -86,21 +82,21 @@ async def scan_and_enqueue(
         created += 1
 
     # ── Unlinked Devices ─────────────────────────────────────────
-    dev_result = await db.execute(
-        select(Device).where(
-            Device.tenant_id == tenant_id,
-            Device.site_id.is_(None),
-            Device.status.notin_(["decommissioned"]),
-        )
+    dev_q = select(Device).where(
+        Device.site_id.is_(None),
+        Device.status.notin_(["decommissioned"]),
     )
+    if not is_superadmin:
+        dev_q = dev_q.where(Device.tenant_id == tenant_id)
+    dev_result = await db.execute(dev_q)
     for dev in dev_result.scalars().all():
         if ("device", dev.id) in existing_keys:
             skipped += 1
             continue
-
-        suggestion = _suggest_for_device(dev, tenant_sites)
+        tenant_sites = sites_by_tenant.get(dev.tenant_id, [])
+        suggestion = _suggest(dev.carrier, tenant_sites)
         item = ProvisioningQueueItem(
-            tenant_id=tenant_id,
+            tenant_id=dev.tenant_id,
             item_type="device",
             item_id=dev.id,
             external_ref=dev.device_id,
@@ -112,21 +108,21 @@ async def scan_and_enqueue(
         created += 1
 
     # ── Unlinked Lines ───────────────────────────────────────────
-    line_result = await db.execute(
-        select(Line).where(
-            Line.tenant_id == tenant_id,
-            Line.site_id.is_(None),
-            Line.status.notin_(["disconnected"]),
-        )
+    line_q = select(Line).where(
+        Line.site_id.is_(None),
+        Line.status.notin_(["disconnected"]),
     )
+    if not is_superadmin:
+        line_q = line_q.where(Line.tenant_id == tenant_id)
+    line_result = await db.execute(line_q)
     for line in line_result.scalars().all():
         if ("line", line.id) in existing_keys:
             skipped += 1
             continue
-
-        suggestion = _suggest_for_line(line, tenant_sites)
+        tenant_sites = sites_by_tenant.get(line.tenant_id, [])
+        suggestion = _suggest(line.provider, tenant_sites)
         item = ProvisioningQueueItem(
-            tenant_id=tenant_id,
+            tenant_id=line.tenant_id,
             item_type="line",
             item_id=line.id,
             external_ref=line.did or line.line_id,
@@ -139,24 +135,21 @@ async def scan_and_enqueue(
         created += 1
 
     await db.commit()
-
-    logger.info(
-        "Provisioning scan: tenant=%s created=%d skipped=%d by=%s",
-        tenant_id, created, skipped, initiated_by,
-    )
-    return {"created": created, "skipped": skipped, "tenant_id": tenant_id}
+    logger.info("Provisioning scan: created=%d skipped=%d by=%s", created, skipped, initiated_by)
+    return {"created": created, "skipped": skipped}
 
 
-def _base_flags() -> dict:
-    """Default flags for a new queue item (unlinked = missing site and E911)."""
-    return {"missing_site": True, "missing_e911": True}
+def _suggest(carrier: str | None, sites: list[Site]) -> dict:
+    """Generate suggestion fields based on available sites.
 
+    Only suggests a specific site when there's exactly one site in the tenant.
+    Multiple sites → needs_review so the operator picks the right one.
+    """
+    flags = {"missing_site": True, "missing_e911": True}
 
-def _suggest_for_sim(sim: Sim, sites: list[Site]) -> dict:
-    """Generate suggestion fields for an unlinked SIM."""
-    flags = _base_flags()
     if not sites:
-        return {**flags, "status": "new", "suggestion_confidence": None}
+        return {**flags, "status": "needs_review", "suggestion_confidence": None,
+                "suggestion_reason": "No sites in tenant — create a site first"}
 
     if len(sites) == 1:
         s = sites[0]
@@ -167,90 +160,17 @@ def _suggest_for_sim(sim: Sim, sites: list[Site]) -> dict:
             "suggested_site_id": s.site_id,
             "suggested_site_name": s.site_name,
             "suggested_tenant_id": s.tenant_id,
-            "suggested_unit_type": "elevator_phone",
-            "suggestion_confidence": 0.7,
-            "suggestion_reason": f"Only site in tenant — {s.site_name}",
+            "suggestion_confidence": 0.8,
+            "suggestion_reason": f"Only site in account — {s.site_name}",
             "missing_e911": not has_e911,
-            "needs_compliance_review": True,
         }
 
-    if sim.carrier:
-        carrier_match = [s for s in sites if (s.carrier or "").lower() == sim.carrier.lower()]
-        if len(carrier_match) == 1:
-            s = carrier_match[0]
-            has_e911 = bool(s.e911_street and s.e911_city)
-            return {
-                **flags,
-                "status": "suggested",
-                "suggested_site_id": s.site_id,
-                "suggested_site_name": s.site_name,
-                "suggested_tenant_id": s.tenant_id,
-                "suggestion_confidence": 0.5,
-                "suggestion_reason": f"Carrier match ({sim.carrier}) — {s.site_name}",
-                "missing_e911": not has_e911,
-                "needs_compliance_review": True,
-            }
-
+    # Multiple sites → don't guess, let the operator decide
+    site_names = ", ".join(s.site_name for s in sites[:3])
+    suffix = f" + {len(sites) - 3} more" if len(sites) > 3 else ""
     return {
         **flags,
         "status": "needs_review",
         "suggestion_confidence": None,
-        "suggestion_reason": f"{len(sites)} sites available — manual assignment needed",
-        "needs_compliance_review": True,
-    }
-
-
-def _suggest_for_device(dev: Device, sites: list[Site]) -> dict:
-    """Generate suggestion fields for an unlinked device."""
-    flags = _base_flags()
-    if not sites:
-        return {**flags, "status": "new", "suggestion_confidence": None}
-
-    if len(sites) == 1:
-        s = sites[0]
-        has_e911 = bool(s.e911_street and s.e911_city)
-        return {
-            **flags,
-            "status": "suggested",
-            "suggested_site_id": s.site_id,
-            "suggested_site_name": s.site_name,
-            "suggested_tenant_id": s.tenant_id,
-            "suggestion_confidence": 0.7,
-            "suggestion_reason": f"Only site in tenant — {s.site_name}",
-            "missing_e911": not has_e911,
-        }
-
-    return {
-        **flags,
-        "status": "needs_review",
-        "suggestion_confidence": None,
-        "suggestion_reason": f"{len(sites)} sites available — manual assignment needed",
-    }
-
-
-def _suggest_for_line(line: Line, sites: list[Site]) -> dict:
-    """Generate suggestion fields for an unlinked line."""
-    flags = _base_flags()
-    if not sites:
-        return {**flags, "status": "new", "suggestion_confidence": None}
-
-    if len(sites) == 1:
-        s = sites[0]
-        has_e911 = bool(s.e911_street and s.e911_city)
-        return {
-            **flags,
-            "status": "suggested",
-            "suggested_site_id": s.site_id,
-            "suggested_site_name": s.site_name,
-            "suggested_tenant_id": s.tenant_id,
-            "suggestion_confidence": 0.7,
-            "suggestion_reason": f"Only site in tenant — {s.site_name}",
-            "missing_e911": not has_e911,
-        }
-
-    return {
-        **flags,
-        "status": "needs_review",
-        "suggestion_confidence": None,
-        "suggestion_reason": f"{len(sites)} sites available — manual assignment needed",
+        "suggestion_reason": f"{len(sites)} sites in account ({site_names}{suffix}) — select the correct site",
     }

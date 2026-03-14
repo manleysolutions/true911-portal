@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/api/client";
 import {
   Cpu, Disc3, Phone, RefreshCw, Search, CheckCircle2, AlertTriangle, XCircle,
-  Loader2, Building2, MapPin, Link2, Eye, HelpCircle, Zap, ChevronDown,
+  Loader2, Building2, MapPin, Link2, HelpCircle, Zap,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SitePickerModal from "@/components/SitePickerModal";
@@ -19,24 +19,9 @@ const STATUS_CONFIG = {
   new: { label: "New", cls: "bg-blue-50 text-blue-700 border-blue-200" },
   suggested: { label: "Suggested", cls: "bg-purple-50 text-purple-700 border-purple-200" },
   needs_review: { label: "Needs Review", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  approved: { label: "Approved", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   linked: { label: "Linked", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   ignored: { label: "Ignored", cls: "bg-gray-100 text-gray-500 border-gray-200" },
 };
-
-function ConfidenceBar({ value }) {
-  if (value == null) return <span className="text-[10px] text-gray-400">No suggestion</span>;
-  const pct = Math.round(value * 100);
-  const color = pct >= 70 ? "bg-emerald-500" : pct >= 40 ? "bg-amber-500" : "bg-red-400";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-[10px] font-bold text-gray-500 w-8">{pct}%</span>
-    </div>
-  );
-}
 
 
 export default function ProvisioningQueue() {
@@ -48,8 +33,10 @@ export default function ProvisioningQueue() {
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [linkTarget, setLinkTarget] = useState(null); // item to link via site picker
-  const [actionLoading, setActionLoading] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [linkMode, setLinkMode] = useState(null); // "single" item or "bulk"
+  const [linkTarget, setLinkTarget] = useState(null); // single item for site picker
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -57,8 +44,7 @@ export default function ProvisioningQueue() {
       const params = new URLSearchParams();
       if (typeFilter) params.set("item_type", typeFilter);
       if (statusFilter) params.set("status", statusFilter);
-      params.set("limit", "200");
-
+      params.set("limit", "300");
       const [itemsData, summaryData] = await Promise.all([
         apiFetch(`/provisioning?${params}`),
         apiFetch("/provisioning/summary"),
@@ -85,52 +71,77 @@ export default function ProvisioningQueue() {
     setScanning(false);
   };
 
-  const handleApprove = async (item) => {
-    if (!item.suggested_site_id) {
-      setLinkTarget(item);
-      return;
-    }
-    setActionLoading(item.id);
-    try {
-      await apiFetch(`/provisioning/${item.id}/approve`, {
-        method: "POST",
-        body: JSON.stringify({ site_id: item.suggested_site_id }),
-      });
-      toast.success(`${item.item_type} linked to ${item.suggested_site_name || item.suggested_site_id}`);
-      fetchData();
-    } catch (err) {
-      toast.error(err?.message || "Failed to approve");
-    }
-    setActionLoading(null);
+  // ── Single item: link to site ──
+  const handleLinkSingle = (item) => {
+    setLinkTarget(item);
+    setLinkMode("single");
   };
 
-  const handleLink = async (siteId) => {
-    if (!linkTarget) return;
-    setActionLoading(linkTarget.id);
+  // ── Bulk: link selected to site ──
+  const handleBulkLink = () => {
+    setLinkMode("bulk");
+  };
+
+  // ── Site picker confirm ──
+  const handleSiteConfirm = async (siteId) => {
+    setActionLoading(true);
     try {
-      await apiFetch(`/provisioning/${linkTarget.id}/link`, {
-        method: "POST",
-        body: JSON.stringify({ site_id: siteId }),
-      });
-      toast.success(`${linkTarget.item_type} linked to site`);
+      if (linkMode === "single" && linkTarget) {
+        await apiFetch(`/provisioning/${linkTarget.id}/link`, {
+          method: "POST",
+          body: JSON.stringify({ site_id: siteId }),
+        });
+        toast.success(`Linked to site`);
+      } else if (linkMode === "bulk") {
+        const result = await apiFetch("/provisioning/bulk-link", {
+          method: "POST",
+          body: JSON.stringify({ item_ids: [...selected], site_id: siteId }),
+        });
+        toast.success(`${result.linked} item(s) linked to site`);
+        setSelected(new Set());
+      }
+      setLinkMode(null);
       setLinkTarget(null);
       fetchData();
     } catch (err) {
       toast.error(err?.message || "Failed to link");
     }
-    setActionLoading(null);
+    setActionLoading(false);
   };
 
+  // ── Single ignore ──
   const handleIgnore = async (item) => {
-    setActionLoading(item.id);
     try {
       await apiFetch(`/provisioning/${item.id}/ignore`, { method: "POST" });
-      toast.success("Item ignored");
+      toast.success("Ignored");
       fetchData();
     } catch (err) {
       toast.error(err?.message || "Failed to ignore");
     }
-    setActionLoading(null);
+  };
+
+  // ── Bulk ignore ──
+  const handleBulkIgnore = async () => {
+    try {
+      const result = await apiFetch("/provisioning/bulk-ignore", {
+        method: "POST",
+        body: JSON.stringify({ item_ids: [...selected] }),
+      });
+      toast.success(`${result.ignored} item(s) ignored`);
+      setSelected(new Set());
+      fetchData();
+    } catch (err) {
+      toast.error(err?.message || "Failed to ignore");
+    }
+  };
+
+  // ── Selection ──
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
   const filtered = items.filter(i => {
@@ -139,8 +150,11 @@ export default function ProvisioningQueue() {
     return (i.external_ref || "").toLowerCase().includes(q) ||
            (i.suggested_site_name || "").toLowerCase().includes(q) ||
            (i.source_provider || "").toLowerCase().includes(q) ||
-           (i.suggestion_reason || "").toLowerCase().includes(q);
+           (i.suggestion_reason || "").toLowerCase().includes(q) ||
+           (i.tenant_id || "").toLowerCase().includes(q);
   });
+
+  const isActionable = (item) => ["new", "suggested", "needs_review"].includes(item.status);
 
   return (
     <PageWrapper>
@@ -158,11 +172,8 @@ export default function ProvisioningQueue() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleScan}
-              disabled={scanning}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold"
-            >
+            <button onClick={handleScan} disabled={scanning}
+              className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold">
               {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
               Scan Inventory
             </button>
@@ -190,15 +201,34 @@ export default function ProvisioningQueue() {
           </div>
         )}
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+            <span className="text-purple-800 text-xs font-semibold">{selected.size} item(s) selected</span>
+            <div className="flex items-center gap-2">
+              <button onClick={handleBulkLink}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold">
+                <Building2 className="w-3.5 h-3.5" /> Assign to Site
+              </button>
+              <button onClick={handleBulkIgnore}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 hover:bg-white text-gray-600 rounded-lg text-xs font-medium">
+                <XCircle className="w-3.5 h-3.5" /> Ignore Selected
+              </button>
+              <button onClick={() => setSelected(new Set())}
+                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search ICCID, device, DID, site..."
-              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm"
-            />
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search ICCID, device, DID, site, tenant..."
+              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm" />
           </div>
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
@@ -219,7 +249,7 @@ export default function ProvisioningQueue() {
         </div>
 
         {/* Queue items */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 text-purple-600 animate-spin" />
@@ -228,124 +258,110 @@ export default function ProvisioningQueue() {
             <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
               <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
               <p className="text-sm text-gray-500">
-                {items.length === 0 ? "No items in queue. Click \"Scan Inventory\" to detect unlinked infrastructure." : "No items match your filters."}
+                {items.length === 0 ? 'No items in queue. Click "Scan Inventory" to detect unlinked infrastructure.' : "No items match your filters."}
               </p>
             </div>
-          ) : filtered.map(item => {
-            const tc = TYPE_CONFIG[item.item_type] || TYPE_CONFIG.sim;
-            const sc = STATUS_CONFIG[item.status] || STATUS_CONFIG.new;
-            const TypeIcon = tc.icon;
-            const isActionable = ["new", "suggested", "needs_review"].includes(item.status);
+          ) : (
+            <>
+            {/* Select all */}
+            <div className="flex items-center gap-2 px-1">
+              <input type="checkbox"
+                checked={filtered.length > 0 && selected.size === filtered.filter(isActionable).length}
+                onChange={() => {
+                  const actionableIds = filtered.filter(isActionable).map(i => i.id);
+                  if (selected.size === actionableIds.length) setSelected(new Set());
+                  else setSelected(new Set(actionableIds));
+                }}
+                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+              <span className="text-xs text-gray-500">Select all actionable ({filtered.filter(isActionable).length})</span>
+            </div>
 
-            return (
-              <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-start gap-4">
-                  {/* Type badge */}
-                  <div className={`w-10 h-10 rounded-lg ${tc.bg} ${tc.border} border flex items-center justify-center flex-shrink-0`}>
-                    <TypeIcon className={`w-5 h-5 ${tc.color}`} />
+            {filtered.map(item => {
+              const tc = TYPE_CONFIG[item.item_type] || TYPE_CONFIG.sim;
+              const sc = STATUS_CONFIG[item.status] || STATUS_CONFIG.new;
+              const TypeIcon = tc.icon;
+              const actionable = isActionable(item);
+
+              return (
+                <div key={item.id} className={`bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3 ${selected.has(item.id) ? "ring-2 ring-purple-200 bg-purple-50/30" : ""}`}>
+                  {/* Checkbox */}
+                  {actionable && (
+                    <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelect(item.id)}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 flex-shrink-0" />
+                  )}
+                  {!actionable && <div className="w-4" />}
+
+                  {/* Type icon */}
+                  <div className={`w-8 h-8 rounded-lg ${tc.bg} ${tc.border} border flex items-center justify-center flex-shrink-0`}>
+                    <TypeIcon className={`w-4 h-4 ${tc.color}`} />
                   </div>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-bold text-gray-900 font-mono">{item.external_ref}</span>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${sc.cls}`}>{sc.label}</span>
                       {item.source_provider && item.source_provider !== "manual" && (
                         <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold">{item.source_provider}</span>
                       )}
+                      <span className="text-[10px] text-gray-400">{item.tenant_id}</span>
                     </div>
-
-                    {/* Suggestion */}
-                    {item.suggested_site_name && (
-                      <div className="flex items-center gap-2 mb-2">
-                        <Building2 className="w-3.5 h-3.5 text-purple-500" />
-                        <span className="text-xs text-gray-700">
-                          Suggested: <span className="font-semibold">{item.suggested_site_name}</span>
-                        </span>
+                    {/* Suggestion or reason */}
+                    {item.suggested_site_name ? (
+                      <div className="text-xs text-gray-600 mt-0.5">
+                        Suggested: <span className="font-semibold">{item.suggested_site_name}</span>
+                        {item.suggestion_confidence != null && <span className="text-gray-400 ml-1">({Math.round(item.suggestion_confidence * 100)}%)</span>}
                       </div>
-                    )}
-                    {item.suggestion_reason && (
-                      <p className="text-[10px] text-gray-500 mb-2">{item.suggestion_reason}</p>
-                    )}
-
-                    {/* Confidence */}
-                    {item.suggestion_confidence != null && (
-                      <div className="w-40 mb-2">
-                        <ConfidenceBar value={item.suggestion_confidence} />
-                      </div>
-                    )}
-
+                    ) : item.suggestion_reason ? (
+                      <div className="text-[11px] text-gray-500 mt-0.5">{item.suggestion_reason}</div>
+                    ) : null}
                     {/* Warning badges */}
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1 mt-1">
                       {item.missing_site && (
-                        <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                          <Building2 className="w-2.5 h-2.5" /> No site
-                        </span>
+                        <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">No site</span>
                       )}
                       {item.missing_e911 && (
-                        <span className="flex items-center gap-1 text-[10px] text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">
-                          <MapPin className="w-2.5 h-2.5" /> No E911
-                        </span>
-                      )}
-                      {item.needs_compliance_review && (
-                        <span className="flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                          <HelpCircle className="w-2.5 h-2.5" /> Compliance review
-                        </span>
+                        <span className="text-[9px] text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">No E911</span>
                       )}
                     </div>
                   </div>
 
                   {/* Actions */}
-                  {isActionable && (
-                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                      {item.suggested_site_id && (
-                        <button
-                          onClick={() => handleApprove(item)}
-                          disabled={actionLoading === item.id}
-                          className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-[11px] font-semibold rounded-lg"
-                        >
-                          {actionLoading === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                          Approve
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setLinkTarget(item)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 hover:bg-gray-50 text-gray-700 text-[11px] font-medium rounded-lg"
-                      >
-                        <Link2 className="w-3 h-3" /> Link to Site
+                  {actionable && (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button onClick={() => handleLinkSingle(item)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold rounded-lg">
+                        <Building2 className="w-3 h-3" /> Assign Site
                       </button>
-                      <button
-                        onClick={() => handleIgnore(item)}
-                        disabled={actionLoading === item.id}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 text-[11px] rounded-lg"
-                      >
-                        <XCircle className="w-3 h-3" /> Ignore
+                      <button onClick={() => handleIgnore(item)}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg" title="Ignore">
+                        <XCircle className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
 
-                  {/* Resolved state */}
+                  {/* Resolved */}
                   {item.status === "linked" && item.resolved_site_id && (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-700">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Linked to {item.resolved_site_id}</span>
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 flex-shrink-0">
+                      <CheckCircle2 className="w-4 h-4" /> {item.resolved_site_id}
                     </div>
                   )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+            </>
+          )}
         </div>
       </div>
 
-      {/* Site picker for manual linking */}
-      {linkTarget && (
+      {/* Site picker */}
+      {linkMode && (
         <SitePickerModal
-          title={`Link ${linkTarget.item_type} to Site`}
-          count={1}
-          entityLabel={linkTarget.external_ref || linkTarget.item_type}
-          onClose={() => setLinkTarget(null)}
-          onConfirm={handleLink}
+          title={linkMode === "bulk" ? `Assign ${selected.size} Item(s) to Site` : `Assign ${linkTarget?.item_type || "item"} to Site`}
+          count={linkMode === "bulk" ? selected.size : 1}
+          entityLabel={linkMode === "bulk" ? "item(s)" : (linkTarget?.external_ref || "item")}
+          onClose={() => { setLinkMode(null); setLinkTarget(null); }}
+          onConfirm={handleSiteConfirm}
         />
       )}
     </PageWrapper>
