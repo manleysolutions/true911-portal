@@ -78,3 +78,37 @@ export const Provider = makeEntity("/providers");
 export const HardwareModel = makeEntity("/hardware-models");
 export const Customer = makeEntity("/customers");
 export const Sim = makeEntity("/sims");
+
+// VOLA / PR12 integration
+export const Vola = {
+  testConnection: () => apiFetch("/integrations/vola/test"),
+  listOrgs: () => apiFetch("/integrations/vola/orgs"),
+  listDevices: (usageStatus = "inUse") =>
+    apiFetch(`/integrations/vola/devices?usage_status=${usageStatus}`),
+  syncDevices: (usageStatus = "inUse") =>
+    apiFetch(`/integrations/vola/devices/sync?usage_status=${usageStatus}`, { method: "POST" }),
+  reboot: (deviceSn) =>
+    apiFetch(`/integrations/vola/device/${deviceSn}/reboot`, { method: "POST", body: JSON.stringify({ device_sn: deviceSn }) }),
+  readParams: (deviceSn, parameterNames, timeoutSeconds = 20) =>
+    apiFetch(`/integrations/vola/device/${deviceSn}/params/read`, {
+      method: "POST",
+      body: JSON.stringify({ device_sn: deviceSn, parameter_names: parameterNames, timeout_seconds: timeoutSeconds }),
+    }),
+  writeParams: (deviceSn, parameterValues, timeoutSeconds = 20) =>
+    apiFetch(`/integrations/vola/device/${deviceSn}/params/write`, {
+      method: "POST",
+      body: JSON.stringify({ device_sn: deviceSn, parameter_values: parameterValues, timeout_seconds: timeoutSeconds }),
+    }),
+  bindToSite: (deviceId, siteId) =>
+    apiFetch(`/integrations/vola/device/${deviceId}/bind`, {
+      method: "POST",
+      body: JSON.stringify({ device_id: deviceId, site_id: siteId }),
+    }),
+  provisionBasic: (deviceSn, siteCode, informInterval = 300) =>
+    apiFetch(`/integrations/vola/device/${deviceSn}/provision/basic`, {
+      method: "POST",
+      body: JSON.stringify({ device_sn: deviceSn, site_code: siteCode, inform_interval: informInterval }),
+    }),
+  deviceStatus: (deviceSn) =>
+    apiFetch(`/integrations/vola/device/${deviceSn}/status`),
+};

@@ -31,6 +31,11 @@ function ProviderFormModal({ provider, onClose, onSaved }) {
     display_name: provider?.display_name || "",
     api_key_ref: provider?.api_key_ref || "",
     enabled: provider?.enabled ?? false,
+    // VOLA-specific config
+    vola_email: provider?.config_json?.email || "",
+    vola_password: provider?.config_json?.password || "",
+    vola_org_id: provider?.config_json?.org_id || "",
+    vola_base_url: provider?.config_json?.base_url || "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -45,12 +50,24 @@ function ProviderFormModal({ provider, onClose, onSaved }) {
     setError("");
     setSaving(true);
     try {
+      // Build config_json for VOLA providers
+      let config_json = undefined;
+      if (form.provider_type === "vola") {
+        config_json = {};
+        if (form.vola_email) config_json.email = form.vola_email;
+        if (form.vola_password) config_json.password = form.vola_password;
+        if (form.vola_org_id) config_json.org_id = form.vola_org_id;
+        if (form.vola_base_url) config_json.base_url = form.vola_base_url;
+        if (Object.keys(config_json).length === 0) config_json = undefined;
+      }
+
       if (isEdit) {
         await Provider.update(provider.id, {
           provider_type: form.provider_type,
           display_name: form.display_name,
           api_key_ref: form.api_key_ref || undefined,
           enabled: form.enabled,
+          config_json,
         });
         toast.success("Provider updated.");
       } else {
@@ -60,6 +77,7 @@ function ProviderFormModal({ provider, onClose, onSaved }) {
           display_name: form.display_name,
           api_key_ref: form.api_key_ref || undefined,
           enabled: form.enabled,
+          config_json,
         });
         toast.success("Provider created.");
       }
@@ -130,6 +148,54 @@ function ProviderFormModal({ provider, onClose, onSaved }) {
               placeholder="Vault path or env-var name"
             />
           </div>
+
+          {/* VOLA-specific fields */}
+          {form.provider_type === "vola" && (
+            <div className="space-y-3 bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="text-xs font-bold text-blue-800 uppercase tracking-wide">VOLA Cloud Credentials</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
+                  <input
+                    value={form.vola_email}
+                    onChange={set("vola_email")}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="VOLA account email"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={form.vola_password}
+                    onChange={set("vola_password")}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="VOLA password"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Org ID (optional)</label>
+                  <input
+                    value={form.vola_org_id}
+                    onChange={set("vola_org_id")}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Auto-switch to this org"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Base URL (optional)</label>
+                  <input
+                    value={form.vola_base_url}
+                    onChange={set("vola_base_url")}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="https://cloudapi.volanetworks.net"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2.5">
             <input

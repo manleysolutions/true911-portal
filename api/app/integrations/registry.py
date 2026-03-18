@@ -1,16 +1,18 @@
-"""Provider client factory — maps provider slugs to client classes."""
+"""Provider client factory — maps provider slugs to client classes.
+
+Note: VOLA uses its own service layer (app.services.vola_service) instead of
+the generic BaseProviderClient pattern, so it is not registered here.
+"""
 
 from __future__ import annotations
 
 from app.integrations.base import BaseProviderClient
 from app.integrations.telnyx import TelnyxClient
 from app.integrations.tmobile import TMobileClient
-from app.integrations.vola import VolaClient
 
 _REGISTRY: dict[str, type[BaseProviderClient]] = {
     "telnyx": TelnyxClient,
     "tmobile": TMobileClient,
-    "vola": VolaClient,
 }
 
 

@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 
+    # ── VOLA / FlyingVoice TR-069 ───────────────────────────────────────
+    VOLA_BASE_URL: str = "https://cloudapi.volanetworks.net"
+    VOLA_EMAIL: str = ""
+    VOLA_PASSWORD: str = ""
+    VOLA_ORG_ID: str = ""  # optional org to auto-switch
+    VOLA_ALLOWED_PARAM_PREFIXES: str = ""  # comma-separated read prefixes
+    VOLA_ALLOWED_SET_PREFIXES: str = ""    # comma-separated write prefixes
+    VOLA_BLOCKED_SET_PREFIXES: str = ""    # comma-separated blocked write prefixes
+    VOLA_DENYLIST_EXACT: str = ""          # comma-separated exact denied nodes
+
     # ── Zoho CRM ───────────────────────────────────────────────────────
     ZOHO_CRM_CLIENT_ID: str = ""
     ZOHO_CRM_CLIENT_SECRET: str = ""

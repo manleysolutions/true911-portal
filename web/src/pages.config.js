@@ -83,6 +83,7 @@ import DeviceAssignment from './pages/DeviceAssignment';
 import SiteOnboarding from './pages/SiteOnboarding';
 import SiteDetail from './pages/SiteDetail';
 import ProvisioningQueue from './pages/ProvisioningQueue';
+import VolaIntegration from './pages/VolaIntegration';
 import __Layout from './Layout.jsx';
 
 
@@ -123,6 +124,7 @@ export const PAGES = {
     "SiteOnboarding": SiteOnboarding,
     "SiteDetail": SiteDetail,
     "ProvisioningQueue": ProvisioningQueue,
+    "VolaIntegration": VolaIntegration,
 }
 
 export const pagesConfig = {

@@ -50,3 +50,7 @@ class Device(Base):
     data_usage_mb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     last_network_event: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     telemetry_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # VOLA linkage (Phase 1 PR12)
+    vola_org_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    vola_last_sync: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    vola_last_task_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
