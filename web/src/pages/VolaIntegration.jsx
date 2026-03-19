@@ -50,29 +50,63 @@ function ConnectionPanel() {
   );
 }
 
+/* ── Last Action Result banner ── */
+const ACTION_STYLES = {
+  success: "bg-emerald-50 border-emerald-200 text-emerald-800",
+  failed: "bg-red-50 border-red-200 text-red-800",
+  error: "bg-red-50 border-red-200 text-red-800",
+  pending: "bg-amber-50 border-amber-200 text-amber-800",
+};
+
+function ActionResult({ result, onDismiss }) {
+  if (!result) return null;
+  const style = ACTION_STYLES[result.status] || ACTION_STYLES.pending;
+  const icon = result.status === "success"
+    ? <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+    : <XCircle className="w-3.5 h-3.5 flex-shrink-0" />;
+
+  return (
+    <div className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-xs ${style}`}>
+      {icon}
+      <div className="flex-1 min-w-0">
+        <span className="font-semibold">{result.action}:</span>{" "}
+        <span>{result.message}</span>
+        {result.details && (
+          <div className="mt-1 font-mono text-[11px] opacity-80 break-all">{result.details}</div>
+        )}
+      </div>
+      <button onClick={onDismiss} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+        <XCircle className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
+
 /* ── VOLA Device Card ── */
-function VolaDeviceCard({ device, sites, onSync, onReboot, onProvision, onReadStatus }) {
+function VolaDeviceCard({ device, sites }) {
   const [expanded, setExpanded] = useState(false);
   const [rebooting, setRebooting] = useState(false);
   const [reading, setReading] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
-  const [siteId, setSiteId] = useState("");
   const [siteCode, setSiteCode] = useState("");
   const [readResult, setReadResult] = useState(null);
+  const [lastAction, setLastAction] = useState(null);
 
   const handleReboot = async () => {
     setRebooting(true);
+    setLastAction(null);
     try {
       const res = await Vola.reboot(device.device_sn);
-      toast.success(`Reboot task created: ${res.task_id}`);
+      setLastAction({ action: "Reboot", status: "success", message: `Task created`, details: `task_id: ${res.task_id}` });
     } catch (err) {
-      toast.error(err?.message || "Reboot failed");
+      setLastAction({ action: "Reboot", status: "error", message: err?.message || "Failed to create reboot task" });
     }
     setRebooting(false);
   };
 
   const handleReadStatus = async () => {
     setReading(true);
+    setLastAction(null);
     try {
       const res = await Vola.readParams(device.device_sn, [
         "Device.DeviceInfo.SoftwareVersion",
@@ -81,9 +115,10 @@ function VolaDeviceCard({ device, sites, onSync, onReboot, onProvision, onReadSt
         "Device.ManagementServer.PeriodicInformInterval",
       ]);
       setReadResult(res);
-      toast.success("Parameters read successfully");
+      const count = Object.keys(res.extracted_values || {}).length;
+      setLastAction({ action: "Read Status", status: res.status, message: `${count} parameter(s) returned`, details: `task_id: ${res.task_id}` });
     } catch (err) {
-      toast.error(err?.message || "Failed to read parameters");
+      setLastAction({ action: "Read Status", status: "error", message: err?.message || "Failed to read parameters" });
     }
     setReading(false);
   };
@@ -94,11 +129,13 @@ function VolaDeviceCard({ device, sites, onSync, onReboot, onProvision, onReadSt
       return;
     }
     setProvisioning(true);
+    setLastAction(null);
     try {
       const res = await Vola.provisionBasic(device.device_sn, siteCode.trim());
-      toast.success(`Provisioning ${res.status}: ${JSON.stringify(res.applied)}`);
+      const appliedStr = Object.entries(res.applied || {}).map(([k, v]) => `${k.split(".").pop()}=${v}`).join(", ");
+      setLastAction({ action: "Provision", status: res.status, message: appliedStr || "Parameters sent", details: `task_id: ${res.task_id}` });
     } catch (err) {
-      toast.error(err?.message || "Provisioning failed");
+      setLastAction({ action: "Provision", status: "error", message: err?.message || "Provisioning failed" });
     }
     setProvisioning(false);
   };
@@ -115,7 +152,7 @@ function VolaDeviceCard({ device, sites, onSync, onReboot, onProvision, onReadSt
           <div className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-gray-400"}`} />
           <div>
             <div className="text-sm font-semibold text-gray-900">{device.device_sn}</div>
-            <div className="text-xs text-gray-500">{device.model} | MAC: {device.mac || "—"}</div>
+            <div className="text-xs text-gray-500">{device.model} | MAC: {device.mac || "---"}</div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -132,10 +169,13 @@ function VolaDeviceCard({ device, sites, onSync, onReboot, onProvision, onReadSt
           {/* Info */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div><span className="text-gray-400 block">SN</span><span className="font-mono">{device.device_sn}</span></div>
-            <div><span className="text-gray-400 block">MAC</span><span className="font-mono">{device.mac || "—"}</span></div>
-            <div><span className="text-gray-400 block">IP</span><span className="font-mono">{device.ip || "—"}</span></div>
-            <div><span className="text-gray-400 block">Org</span><span>{device.org_name || device.org_id || "—"}</span></div>
+            <div><span className="text-gray-400 block">MAC</span><span className="font-mono">{device.mac || "---"}</span></div>
+            <div><span className="text-gray-400 block">IP</span><span className="font-mono">{device.ip || "---"}</span></div>
+            <div><span className="text-gray-400 block">Org</span><span>{device.org_name || device.org_id || "---"}</span></div>
           </div>
+
+          {/* Last action result */}
+          <ActionResult result={lastAction} onDismiss={() => setLastAction(null)} />
 
           {/* Actions */}
           <div className="flex flex-wrap gap-2">
@@ -157,7 +197,7 @@ function VolaDeviceCard({ device, sites, onSync, onReboot, onProvision, onReadSt
             </button>
           </div>
 
-          {/* Read result */}
+          {/* Read result — parameter values table */}
           {readResult && (
             <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
               <div className="font-semibold text-gray-700 mb-1">Parameters ({readResult.status})</div>

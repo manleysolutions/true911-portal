@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -123,9 +124,9 @@ async def sync_vola_devices(
         existing_q = select(Device).where(
             Device.tenant_id == tenant_id,
             or_(*conditions),
-        )
+        ).limit(1)
         existing_result = await db.execute(existing_q)
-        existing = existing_result.scalar_one_or_none()
+        existing = existing_result.scalar_one_or_none()  # limit(1) ensures at most one
 
         if existing:
             # Update metadata from VOLA
@@ -174,7 +175,20 @@ async def sync_vola_devices(
                 notes=f"Synced from VOLA org={normalized.get('org_id', '')}",
             )
             db.add(new_device)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                logger.warning("Skipping duplicate device_id=%s (SN=%s MAC=%s)", device_id, sn, mac)
+                skipped += 1
+                result_devices.append({
+                    "device_id": device_id,
+                    "id": None,
+                    "action": "skipped_duplicate",
+                    "serial_number": sn,
+                    "mac_address": mac,
+                })
+                continue
 
             # Emit event
             db.add(Event(

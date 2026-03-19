@@ -88,7 +88,7 @@ export const Vola = {
   syncDevices: (usageStatus = "inUse") =>
     apiFetch(`/integrations/vola/devices/sync?usage_status=${usageStatus}`, { method: "POST" }),
   reboot: (deviceSn) =>
-    apiFetch(`/integrations/vola/device/${deviceSn}/reboot`, { method: "POST", body: JSON.stringify({ device_sn: deviceSn }) }),
+    apiFetch(`/integrations/vola/device/${deviceSn}/reboot`, { method: "POST" }),
   readParams: (deviceSn, parameterNames, timeoutSeconds = 20) =>
     apiFetch(`/integrations/vola/device/${deviceSn}/params/read`, {
       method: "POST",
@@ -99,10 +99,10 @@ export const Vola = {
       method: "POST",
       body: JSON.stringify({ device_sn: deviceSn, parameter_values: parameterValues, timeout_seconds: timeoutSeconds }),
     }),
-  bindToSite: (deviceId, siteId) =>
-    apiFetch(`/integrations/vola/device/${deviceId}/bind`, {
+  bindToSite: (devicePk, siteId) =>
+    apiFetch(`/integrations/vola/device/${devicePk}/bind`, {
       method: "POST",
-      body: JSON.stringify({ device_id: deviceId, site_id: siteId }),
+      body: JSON.stringify({ site_id: siteId }),
     }),
   provisionBasic: (deviceSn, siteCode, informInterval = 300) =>
     apiFetch(`/integrations/vola/device/${deviceSn}/provision/basic`, {

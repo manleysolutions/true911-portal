@@ -45,6 +45,7 @@ const PERMISSIONS = {
   CLOSE_INCIDENT: ["Admin", "Manager"],
   MANAGE_NOTIFICATIONS: ["Admin"],
   MANAGE_PROVIDERS: ["Admin"],
+  MANAGE_DEVICES: ["Admin"],
   ROTATE_DEVICE_KEY: ["Admin"],
   MANAGE_USERS: ["Admin"],
   MANAGE_SIMS: ["Admin"],

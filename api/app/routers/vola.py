@@ -119,7 +119,6 @@ class SetParamsSyncResponse(BaseModel):
 
 
 class BindRequest(BaseModel):
-    device_id: int
     site_id: str
 
 
@@ -379,7 +378,7 @@ async def bind_to_site(
     """Bind a True911 device (by PK) to a site."""
     try:
         device = await bind_device_to_site(
-            db, current_user.tenant_id, body.device_id, body.site_id,
+            db, current_user.tenant_id, device_id_pk, body.site_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
