@@ -157,6 +157,7 @@ class DeployDeviceResult(BaseModel):
     provision_task_id: str | None = None
     reboot_task_id: str | None = None
     applied: dict[str, str] = Field(default_factory=dict)
+    verified_values: dict[str, str] = Field(default_factory=dict)
 
 
 class DeployResponse(BaseModel):

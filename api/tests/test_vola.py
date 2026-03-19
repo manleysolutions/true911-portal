@@ -395,34 +395,55 @@ def test_build_provision_payload_with_extra():
 @respx.mock
 @pytest.mark.asyncio
 async def test_deploy_device_full_flow():
-    """Test deploy_device runs ensure->bind->provision->reboot."""
-    from unittest.mock import AsyncMock, MagicMock, PropertyMock
+    """Test deploy_device runs validate->ensure->bind->provision->reboot->verify."""
+    from unittest.mock import AsyncMock, MagicMock
     from app.services.vola_service import deploy_device
 
     _mock_auth()
 
+    # Mock VOLA device-list for validation step
+    respx.post(f"{VOLA_BASE}/org-mgmt-api/device-list").mock(
+        return_value=httpx.Response(200, json={"data": {
+            "total": 1,
+            "list": [{"deviceSN": "SN001", "mac": "AA:BB:CC:DD:EE:01", "status": "online"}],
+        }})
+    )
+
     # Mock VOLA task operations — createTask returns taskId, poll returns success
-    call_count = 0
+    created_task_ids = []
     def task_op_side_effect(request):
-        nonlocal call_count
-        call_count += 1
         body = json.loads(request.content)
         if body.get("operation") == "createTask":
-            return httpx.Response(200, json={"data": {"taskId": f"task_{call_count}"}})
-        # poll: immediate success
+            tid = f"task_{len(created_task_ids) + 1}"
+            created_task_ids.append(tid)
+            return httpx.Response(200, json={"data": {"taskId": tid}})
+        # getTaskResult — always return success for the requested task
+        requested_ids = body.get("taskIdList", [])
+        tid = requested_ids[0] if requested_ids else "unknown"
         return httpx.Response(200, json={"data": {
-            "successList": [{"taskId": f"task_{call_count - 1}", "result": "ok"}],
+            "successList": [{
+                "taskId": tid,
+                "result": "ok",
+                "parameterValues": [
+                    {"name": "Device.DeviceInfo.ProvisioningCode", "value": "SITE-001"},
+                    {"name": "Device.ManagementServer.PeriodicInformInterval", "value": "300"},
+                ],
+            }],
             "failedList": [], "pendingList": [],
         }})
 
     respx.post(f"{VOLA_BASE}/org-mgmt-api/device-task-operation").mock(side_effect=task_op_side_effect)
+
+    # Mock switchOrg if org_id is set
+    respx.post(f"{VOLA_BASE}/user-mgmt-api/user-operation").mock(
+        return_value=httpx.Response(200, json={"data": {}})
+    )
 
     client = _make_client()
 
     # Mock DB session
     mock_db = AsyncMock()
 
-    # ensure_device_exists: simulate device not found -> create
     mock_device = MagicMock()
     mock_device.device_id = "VOLA-SN001"
     mock_device.id = 1
@@ -430,16 +451,9 @@ async def test_deploy_device_full_flow():
     mock_device.site_id = None
     mock_device.serial_number = "SN001"
 
-    # First execute (lookup by SN) returns None, triggering create
-    # We simulate that ensure_device_exists returns a device object
-    mock_result_none = MagicMock()
-    mock_result_none.scalar_one_or_none.return_value = None
-
-    mock_db.execute.return_value = mock_result_none
     mock_db.flush = AsyncMock()
     mock_db.commit = AsyncMock()
 
-    # Patch ensure_device_exists to avoid full DB interaction
     from unittest.mock import patch
     with patch("app.services.vola_service.ensure_device_exists", return_value=mock_device):
         result = await deploy_device(
@@ -448,16 +462,19 @@ async def test_deploy_device_full_flow():
             site_id="SITE-001",
             site_code="SITE-001",
             inform_interval=300,
+            verify=True,
         )
 
     assert result["device_sn"] == "SN001"
+    assert result["steps"]["vola_validate"] == "ok"
     assert result["steps"]["ensure_device"] == "ok"
     assert result["steps"]["bind_to_site"] == "ok"
     assert result["steps"]["provision"] == "success"
     assert result["steps"]["reboot"] == "ok"
+    assert result["steps"]["verify"] == "ok"
     assert result["status"] == "success"
-    assert "provision_task_id" in result
-    assert "reboot_task_id" in result
+    assert result["verified_values"]["Device.DeviceInfo.ProvisioningCode"] == "SITE-001"
+    assert result["verified_values"]["Device.ManagementServer.PeriodicInformInterval"] == "300"
 
 
 # ── Provision deployment (service layer) ────────────────────────────────────

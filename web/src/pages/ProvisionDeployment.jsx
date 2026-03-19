@@ -17,6 +17,12 @@ const STEP_LABELS = {
   vola_connect: "VOLA Connection",
   devices: "Devices",
   user_invite: "User Invite",
+  vola_validate: "VOLA Validate",
+  ensure_device: "Create Device",
+  bind_to_site: "Bind to Site",
+  provision: "Provision",
+  reboot: "Reboot",
+  verify: "Verify",
 };
 
 const STEP_ORDER = ["tenant", "customer", "site", "vola_connect", "devices", "user_invite"];
@@ -42,26 +48,47 @@ function StepResult({ stepKey, value }) {
 
 function DeviceResult({ d }) {
   const ok = d.status === "success";
+  const partial = d.status === "partial";
+  const stepOrder = ["vola_validate", "ensure_device", "bind_to_site", "provision", "reboot", "verify"];
   return (
-    <div className={`rounded-xl border px-4 py-3 ${ok ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
-      <div className="flex items-center gap-2 mb-1.5">
+    <div className={`rounded-xl border px-4 py-3 ${ok ? "bg-emerald-50 border-emerald-200" : partial ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"}`}>
+      <div className="flex items-center gap-2 mb-2">
         {ok ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <XCircle className="w-4 h-4 text-red-600" />}
         <span className="text-sm font-bold text-gray-900">{d.device_sn}</span>
         {d.device_id && <span className="text-xs text-gray-400">{d.device_id}</span>}
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto ${ok ? "bg-emerald-100 text-emerald-700" : partial ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+          {d.status}
+        </span>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {Object.entries(d.steps || {}).map(([k, v]) => {
+      {/* Step badges */}
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {stepOrder.filter(k => d.steps?.[k]).map(k => {
+          const v = d.steps[k];
           const isOk = v === "ok" || v === "success";
+          const isWarn = v.startsWith("not_found") || v === "mismatch" || v.startsWith("skipped");
+          const label = STEP_LABELS[k] || k.replace(/_/g, " ");
           return (
-            <span key={k} className={isOk ? "text-emerald-700" : "text-red-700"}>
-              {k.replace(/_/g, " ")}: {v}
+            <span key={k} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+              isOk ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+              isWarn ? "bg-amber-50 text-amber-700 border-amber-200" :
+              "bg-red-50 text-red-700 border-red-200"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isOk ? "bg-emerald-500" : isWarn ? "bg-amber-500" : "bg-red-500"}`} />
+              {label}
             </span>
           );
         })}
       </div>
+      {/* Applied params */}
       {d.applied && Object.keys(d.applied).length > 0 && (
-        <div className="text-xs text-gray-600 mt-1">
-          {Object.entries(d.applied).map(([k, v]) => `${k.split(".").pop()}=${v}`).join(", ")}
+        <div className="text-xs text-gray-600 mb-1">
+          <span className="text-gray-400">Applied:</span> {Object.entries(d.applied).map(([k, v]) => `${k.split(".").pop()}=${v}`).join(", ")}
+        </div>
+      )}
+      {/* Verified values */}
+      {d.verified_values && Object.keys(d.verified_values).length > 0 && (
+        <div className="text-xs text-emerald-700 mb-1">
+          <span className="text-gray-400">Verified:</span> {Object.entries(d.verified_values).map(([k, v]) => `${k.split(".").pop()}=${v}`).join(", ")}
         </div>
       )}
       {d.error && <div className="text-xs text-red-700 mt-1">{d.error}</div>}

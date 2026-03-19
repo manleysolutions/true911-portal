@@ -357,10 +357,11 @@ async def deploy_device(
     site_id: str,
     site_code: str,
     inform_interval: int = 300,
+    verify: bool = True,
 ) -> dict[str, Any]:
     """Run the full deploy sequence for a single device.
 
-    Steps: ensure exists -> bind to site -> provision -> reboot.
+    Steps: validate in VOLA -> ensure exists -> bind to site -> provision -> reboot -> verify.
     Returns a result dict with status per step.
     """
     result: dict[str, Any] = {
@@ -368,9 +369,29 @@ async def deploy_device(
         "steps": {},
         "status": "success",
         "error": None,
+        "verified_values": {},
     }
 
-    # Step 1: Ensure device exists
+    # Step 0: Validate device exists in VOLA
+    try:
+        vola_data = await client.get_device_list("inUse")
+        raw_list = vola_data.get("list", vola_data.get("deviceList", [])) if isinstance(vola_data, dict) else (vola_data if isinstance(vola_data, list) else [])
+        found = any(
+            d.get("deviceSN", d.get("sn", "")) == device_sn
+            for d in raw_list
+        )
+        if found:
+            result["steps"]["vola_validate"] = "ok"
+        else:
+            # Device not in VOLA — warn but continue (may be offline / different status)
+            result["steps"]["vola_validate"] = "not_found_in_vola"
+            logger.warning("Device %s not found in VOLA device list — continuing anyway", device_sn)
+    except Exception as exc:
+        # Non-fatal — VOLA list may fail but device may still accept tasks
+        result["steps"]["vola_validate"] = f"skipped: {exc}"
+        logger.warning("Could not validate device %s in VOLA: %s", device_sn, exc)
+
+    # Step 1: Ensure device exists locally
     try:
         device = await ensure_device_exists(db, tenant_id, device_sn)
         result["device_id"] = device.device_id
@@ -439,6 +460,41 @@ async def deploy_device(
         if result["status"] == "success":
             result["status"] = "partial"
             result["error"] = f"Provisioned but reboot failed: {exc}"
+
+    # Step 5: Verify (read-back provisioned parameters)
+    if verify and result["steps"].get("provision") == "success":
+        try:
+            verify_params = [
+                "Device.DeviceInfo.ProvisioningCode",
+                "Device.ManagementServer.PeriodicInformInterval",
+            ]
+            vdata = await client.create_get_parameter_values_task(device_sn, verify_params)
+            vtask_id = vdata.get("taskId", vdata.get("id", ""))
+            if vtask_id:
+                vpoll = await client.poll_task_sync(vtask_id, timeout_seconds=20, poll_interval=1.0)
+                if vpoll["status"] == "success":
+                    verified = extract_parameter_values(vpoll["result"])
+                    result["verified_values"] = verified
+                    # Check if values match what we applied
+                    code_match = verified.get("Device.DeviceInfo.ProvisioningCode", "") == site_code
+                    interval_match = verified.get("Device.ManagementServer.PeriodicInformInterval", "") == str(inform_interval)
+                    if code_match and interval_match:
+                        result["steps"]["verify"] = "ok"
+                    else:
+                        result["steps"]["verify"] = "mismatch"
+                        if result["status"] == "success":
+                            result["status"] = "partial"
+                            result["error"] = "Verification: parameter values don't match expected"
+                else:
+                    result["steps"]["verify"] = vpoll["status"]
+            else:
+                result["steps"]["verify"] = "skipped: no taskId"
+        except Exception as exc:
+            # Verify failure is non-fatal
+            result["steps"]["verify"] = f"error: {exc}"
+            logger.warning("Verify failed for %s: %s", device_sn, exc)
+    elif not verify:
+        result["steps"]["verify"] = "skipped"
 
     # Commit the DB changes (device create/bind)
     try:
