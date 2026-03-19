@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     ZOHO_CRM_ORG_ID: str = ""  # optional — for multi-org Zoho setups
     ZOHO_CRM_DEFAULT_TENANT: str = "default"  # tenant_id for accounts without explicit mapping
 
+    # ── T-Mobile Wholesale (TAAP / PoP) ────────────────────────────────
+    TMOBILE_ENV: str = "pit"  # pit | prod
+    TMOBILE_BASE_URL: str = ""  # https://pit-apis.t-mobile.com or https://apis.t-mobile.com
+    TMOBILE_TOKEN_URL: str = ""  # https://pit-oauth.t-mobile.com/oauth2/v2/tokens or prod equiv
+    TMOBILE_CONSUMER_KEY: str = ""
+    TMOBILE_CONSUMER_SECRET: str = ""
+    TMOBILE_PARTNER_ID: str = ""  # T-Mobile-assigned partner ID
+    TMOBILE_SENDER_ID: str = ""   # T-Mobile-assigned sender ID
+    TMOBILE_ACCOUNT_ID: str = ""  # wholesale account ID
+    TMOBILE_PRIVATE_KEY_PATH: str = ""  # path to RSA private key PEM file
+    TMOBILE_PRIVATE_KEY_PEM: str = ""   # alternative: PEM content directly (for Render/Docker)
+
     # ── Verizon ThingSpace ─────────────────────────────────────────────
     VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session
     VERIZON_THINGSPACE_BASE_URL: str = "https://thingspace.verizon.com/api"
