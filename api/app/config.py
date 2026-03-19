@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     VOLA_ALLOWED_SET_PREFIXES: str = ""    # comma-separated write prefixes
     VOLA_BLOCKED_SET_PREFIXES: str = ""    # comma-separated blocked write prefixes
     VOLA_DENYLIST_EXACT: str = ""          # comma-separated exact denied nodes
+    VOLA_DEBUG_FETCH: str = "false"       # "true" to log raw VOLA API responses
 
     # ── Zoho CRM ───────────────────────────────────────────────────────
     ZOHO_CRM_CLIENT_ID: str = ""

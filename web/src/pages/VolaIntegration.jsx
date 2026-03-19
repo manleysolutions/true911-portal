@@ -169,10 +169,13 @@ function VolaDeviceCard({ device, sites }) {
           {/* Info */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div><span className="text-gray-400 block">SN</span><span className="font-mono">{device.device_sn}</span></div>
-            <div><span className="text-gray-400 block">MAC</span><span className="font-mono">{device.mac || "---"}</span></div>
-            <div><span className="text-gray-400 block">IP</span><span className="font-mono">{device.ip || "---"}</span></div>
+            <div><span className="text-gray-400 block">Model</span><span className="font-mono">{device.model || "---"}</span></div>
             <div><span className="text-gray-400 block">Org</span><span>{device.org_name || device.org_id || "---"}</span></div>
+            <div><span className="text-gray-400 block">Last Update</span><span>{device.last_update || "---"}</span></div>
           </div>
+          {device.line_accounts?.filter(Boolean).length > 0 && (
+            <div className="text-xs text-gray-500">Lines: {device.line_accounts.filter(Boolean).join(", ")}</div>
+          )}
 
           {/* Last action result */}
           <ActionResult result={lastAction} onDismiss={() => setLastAction(null)} />
@@ -669,6 +672,7 @@ export default function VolaIntegration() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [showQuickDeploy, setShowQuickDeploy] = useState(false);
+  const [fetchAttempted, setFetchAttempted] = useState(false);
 
   const fetchSites = useCallback(async () => {
     try {
@@ -681,10 +685,15 @@ export default function VolaIntegration() {
 
   const handleFetchDevices = async () => {
     setLoading(true);
+    setFetchAttempted(true);
     try {
       const res = await Vola.listDevices();
       setVolaDevices(res.devices || []);
-      toast.success(`Found ${res.total} VOLA device(s)`);
+      if (res.total > 0) {
+        toast.success(`Found ${res.total} VOLA device(s)`);
+      } else {
+        toast.warning("Authenticated but 0 devices returned. Check org filter or device status in VOLA Cloud.");
+      }
     } catch (err) {
       toast.error(err?.message || "Failed to fetch VOLA devices");
     }
@@ -772,8 +781,21 @@ export default function VolaIntegration() {
         {volaDevices.length === 0 && !loading && (
           <div className="text-center py-12">
             <Radio className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <div className="text-sm font-semibold text-gray-500">No VOLA devices loaded</div>
-            <div className="text-xs text-gray-400 mt-1">Click "Fetch VOLA Devices" to pull the device list from VOLA Cloud.</div>
+            {fetchAttempted ? (
+              <>
+                <div className="text-sm font-semibold text-amber-600">Authenticated, but no devices were returned</div>
+                <div className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
+                  This may indicate an org filter mismatch, empty device scope, or different usage status.
+                  Check your VOLA Cloud dashboard to confirm devices are under "In Use" for this organization.
+                  If you have an org ID, set it in your VOLA provider config.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-sm font-semibold text-gray-500">No VOLA devices loaded</div>
+                <div className="text-xs text-gray-400 mt-1">Click "Fetch VOLA Devices" to pull the device list from VOLA Cloud.</div>
+              </>
+            )}
           </div>
         )}
 

@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.integrations.vola import VolaClient, normalize_vola_device, extract_parameter_values
+from app.integrations.vola import VolaClient, normalize_vola_device, extract_device_list, extract_parameter_values
 from app.models.device import Device
 from app.models.event import Event
 from app.models.provider import Provider
@@ -375,7 +375,7 @@ async def deploy_device(
     # Step 0: Validate device exists in VOLA
     try:
         vola_data = await client.get_device_list("inUse")
-        raw_list = vola_data.get("list", vola_data.get("deviceList", [])) if isinstance(vola_data, dict) else (vola_data if isinstance(vola_data, list) else [])
+        raw_list = extract_device_list(vola_data)
         found = any(
             d.get("deviceSN", d.get("sn", "")) == device_sn
             for d in raw_list

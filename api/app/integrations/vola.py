@@ -3,12 +3,17 @@
 Ported from true911-vola-connector to run inside true911-prod directly.
 Provides: auth, org listing, device listing, reboot, parameter get/set,
 task polling, and safety controls (allowlist / denylist / dangerous prefix).
+
+Auth note: VOLA Cloud API uses token-in-body auth. The access token must be
+sent as a "token" key in the JSON request body for all authenticated
+endpoints (NOT as an HTTP header).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -16,10 +21,10 @@ import httpx
 
 logger = logging.getLogger("true911.integrations.vola")
 
-# ── Module-level token cache ────────────────────────────────────────────────
+# ── Debug mode (reads directly from env so it works without full app config) ─
+VOLA_DEBUG_FETCH = os.environ.get("VOLA_DEBUG_FETCH", "").lower() in ("true", "1", "yes")
 
-_token: str | None = None
-_token_obtained_at: float = 0.0
+# ── Token config ────────────────────────────────────────────────────────────
 _TOKEN_LIFETIME_SECONDS: int = 24 * 60 * 60  # 24 h
 _TOKEN_REFRESH_BUFFER: int = 5 * 60           # 5 min
 
@@ -28,10 +33,8 @@ _TOKEN_REFRESH_BUFFER: int = 5 * 60           # 5 min
 MAX_PARAMETER_NAMES: int = 50
 MAX_SET_PARAMETER_VALUES: int = 50
 
-# Default safe read prefixes (empty = allow all in dev)
 DEFAULT_ALLOWED_PARAM_PREFIXES: list[str] = []
 
-# Default safe write prefixes
 DEFAULT_ALLOWED_SET_PREFIXES: list[str] = [
     "Device.DeviceInfo.ProvisioningCode",
     "Device.DeviceInfo.X_",
@@ -56,26 +59,12 @@ DEFAULT_DENYLIST_EXACT: set[str] = {
     "InternetGatewayDevice.ManagementServer.Password",
 }
 
-# Hardcoded dangerous prefixes that are always blocked unless explicitly allowed
 HARDCODED_DANGEROUS_PREFIXES: list[str] = [
     "Device.Security.",
     "Device.Users.",
     "InternetGatewayDevice.UserInterface.",
     "InternetGatewayDevice.DeviceInfo.X_Password",
 ]
-
-
-def _token_expired() -> bool:
-    if _token is None:
-        return True
-    age = time.time() - _token_obtained_at
-    return age >= (_TOKEN_LIFETIME_SECONDS - _TOKEN_REFRESH_BUFFER)
-
-
-def _invalidate_token() -> None:
-    global _token, _token_obtained_at
-    _token = None
-    _token_obtained_at = 0.0
 
 
 # ── HTTP helpers ────────────────────────────────────────────────────────────
@@ -98,7 +87,11 @@ async def close_client() -> None:
 
 
 class VolaClient:
-    """Stateful VOLA API client scoped to specific credentials."""
+    """Stateful VOLA API client scoped to specific credentials.
+
+    VOLA Cloud uses token-in-body authentication: every POST after login
+    must include ``"token": "<accessToken>"`` in the JSON body.
+    """
 
     def __init__(
         self,
@@ -139,24 +132,43 @@ class VolaClient:
     def _build_url(self, path: str) -> str:
         return f"{self.base_url}{path}"
 
-    async def _authed_headers(self) -> dict[str, str]:
-        token = await self.get_access_token()
-        return {"accessToken": token, "Content-Type": "application/json"}
-
     async def _post(self, path: str, payload: dict[str, Any], *, retry_on_401: bool = True) -> dict[str, Any]:
-        """POST to Vola API with automatic 401 retry (re-auth once)."""
+        """POST to Vola API with token injected into the JSON body.
+
+        VOLA Cloud requires ``"token": "<accessToken>"`` in the request body
+        for all authenticated endpoints.
+        """
         client = await _client()
-        headers = await self._authed_headers()
+        token = await self.get_access_token()
         url = self._build_url(path)
 
-        logger.debug("POST %s  payload=%s", url, payload)
-        resp = await client.post(url, json=payload, headers=headers)
+        # Inject token into the body (VOLA's auth mechanism)
+        body = {**payload, "token": token}
 
-        if resp.status_code == 401 and retry_on_401:
-            logger.info("Got 401 – refreshing token and retrying")
+        if VOLA_DEBUG_FETCH:
+            logger.info("VOLA_DEBUG POST %s  payload_keys=%s", url, list(payload.keys()))
+
+        resp = await client.post(url, json=body, headers={"Content-Type": "application/json"})
+
+        if VOLA_DEBUG_FETCH:
+            logger.info("VOLA_DEBUG response status=%s body_preview=%s", resp.status_code, resp.text[:500])
+
+        # Detect token expiry from VOLA's custom error
+        is_token_error = False
+        if resp.status_code == 200:
+            try:
+                rjson = resp.json()
+                if rjson.get("code") == "400" and "token" in rjson.get("status", "").lower():
+                    is_token_error = True
+            except Exception:
+                pass
+
+        if (resp.status_code == 401 or is_token_error) and retry_on_401:
+            logger.info("Got token error – refreshing and retrying %s", path)
             self._invalidate_token()
-            headers = await self._authed_headers()
-            resp = await client.post(url, json=payload, headers=headers)
+            token = await self.get_access_token()
+            body["token"] = token
+            resp = await client.post(url, json=body, headers={"Content-Type": "application/json"})
 
         resp.raise_for_status()
         return resp.json()
@@ -180,11 +192,16 @@ class VolaClient:
         resp.raise_for_status()
         body = resp.json()
 
-        data = body.get("data", body)
-        self._token = data["accessToken"]
+        if VOLA_DEBUG_FETCH:
+            logger.info("VOLA_DEBUG auth response keys=%s code=%s", list(body.keys()), body.get("code"))
+
+        # Token may be at top level or under data.accessToken
+        self._token = body.get("accessToken") or body.get("data", {}).get("accessToken")
+        if not self._token:
+            raise RuntimeError(f"VOLA auth did not return accessToken. Response keys: {list(body.keys())}")
         self._token_obtained_at = time.time()
         logger.info("VOLA token obtained successfully")
-        return self._token  # type: ignore[return-value]
+        return self._token
 
     # ── Orgs ────────────────────────────────────────────────────────────────
 
@@ -193,6 +210,10 @@ class VolaClient:
         body = await self._post("/user-mgmt-api/user-operation", {
             "operation": "getOrgList",
         })
+        # Response: {"code":"200", "orgList": [...]} (top-level)
+        # or older: {"data": {"orgList": [...]}}
+        if isinstance(body.get("orgList"), list):
+            return body["orgList"]
         data = body.get("data", body)
         if isinstance(data, list):
             return data
@@ -213,7 +234,10 @@ class VolaClient:
     # ── Devices ─────────────────────────────────────────────────────────────
 
     async def get_device_list(self, usage_status: str = "inUse") -> dict[str, Any]:
-        """Return device list filtered by usage status."""
+        """Return device list filtered by usage status.
+
+        Returns the full response body so callers can extract deviceList.
+        """
         if self.org_id:
             await self.switch_org(self.org_id)
 
@@ -222,7 +246,11 @@ class VolaClient:
             "pageNum": 1,
             "pageSize": 500,
         })
-        return body.get("data", body)
+
+        if VOLA_DEBUG_FETCH:
+            logger.info("VOLA_DEBUG device-list response keys=%s code=%s", list(body.keys()), body.get("code"))
+
+        return body
 
     # ── Tasks ───────────────────────────────────────────────────────────────
 
@@ -247,11 +275,12 @@ class VolaClient:
         return data.get("taskList", [data]) if isinstance(data, dict) else [data]
 
     async def get_task_result_raw(self, task_ids: list[str]) -> dict[str, Any]:
-        """Return the raw 'data' envelope from getTaskResult."""
+        """Return the raw response from getTaskResult."""
         body = await self._post("/org-mgmt-api/device-task-operation", {
             "operation": "getTaskResult",
             "taskIdList": task_ids,
         })
+        # Try data envelope first, fall back to top-level
         return body.get("data", body)
 
     # ── Parameter read (TR-069 getParameterValues) ──────────────────────────
@@ -345,26 +374,22 @@ class VolaClient:
 
         nodes = [pair[0] for pair in values]
 
-        # 1. Exact denylist
         if self.denylist_exact:
             for node in nodes:
                 if node in self.denylist_exact:
                     return f"Parameter '{node}' is explicitly denied"
 
-        # 2. Blocked prefixes (always checked)
         for node in nodes:
             for pfx in self.blocked_set_prefixes:
                 if node.startswith(pfx):
                     return f"Parameter '{node}' matches blocked prefix '{pfx}'"
 
-        # 3. Hardcoded dangerous prefixes
         for node in nodes:
             for dpfx in HARDCODED_DANGEROUS_PREFIXES:
                 if node.startswith(dpfx):
                     if not any(node.startswith(a) for a in self.allowed_set_prefixes):
                         return f"Parameter '{node}' matches dangerous prefix '{dpfx}' and is not in allowed set prefixes"
 
-        # 4. Allowlist (if configured)
         if self.allowed_set_prefixes:
             for node in nodes:
                 if not any(node.startswith(pfx) for pfx in self.allowed_set_prefixes):
@@ -402,15 +427,44 @@ def extract_parameter_values(raw: Any) -> dict[str, str]:
 
 
 def normalize_vola_device(raw: dict) -> dict[str, Any]:
-    """Normalize a raw Vola device dict into a consistent shape."""
+    """Normalize a raw VOLA device dict into a consistent shape.
+
+    Handles both the real VOLA Cloud response format and the older
+    connector-era format for backward compatibility.
+
+    Real VOLA Cloud fields:
+        deviceSN, deviceModel, softwareVersion, orgName, orgId,
+        status ("Online"/"Offline"), lastUpdateTime, deviceId, line
+    """
     return {
         "device_sn": raw.get("deviceSN", raw.get("sn", "")),
         "mac": raw.get("mac", ""),
-        "model": raw.get("model", raw.get("deviceModel", "")),
-        "firmware_version": raw.get("firmwareVersion", raw.get("version", "")),
+        "model": raw.get("deviceModel", raw.get("model", "")),
+        "firmware_version": raw.get("softwareVersion", raw.get("firmwareVersion", raw.get("version", ""))),
         "ip": raw.get("ip", raw.get("lanIp", "")),
-        "status": raw.get("status", ""),
-        "usage_status": raw.get("usageStatus", ""),
+        "status": raw.get("status", "").lower(),  # normalize "Online" -> "online"
+        "usage_status": raw.get("usageStatus", "inUse"),
         "org_id": raw.get("orgId", ""),
         "org_name": raw.get("orgName", ""),
+        "last_update": raw.get("lastUpdateTime", ""),
+        "device_id_vola": raw.get("deviceId", ""),
+        "line_accounts": raw.get("line", {}).get("accounts", []) if isinstance(raw.get("line"), dict) else [],
     }
+
+
+def extract_device_list(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract the device list from a VOLA device-list response.
+
+    VOLA Cloud returns: {"code":"200", "deviceList": [...]}
+    Older format:       {"data": {"list": [...]}}
+    """
+    # Try top-level deviceList first (real VOLA Cloud format)
+    if isinstance(body.get("deviceList"), list):
+        return body["deviceList"]
+    # Try data.list or data.deviceList (legacy/older format)
+    data = body.get("data", {})
+    if isinstance(data, dict):
+        return data.get("list", data.get("deviceList", []))
+    if isinstance(data, list):
+        return data
+    return []

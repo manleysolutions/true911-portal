@@ -14,6 +14,7 @@ from unittest import mock
 from app.integrations.vola import (
     VolaClient,
     extract_parameter_values,
+    extract_device_list,
     normalize_vola_device,
     HARDCODED_DANGEROUS_PREFIXES,
 )
@@ -35,9 +36,12 @@ def _make_client(**kwargs) -> VolaClient:
 
 
 def _mock_auth():
+    """Mock VOLA auth — real format has accessToken at top level."""
     respx.post(f"{VOLA_BASE}/user-mgmt-api/get-access-token").mock(
         return_value=httpx.Response(200, json={
-            "data": {"accessToken": "tok_test_123"}
+            "code": "200",
+            "status": "Get access token succeed",
+            "accessToken": "tok_test_123",
         })
     )
 
@@ -73,12 +77,12 @@ async def test_org_list():
     _mock_auth()
     respx.post(f"{VOLA_BASE}/user-mgmt-api/user-operation").mock(
         return_value=httpx.Response(200, json={
-            "data": {
-                "orgList": [
-                    {"orgId": "org1", "orgName": "Alpha"},
-                    {"orgId": "org2", "orgName": "Beta"},
-                ]
-            }
+            "code": "200",
+            "status": "User getOrgList operation succeed",
+            "orgList": [
+                {"orgId": "org1", "name": "Alpha", "role": "OWNER"},
+                {"orgId": "org2", "name": "Beta", "role": "MEMBER"},
+            ],
         })
     )
     client = _make_client()
@@ -95,23 +99,24 @@ async def test_device_list():
     _mock_auth()
     respx.post(f"{VOLA_BASE}/org-mgmt-api/device-list").mock(
         return_value=httpx.Response(200, json={
-            "data": {
-                "total": 2,
-                "list": [
-                    {"deviceSN": "SN001", "mac": "AA:BB:CC:DD:EE:01", "model": "FIP16Plus",
-                     "firmwareVersion": "1.2.3", "ip": "10.0.0.11", "status": "online",
-                     "usageStatus": "inUse", "orgId": "org1", "orgName": "Demo"},
-                    {"deviceSN": "SN002", "mac": "AA:BB:CC:DD:EE:02", "model": "FIP16Plus",
-                     "firmwareVersion": "1.2.4", "ip": "10.0.0.12", "status": "offline",
-                     "usageStatus": "inUse", "orgId": "org1", "orgName": "Demo"},
-                ],
-            }
+            "code": "200",
+            "status": "Device list succeed",
+            "deviceList": [
+                {"deviceSN": "SN001", "deviceModel": "PR12",
+                 "softwareVersion": "1.2.3", "status": "Online",
+                 "orgId": "org1", "orgName": "Demo", "lastUpdateTime": "Mar 19 2026 15:25"},
+                {"deviceSN": "SN002", "deviceModel": "PR12",
+                 "softwareVersion": "1.2.4", "status": "Offline",
+                 "orgId": "org1", "orgName": "Demo", "lastUpdateTime": "Mar 19 2026 00:50"},
+            ],
         })
     )
     client = _make_client()
     data = await client.get_device_list("inUse")
-    assert data["total"] == 2
-    assert len(data["list"]) == 2
+    raw_list = extract_device_list(data)
+    assert len(raw_list) == 2
+    assert raw_list[0]["deviceSN"] == "SN001"
+    assert raw_list[0]["deviceModel"] == "PR12"
 
 
 # ── Reboot ──────────────────────────────────────────────────────────────────
@@ -132,9 +137,12 @@ async def test_reboot():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_401_retry():
+async def test_token_error_retry():
+    """VOLA returns code=400 'Miss token' when token expires — triggers re-auth."""
     auth_route = respx.post(f"{VOLA_BASE}/user-mgmt-api/get-access-token").mock(
-        return_value=httpx.Response(200, json={"data": {"accessToken": "tok_fresh"}})
+        return_value=httpx.Response(200, json={
+            "code": "200", "status": "Get access token succeed", "accessToken": "tok_fresh",
+        })
     )
     call_count = 0
 
@@ -142,15 +150,17 @@ async def test_401_retry():
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return httpx.Response(401, json={"error": "token expired"})
-        return httpx.Response(200, json={"data": {"total": 0, "list": []}})
+            return httpx.Response(200, json={"code": "400", "status": "Bad Request: Miss token"})
+        return httpx.Response(200, json={
+            "code": "200", "status": "Device list succeed", "deviceList": [],
+        })
 
     respx.post(f"{VOLA_BASE}/org-mgmt-api/device-list").mock(
         side_effect=device_list_side_effect
     )
     client = _make_client()
     data = await client.get_device_list("inUse")
-    assert data["total"] == 0
+    assert extract_device_list(data) == []
     assert auth_route.call_count == 2  # initial + retry
 
 
@@ -240,21 +250,49 @@ def test_extract_parameter_values_empty():
 # ── Device normalization ────────────────────────────────────────────────────
 
 def test_normalize_vola_device():
+    """Test with real VOLA Cloud response fields."""
     raw = {
-        "deviceSN": "SN001",
-        "mac": "AA:BB:CC:DD:EE:01",
-        "model": "FIP16Plus",
-        "firmwareVersion": "1.2.3",
-        "ip": "10.0.0.11",
-        "status": "online",
-        "usageStatus": "inUse",
-        "orgId": "org1",
-        "orgName": "Demo",
+        "deviceSN": "VOLA00225600646",
+        "deviceModel": "PR12",
+        "softwareVersion": "FVLMA000301",
+        "status": "Online",
+        "orgId": "0aa69eb5-42d3-4fc8-8bf7-efe0116022ae",
+        "orgName": "Manley Solutions",
+        "lastUpdateTime": "Mar 19 2026 15:25",
+        "deviceId": "501365-PR12-VOLA00225600646",
+        "line": {"status": [1, 0], "accounts": ["19046890551", ""]},
     }
     normalized = normalize_vola_device(raw)
-    assert normalized["device_sn"] == "SN001"
-    assert normalized["mac"] == "AA:BB:CC:DD:EE:01"
-    assert normalized["firmware_version"] == "1.2.3"
+    assert normalized["device_sn"] == "VOLA00225600646"
+    assert normalized["model"] == "PR12"
+    assert normalized["firmware_version"] == "FVLMA000301"
+    assert normalized["status"] == "online"  # lowercased
+    assert normalized["org_name"] == "Manley Solutions"
+    assert normalized["last_update"] == "Mar 19 2026 15:25"
+    assert normalized["device_id_vola"] == "501365-PR12-VOLA00225600646"
+    assert normalized["line_accounts"] == ["19046890551", ""]
+
+
+def test_extract_device_list_real_format():
+    """Test extract_device_list with real VOLA Cloud response."""
+    body = {
+        "code": "200",
+        "status": "Device list succeed",
+        "deviceList": [
+            {"deviceSN": "SN001", "deviceModel": "PR12"},
+            {"deviceSN": "SN002", "deviceModel": "PR12"},
+        ],
+    }
+    result = extract_device_list(body)
+    assert len(result) == 2
+    assert result[0]["deviceSN"] == "SN001"
+
+
+def test_extract_device_list_legacy_format():
+    """Test extract_device_list with legacy data.list format."""
+    body = {"data": {"list": [{"deviceSN": "SN001"}]}}
+    result = extract_device_list(body)
+    assert len(result) == 1
 
 
 # ── Sync deduplication (service layer) ──────────────────────────────────────
@@ -401,12 +439,13 @@ async def test_deploy_device_full_flow():
 
     _mock_auth()
 
-    # Mock VOLA device-list for validation step
+    # Mock VOLA device-list for validation step (real format)
     respx.post(f"{VOLA_BASE}/org-mgmt-api/device-list").mock(
-        return_value=httpx.Response(200, json={"data": {
-            "total": 1,
-            "list": [{"deviceSN": "SN001", "mac": "AA:BB:CC:DD:EE:01", "status": "online"}],
-        }})
+        return_value=httpx.Response(200, json={
+            "code": "200",
+            "status": "Device list succeed",
+            "deviceList": [{"deviceSN": "SN001", "deviceModel": "PR12", "status": "Online"}],
+        })
     )
 
     # Mock VOLA task operations — createTask returns taskId, poll returns success

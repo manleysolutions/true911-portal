@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
-from app.integrations.vola import extract_parameter_values, normalize_vola_device
+from app.integrations.vola import extract_device_list, extract_parameter_values, normalize_vola_device
 from app.models.device import Device
 from app.models.user import User
 from app.services.vola_service import (
@@ -52,6 +52,9 @@ class VolaDeviceOut(BaseModel):
     usage_status: str = ""
     org_id: str = ""
     org_name: str = ""
+    last_update: str = ""
+    device_id_vola: str = ""
+    line_accounts: list[str] = Field(default_factory=list)
 
 
 class VolaDevicesResponse(BaseModel):
@@ -238,9 +241,9 @@ async def list_vola_devices(
         logger.exception("Failed to fetch VOLA device list")
         raise HTTPException(status_code=502, detail=f"VOLA API error: {exc}")
 
-    raw_list = data.get("list", data.get("deviceList", [])) if isinstance(data, dict) else data
+    raw_list = extract_device_list(data)
     devices = [VolaDeviceOut(**normalize_vola_device(d)) for d in raw_list]
-    total = data.get("total", len(devices)) if isinstance(data, dict) else len(devices)
+    total = len(devices)
     return VolaDevicesResponse(total=total, devices=devices)
 
 
@@ -261,7 +264,7 @@ async def sync_devices(
         logger.exception("Failed to fetch VOLA device list for sync")
         raise HTTPException(status_code=502, detail=f"VOLA API error: {exc}")
 
-    raw_list = data.get("list", data.get("deviceList", [])) if isinstance(data, dict) else data
+    raw_list = extract_device_list(data)
     result = await sync_vola_devices(
         db, current_user.tenant_id, raw_list,
         user_email=current_user.email,
