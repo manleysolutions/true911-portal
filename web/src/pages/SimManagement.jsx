@@ -15,9 +15,28 @@ const STATUS_BADGE = {
   inventory:  "bg-blue-50 text-blue-700 border-blue-200",
   assigned:   "bg-purple-50 text-purple-700 border-purple-200",
   suspended:  "bg-amber-50 text-amber-700 border-amber-200",
+  orphaned:   "bg-orange-50 text-orange-700 border-orange-200",
   deactivated:"bg-gray-100 text-gray-500 border-gray-200",
   terminated: "bg-red-50 text-red-700 border-red-200",
+  retired:    "bg-gray-100 text-gray-500 border-gray-200",
   error:      "bg-red-50 text-red-700 border-red-200",
+};
+
+const STATUS_LABELS = {
+  inventory: "In Inventory", assigned: "Assigned", active: "Active",
+  suspended: "Suspended", orphaned: "Needs Review", retired: "Retired",
+  deactivated: "Deactivated", terminated: "Terminated", error: "Error",
+};
+
+const RECON_BADGE = {
+  verified: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  partial: "bg-amber-50 text-amber-700 border-amber-200",
+  unverified: "bg-gray-100 text-gray-500 border-gray-200",
+};
+
+const SOURCE_LABELS = {
+  manual: "Manual", carrier_sync: "Carrier Sync", carrier_api: "Carrier API",
+  device_discovered: "Device", inventory_import: "Import", unknown: "Unknown",
 };
 
 const CARRIER_BADGE = {
@@ -36,7 +55,7 @@ const CARRIER_OPTIONS = [
   { value: "teal", label: "Teal" },
 ];
 
-const STATUS_OPTIONS = ["inventory", "assigned", "active", "suspended", "deactivated", "error"];
+const STATUS_OPTIONS = ["inventory", "assigned", "active", "suspended", "orphaned", "deactivated", "retired", "error"];
 
 const SIM_ACTIONS = {
   inventory: ["activate"],
@@ -581,11 +600,13 @@ export default function SimManagement() {
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
           >
             <option value="">All Statuses</option>
-            <option value="inventory">Inventory</option>
+            <option value="inventory">In Inventory</option>
             <option value="active">Active</option>
             <option value="assigned">Assigned</option>
             <option value="suspended">Suspended</option>
+            <option value="orphaned">Needs Review</option>
             <option value="deactivated">Deactivated</option>
+            <option value="retired">Retired</option>
             <option value="error">Error</option>
           </select>
           <select
@@ -658,6 +679,7 @@ export default function SimManagement() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Plan</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Site</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Source</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Recon</th>
                   {can("MANAGE_SIMS") && (
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase w-36">Actions</th>
                   )}
@@ -713,7 +735,7 @@ export default function SimManagement() {
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[s.status] || "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                          {s.status}
+                          {STATUS_LABELS[s.status] || s.status}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs">{s.plan || "\u2014"}</td>
@@ -725,12 +747,20 @@ export default function SimManagement() {
                         )}
                       </td>
                       <td className="px-4 py-2.5">
-                        {s.data_source === "carrier_sync" ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
-                            <CloudDownload className="w-2.5 h-2.5" /> sync
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                          s.data_source === "carrier_sync" || s.data_source === "carrier_api" ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
+                          s.data_source === "device_discovered" ? "bg-cyan-50 text-cyan-700 border-cyan-200" :
+                          "bg-gray-50 text-gray-500 border-gray-200"
+                        }`}>
+                          {s.data_source === "carrier_sync" || s.data_source === "carrier_api" ? <CloudDownload className="w-2.5 h-2.5" /> : null}
+                          {SOURCE_LABELS[s.data_source] || s.data_source || "Manual"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {s.reconciliation_status && (
+                          <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${RECON_BADGE[s.reconciliation_status] || RECON_BADGE.unverified}`}>
+                            {s.reconciliation_status}
                           </span>
-                        ) : (
-                          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-gray-50 text-gray-500 border-gray-200">manual</span>
                         )}
                       </td>
                       {can("MANAGE_SIMS") && (

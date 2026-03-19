@@ -72,7 +72,9 @@ async def list_sims(
     assigned_to_site: str | None = Query(None, description="Filter by site_id"),
     has_site: bool | None = Query(None, description="true=assigned to any site, false=no site"),
     has_device: bool | None = Query(None, description="true=assigned to any device, false=no device"),
-    data_source: str | None = Query(None, description="manual or carrier_sync"),
+    data_source: str | None = Query(None, description="manual, carrier_sync, device_discovered, etc."),
+    reconciliation: str | None = Query(None, description="unverified, partial, verified"),
+    needs_review: bool | None = Query(None, description="true = orphaned/partial/unverified status"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -96,6 +98,14 @@ async def list_sims(
         q = q.where(Sim.device_id.is_(None))
     if data_source:
         q = q.where(Sim.data_source == data_source)
+    if reconciliation:
+        q = q.where(Sim.reconciliation_status == reconciliation)
+    if needs_review:
+        from sqlalchemy import or_
+        q = q.where(or_(
+            Sim.status.in_(["orphaned", "error"]),
+            Sim.reconciliation_status.in_(["unverified", "partial"]),
+        ))
     q = apply_sort(q, Sim, sort)
     q = q.limit(limit)
     result = await db.execute(q)
@@ -327,6 +337,10 @@ async def assign_manual_sim(
     else:
         # Create new SIM — generate placeholder ICCID if not provided
         iccid = body.iccid.strip() if body.iccid else f"MANUAL-{msisdn}"
+        # Determine reconciliation status based on completeness
+        has_iccid = bool(body.iccid and body.iccid.strip())
+        has_carrier = bool(body.carrier and body.carrier != "Unknown")
+        recon = "verified" if (has_iccid and has_carrier) else "partial" if has_carrier else "unverified"
         sim = Sim(
             tenant_id=tenant_id,
             iccid=iccid,
@@ -334,6 +348,8 @@ async def assign_manual_sim(
             carrier=body.carrier or "Unknown",
             status="active",
             data_source="manual",
+            reconciliation_status=recon,
+            last_seen_at=datetime.now(timezone.utc),
             notes=body.notes or f"Manual entry for device {device.device_id}",
         )
         db.add(sim)

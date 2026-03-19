@@ -43,9 +43,15 @@ class Sim(Base):
     # ── Provenance ───────────────────────────────────────────────
     provider_sim_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     carrier_label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    # User-defined label from carrier portal (e.g., site/customer name entered in ThingSpace)
-    data_source: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, default="manual")  # manual | carrier_sync
+    # Source: how this SIM entered the system
+    # inventory_import | manual | device_discovered | carrier_api | unknown | carrier_sync (legacy)
+    data_source: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, default="manual")
+    # Reconciliation: how complete/verified is this SIM record
+    # unverified | partial | verified
+    reconciliation_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="unverified")
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(nullable=True, index=True)
 
     # ── Inferred Location (from carrier, NOT E911-valid) ─────────
     inferred_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

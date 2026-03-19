@@ -9,6 +9,7 @@ class SimOut(BaseModel):
     tenant_id: str
     site_id: Optional[str] = None
     device_id: Optional[str] = None
+    customer_id: Optional[int] = None
     iccid: str
     msisdn: Optional[str] = None
     imsi: Optional[str] = None
@@ -17,12 +18,14 @@ class SimOut(BaseModel):
     status: str
     activation_status: Optional[str] = None
     network_status: Optional[str] = None
+    reconciliation_status: Optional[str] = None
     plan: Optional[str] = None
     apn: Optional[str] = None
     provider_sim_id: Optional[str] = None
     carrier_label: Optional[str] = None
     data_source: Optional[str] = None
     last_synced_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
     inferred_lat: Optional[float] = None
     inferred_lng: Optional[float] = None
     inferred_location_source: Optional[str] = None
