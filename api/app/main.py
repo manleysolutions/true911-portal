@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments
 
 logger = logging.getLogger("true911")
 
@@ -97,6 +97,7 @@ app.include_router(provisioning.router,           prefix="/api/provisioning",   
 app.include_router(zoho_crm.router,              prefix="/api/zoho-crm",        tags=["zoho-crm"])
 app.include_router(carrier_verizon.router,       prefix="/api/carriers/verizon", tags=["carriers"])
 app.include_router(vola.router,                  prefix="/api/integrations/vola", tags=["vola"])
+app.include_router(deployments.router,           prefix="/api/deployments",       tags=["deployments"])
 
 
 @app.get("/api/config/features")

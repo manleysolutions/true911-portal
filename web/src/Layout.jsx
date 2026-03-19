@@ -68,6 +68,7 @@ const NOC_NAV = [
   { name: "Providers",    page: "Providers",           icon: Plug },
   { name: "Integrations", page: "IntegrationSync",    icon: ArrowDownUp },
   { name: "PR12 Deploy",   page: "Pr12QuickDeploy",     icon: Rocket },
+  { name: "Zero-Touch",    page: "ProvisionDeployment", icon: Zap },
   { name: "VOLA / PR12",   page: "VolaIntegration",     icon: Radio },
   { name: "Provisioning",  page: "ProvisioningQueue",   icon: Zap },
   { name: "Site Onboard",  page: "SiteOnboarding",     icon: Building2 },

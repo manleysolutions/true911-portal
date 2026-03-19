@@ -117,3 +117,12 @@ export const Vola = {
       body: JSON.stringify({ site_id: siteId, device_sns: deviceSns, site_code: siteCode, inform_interval: informInterval }),
     }),
 };
+
+// Zero-Touch Provisioning
+export const Deployment = {
+  provision: (data) =>
+    apiFetch("/deployments/provision", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};

@@ -458,3 +458,52 @@ async def test_deploy_device_full_flow():
     assert result["status"] == "success"
     assert "provision_task_id" in result
     assert "reboot_task_id" in result
+
+
+# ── Provision deployment (service layer) ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_provision_deploy_creates_steps():
+    """Test run_provision_deployment produces expected step structure."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.services.provision_deploy import run_provision_deployment
+
+    mock_db = AsyncMock()
+    mock_db.flush = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    # Mock tenant lookup → not found → create
+    mock_result_none = MagicMock()
+    mock_result_none.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = mock_result_none
+
+    # We patch deploy_device to avoid real VOLA calls
+    mock_deploy = AsyncMock(return_value={
+        "device_sn": "SN001",
+        "device_id": "VOLA-SN001",
+        "device_pk": 1,
+        "status": "success",
+        "error": None,
+        "steps": {"ensure_device": "ok", "bind_to_site": "ok", "provision": "success", "reboot": "ok"},
+        "provision_task_id": "task_1",
+        "reboot_task_id": "task_2",
+        "applied": {"Device.DeviceInfo.ProvisioningCode": "TEST"},
+    })
+
+    mock_client = MagicMock()
+
+    with patch("app.services.provision_deploy.deploy_device", mock_deploy), \
+         patch("app.services.provision_deploy.get_tenant_vola_client", AsyncMock(return_value=mock_client)):
+        result = await run_provision_deployment(
+            mock_db,
+            operator_tenant_id="test-tenant",
+            customer_name="Test Co",
+            site_name="Main Office",
+            device_sns=["SN001"],
+        )
+
+    assert result["steps"]["tenant"] == "ok"
+    assert result["steps"]["customer"] == "ok"
+    assert result["steps"]["site"] == "ok"
+    assert len(result["devices"]) == 1
+    assert result["devices"][0]["status"] == "success"
