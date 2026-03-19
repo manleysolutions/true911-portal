@@ -388,3 +388,73 @@ def test_build_provision_payload_with_extra():
     from app.services.vola_service import build_provision_payload
     params = build_provision_payload("S1", 600, extra_params=[["Device.Time.NTPServer1", "pool.ntp.org"]])
     assert len(params) == 3
+
+
+# ── Deploy device (service layer) ───────────────────────────────────────────
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_deploy_device_full_flow():
+    """Test deploy_device runs ensure->bind->provision->reboot."""
+    from unittest.mock import AsyncMock, MagicMock, PropertyMock
+    from app.services.vola_service import deploy_device
+
+    _mock_auth()
+
+    # Mock VOLA task operations — createTask returns taskId, poll returns success
+    call_count = 0
+    def task_op_side_effect(request):
+        nonlocal call_count
+        call_count += 1
+        body = json.loads(request.content)
+        if body.get("operation") == "createTask":
+            return httpx.Response(200, json={"data": {"taskId": f"task_{call_count}"}})
+        # poll: immediate success
+        return httpx.Response(200, json={"data": {
+            "successList": [{"taskId": f"task_{call_count - 1}", "result": "ok"}],
+            "failedList": [], "pendingList": [],
+        }})
+
+    respx.post(f"{VOLA_BASE}/org-mgmt-api/device-task-operation").mock(side_effect=task_op_side_effect)
+
+    client = _make_client()
+
+    # Mock DB session
+    mock_db = AsyncMock()
+
+    # ensure_device_exists: simulate device not found -> create
+    mock_device = MagicMock()
+    mock_device.device_id = "VOLA-SN001"
+    mock_device.id = 1
+    mock_device.status = "provisioning"
+    mock_device.site_id = None
+    mock_device.serial_number = "SN001"
+
+    # First execute (lookup by SN) returns None, triggering create
+    # We simulate that ensure_device_exists returns a device object
+    mock_result_none = MagicMock()
+    mock_result_none.scalar_one_or_none.return_value = None
+
+    mock_db.execute.return_value = mock_result_none
+    mock_db.flush = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    # Patch ensure_device_exists to avoid full DB interaction
+    from unittest.mock import patch
+    with patch("app.services.vola_service.ensure_device_exists", return_value=mock_device):
+        result = await deploy_device(
+            mock_db, "tenant-1", client,
+            device_sn="SN001",
+            site_id="SITE-001",
+            site_code="SITE-001",
+            inform_interval=300,
+        )
+
+    assert result["device_sn"] == "SN001"
+    assert result["steps"]["ensure_device"] == "ok"
+    assert result["steps"]["bind_to_site"] == "ok"
+    assert result["steps"]["provision"] == "success"
+    assert result["steps"]["reboot"] == "ok"
+    assert result["status"] == "success"
+    assert "provision_task_id" in result
+    assert "reboot_task_id" in result

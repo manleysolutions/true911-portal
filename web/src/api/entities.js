@@ -111,4 +111,9 @@ export const Vola = {
     }),
   deviceStatus: (deviceSn) =>
     apiFetch(`/integrations/vola/device/${deviceSn}/status`),
+  deploy: (siteId, deviceSns, siteCode, informInterval = 300) =>
+    apiFetch("/integrations/vola/deploy", {
+      method: "POST",
+      body: JSON.stringify({ site_id: siteId, device_sns: deviceSns, site_code: siteCode, inform_interval: informInterval }),
+    }),
 };

@@ -84,6 +84,7 @@ import SiteOnboarding from './pages/SiteOnboarding';
 import SiteDetail from './pages/SiteDetail';
 import ProvisioningQueue from './pages/ProvisioningQueue';
 import VolaIntegration from './pages/VolaIntegration';
+import Pr12QuickDeploy from './pages/Pr12QuickDeploy';
 import __Layout from './Layout.jsx';
 
 
@@ -125,6 +126,7 @@ export const PAGES = {
     "SiteDetail": SiteDetail,
     "ProvisioningQueue": ProvisioningQueue,
     "VolaIntegration": VolaIntegration,
+    "Pr12QuickDeploy": Pr12QuickDeploy,
 }
 
 export const pagesConfig = {

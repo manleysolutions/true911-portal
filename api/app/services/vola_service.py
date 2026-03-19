@@ -268,6 +268,188 @@ BASIC_PROVISION_PARAMS: list[list[str]] = [
 ]
 
 
+async def ensure_device_exists(
+    db: AsyncSession,
+    tenant_id: str,
+    device_sn: str,
+    mac: str = "",
+    model: str = "",
+    firmware_version: str = "",
+) -> Device:
+    """Find or create a device record for the given VOLA serial number.
+
+    Returns the Device ORM object (flushed but not committed).
+    """
+    from sqlalchemy.exc import IntegrityError as _IE
+
+    # Look up by SN first
+    result = await db.execute(
+        select(Device).where(
+            Device.tenant_id == tenant_id,
+            Device.serial_number == device_sn,
+        ).limit(1)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing
+
+    # Also check by MAC
+    if mac:
+        result2 = await db.execute(
+            select(Device).where(
+                Device.tenant_id == tenant_id,
+                Device.mac_address == mac,
+            ).limit(1)
+        )
+        existing2 = result2.scalar_one_or_none()
+        if existing2:
+            if not existing2.serial_number:
+                existing2.serial_number = device_sn
+            return existing2
+
+    device_id = f"VOLA-{device_sn}"
+    new_device = Device(
+        device_id=device_id,
+        tenant_id=tenant_id,
+        status="provisioning",
+        device_type="PR12",
+        model=model or "FlyingVoice PR12",
+        manufacturer="FlyingVoice",
+        serial_number=device_sn,
+        mac_address=mac or None,
+        firmware_version=firmware_version or None,
+        identifier_type="ata",
+        notes="Created via Quick Deploy",
+    )
+    db.add(new_device)
+    try:
+        await db.flush()
+    except _IE:
+        await db.rollback()
+        # Race condition — re-fetch
+        result3 = await db.execute(
+            select(Device).where(
+                Device.tenant_id == tenant_id,
+                Device.serial_number == device_sn,
+            ).limit(1)
+        )
+        found = result3.scalar_one_or_none()
+        if found:
+            return found
+        raise
+
+    db.add(Event(
+        event_id=f"evt-{uuid.uuid4().hex[:12]}",
+        tenant_id=tenant_id,
+        event_type="device.vola_sync",
+        device_id=device_id,
+        severity="info",
+        message=f"Device {device_id} created via Quick Deploy (SN={device_sn})",
+    ))
+    return new_device
+
+
+async def deploy_device(
+    db: AsyncSession,
+    tenant_id: str,
+    client: VolaClient,
+    device_sn: str,
+    site_id: str,
+    site_code: str,
+    inform_interval: int = 300,
+) -> dict[str, Any]:
+    """Run the full deploy sequence for a single device.
+
+    Steps: ensure exists -> bind to site -> provision -> reboot.
+    Returns a result dict with status per step.
+    """
+    result: dict[str, Any] = {
+        "device_sn": device_sn,
+        "steps": {},
+        "status": "success",
+        "error": None,
+    }
+
+    # Step 1: Ensure device exists
+    try:
+        device = await ensure_device_exists(db, tenant_id, device_sn)
+        result["device_id"] = device.device_id
+        result["device_pk"] = device.id
+        result["steps"]["ensure_device"] = "ok"
+    except Exception as exc:
+        result["status"] = "failed"
+        result["error"] = f"Failed to ensure device: {exc}"
+        result["steps"]["ensure_device"] = f"error: {exc}"
+        return result
+
+    # Step 2: Bind to site
+    try:
+        device.site_id = site_id
+        if device.status == "provisioning":
+            device.status = "active"
+        await db.flush()
+        result["steps"]["bind_to_site"] = "ok"
+    except Exception as exc:
+        result["status"] = "failed"
+        result["error"] = f"Failed to bind to site: {exc}"
+        result["steps"]["bind_to_site"] = f"error: {exc}"
+        return result
+
+    # Step 3: Provision
+    try:
+        params = build_provision_payload(site_code, inform_interval)
+        err = client.validate_set_param_values(params)
+        if err:
+            result["steps"]["provision"] = f"validation_error: {err}"
+            result["status"] = "failed"
+            result["error"] = err
+            return result
+
+        data = await client.create_set_parameter_values_task(device_sn, params)
+        task_id = data.get("taskId", data.get("id", ""))
+        if not task_id:
+            result["steps"]["provision"] = "error: no taskId returned"
+            result["status"] = "failed"
+            result["error"] = "VOLA did not return a taskId for provisioning"
+            return result
+
+        poll = await client.poll_task_sync(task_id, timeout_seconds=25, poll_interval=1.0)
+        result["steps"]["provision"] = poll["status"]
+        result["provision_task_id"] = task_id
+        result["applied"] = {p[0]: p[1] for p in params}
+
+        if poll["status"] != "success":
+            result["status"] = "partial"
+            result["error"] = f"Provision {poll['status']}"
+    except Exception as exc:
+        result["steps"]["provision"] = f"error: {exc}"
+        result["status"] = "failed"
+        result["error"] = f"Provision failed: {exc}"
+        return result
+
+    # Step 4: Reboot
+    try:
+        rdata = await client.create_reboot_task(device_sn)
+        reboot_tid = rdata.get("taskId", rdata.get("id", ""))
+        result["steps"]["reboot"] = "ok" if reboot_tid else "no_task_id"
+        result["reboot_task_id"] = reboot_tid
+    except Exception as exc:
+        # Reboot failure is non-fatal — device was provisioned
+        result["steps"]["reboot"] = f"error: {exc}"
+        if result["status"] == "success":
+            result["status"] = "partial"
+            result["error"] = f"Provisioned but reboot failed: {exc}"
+
+    # Commit the DB changes (device create/bind)
+    try:
+        await db.commit()
+    except Exception as exc:
+        result["status"] = "failed"
+        result["error"] = f"DB commit failed: {exc}"
+
+    return result
+
+
 def build_provision_payload(
     site_code: str,
     inform_interval: int = 300,

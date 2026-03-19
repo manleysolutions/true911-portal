@@ -21,6 +21,7 @@ from app.models.user import User
 from app.services.vola_service import (
     bind_device_to_site,
     build_provision_payload,
+    deploy_device,
     get_tenant_vola_client,
     sync_vola_devices,
 )
@@ -137,6 +138,34 @@ class ProvisionBasicResponse(BaseModel):
     status: str
     applied: dict[str, str] = Field(default_factory=dict)
     raw_task_result: dict | list | None = None
+
+
+class DeployRequest(BaseModel):
+    site_id: str
+    device_sns: list[str]
+    site_code: str
+    inform_interval: int = 300
+
+
+class DeployDeviceResult(BaseModel):
+    device_sn: str
+    device_id: str | None = None
+    device_pk: int | None = None
+    status: str  # success | partial | failed
+    error: str | None = None
+    steps: dict[str, str] = Field(default_factory=dict)
+    provision_task_id: str | None = None
+    reboot_task_id: str | None = None
+    applied: dict[str, str] = Field(default_factory=dict)
+
+
+class DeployResponse(BaseModel):
+    site_id: str
+    site_code: str
+    total: int
+    succeeded: int
+    failed: int
+    results: list[DeployDeviceResult]
 
 
 class TestConnectionResponse(BaseModel):
@@ -446,6 +475,51 @@ async def provision_basic(
         status=result["status"],
         raw_task_result=result["result"],
         applied=applied,
+    )
+
+
+@router.post("/deploy", response_model=DeployResponse)
+async def deploy_pr12(
+    body: DeployRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("MANAGE_DEVICES")),
+):
+    """Quick Deploy: sync + bind + provision + reboot for multiple devices in one call.
+
+    Runs the full deploy sequence for each device_sn sequentially.
+    """
+    if not body.device_sns:
+        raise HTTPException(status_code=400, detail="device_sns must not be empty")
+    if len(body.device_sns) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 devices per deploy")
+
+    try:
+        client = await get_tenant_vola_client(db, current_user.tenant_id)
+    except Exception as exc:
+        logger.exception("Failed to get VOLA client for deploy")
+        raise HTTPException(status_code=502, detail=f"VOLA connection error: {exc}")
+
+    results: list[DeployDeviceResult] = []
+    for sn in body.device_sns:
+        r = await deploy_device(
+            db, current_user.tenant_id, client,
+            device_sn=sn,
+            site_id=body.site_id,
+            site_code=body.site_code,
+            inform_interval=body.inform_interval,
+        )
+        results.append(DeployDeviceResult(**r))
+
+    succeeded = sum(1 for r in results if r.status == "success")
+    failed = sum(1 for r in results if r.status == "failed")
+
+    return DeployResponse(
+        site_id=body.site_id,
+        site_code=body.site_code,
+        total=len(results),
+        succeeded=succeeded,
+        failed=failed,
+        results=results,
     )
 
 
