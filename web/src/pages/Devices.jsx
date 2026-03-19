@@ -134,23 +134,48 @@ function identityTypeForModel(hwModelId) {
   return "";
 }
 
+/* ── Carrier auto-detect from MSISDN prefix ── */
+const CARRIER_PREFIXES = {
+  "+1": [
+    { prefix: "1310", carrier: "T-Mobile" }, { prefix: "1312", carrier: "T-Mobile" },
+    { prefix: "1904", carrier: "T-Mobile" }, { prefix: "1786", carrier: "T-Mobile" },
+  ],
+};
+
+function guessCarrier(msisdn) {
+  const digits = msisdn.replace(/\D/g, "");
+  if (digits.length >= 4) {
+    for (const { prefix, carrier } of CARRIER_PREFIXES["+1"] || []) {
+      if (digits.startsWith(prefix)) return carrier;
+    }
+  }
+  return "";
+}
+
+const SIM_CARRIER_OPTIONS = ["Verizon", "T-Mobile", "AT&T", "Telnyx", "Teal", "Unknown"];
+
 /* ── Assigned SIMs panel (shown inside edit modal) ── */
-function DeviceSimPanel({ deviceId }) {
+function DeviceSimPanel({ deviceId, deviceMsisdn }) {
   const { can } = useAuth();
   const [sims, setSims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [unassigning, setUnassigning] = useState(null);
-  const [showPicker, setShowPicker] = useState(false);
+  // Picker mode: null | "existing" | "manual"
+  const [pickerMode, setPickerMode] = useState(null);
   const [availableSims, setAvailableSims] = useState([]);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [selectedSimId, setSelectedSimId] = useState("");
+  // Manual entry fields
+  const [manualMsisdn, setManualMsisdn] = useState("");
+  const [manualIccid, setManualIccid] = useState("");
+  const [manualCarrier, setManualCarrier] = useState("");
 
   const fetchSims = useCallback(async () => {
     try {
       const data = await apiFetch(`/devices/${deviceId}/sims`);
       setSims(data);
-    } catch { /* silently fail — endpoint may not exist yet */ }
+    } catch { /* silently fail */ }
     setLoading(false);
   }, [deviceId]);
 
@@ -168,8 +193,8 @@ function DeviceSimPanel({ deviceId }) {
     setUnassigning(null);
   };
 
-  const handleOpenPicker = async () => {
-    setShowPicker(true);
+  const handleOpenExisting = async () => {
+    setPickerMode("existing");
     setPickerLoading(true);
     try {
       const data = await apiFetch("/sims?unassigned=true&limit=200");
@@ -180,7 +205,16 @@ function DeviceSimPanel({ deviceId }) {
     setPickerLoading(false);
   };
 
-  const handleAssign = async () => {
+  const handleOpenManual = () => {
+    setPickerMode("manual");
+    // Pre-fill MSISDN from device if available
+    if (deviceMsisdn && !manualMsisdn) {
+      setManualMsisdn(deviceMsisdn);
+      setManualCarrier(guessCarrier(deviceMsisdn));
+    }
+  };
+
+  const handleAssignExisting = async () => {
     if (!selectedSimId) return;
     setAssigning(true);
     try {
@@ -189,13 +223,47 @@ function DeviceSimPanel({ deviceId }) {
         body: JSON.stringify({ device_id: deviceId, slot: 1 }),
       });
       toast.success("SIM assigned to device");
-      setShowPicker(false);
-      setSelectedSimId("");
+      closePicker();
       fetchSims();
     } catch (err) {
       toast.error(err?.message || "Failed to assign SIM");
     }
     setAssigning(false);
+  };
+
+  const handleAssignManual = async () => {
+    const msisdn = manualMsisdn.trim();
+    if (!msisdn) {
+      toast.error("MSISDN is required");
+      return;
+    }
+    setAssigning(true);
+    try {
+      await apiFetch("/sims/assign-manual", {
+        method: "POST",
+        body: JSON.stringify({
+          device_id: deviceId,
+          msisdn,
+          iccid: manualIccid.trim() || undefined,
+          carrier: manualCarrier || "Unknown",
+          slot: 1,
+        }),
+      });
+      toast.success("SIM created and assigned");
+      closePicker();
+      fetchSims();
+    } catch (err) {
+      toast.error(err?.message || "Failed to assign SIM");
+    }
+    setAssigning(false);
+  };
+
+  const closePicker = () => {
+    setPickerMode(null);
+    setSelectedSimId("");
+    setManualMsisdn("");
+    setManualIccid("");
+    setManualCarrier("");
   };
 
   if (loading) {
@@ -211,9 +279,12 @@ function DeviceSimPanel({ deviceId }) {
       {sims.map(s => (
         <div key={s.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
           <div className="flex-1 min-w-0">
-            <div className="font-mono text-xs text-gray-700 truncate">{s.iccid}</div>
+            <div className="font-mono text-xs text-gray-700 truncate">
+              {s.msisdn || s.iccid}
+            </div>
             <div className="text-[10px] text-gray-500">
-              {s.carrier} {s.msisdn ? `| ${s.msisdn}` : ""} | {s.status}
+              {s.carrier}{s.iccid && !s.iccid.startsWith("MANUAL-") ? ` | ${s.iccid}` : ""} | {s.status}
+              {s.data_source === "manual" && <span className="ml-1 text-blue-500">(manual)</span>}
             </div>
           </div>
           <button
@@ -227,29 +298,41 @@ function DeviceSimPanel({ deviceId }) {
         </div>
       ))}
 
-      {sims.length === 0 && !showPicker && (
+      {sims.length === 0 && !pickerMode && (
         <div className="text-xs text-gray-400 py-1">No SIMs assigned to this device.</div>
       )}
 
-      {/* SIM Assign Picker */}
-      {can("MANAGE_SIMS") && !showPicker && (
-        <button
-          onClick={handleOpenPicker}
-          className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium mt-1"
-        >
-          <Link2 className="w-3 h-3" /> Link SIM
-        </button>
+      {/* Action buttons */}
+      {can("MANAGE_SIMS") && !pickerMode && (
+        <div className="flex gap-2 mt-1">
+          <button
+            onClick={handleOpenExisting}
+            className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium"
+          >
+            <Link2 className="w-3 h-3" /> From Inventory
+          </button>
+          <button
+            onClick={handleOpenManual}
+            className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium"
+          >
+            <Pencil className="w-3 h-3" /> Enter Manually
+          </button>
+        </div>
       )}
 
-      {showPicker && (
+      {/* Existing SIM picker */}
+      {pickerMode === "existing" && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
-          <div className="text-xs font-semibold text-gray-700">Assign a SIM</div>
+          <div className="text-xs font-semibold text-gray-700">Select from Inventory</div>
           {pickerLoading ? (
             <div className="flex items-center gap-2 text-xs text-gray-400">
               <Loader2 className="w-3 h-3 animate-spin" /> Loading available SIMs...
             </div>
           ) : availableSims.length === 0 ? (
-            <div className="text-xs text-gray-400">No unassigned SIMs available.</div>
+            <div className="text-xs text-gray-400">
+              No unassigned SIMs in inventory.
+              <button onClick={handleOpenManual} className="ml-1 text-blue-600 underline font-medium">Enter manually instead</button>
+            </div>
           ) : (
             <select
               value={selectedSimId}
@@ -265,18 +348,69 @@ function DeviceSimPanel({ deviceId }) {
             </select>
           )}
           <div className="flex gap-2">
+            <button onClick={closePicker} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
             <button
-              onClick={() => { setShowPicker(false); setSelectedSimId(""); }}
-              className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleAssign}
+              onClick={handleAssignExisting}
               disabled={!selectedSimId || assigning}
               className="px-3 py-1.5 text-xs text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-lg font-medium"
             >
               {assigning ? "Assigning..." : "Assign"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Manual SIM entry */}
+      {pickerMode === "manual" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+          <div className="text-xs font-semibold text-gray-700">Enter SIM Manually</div>
+          {deviceMsisdn && manualMsisdn === deviceMsisdn && (
+            <div className="text-[10px] text-blue-600 bg-blue-50 px-2 py-1 rounded">
+              Pre-filled from device telemetry
+            </div>
+          )}
+          <div>
+            <label className="block text-[10px] text-gray-500 mb-0.5">MSISDN / Phone Number *</label>
+            <input
+              value={manualMsisdn}
+              onChange={e => {
+                setManualMsisdn(e.target.value);
+                if (!manualCarrier) setManualCarrier(guessCarrier(e.target.value));
+              }}
+              placeholder="e.g. 19046890551"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">ICCID (optional)</label>
+              <input
+                value={manualIccid}
+                onChange={e => setManualIccid(e.target.value)}
+                placeholder="SIM card number"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">Carrier</label>
+              <select
+                value={manualCarrier}
+                onChange={e => setManualCarrier(e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value="">-- Select --</option>
+                {SIM_CARRIER_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={closePicker} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button
+              onClick={handleAssignManual}
+              disabled={!manualMsisdn.trim() || assigning}
+              className="px-3 py-1.5 text-xs text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-lg font-medium"
+            >
+              {assigning ? "Assigning..." : "Create & Assign"}
             </button>
           </div>
         </div>
@@ -615,7 +749,7 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
               <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
                 <span className="flex items-center gap-1"><Link2 className="w-3 h-3" /> Assigned SIMs</span>
               </label>
-              <DeviceSimPanel deviceId={editDevice.id} />
+              <DeviceSimPanel deviceId={editDevice.id} deviceMsisdn={editDevice.msisdn} />
             </div>
           )}
 

@@ -563,3 +563,21 @@ async def test_provision_deploy_creates_steps():
     assert result["steps"]["site"] == "ok"
     assert len(result["devices"]) == 1
     assert result["devices"][0]["status"] == "success"
+
+
+# ── Manual SIM schema ──────────────────────────────────────────────────────
+
+def test_sim_manual_assign_schema():
+    """Test SimManualAssign validates correctly."""
+    from app.schemas.sim import SimManualAssign
+
+    # Valid — MSISDN only
+    s = SimManualAssign(device_id=1, msisdn="19046890551")
+    assert s.carrier == "Unknown"
+    assert s.iccid is None
+    assert s.slot == 1
+
+    # Valid — full fields
+    s2 = SimManualAssign(device_id=1, msisdn="19046890551", iccid="89014103211118510720", carrier="T-Mobile")
+    assert s2.carrier == "T-Mobile"
+    assert s2.iccid == "89014103211118510720"

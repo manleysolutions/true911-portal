@@ -13,7 +13,7 @@ from app.models.sim import Sim
 from app.models.user import User
 from app.routers.helpers import apply_sort
 from app.models.site import Site
-from app.schemas.sim import SimActionOut, SimAssign, SimBulkSiteAssign, SimCreate, SimOut, SimUpdate
+from app.schemas.sim import SimActionOut, SimAssign, SimBulkSiteAssign, SimCreate, SimManualAssign, SimOut, SimUpdate
 
 logger = logging.getLogger("true911.sims")
 
@@ -266,6 +266,119 @@ async def unassign_sim(
     assignment.unassigned_at = datetime.now(timezone.utc)
     await db.commit()
     return SimActionOut(sim_id=pk, action="unassign", message="SIM unassigned from device")
+
+
+# ── Manual SIM Entry + Assign ──────────────────────────────────────
+
+@router.post(
+    "/assign-manual",
+    response_model=SimOut,
+    status_code=201,
+    dependencies=[Depends(require_permission("MANAGE_SIMS"))],
+)
+async def assign_manual_sim(
+    body: SimManualAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create (or find) a SIM by MSISDN and assign it to a device in one call.
+
+    For SIMs not in inventory (e.g. existing T-Mobile SIMs on PR12 devices).
+    If a SIM with the same MSISDN already exists, reuses it. If ICCID is
+    provided and matches, reuses that. Otherwise creates a new SIM record.
+    """
+    msisdn = body.msisdn.strip()
+    if not msisdn:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "MSISDN is required")
+
+    tenant_id = current_user.tenant_id
+
+    # Verify device exists
+    dev_result = await db.execute(
+        select(Device).where(Device.id == body.device_id, Device.tenant_id == tenant_id)
+    )
+    device = dev_result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
+
+    # Try to find existing SIM by MSISDN
+    sim = None
+    existing_q = select(Sim).where(Sim.tenant_id == tenant_id, Sim.msisdn == msisdn).limit(1)
+    existing_result = await db.execute(existing_q)
+    sim = existing_result.scalar_one_or_none()
+
+    # Also try by ICCID if provided
+    if not sim and body.iccid:
+        iccid_q = select(Sim).where(Sim.tenant_id == tenant_id, Sim.iccid == body.iccid.strip()).limit(1)
+        iccid_result = await db.execute(iccid_q)
+        sim = iccid_result.scalar_one_or_none()
+
+    if sim:
+        # Update fields if new info provided
+        if body.iccid and not sim.iccid.startswith("MANUAL-"):
+            pass  # keep real ICCID
+        elif body.iccid:
+            sim.iccid = body.iccid.strip()
+        if not sim.msisdn:
+            sim.msisdn = msisdn
+        if body.carrier and body.carrier != "Unknown":
+            sim.carrier = body.carrier
+        logger.info("Reusing existing SIM %d (iccid=%s) for manual assign", sim.id, sim.iccid)
+    else:
+        # Create new SIM — generate placeholder ICCID if not provided
+        iccid = body.iccid.strip() if body.iccid else f"MANUAL-{msisdn}"
+        sim = Sim(
+            tenant_id=tenant_id,
+            iccid=iccid,
+            msisdn=msisdn,
+            carrier=body.carrier or "Unknown",
+            status="active",
+            data_source="manual",
+            notes=body.notes or f"Manual entry for device {device.device_id}",
+        )
+        db.add(sim)
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            # ICCID collision — try fetching by the generated ICCID
+            retry = await db.execute(
+                select(Sim).where(Sim.iccid == iccid, Sim.tenant_id == tenant_id).limit(1)
+            )
+            sim = retry.scalar_one_or_none()
+            if not sim:
+                raise HTTPException(status.HTTP_409_CONFLICT, "SIM with this ICCID or MSISDN already exists")
+
+    # Assign to device
+    assignment = DeviceSim(
+        device_id=body.device_id,
+        sim_id=sim.id,
+        slot=body.slot,
+        active=True,
+        assigned_by=current_user.email,
+    )
+    db.add(assignment)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "SIM is already assigned or device slot is occupied",
+        )
+
+    # Also update device-level MSISDN for convenience
+    if not device.msisdn or device.msisdn != msisdn:
+        device.msisdn = msisdn
+
+    await db.commit()
+    await db.refresh(sim)
+
+    logger.info(
+        "Manual SIM assign: sim=%d iccid=%s msisdn=%s -> device=%d (%s) by %s",
+        sim.id, sim.iccid, msisdn, device.id, device.device_id, current_user.email,
+    )
+    return SimOut.model_validate(sim)
 
 
 # ── Async Actions (activate / suspend / resume) ──────────────────

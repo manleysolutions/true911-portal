@@ -72,6 +72,16 @@ class SimBulkSiteAssign(BaseModel):
     site_id: str
 
 
+class SimManualAssign(BaseModel):
+    """Create (or find) a SIM by MSISDN and assign it to a device in one step."""
+    device_id: int
+    msisdn: str
+    iccid: Optional[str] = None
+    carrier: str = "Unknown"
+    slot: int = 1
+    notes: Optional[str] = None
+
+
 class SimActionOut(BaseModel):
     sim_id: int
     action: str
