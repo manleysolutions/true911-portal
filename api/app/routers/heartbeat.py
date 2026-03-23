@@ -8,16 +8,14 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import bcrypt
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters import get_adapter
 from app.adapters.base import DEVICE_WRITABLE_FIELDS
-from app.dependencies import get_db
+from app.dependencies import authenticate_device, get_db
 from app.models.command_telemetry import CommandTelemetry
-from app.models.device import Device
 from app.models.event import Event
 from app.models.site import Site
 from app.models.telemetry_event import TelemetryEvent
@@ -26,34 +24,6 @@ from app.services.continuity import DEFAULT_HEARTBEAT_INTERVAL
 
 router = APIRouter()
 
-_GENERIC_AUTH_ERROR = "Invalid device credentials"
-
-
-async def _authenticate_device(
-    device_id: str,
-    raw_key: str,
-    db: AsyncSession,
-) -> Device:
-    """Lookup device by device_id and verify raw_key against stored hash.
-
-    Returns the Device ORM object on success.
-    Raises 403 with a generic message on any failure — intentionally does
-    not distinguish between "device not found" and "wrong key" to prevent
-    enumeration.
-    """
-    result = await db.execute(
-        select(Device).where(Device.device_id == device_id)
-    )
-    device = result.scalar_one_or_none()
-
-    if not device or not device.api_key_hash:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, _GENERIC_AUTH_ERROR)
-
-    if not bcrypt.checkpw(raw_key.encode("utf-8")[:72], device.api_key_hash.encode()):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, _GENERIC_AUTH_ERROR)
-
-    return device
-
 
 @router.post("", response_model=DeviceTokenHeartbeatResponse)
 async def device_token_heartbeat(
@@ -61,7 +31,7 @@ async def device_token_heartbeat(
     x_device_key: str = Header(..., alias="X-Device-Key"),
     db: AsyncSession = Depends(get_db),
 ):
-    device = await _authenticate_device(body.device_id, x_device_key, db)
+    device = await authenticate_device(body.device_id, x_device_key, db)
 
     now = datetime.now(timezone.utc)
     device.last_heartbeat = now

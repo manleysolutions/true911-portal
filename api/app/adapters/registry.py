@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from app.adapters.base import DeviceAdapter
+from app.adapters.csas_adapter import CSASAdapter
 from app.adapters.generic_adapter import GenericAdapter
 from app.adapters.inseego_adapter import InsegoAdapter
 from app.adapters.pr12_adapter import PR12Adapter
+
+_CSAS_IDENTIFIERS: frozenset[str] = frozenset({
+    "csas", "csa-software", "csas-edge",
+})
 
 _PR12_IDENTIFIERS: frozenset[str] = frozenset({
     "pr12", "csa", "pr12-csa",
@@ -16,6 +21,7 @@ _INSEEGO_IDENTIFIERS: frozenset[str] = frozenset({
 })
 
 _generic = GenericAdapter()
+_csas = CSASAdapter()
 _pr12 = PR12Adapter()
 _inseego = InsegoAdapter()
 
@@ -24,9 +30,10 @@ def get_adapter(device_type: str | None, model: str | None) -> DeviceAdapter:
     """Return the adapter for a device based on its type/model fields.
 
     Selection order:
-    1. If ``model`` or ``device_type`` matches a PR12 identifier → PR12Adapter
-    2. If ``model`` or ``device_type`` matches an Inseego identifier → InsegoAdapter
-    3. Otherwise → GenericAdapter
+    1. If ``model`` or ``device_type`` matches a CSAS identifier → CSASAdapter
+    2. If ``model`` or ``device_type`` matches a PR12 identifier → PR12Adapter
+    3. If ``model`` or ``device_type`` matches an Inseego identifier → InsegoAdapter
+    4. Otherwise → GenericAdapter
 
     Also checks ``hardware_model_id`` if passed as ``model`` (e.g. "flyingvoice-pr12"
     or "inseego-fw3100" from the hardware_models table).
@@ -35,6 +42,8 @@ def get_adapter(device_type: str | None, model: str | None) -> DeviceAdapter:
         if not value:
             continue
         lowered = value.lower().strip()
+        if lowered in _CSAS_IDENTIFIERS:
+            return _csas
         if lowered in _PR12_IDENTIFIERS:
             return _pr12
         if lowered in _INSEEGO_IDENTIFIERS:

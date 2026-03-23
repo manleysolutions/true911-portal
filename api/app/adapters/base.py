@@ -26,6 +26,8 @@ METADATA_KEYS: frozenset[str] = frozenset({
     "network_type",
     "connection_status",
     "board_temp_c",
+    "csas_status",
+    "csas_timestamp",
 })
 
 

@@ -1,6 +1,7 @@
 import uuid
 from typing import AsyncGenerator
 
+import bcrypt
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
+from app.models.device import Device
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.auth import decode_token
@@ -67,6 +69,35 @@ async def get_current_user(
         user.tenant_id = x_act_as_tenant
 
     return user
+
+
+_GENERIC_DEVICE_AUTH_ERROR = "Invalid device credentials"
+
+
+async def authenticate_device(
+    device_id: str,
+    raw_key: str,
+    db: AsyncSession,
+) -> Device:
+    """Lookup device by device_id and verify raw_key against stored hash.
+
+    Returns the Device ORM object on success.
+    Raises 403 with a generic message on any failure — intentionally does
+    not distinguish between "device not found" and "wrong key" to prevent
+    enumeration.
+    """
+    result = await db.execute(
+        select(Device).where(Device.device_id == device_id)
+    )
+    device = result.scalar_one_or_none()
+
+    if not device or not device.api_key_hash:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _GENERIC_DEVICE_AUTH_ERROR)
+
+    if not bcrypt.checkpw(raw_key.encode("utf-8")[:72], device.api_key_hash.encode()):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _GENERIC_DEVICE_AUTH_ERROR)
+
+    return device
 
 
 def require_permission(action: str):

@@ -105,3 +105,26 @@ class ClassifyRequest(BaseModel):
     silence_ratio: float = 0.0
     window_duration_ms: int = 5000
     source: str = "api"
+
+
+class EdgeClassifyRequest(BaseModel):
+    """POST /api/line-intelligence/edge-classify — device-token observation.
+
+    Same signal fields as ClassifyRequest but includes ``device_id`` as a
+    required field (used for device-key authentication) and defaults
+    ``source`` to ``"csas"``.
+    """
+
+    device_id: str
+    line_id: str
+    site_id: Optional[str] = None
+    port_index: int = 0
+
+    # Signal inputs (normalized)
+    dtmf_digits: str = ""
+    fax_tone_present: bool = False
+    modem_carrier_present: bool = False
+    voice_energy_estimate: float = 0.0
+    silence_ratio: float = 0.0
+    window_duration_ms: int = 5000
+    source: str = "csas"

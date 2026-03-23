@@ -12,13 +12,14 @@ Endpoints:
     POST /api/line-intelligence/classify — submit observation for classification
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import authenticate_device, get_current_user, get_db
 from app.models.user import User
 from app.schemas.line_intelligence import (
     ClassifyRequest,
+    EdgeClassifyRequest,
     LineIntelligenceEventOut,
     LineIntelligenceStatusOut,
     PortStateOut,
@@ -185,3 +186,67 @@ async def classify(
         "manual_override": decision.manual_override,
         "pipeline_version": decision.pipeline_version,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /edge-classify  (device-token auth for CSAS edge ingestion)
+# ---------------------------------------------------------------------------
+
+def _format_decision(decision) -> dict:
+    """Format a SessionDecision into the standard API response shape."""
+    return {
+        "decision_id": decision.decision_id,
+        "line_id": decision.line_id,
+        "classification": {
+            "line_type": decision.classification.line_type.value,
+            "confidence_score": decision.classification.confidence_score,
+            "confidence_tier": decision.classification.confidence_tier.value,
+            "is_actionable": decision.classification.is_actionable,
+            "fallback_applied": decision.classification.fallback_applied,
+            "evidence": [e.model_dump() for e in decision.classification.evidence],
+        },
+        "assigned_profile": {
+            "profile_id": decision.assigned_profile.profile_id,
+            "profile_name": decision.assigned_profile.profile_name,
+            "line_type": decision.assigned_profile.line_type.value,
+        },
+        "manual_override": decision.manual_override,
+        "pipeline_version": decision.pipeline_version,
+    }
+
+
+@router.post("/edge-classify")
+async def edge_classify(
+    body: EdgeClassifyRequest,
+    x_device_key: str = Header(..., alias="X-Device-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a line observation from a CSAS edge device.
+
+    Authenticates via device API key (``X-Device-Key`` header) instead of
+    JWT.  The tenant_id is resolved from the authenticated device record,
+    preserving tenant isolation without requiring a user session.
+    """
+    _require_feature()
+
+    device = await authenticate_device(body.device_id, x_device_key, db)
+
+    # Use the device's site_id as fallback when the payload omits it
+    site_id = body.site_id or device.site_id
+
+    decision = await li_svc.classify_line(
+        db,
+        tenant_id=device.tenant_id,
+        line_id=body.line_id,
+        device_id=device.device_id,
+        site_id=site_id,
+        port_index=body.port_index,
+        dtmf_digits=body.dtmf_digits,
+        fax_tone_present=body.fax_tone_present,
+        modem_carrier_present=body.modem_carrier_present,
+        voice_energy_estimate=body.voice_energy_estimate,
+        silence_ratio=body.silence_ratio,
+        window_duration_ms=body.window_duration_ms,
+        source=body.source,
+    )
+    return _format_decision(decision)
