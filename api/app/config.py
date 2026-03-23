@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     INTEGRATION_ALLOWED_SOURCES: str = "zoho,qb"  # comma-separated
     INTEGRATION_HMAC_SKEW_SECONDS: int = 300  # replay protection window
     FEATURE_SAMANTHA: str = "false"  # "true" to show AI/Samantha nav item
+    FEATURE_LINE_INTELLIGENCE: str = "false"  # "true" to enable Line Intelligence Engine endpoints
     TRUE911_BOOTSTRAP_ADMIN_PASSWORD: str = ""  # required for prod bootstrap
     TRUE911_BOOTSTRAP_SUPERADMIN_EMAIL: str = "smanley@manleysolutions.com"
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off

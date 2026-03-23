@@ -44,6 +44,8 @@ from app.models.autonomous_action import AutonomousAction
 from app.models.operational_digest import OperationalDigest
 from app.models.service_unit import ServiceUnit
 from app.models.provisioning_queue import ProvisioningQueueItem
+from app.models.line_intelligence_event import LineIntelligenceEvent
+from app.models.port_state import PortState
 
 __all__ = [
     "Tenant",
@@ -93,4 +95,6 @@ __all__ = [
     "OperationalDigest",
     "ServiceUnit",
     "ProvisioningQueueItem",
+    "LineIntelligenceEvent",
+    "PortState",
 ]
