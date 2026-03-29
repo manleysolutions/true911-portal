@@ -121,18 +121,19 @@ const NOC_NAV = [
 // ── Customer / user portal ──────────────────────────────────────
 
 const CUSTOMER_NAV = [
-  { name: "My Sites",    page: "Sites",           icon: Building2 },
-  { name: "My Devices",  page: "Devices",         icon: Cpu },
-  { name: "Lines",       page: "Lines",           icon: Phone },
-  { name: "Incidents",   page: "Incidents",       icon: AlertOctagon },
-  { name: "Reports",     page: "Reports",         icon: FileText },
+  { name: "Dashboard",   page: "ManagerDashboard", icon: LayoutDashboard },
+  { name: "My Sites",    page: "Sites",            icon: Building2 },
+  { name: "My Devices",  page: "Devices",          icon: Cpu },
+  { name: "Incidents",   page: "Incidents",        icon: AlertOctagon },
+  { name: "Map",         page: "DeploymentMap",    icon: Map },
   {
-    group: "advanced", label: "Advanced", icon: Activity, minRole: "Manager",
+    group: "monitoring", label: "Monitoring", icon: Activity, minRole: "Manager",
     children: [
-      { name: "Events",       page: "Events",           icon: Activity },
-      { name: "Recordings",   page: "Recordings",       icon: Disc3 },
+      { name: "Lines",        page: "Lines",             icon: Phone },
+      { name: "Events",       page: "Events",            icon: Activity },
       { name: "Network",      page: "NetworkDashboard",  icon: Radio },
-      { name: "Map",          page: "DeploymentMap",      icon: Map },
+      { name: "Recordings",   page: "Recordings",        icon: Disc3 },
+      { name: "Reports",      page: "Reports",           icon: FileText },
     ],
   },
 ];

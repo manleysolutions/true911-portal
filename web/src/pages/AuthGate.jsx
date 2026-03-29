@@ -5,6 +5,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isDemo } from "@/config";
 import { apiFetch, setTokens } from "@/api/client";
 
+// Role-aware landing page after login
+function getLandingPage(role) {
+  const r = (role || "").toLowerCase();
+  if (r === "superadmin" || r === "admin") return createPageUrl("Command");
+  return createPageUrl("ManagerDashboard");
+}
+
 const DEMO_ROLES = [
   {
     role: "Admin",
@@ -99,7 +106,7 @@ export default function AuthGate() {
 
   useEffect(() => {
     if (ready && user && !mustChangePassword) {
-      window.location.href = createPageUrl("Overview");
+      window.location.href = getLandingPage(user.role);
     }
   }, [user, ready, mustChangePassword]);
 
@@ -128,8 +135,8 @@ export default function AuthGate() {
         return;
       }
 
-      await login(email, password);
-      window.location.href = createPageUrl("Overview");
+      const loggedIn = await login(email, password);
+      window.location.href = getLandingPage(loggedIn?.role);
     } catch (err) {
       setError(err?.message || "Invalid credentials. Please check your email and password.");
       setLoading(false);
@@ -146,7 +153,7 @@ export default function AuthGate() {
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });
       setMustChangePassword(false);
-      window.location.href = createPageUrl("Overview");
+      window.location.href = getLandingPage(user?.role);
     } catch (err) {
       setError(err?.message || "Failed to change password");
       setLoading(false);
@@ -194,8 +201,8 @@ export default function AuthGate() {
     setError("");
     setLoading(true);
     try {
-      await register(email, password, name);
-      window.location.href = createPageUrl("Overview");
+      const registered = await register(email, password, name);
+      window.location.href = getLandingPage(registered?.role);
     } catch (err) {
       setError(err?.message || "Registration failed. Please try again.");
       setLoading(false);
@@ -214,7 +221,7 @@ export default function AuthGate() {
       setTokens(data.access_token, data.refresh_token);
       setInviteAccepted(true);
       setTimeout(() => {
-        window.location.href = createPageUrl("Overview");
+        window.location.href = getLandingPage(data?.user?.role);
       }, 1500);
     } catch (err) {
       setInviteError(err?.message || "Failed to set up your account");
@@ -228,8 +235,8 @@ export default function AuthGate() {
     setPassword(acc.password);
     setQuickLoading(acc.role);
     try {
-      await login(acc.email, acc.password);
-      window.location.href = createPageUrl("Overview");
+      const ql = await login(acc.email, acc.password);
+      window.location.href = getLandingPage(ql?.role);
     } catch {
       setError("Login failed. Check backend connection.");
       setQuickLoading(null);

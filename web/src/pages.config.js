@@ -88,6 +88,7 @@ import Pr12QuickDeploy from './pages/Pr12QuickDeploy';
 import ProvisionDeployment from './pages/ProvisionDeployment';
 import SubscriberImport from './pages/SubscriberImport';
 import ImportVerification from './pages/ImportVerification';
+import ManagerDashboard from './pages/ManagerDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -133,6 +134,7 @@ export const PAGES = {
     "ProvisionDeployment": ProvisionDeployment,
     "SubscriberImport": SubscriberImport,
     "ImportVerification": ImportVerification,
+    "ManagerDashboard": ManagerDashboard,
 }
 
 export const pagesConfig = {
