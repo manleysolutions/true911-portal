@@ -155,16 +155,16 @@ const ADMIN_NAV = [
   },
 ];
 
-// ── Customer / user portal ──────────────────────────────────────
+// ── Manager portal ────────────────────────────────────────────────
 
-const CUSTOMER_NAV = [
+const MANAGER_NAV = [
   { name: "Dashboard",   page: "ManagerDashboard", icon: LayoutDashboard },
   { name: "My Sites",    page: "Sites",            icon: Building2 },
   { name: "My Devices",  page: "Devices",          icon: Cpu },
   { name: "Incidents",   page: "Incidents",        icon: AlertOctagon },
   { name: "Map",         page: "DeploymentMap",    icon: Map },
   {
-    group: "monitoring", label: "Monitoring", icon: Activity, minRole: "Manager",
+    group: "monitoring", label: "Monitoring", icon: Activity,
     children: [
       { name: "Lines",        page: "Lines",             icon: Phone },
       { name: "Events",       page: "Events",            icon: Activity },
@@ -173,6 +173,14 @@ const CUSTOMER_NAV = [
       { name: "Reports",      page: "Reports",           icon: FileText },
     ],
   },
+];
+
+// ── User (view-only) portal ──────────────────────────────────────
+
+const USER_NAV = [
+  { name: "Status",   page: "UserDashboard",  icon: ShieldCheck },
+  { name: "Sites",    page: "Sites",           icon: Building2 },
+  { name: "Map",      page: "DeploymentMap",   icon: Map },
 ];
 
 
@@ -217,9 +225,10 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
   const level = roleLevel(userRole);
   const isSuperAdmin = level >= ROLE_LEVEL.SuperAdmin;
   const isAdmin = level >= ROLE_LEVEL.Admin;
-  const isNOC = isSuperAdmin; // Only SuperAdmin gets the full NOC nav
+  const isManager = level >= ROLE_LEVEL.Manager;
+  const isNOC = isSuperAdmin;
 
-  const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : CUSTOMER_NAV;
+  const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : isManager ? MANAGER_NAV : USER_NAV;
   const visibleNav = useMemo(() => filterNav(navSource, level), [navSource, level]);
 
   // Track which groups are expanded — auto-expand the one containing the active page

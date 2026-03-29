@@ -10,7 +10,8 @@ function getLandingPage(role) {
   const r = (role || "").toLowerCase();
   if (r === "superadmin") return createPageUrl("Command");
   if (r === "admin") return createPageUrl("AdminDashboard");
-  return createPageUrl("ManagerDashboard");
+  if (r === "manager") return createPageUrl("ManagerDashboard");
+  return createPageUrl("UserDashboard");
 }
 
 const DEMO_ROLES = [

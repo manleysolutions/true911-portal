@@ -90,6 +90,7 @@ import SubscriberImport from './pages/SubscriberImport';
 import ImportVerification from './pages/ImportVerification';
 import ManagerDashboard from './pages/ManagerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import UserDashboard from './pages/UserDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -137,6 +138,7 @@ export const PAGES = {
     "ImportVerification": ImportVerification,
     "ManagerDashboard": ManagerDashboard,
     "AdminDashboard": AdminDashboard,
+    "UserDashboard": UserDashboard,
 }
 
 export const pagesConfig = {
