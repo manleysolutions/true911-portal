@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut,
   AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug,
   ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users,
-  KeyRound, Eye, EyeOff, AlertTriangle, CheckCircle, Loader2, HelpCircle, Home,
-  UserCog, XCircle, Zap,
+  KeyRound, Eye, EyeOff, AlertTriangle, CheckCircle, Loader2, HelpCircle,
+  UserCog, XCircle, Zap, ChevronRight, Gauge, Package, Wrench, MonitorCog,
+  Layers, SlidersHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -15,89 +16,390 @@ import { toast } from "sonner";
 import { config } from "@/config";
 
 // ── Role hierarchy ──────────────────────────────────────────────
-// Higher number = more access.  SuperAdmin sees everything.
 const ROLE_LEVEL = { User: 1, Manager: 2, Admin: 3, SuperAdmin: 4 };
-
-function roleLevel(role) {
-  return ROLE_LEVEL[role] || 0;
-}
-
-// ── Navigation definitions ──────────────────────────────────────
-// minRole: minimum role to see this item (default: visible to all)
-// portal:  "customer" = customer-facing, "noc" = NOC/admin, "both" = always shown
-
-const CUSTOMER_NAV = [
-  { section: "label", label: "MY PORTAL" },
-  { name: "My Sites",     page: "Sites",            icon: Building2 },
-  { name: "My Devices",   page: "Devices",           icon: Cpu },
-  { name: "Lines",        page: "Lines",             icon: Phone },
-  { name: "Incidents",    page: "Incidents",         icon: AlertOctagon },
-  { name: "Reports",      page: "Reports",           icon: FileText },
-  { section: "separator" },
-  { name: "Events",       page: "Events",            icon: Activity,       minRole: "Manager" },
-  { name: "Recordings",   page: "Recordings",        icon: Disc3,          minRole: "Manager" },
-  { name: "Network",      page: "NetworkDashboard",  icon: Radio,          minRole: "Manager" },
-  { name: "Map",          page: "DeploymentMap",      icon: Map,            minRole: "Manager" },
-];
-
-const NOC_NAV = [
-  { section: "label", label: "OPERATIONS" },
-  { name: "Command",      page: "Command",           icon: ShieldCheck },
-  { name: "Operator View", page: "OperatorView",     icon: Building2 },
-  { name: "Overview",     page: "Overview",           icon: LayoutDashboard },
-  { section: "separator" },
-  { section: "label", label: "FLEET" },
-  { name: "Customers",    page: "Customers",          icon: Users },
-  { name: "Sites",        page: "Sites",              icon: Building2 },
-  { name: "Devices",      page: "Devices",            icon: Cpu },
-  { name: "SIMs",         page: "SimManagement",      icon: Disc3 },
-  { name: "Lines",        page: "Lines",              icon: Phone },
-  { name: "E911",         page: "E911",               icon: MapPin },
-  { section: "separator" },
-  { section: "label", label: "MONITORING" },
-  { name: "Alerts",       page: "Notifications",      icon: Bell },
-  { name: "Events",       page: "Events",             icon: Activity },
-  { name: "Incidents",    page: "Incidents",           icon: AlertOctagon },
-  { name: "Network",      page: "NetworkDashboard",   icon: Radio },
-  { name: "Recordings",   page: "Recordings",         icon: Disc3 },
-  { name: "Reports",      page: "Reports",            icon: FileText },
-  { name: "Map",          page: "DeploymentMap",       icon: Map },
-  { section: "separator" },
-  { section: "label", label: "PLATFORM" },
-  { name: "Auto Ops",     page: "AutoOps",            icon: Bot },
-  { name: "Providers",    page: "Providers",           icon: Plug },
-  { name: "Integrations", page: "IntegrationSync",    icon: ArrowDownUp },
-  { name: "PR12 Deploy",   page: "Pr12QuickDeploy",     icon: Rocket },
-  { name: "Zero-Touch",    page: "ProvisionDeployment", icon: Zap },
-  { name: "VOLA / PR12",   page: "VolaIntegration",     icon: Radio },
-  { name: "Provisioning",  page: "ProvisioningQueue",   icon: Zap },
-  { name: "Sub. Import",   page: "SubscriberImport",    icon: FileSpreadsheet },
-  { name: "Import Verify", page: "ImportVerification", icon: CheckCircle },
-  { name: "Site Onboard",  page: "SiteOnboarding",     icon: Building2 },
-  { name: "Device Setup", page: "OnboardingWizard",   icon: Rocket },
-  { name: "Organization", page: "OrgSettings",        icon: Globe },
-  { name: "AI / Samantha", page: "Samantha",          icon: Sparkles,       featureFlag: "samantha" },
-  { section: "separator" },
-  { section: "label", label: "SYSTEM ADMIN", minRole: "SuperAdmin" },
-  { name: "Admin",        page: "Admin",              icon: Settings,       minRole: "SuperAdmin" },
-  { name: "Tenants",      page: "AdminTenants",       icon: Building2,      minRole: "SuperAdmin" },
-  { name: "Users",        page: "AdminUsers",         icon: Shield,         minRole: "SuperAdmin" },
-  { name: "Imports",      page: "AdminImports",       icon: Upload,         minRole: "SuperAdmin" },
-];
+function roleLevel(role) { return ROLE_LEVEL[role] || 0; }
 
 const ROLE_BADGE = {
-  SuperAdmin: "bg-purple-100 text-purple-700 border-purple-200",
-  Admin: "bg-red-100 text-red-700 border-red-200",
-  Manager: "bg-blue-100 text-blue-700 border-blue-200",
-  User: "bg-gray-100 text-gray-600 border-gray-200",
+  SuperAdmin: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  Admin: "bg-red-500/20 text-red-300 border-red-500/30",
+  Manager: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  User: "bg-gray-500/20 text-gray-400 border-gray-500/30",
 };
 
 const FEATURE_FLAGS = {
   samantha: config.featureSamantha,
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// NAVIGATION CONFIG
+// ═══════════════════════════════════════════════════════════════════
+//
+// Structure:
+//   Top-level items:   { name, page, icon, minRole?, featureFlag? }
+//   Collapsible group: { group, label, icon, minRole?, children: [...items] }
+//
+// minRole defaults to "User" (everyone).  "Admin" hides from Manager/User.
+// "SuperAdmin" hides from Admin/Manager/User.
+//
+// ── NOC / Admin portal ──────────────────────────────────────────
 
-// ── Change Password Modal ───────────────────────────────────────
+const NOC_NAV = [
+  // ── Primary (always visible) ──
+  { name: "Command Center",  page: "Command",         icon: ShieldCheck },
+  { name: "Customers",       page: "Customers",       icon: Users },
+  { name: "Sites",           page: "Sites",           icon: Building2 },
+  { name: "Devices",         page: "Devices",         icon: Cpu },
+  { name: "Incidents",       page: "Incidents",       icon: AlertOctagon },
+  { name: "Map",             page: "DeploymentMap",   icon: Map },
+
+  // ── Monitoring ──
+  {
+    group: "monitoring", label: "Monitoring", icon: Activity, minRole: "Manager",
+    children: [
+      { name: "Alerts",          page: "Notifications",     icon: Bell },
+      { name: "Events",          page: "Events",            icon: Activity },
+      { name: "Network Health",  page: "NetworkDashboard",  icon: Radio },
+      { name: "Recordings",      page: "Recordings",        icon: Disc3 },
+      { name: "Reports",         page: "Reports",           icon: FileText },
+    ],
+  },
+
+  // ── Fleet ──
+  {
+    group: "fleet", label: "Fleet", icon: Layers,
+    children: [
+      { name: "Lines",       page: "Lines",           icon: Phone },
+      { name: "SIMs",        page: "SimManagement",   icon: Disc3 },
+      { name: "E911",        page: "E911",            icon: MapPin },
+      { name: "Operator View", page: "OperatorView",  icon: Gauge },
+      { name: "Overview",    page: "Overview",         icon: LayoutDashboard },
+    ],
+  },
+
+  // ── Deployment ──
+  {
+    group: "deployment", label: "Deployment", icon: Rocket, minRole: "Admin",
+    children: [
+      { name: "New Site Setup",      page: "SiteOnboarding",     icon: Building2 },
+      { name: "Device Provisioning", page: "OnboardingWizard",   icon: Wrench },
+      { name: "Zero-Touch Deploy",   page: "ProvisionDeployment", icon: Zap },
+      { name: "PR12 Deploy",         page: "Pr12QuickDeploy",    icon: Rocket },
+      { name: "VOLA / PR12",         page: "VolaIntegration",    icon: Radio },
+      { name: "Provisioning Queue",  page: "ProvisioningQueue",  icon: Package },
+      { name: "Subscriber Import",   page: "SubscriberImport",   icon: FileSpreadsheet },
+      { name: "Import Verification", page: "ImportVerification", icon: CheckCircle },
+      { name: "Site Import",         page: "SiteImport",         icon: Upload },
+      { name: "Bulk Deploy",         page: "BulkDeploy",         icon: Layers },
+    ],
+  },
+
+  // ── Integrations ──
+  {
+    group: "integrations", label: "Integrations", icon: Plug, minRole: "Admin",
+    children: [
+      { name: "Providers",      page: "Providers",        icon: Plug },
+      { name: "Sync Status",    page: "IntegrationSync",  icon: ArrowDownUp },
+      { name: "Auto Ops",       page: "AutoOps",          icon: Bot },
+      { name: "AI / Samantha",  page: "Samantha",         icon: Sparkles, featureFlag: "samantha" },
+    ],
+  },
+
+  // ── Administration ──
+  {
+    group: "admin", label: "Administration", icon: Settings, minRole: "Admin",
+    children: [
+      { name: "Organization",   page: "OrgSettings",       icon: Globe },
+      { name: "Device Setup",   page: "DeviceAssignment",  icon: SlidersHorizontal },
+      { name: "Tenants",        page: "AdminTenants",      icon: Building2,  minRole: "SuperAdmin" },
+      { name: "Users & Roles",  page: "AdminUsers",        icon: Shield,     minRole: "SuperAdmin" },
+      { name: "Data Imports",   page: "AdminImports",      icon: Upload,     minRole: "SuperAdmin" },
+      { name: "System",         page: "Admin",             icon: MonitorCog, minRole: "SuperAdmin" },
+    ],
+  },
+];
+
+// ── Customer / user portal ──────────────────────────────────────
+
+const CUSTOMER_NAV = [
+  { name: "My Sites",    page: "Sites",           icon: Building2 },
+  { name: "My Devices",  page: "Devices",         icon: Cpu },
+  { name: "Lines",       page: "Lines",           icon: Phone },
+  { name: "Incidents",   page: "Incidents",       icon: AlertOctagon },
+  { name: "Reports",     page: "Reports",         icon: FileText },
+  {
+    group: "advanced", label: "Advanced", icon: Activity, minRole: "Manager",
+    children: [
+      { name: "Events",       page: "Events",           icon: Activity },
+      { name: "Recordings",   page: "Recordings",       icon: Disc3 },
+      { name: "Network",      page: "NetworkDashboard",  icon: Radio },
+      { name: "Map",          page: "DeploymentMap",      icon: Map },
+    ],
+  },
+];
+
+
+// ═══════════════════════════════════════════════════════════════════
+// NAV FILTERING UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+
+function isItemVisible(item, level) {
+  if (item.featureFlag && !FEATURE_FLAGS[item.featureFlag]) return false;
+  if (item.minRole && level < ROLE_LEVEL[item.minRole]) return false;
+  return true;
+}
+
+function filterNav(nav, level) {
+  return nav
+    .filter(item => isItemVisible(item, level))
+    .map(item => {
+      if (item.group && item.children) {
+        const kids = item.children.filter(c => isItemVisible(c, level));
+        if (kids.length === 0) return null;
+        return { ...item, children: kids };
+      }
+      return item;
+    })
+    .filter(Boolean);
+}
+
+function getChildPages(item) {
+  if (item.children) return item.children.map(c => c.page);
+  return [];
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SIDEBAR COMPONENT
+// ═══════════════════════════════════════════════════════════════════
+
+function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
+  const { user, logout, impersonation, stopImpersonation, isRealSuperAdmin } = useAuth();
+
+  const userRole = user?.role || "User";
+  const level = roleLevel(userRole);
+  const isNOC = level >= ROLE_LEVEL.Admin;
+
+  const navSource = isNOC ? NOC_NAV : CUSTOMER_NAV;
+  const visibleNav = useMemo(() => filterNav(navSource, level), [navSource, level]);
+
+  // Track which groups are expanded — auto-expand the one containing the active page
+  const [expanded, setExpanded] = useState(() => {
+    const open = {};
+    navSource.forEach(item => {
+      if (item.group && item.children?.some(c => c.page === currentPageName)) {
+        open[item.group] = true;
+      }
+    });
+    return open;
+  });
+
+  // Keep the active group expanded when route changes
+  useEffect(() => {
+    navSource.forEach(item => {
+      if (item.group && item.children?.some(c => c.page === currentPageName)) {
+        setExpanded(prev => ({ ...prev, [item.group]: true }));
+      }
+    });
+  }, [currentPageName, navSource]);
+
+  const toggleGroup = (group) => {
+    setExpanded(prev => ({ ...prev, [group]: !prev[group] }));
+  };
+
+  const accentColor = isNOC ? "red" : "slate";
+
+  return (
+    <aside className="flex flex-col h-full bg-gray-950 text-gray-300 w-[248px]">
+      {/* ── Branding ── */}
+      <div className="px-5 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isNOC ? "bg-red-600" : "bg-slate-700"}`}>
+            <Shield className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <div className="text-[15px] font-bold text-white leading-none tracking-tight">
+              True911<span className={isNOC ? "text-red-500" : "text-slate-500"}>+</span>
+            </div>
+            <div className="text-[9px] text-gray-500 tracking-[0.18em] uppercase mt-0.5">
+              {isNOC ? "NOC Operations" : "Customer Portal"}
+            </div>
+          </div>
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-800 text-gray-500 lg:hidden">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* ── User card ── */}
+      {user && (
+        <div className="mx-3 mb-3 px-3 py-2.5 rounded-lg bg-gray-900/70 border border-gray-800/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center text-xs font-semibold text-gray-400">
+              {user.name?.charAt(0)?.toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-gray-200 truncate">{user.name}</div>
+              <div className="text-[10px] text-gray-500 truncate">{user.email}</div>
+            </div>
+            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ROLE_BADGE[userRole] || ROLE_BADGE.User}`}>
+              {userRole}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Navigation ── */}
+      <nav className="flex-1 px-3 pb-3 overflow-y-auto space-y-0.5 scrollbar-thin">
+        {visibleNav.map((item, idx) => {
+          // ── Top-level link ──
+          if (!item.group) {
+            return (
+              <NavLink
+                key={item.page}
+                item={item}
+                active={currentPageName === item.page}
+                accent={accentColor}
+                onClick={onClose}
+              />
+            );
+          }
+
+          // ── Collapsible group ──
+          const isOpen = !!expanded[item.group];
+          const hasActiveChild = item.children.some(c => c.page === currentPageName);
+
+          return (
+            <div key={item.group} className="mt-1.5">
+              <button
+                onClick={() => toggleGroup(item.group)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                  hasActiveChild
+                    ? "text-gray-200 bg-gray-800/50"
+                    : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/30"
+                }`}
+              >
+                <item.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <span className="flex-1 text-left">{item.label}</span>
+                <ChevronRight
+                  className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                />
+              </button>
+
+              {/* Children */}
+              <div
+                className={`overflow-hidden transition-all duration-200 ease-in-out ${
+                  isOpen ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
+                }`}
+              >
+                <div className="ml-3 pl-3 border-l border-gray-800/60 mt-0.5 space-y-0.5">
+                  {item.children.map(child => (
+                    <NavLink
+                      key={child.page}
+                      item={child}
+                      active={currentPageName === child.page}
+                      accent={accentColor}
+                      onClick={onClose}
+                      nested
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* ── Footer ── */}
+      <div className="px-3 py-3 border-t border-gray-800/60">
+        {user && (
+          <div className="space-y-0.5">
+            {isRealSuperAdmin && !impersonation && (
+              <FooterButton onClick={onViewAs} icon={UserCog} label="View As..." color="purple" />
+            )}
+            {impersonation && (
+              <FooterButton
+                onClick={() => { stopImpersonation(); window.location.reload(); }}
+                icon={XCircle} label="Exit Impersonation" color="red"
+              />
+            )}
+            <FooterButton onClick={onChangePassword} icon={KeyRound} label="Change Password" />
+            <FooterButton onClick={logout} icon={LogOut} label="Sign Out" />
+          </div>
+        )}
+        <div className="mt-3 flex items-center gap-1.5 justify-center">
+          <span className="text-[9px] text-blue-400 font-bold tracking-wide">Made in USA</span>
+          <span className="text-gray-700 text-[9px]">·</span>
+          <span className="text-[9px] text-gray-600">NDAA-TAA</span>
+        </div>
+        <div className="text-[9px] text-gray-600 text-center mt-0.5">© 2026 Manley Solutions</div>
+      </div>
+    </aside>
+  );
+}
+
+
+// ── NavLink (reusable for top-level and nested items) ───────────
+
+function NavLink({ item, active, accent, onClick, nested = false }) {
+  const Icon = item.icon;
+  const activeClasses = accent === "red"
+    ? "bg-red-600/15 text-red-400 font-semibold"
+    : "bg-slate-700/40 text-slate-200 font-semibold";
+
+  return (
+    <Link
+      to={createPageUrl(item.page)}
+      onClick={onClick}
+      className={`group flex items-center gap-2.5 rounded-lg transition-all duration-150 ${
+        nested ? "px-2.5 py-1.5 text-[12.5px]" : "px-3 py-2 text-[13px]"
+      } ${
+        active
+          ? activeClasses
+          : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-200"
+      }`}
+    >
+      <Icon className={`flex-shrink-0 ${nested ? "w-3.5 h-3.5" : "w-4 h-4"} ${
+        active
+          ? accent === "red" ? "text-red-400" : "text-slate-300"
+          : "text-gray-500 group-hover:text-gray-400"
+      }`} />
+      <span className="truncate">{item.name}</span>
+      {active && (
+        <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+          accent === "red" ? "bg-red-500" : "bg-slate-400"
+        }`} />
+      )}
+    </Link>
+  );
+}
+
+
+// ── Footer button ───────────────────────────────────────────────
+
+function FooterButton({ onClick, icon: Icon, label, color }) {
+  const colorStyles = {
+    purple: "text-purple-400 hover:text-purple-300 hover:bg-purple-500/10",
+    red: "text-red-400 hover:text-red-300 hover:bg-red-500/10",
+  };
+  const baseStyle = colorStyles[color] || "text-gray-500 hover:text-gray-300 hover:bg-gray-800/50";
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg transition-colors ${baseStyle}`}
+    >
+      <Icon className="w-3.5 h-3.5" /> {label}
+    </button>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// CHANGE PASSWORD MODAL
+// ═══════════════════════════════════════════════════════════════════
+
 function ChangePasswordModal({ onClose }) {
   const [currentPwd, setCurrentPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
@@ -110,10 +412,7 @@ function ChangePasswordModal({ onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    if (newPwd !== confirmPwd) {
-      setError("Passwords do not match.");
-      return;
-    }
+    if (newPwd !== confirmPwd) { setError("Passwords do not match."); return; }
     setSaving(true);
     try {
       await apiFetch("/auth/change-password", {
@@ -138,7 +437,6 @@ function ChangePasswordModal({ onClose }) {
           </h3>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
         </div>
-
         {success ? (
           <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs px-4 py-3 rounded-xl">
             <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -183,7 +481,10 @@ function ChangePasswordModal({ onClose }) {
 }
 
 
-// ── View As Modal (SuperAdmin only) ─────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// VIEW AS MODAL (SuperAdmin)
+// ═══════════════════════════════════════════════════════════════════
+
 function ViewAsModal({ onClose }) {
   const { startImpersonation } = useAuth();
   const [tenants, setTenants] = useState([]);
@@ -214,7 +515,6 @@ function ViewAsModal({ onClose }) {
     startImpersonation(selectedTenant, t?.name || selectedTenant, selectedRole);
     toast.success(`Now viewing as ${selectedRole} in ${t?.name || selectedTenant}`);
     onClose();
-    // Reload to apply new nav/permissions
     window.location.reload();
   };
 
@@ -227,17 +527,13 @@ function ViewAsModal({ onClose }) {
           </h3>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
         </div>
-
         <p className="text-xs text-gray-500 mb-4">
           Temporarily view the portal as another role and tenant. Actions are read-only while impersonating.
         </p>
-
-        {/* Tenant */}
         <div className="mb-3">
           <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Tenant / Account</label>
           <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search tenants..."
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
@@ -259,30 +555,23 @@ function ViewAsModal({ onClose }) {
             ))}
           </div>
         </div>
-
-        {/* Role */}
         <div className="mb-4">
           <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">View as Role</label>
           <div className="flex gap-2">
             {["Admin", "Manager", "User"].map(r => (
               <button
-                key={r}
-                onClick={() => setSelectedRole(r)}
+                key={r} onClick={() => setSelectedRole(r)}
                 className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors ${
                   selectedRole === r
                     ? "bg-purple-600 text-white border-purple-600"
                     : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
                 }`}
-              >
-                {r}
-              </button>
+              >{r}</button>
             ))}
           </div>
         </div>
-
         <button
-          onClick={handleStart}
-          disabled={!selectedTenant}
+          onClick={handleStart} disabled={!selectedTenant}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-sm font-medium rounded-lg"
         >
           <Eye className="w-4 h-4" /> Start Impersonation
@@ -293,137 +582,10 @@ function ViewAsModal({ onClose }) {
 }
 
 
-// ── Sidebar ─────────────────────────────────────────────────────
-function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
-  const { user, logout, can, isSuperAdmin, isRealSuperAdmin, impersonation, stopImpersonation } = useAuth();
+// ═══════════════════════════════════════════════════════════════════
+// APP LAYOUT
+// ═══════════════════════════════════════════════════════════════════
 
-  const userRole = user?.role || "User";
-  const level = roleLevel(userRole);
-  const isNOC = level >= ROLE_LEVEL.Admin; // Admin + SuperAdmin see NOC nav
-
-  const navItems = isNOC ? NOC_NAV : CUSTOMER_NAV;
-  const portalLabel = isNOC ? "NOC Portal" : "Customer Portal";
-
-  const visibleNav = navItems.filter(item => {
-    // Sections: show label/separator if user meets minRole (or no minRole set)
-    if (item.section) {
-      if (item.minRole && level < ROLE_LEVEL[item.minRole]) return false;
-      return true;
-    }
-    // Feature flags
-    if (item.featureFlag && !FEATURE_FLAGS[item.featureFlag]) return false;
-    // Min role check
-    if (item.minRole && level < ROLE_LEVEL[item.minRole]) return false;
-    return true;
-  });
-
-  return (
-    <aside className="flex flex-col h-full bg-white border-r border-gray-200 w-60">
-      {/* Branding */}
-      <div className="px-5 py-5 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isNOC ? "bg-red-600" : "bg-slate-800"}`}>
-            <Shield className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-base font-bold text-gray-900 leading-none">True911<span className={isNOC ? "text-red-600" : "text-slate-600"}>+</span></div>
-            <div className="text-[10px] text-gray-400 tracking-widest uppercase mt-0.5">{portalLabel}</div>
-          </div>
-        </div>
-        {onClose && (
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 lg:hidden">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {/* User info */}
-      {user && (
-        <div className="px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600">
-              {user.name?.charAt(0)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-gray-900 truncate">{user.name}</div>
-              <div className="text-[10px] text-gray-500 truncate">{user.email}</div>
-            </div>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${ROLE_BADGE[userRole] || ROLE_BADGE.User}`}>
-              {userRole}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {visibleNav.map((item, idx) => {
-          if (item.section === "separator") {
-            return <div key={`sep-${idx}`} className="my-2 border-t border-gray-100" />;
-          }
-          if (item.section === "label") {
-            return <div key={`lbl-${idx}`} className="px-3 pt-3 pb-1 text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.label}</div>;
-          }
-          const { name, page, icon: Icon } = item;
-          const active = currentPageName === page;
-          return (
-            <Link
-              key={page}
-              to={createPageUrl(page)}
-              onClick={onClose}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
-                active
-                  ? isNOC ? 'bg-red-50 text-red-700 font-semibold' : 'bg-slate-100 text-slate-900 font-semibold'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              {name}
-              {active && <div className={`ml-auto w-1.5 h-1.5 rounded-full ${isNOC ? "bg-red-600" : "bg-slate-700"}`} />}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Footer */}
-      <div className="px-4 py-4 border-t border-gray-100">
-        {user && (
-          <div className="space-y-0.5">
-            {isRealSuperAdmin && !impersonation && (
-              <button onClick={onViewAs}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors font-medium">
-                <UserCog className="w-3.5 h-3.5" /> View As...
-              </button>
-            )}
-            {impersonation && (
-              <button onClick={() => { stopImpersonation(); window.location.reload(); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors font-medium">
-                <XCircle className="w-3.5 h-3.5" /> Exit Impersonation
-              </button>
-            )}
-            <button onClick={onChangePassword}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-              <KeyRound className="w-3.5 h-3.5" /> Change Password
-            </button>
-            <button onClick={logout}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-              <LogOut className="w-3.5 h-3.5" /> Sign Out
-            </button>
-          </div>
-        )}
-        <div className="mt-3 flex items-center gap-1.5 justify-center">
-          <span className="text-[10px] text-blue-800 font-bold">Made in USA</span>
-          <span className="text-gray-300 text-[10px]">·</span>
-          <span className="text-[10px] text-gray-400">NDAA-TAA</span>
-        </div>
-        <div className="text-[10px] text-gray-400 text-center">© 2026 Manley Solutions</div>
-      </div>
-    </aside>
-  );
-}
-
-
-// ── App Layout ──────────────────────────────────────────────────
 const PUBLIC_PAGES = ["AuthGate"];
 
 function AppLayout({ children, currentPageName }) {
@@ -452,15 +614,26 @@ function AppLayout({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <div className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 z-30">
-        <Sidebar currentPageName={currentPageName} onChangePassword={() => setShowChangePwd(true)} onViewAs={() => setShowViewAs(true)} />
+      {/* Desktop sidebar */}
+      <div className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-[248px] z-30">
+        <Sidebar
+          currentPageName={currentPageName}
+          onChangePassword={() => setShowChangePwd(true)}
+          onViewAs={() => setShowViewAs(true)}
+        />
       </div>
 
+      {/* Mobile sidebar overlay */}
       {mobileOpen && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />
-          <div className="fixed inset-y-0 left-0 w-60 z-40 flex flex-col lg:hidden shadow-xl">
-            <Sidebar currentPageName={currentPageName} onClose={() => setMobileOpen(false)} onChangePassword={() => { setShowChangePwd(true); setMobileOpen(false); }} onViewAs={() => { setShowViewAs(true); setMobileOpen(false); }} />
+          <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />
+          <div className="fixed inset-y-0 left-0 w-[248px] z-40 flex flex-col lg:hidden shadow-2xl">
+            <Sidebar
+              currentPageName={currentPageName}
+              onClose={() => setMobileOpen(false)}
+              onChangePassword={() => { setShowChangePwd(true); setMobileOpen(false); }}
+              onViewAs={() => { setShowViewAs(true); setMobileOpen(false); }}
+            />
           </div>
         </>
       )}
@@ -468,7 +641,8 @@ function AppLayout({ children, currentPageName }) {
       {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
       {showViewAs && <ViewAsModal onClose={() => setShowViewAs(false)} />}
 
-      <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
+      <div className="flex-1 lg:ml-[248px] flex flex-col min-h-screen">
+        {/* Mobile header */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
           <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg hover:bg-gray-100">
             <Menu className="w-5 h-5 text-gray-700" />
@@ -501,19 +675,19 @@ function AppLayout({ children, currentPageName }) {
           </div>
         )}
 
-        <main className="flex-1">
-          {children}
-        </main>
+        <main className="flex-1">{children}</main>
       </div>
 
       <Toaster position="top-right" />
 
       <style>{`
-        :root {
-          --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-        }
+        :root { --font-sans: 'Inter', system-ui, -apple-system, sans-serif; }
         body { font-family: var(--font-sans); }
         * { box-sizing: border-box; }
+        .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
       `}</style>
     </div>
   );
