@@ -675,7 +675,7 @@ function RecommendationsPanel({ data }) {
     }
 
     return list;
-  }, [data, incidents, siteSummaries]);
+  }, [data, backendRecs]);
 
   const sevStyles = {
     critical: { border: "border-red-500/20", bg: "bg-red-500/5", icon: AlertOctagon, iconColor: "text-red-400" },
