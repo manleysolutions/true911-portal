@@ -39,7 +39,9 @@ from ..services.command_intelligence import compute_intelligence
 from ..services.attention_engine import (
     evaluate_tenant as attention_evaluate_tenant,
     serialize_site_attention, serialize_attention_item, serialize_summary,
+    AttentionItem,
 )
+from ..services.automation_layer import run_automation, filter_for_role
 
 router = APIRouter()
 
@@ -608,6 +610,19 @@ async def command_summary(
         activity_timeline=activity_timeline,
     )
 
+    # ── Automation layer (consumes attention feed) ────────────────
+    automation_result = await run_automation(
+        db, tenant,
+        attention_result["attention_feed"],
+    )
+    user_role = (current_user.role or "user").lower()
+    automation_payload = {
+        "recommendations": filter_for_role(automation_result["active"], user_role),
+        "active_count": automation_result["active_count"],
+        "suppressed_count": automation_result["suppressed_count"],
+        "resolved_count": automation_result["resolved_count"],
+    }
+
     return {
         "portfolio": portfolio_data,
         "readiness": readiness,
@@ -623,6 +638,8 @@ async def command_summary(
         "intelligence": intelligence,
         # Centralized attention engine output
         "attention": attention_payload,
+        # Automation recommendations (role-filtered)
+        "automation": automation_payload,
     }
 
 

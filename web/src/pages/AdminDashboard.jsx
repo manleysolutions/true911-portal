@@ -553,6 +553,69 @@ function ReadinessSummary({ readiness = {}, portfolio = {} }) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// AUTOMATION RECOMMENDATIONS (consumes backend automation layer)
+// ═══════════════════════════════════════════════════════════════════
+
+function AutomationRecommendations({ data }) {
+  const recs = data?.automation?.recommendations || [];
+  if (recs.length === 0) return null;
+
+  const sevColor = {
+    critical: { border: "border-red-200", bg: "bg-red-50", text: "text-red-700", icon: "text-red-500" },
+    high: { border: "border-amber-200", bg: "bg-amber-50", text: "text-amber-700", icon: "text-amber-500" },
+    medium: { border: "border-blue-200", bg: "bg-blue-50", text: "text-blue-700", icon: "text-blue-500" },
+    low: { border: "border-gray-200", bg: "bg-gray-50", text: "text-gray-600", icon: "text-gray-400" },
+  };
+
+  const typeLabel = {
+    escalate: "Escalation",
+    suggest_ping: "Ping",
+    suggest_reboot: "Reboot",
+    notify: "Alert",
+    follow_up: "Follow-up",
+    report_flag: "Report",
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4 text-blue-500" />
+          <h2 className="text-sm font-semibold text-gray-900">Recommended Actions</h2>
+        </div>
+        <span className="text-[11px] text-gray-400">{recs.length} active</span>
+      </div>
+      <div className="p-3 space-y-2">
+        {recs.slice(0, 5).map((rec, i) => {
+          const sc = sevColor[rec.severity] || sevColor.low;
+          return (
+            <Link
+              key={rec.id || i}
+              to={rec.route_hint ? createPageUrl(rec.route_hint.split("?")[0].replace("/", "")) + (rec.route_hint.includes("?") ? "?" + rec.route_hint.split("?")[1] : "") : "#"}
+              className={`block px-3.5 py-3 rounded-lg border ${sc.border} ${sc.bg} hover:opacity-90 transition-opacity`}
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle className={`w-3.5 h-3.5 ${sc.icon} flex-shrink-0 mt-0.5`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`text-[9px] font-bold uppercase tracking-wider ${sc.text}`}>
+                      {typeLabel[rec.automation_type] || rec.automation_type}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-gray-900 font-medium leading-snug">{rec.recommendation_title}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{rec.recommendation_detail}</p>
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 // REPORT PANEL
 // ═══════════════════════════════════════════════════════════════════
 
@@ -738,6 +801,7 @@ export default function AdminDashboard() {
             {/* Right Column — 4/12 */}
             <div className="lg:col-span-4 space-y-5">
               <ReadinessSummary readiness={readiness} portfolio={p} />
+              <AutomationRecommendations data={data} />
               <OperationalQueues siteSummaries={siteSummaries} portfolio={p} />
               <DeploymentMapPreview siteSummaries={siteSummaries} />
               <AdminActionCenter />

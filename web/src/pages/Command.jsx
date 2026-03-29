@@ -658,10 +658,22 @@ function ActionCenter() {
 // ═══════════════════════════════════════════════════════════════════
 
 function RecommendationsPanel({ data }) {
+  const autoRecs = data?.automation?.recommendations;
   const backendRecs = data?.intelligence?.recommended_actions;
 
   const recs = useMemo(() => {
-    // Use backend recommendations when available
+    // Priority 1: Automation layer recommendations (deduplicated, policy-driven)
+    if (autoRecs?.length) {
+      return autoRecs.map(r => ({
+        severity: r.severity === "critical" ? "critical" : r.severity === "high" ? "warning" : r.severity === "medium" ? "warning" : "info",
+        action: r.recommendation_title,
+        detail: r.recommendation_detail,
+        type: r.automation_type,
+        page: r.route_hint?.startsWith("/") ? r.route_hint.split("?")[0].replace("/", "") : null,
+        query: r.route_hint?.includes("?") ? "?" + r.route_hint.split("?")[1] : "",
+      }));
+    }
+    // Priority 2: Intelligence layer recommendations
     if (backendRecs?.length) {
       return backendRecs.map(r => ({
         severity: r.priority === "high" ? "critical" : r.priority === "medium" ? "warning" : "info",
@@ -732,7 +744,7 @@ function RecommendationsPanel({ data }) {
     }
 
     return list;
-  }, [data, backendRecs]);
+  }, [data, autoRecs, backendRecs]);
 
   const sevStyles = {
     critical: { border: "border-red-500/20", bg: "bg-red-500/5", icon: AlertOctagon, iconColor: "text-red-400" },
