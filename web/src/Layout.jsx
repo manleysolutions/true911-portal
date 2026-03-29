@@ -100,6 +100,7 @@ const NOC_NAV = [
       { name: "Providers",      page: "Providers",        icon: Plug },
       { name: "Sync Status",    page: "IntegrationSync",  icon: ArrowDownUp },
       { name: "Auto Ops",       page: "AutoOps",          icon: Bot },
+      { name: "Automation",     page: "AutomationDashboard", icon: Zap },
       { name: "AI / Samantha",  page: "Samantha",         icon: Sparkles, featureFlag: "samantha" },
     ],
   },
@@ -134,7 +135,8 @@ const ADMIN_NAV = [
       { name: "Events",     page: "Events",           icon: Activity },
       { name: "Network",    page: "NetworkDashboard",  icon: Radio },
       { name: "Recordings", page: "Recordings",        icon: Disc3 },
-      { name: "Reports",    page: "Reports",           icon: FileText },
+      { name: "Reports",      page: "Reports",              icon: FileText },
+      { name: "Automation",   page: "AutomationDashboard",  icon: Zap },
     ],
   },
 

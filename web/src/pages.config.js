@@ -91,6 +91,7 @@ import ImportVerification from './pages/ImportVerification';
 import ManagerDashboard from './pages/ManagerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
+import AutomationDashboard from './pages/AutomationDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -139,6 +140,7 @@ export const PAGES = {
     "ManagerDashboard": ManagerDashboard,
     "AdminDashboard": AdminDashboard,
     "UserDashboard": UserDashboard,
+    "AutomationDashboard": AutomationDashboard,
 }
 
 export const pagesConfig = {

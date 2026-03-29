@@ -42,6 +42,7 @@ from ..services.attention_engine import (
     AttentionItem,
 )
 from ..services.automation_layer import run_automation, filter_for_role
+from ..services.automation_analytics import get_automation_dashboard
 
 router = APIRouter()
 
@@ -1355,3 +1356,17 @@ async def operator_view(
         "active_incidents": len(active_incidents),
         "sites": site_list,
     }
+
+
+# ---------------------------------------------------------------------------
+# Automation Dashboard
+# ---------------------------------------------------------------------------
+
+@router.get("/automation/dashboard")
+async def automation_dashboard(
+    hours: int = Query(24, le=168, ge=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Automation analytics dashboard — aggregated automation event data."""
+    return await get_automation_dashboard(db, current_user.tenant_id, hours)
