@@ -35,6 +35,7 @@ from ..schemas.command import (
 )
 from ..schemas.command_phase3 import TelemetryIngest, TelemetryOut
 from ..services.automation_engine import compute_site_staleness, evaluate_rules
+from ..services.command_intelligence import compute_intelligence
 
 router = APIRouter()
 
@@ -557,22 +558,37 @@ async def command_summary(
     devices_with_heartbeat = [d for d in devices if d.last_heartbeat is not None]
     devices_missing_telemetry = [d for d in devices if d.last_heartbeat is None]
 
+    portfolio_data = {
+        "total_sites": total_sites,
+        "monitored_sites": len(monitored_sites),
+        "imported_only_sites": len(imported_only),
+        "total_devices": len(devices),
+        "active_devices": len(active_devices),
+        "devices_with_telemetry": len(devices_with_heartbeat),
+        "devices_missing_telemetry": len(devices_missing_telemetry),
+        "connected_sites": connected,
+        "attention_sites": len([s for s in sites if s.status == "Attention Needed"]),
+        "disconnected_sites": len([s for s in sites if s.status == "Not Connected"]),
+        "stale_devices": total_stale,
+        "overdue_tasks": len(overdue_tasks),
+        "total_verification_tasks": len(vtasks),
+    }
+
+    # ── Intelligence layer ────────────────────────────────────────
+    intelligence = compute_intelligence(
+        portfolio=portfolio_data,
+        readiness=readiness,
+        system_health=system_health,
+        incident_feed=incident_feed,
+        active_incidents_count=len(active_incidents),
+        critical_incidents_count=len(critical_incidents),
+        escalated_count=escalated_count,
+        site_summaries=site_summaries,
+        activity_timeline=activity_timeline,
+    )
+
     return {
-        "portfolio": {
-            "total_sites": total_sites,
-            "monitored_sites": len(monitored_sites),
-            "imported_only_sites": len(imported_only),
-            "total_devices": len(devices),
-            "active_devices": len(active_devices),
-            "devices_with_telemetry": len(devices_with_heartbeat),
-            "devices_missing_telemetry": len(devices_missing_telemetry),
-            "connected_sites": connected,
-            "attention_sites": len([s for s in sites if s.status == "Attention Needed"]),
-            "disconnected_sites": len([s for s in sites if s.status == "Not Connected"]),
-            "stale_devices": total_stale,
-            "overdue_tasks": len(overdue_tasks),
-            "total_verification_tasks": len(vtasks),
-        },
+        "portfolio": portfolio_data,
         "readiness": readiness,
         "system_health": system_health,
         "incident_feed": incident_feed,
@@ -582,6 +598,8 @@ async def command_summary(
         "unread_notifications": unread_notifications,
         "site_summaries": site_summaries,
         "activity_timeline": activity_timeline,
+        # V2 intelligence fields
+        "intelligence": intelligence,
     }
 
 
