@@ -36,6 +36,10 @@ from ..schemas.command import (
 from ..schemas.command_phase3 import TelemetryIngest, TelemetryOut
 from ..services.automation_engine import compute_site_staleness, evaluate_rules
 from ..services.command_intelligence import compute_intelligence
+from ..services.attention_engine import (
+    evaluate_tenant as attention_evaluate_tenant,
+    serialize_site_attention, serialize_attention_item, serialize_summary,
+)
 
 router = APIRouter()
 
@@ -574,6 +578,23 @@ async def command_summary(
         "total_verification_tasks": len(vtasks),
     }
 
+    # ── Attention Engine (centralized status/health truth) ───────
+    overdue_by_site = {}
+    for t in overdue_tasks:
+        overdue_by_site[t.site_id] = overdue_by_site.get(t.site_id, 0) + 1
+
+    attention_result = attention_evaluate_tenant(
+        sites=sites,
+        devices=devices,
+        incidents_by_site=incs_by_site,
+        overdue_tasks_by_site=overdue_by_site,
+    )
+    attention_payload = {
+        "summary": serialize_summary(attention_result["summary"]),
+        "sites": [serialize_site_attention(sa) for sa in attention_result["site_results"]],
+        "feed": [serialize_attention_item(ai) for ai in attention_result["attention_feed"]],
+    }
+
     # ── Intelligence layer ────────────────────────────────────────
     intelligence = compute_intelligence(
         portfolio=portfolio_data,
@@ -600,6 +621,8 @@ async def command_summary(
         "activity_timeline": activity_timeline,
         # V2 intelligence fields
         "intelligence": intelligence,
+        # Centralized attention engine output
+        "attention": attention_payload,
     }
 
 

@@ -12,6 +12,7 @@ import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
+import { statusLabel, statusColor, toCanonical, getAttentionCounts } from "@/lib/attention";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -33,11 +34,7 @@ function pctSafe(a, b) {
   return Math.round((a / b) * 100);
 }
 
-const STATUS_DOT = {
-  Connected: "bg-emerald-500",
-  "Attention Needed": "bg-amber-500",
-  "Not Connected": "bg-red-500",
-};
+// Status colors now come from @/lib/attention (centralized engine)
 
 const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "";
 
@@ -459,12 +456,10 @@ function SiteStatusTable({ siteSummaries = [], onPing, onReboot }) {
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${STATUS_DOT[site.status] || "bg-gray-300"}`} />
-                    <span className={`text-xs font-medium ${
-                      site.status === "Connected" ? "text-emerald-600" :
-                      site.status === "Not Connected" ? "text-red-600" :
-                      site.status === "Attention Needed" ? "text-amber-600" : "text-gray-500"
-                    }`}>{site.status || "Unknown"}</span>
+                    <div className={`w-2 h-2 rounded-full ${statusColor(toCanonical(site)).dot}`} />
+                    <span className={`text-xs font-medium ${statusColor(toCanonical(site)).text}`}>
+                      {statusLabel(toCanonical(site), "admin")}
+                    </span>
                   </div>
                 </td>
                 <td className="px-3 py-3">

@@ -9,6 +9,7 @@ import {
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
+import { statusLabel, statusColor, toCanonical, getAttentionCounts, getAttentionFeed } from "@/lib/attention";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -25,21 +26,13 @@ function timeSince(iso) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// Friendly status labels for non-technical users
-const FRIENDLY_STATUS = {
-  Connected: "Working",
-  "Attention Needed": "Needs Attention",
-  "Not Connected": "Offline",
-};
+// Status labels and colors now come from @/lib/attention (centralized engine)
+function friendlyStatus(site) {
+  return statusLabel(toCanonical(site), "user");
+}
 
-const STATUS_COLOR = {
-  Connected: { dot: "bg-emerald-500", text: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200" },
-  "Attention Needed": { dot: "bg-amber-500", text: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200" },
-  "Not Connected": { dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50", border: "border-red-200" },
-};
-
-function friendlyStatus(status) {
-  return FRIENDLY_STATUS[status] || status || "Unknown";
+function siteColor(site) {
+  return statusColor(toCanonical(site));
 }
 
 
@@ -62,10 +55,10 @@ function StatusCard({ label, value, icon: Icon, color = "text-gray-400", bgColor
 // SYSTEM STATUS BANNER
 // ═══════════════════════════════════════════════════════════════════
 
-function SystemStatusBanner({ siteSummaries = [], portfolio = {} }) {
-  const attentionCount = siteSummaries.filter(s => s.needs_attention).length;
-  const offlineCount = siteSummaries.filter(s => s.status === "Not Connected").length;
-  const total = portfolio.total_sites || 0;
+function SystemStatusBanner({ counts }) {
+  const attentionCount = (counts.attention || 0) + (counts.offline || 0);
+  const offlineCount = counts.offline || 0;
+  const total = counts.total || 0;
 
   if (offlineCount > 0) {
     return (
@@ -273,9 +266,9 @@ function SiteList({ siteSummaries = [] }) {
       const q = search.toLowerCase();
       list = list.filter(s => (s.site_name || "").toLowerCase().includes(q));
     }
-    if (statusFilter === "working") list = list.filter(s => s.status === "Connected" && !s.needs_attention);
-    else if (statusFilter === "attention") list = list.filter(s => s.needs_attention);
-    else if (statusFilter === "offline") list = list.filter(s => s.status === "Not Connected");
+    if (statusFilter === "working") list = list.filter(s => toCanonical(s) === "connected");
+    else if (statusFilter === "attention") list = list.filter(s => toCanonical(s) === "attention" || s.needs_attention);
+    else if (statusFilter === "offline") list = list.filter(s => toCanonical(s) === "offline");
 
     // Attention first, then alphabetical
     list.sort((a, b) => {
@@ -314,7 +307,7 @@ function SiteList({ siteSummaries = [] }) {
           <div className="px-5 py-8 text-center text-xs text-gray-400">No sites match your search.</div>
         )}
         {filtered.map(site => {
-          const sc = STATUS_COLOR[site.status] || { dot: "bg-gray-300", text: "text-gray-500" };
+          const sc = siteColor(site);
           return (
             <Link
               key={site.site_id}
@@ -325,7 +318,7 @@ function SiteList({ siteSummaries = [] }) {
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium text-gray-900 truncate">{site.site_name}</p>
                 <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-400">
-                  <span className={`font-medium ${sc.text}`}>{friendlyStatus(site.status)}</span>
+                  <span className={`font-medium ${sc.text}`}>{friendlyStatus(site)}</span>
                   <span>{site.total_devices || 0} device{(site.total_devices || 0) !== 1 ? "s" : ""}</span>
                   {site.last_checkin && <span>{timeSince(site.last_checkin)}</span>}
                 </div>
@@ -381,14 +374,14 @@ export default function UserDashboard() {
     );
   }
 
-  const p = data?.portfolio || {};
   const siteSummaries = data?.site_summaries || [];
   const incidents = data?.incident_feed || [];
+  const counts = getAttentionCounts(data);
 
-  const totalSites = p.total_sites || 0;
-  const connectedSites = p.connected_sites || 0;
-  const attentionSites = siteSummaries.filter(s => s.needs_attention).length;
-  const offlineSites = siteSummaries.filter(s => s.status === "Not Connected").length;
+  const totalSites = counts.total;
+  const connectedSites = counts.connected;
+  const attentionSites = counts.attention;
+  const offlineSites = counts.offline;
 
   return (
     <PageWrapper>
@@ -412,7 +405,7 @@ export default function UserDashboard() {
           </div>
 
           {/* System Status Banner */}
-          <SystemStatusBanner siteSummaries={siteSummaries} portfolio={p} />
+          <SystemStatusBanner counts={counts} />
 
           {/* Status Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
