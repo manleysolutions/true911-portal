@@ -132,16 +132,28 @@ function IntelligenceBanner({ data }) {
       {/* Bullet highlights */}
       {highlights.length > 0 && (
         <div className="space-y-1.5 border-t border-slate-800/40 pt-3">
-          {highlights.map((h, i) => (
-            <div key={i} className="flex items-start gap-2.5">
-              <div className="mt-0.5">{sevIcon[h.severity]}</div>
-              <p className={`text-[12.5px] leading-snug ${
-                h.severity === "critical" ? "text-red-300" :
-                h.severity === "warning" ? "text-amber-200/80" :
-                "text-slate-400"
-              }`}>{h.text}</p>
-            </div>
-          ))}
+          {highlights.map((h, i) => {
+            // Route highlights to the most relevant list page
+            const text = (h.text || "").toLowerCase();
+            const highlightHref = text.includes("offline") || text.includes("site") ? createPageUrl("Sites")
+              : text.includes("device") || text.includes("heartbeat") ? createPageUrl("Devices")
+              : text.includes("verification") || text.includes("overdue") ? createPageUrl("Sites")
+              : text.includes("incident") ? createPageUrl("Incidents")
+              : null;
+            const Wrapper = highlightHref ? Link : "div";
+            const wrapperProps = highlightHref ? { to: highlightHref } : {};
+            return (
+              <Wrapper key={i} {...wrapperProps} className={`flex items-start gap-2.5 rounded-lg px-1 -mx-1 transition-colors ${highlightHref ? "hover:bg-white/5 cursor-pointer" : ""}`}>
+                <div className="mt-0.5">{sevIcon[h.severity]}</div>
+                <p className={`text-[12.5px] leading-snug flex-1 ${
+                  h.severity === "critical" ? "text-red-300" :
+                  h.severity === "warning" ? "text-amber-200/80" :
+                  "text-slate-400"
+                }`}>{h.text}</p>
+                {highlightHref && <ChevronRight className="w-3 h-3 text-slate-600 mt-0.5 flex-shrink-0" />}
+              </Wrapper>
+            );
+          })}
         </div>
       )}
     </div>
@@ -153,9 +165,9 @@ function IntelligenceBanner({ data }) {
 // EXECUTIVE METRIC CARD
 // ═══════════════════════════════════════════════════════════════════
 
-function MetricCard({ label, value, sub, icon: Icon, iconBg, iconColor, border, trend }) {
-  return (
-    <div className={`bg-slate-900/80 rounded-xl border ${border || "border-slate-800/60"} p-4 hover:border-slate-700/60 transition-colors`}>
+function MetricCard({ label, value, sub, icon: Icon, iconBg, iconColor, border, trend, href }) {
+  const content = (
+    <>
       <div className="flex items-start justify-between mb-3">
         <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.08em]">{label}</span>
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBg}`}>
@@ -173,8 +185,11 @@ function MetricCard({ label, value, sub, icon: Icon, iconBg, iconColor, border, 
         )}
       </div>
       {sub && <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">{sub}</p>}
-    </div>
+    </>
   );
+  const cls = `bg-slate-900/80 rounded-xl border ${border || "border-slate-800/60"} p-4 hover:border-slate-700/60 transition-colors ${href ? "cursor-pointer" : ""}`;
+  if (href) return <Link to={href} className={`block ${cls}`}>{content}</Link>;
+  return <div className={cls}>{content}</div>;
 }
 
 
@@ -399,10 +414,10 @@ function ReadinessPanel({ readiness = {}, portfolio = {} }) {
               </div>
               <span className={`text-sm font-bold ${cfg.color}`}>{risk_label}</span>
             </div>
-            {/* Plain-English summary */}
-            <p className="text-[11px] text-slate-400 leading-relaxed">
+            {/* Plain-English summary — links to relevant pages */}
+            <Link to={createPageUrl("AutomationDashboard")} className="text-[11px] text-slate-400 leading-relaxed hover:text-slate-300 transition-colors block">
               {plainSummary || (score >= 85 ? "All readiness factors within normal parameters." : "Readiness reflects current deployment and monitoring status.")}
-            </p>
+            </Link>
           </div>
         </div>
 
@@ -412,12 +427,25 @@ function ReadinessPanel({ readiness = {}, portfolio = {} }) {
               <TrendingDown className="w-3 h-3 text-slate-600" />
               <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">What is affecting the score</span>
             </div>
-            {factors.map((f, i) => (
-              <div key={i} className="flex items-center gap-2.5 px-3 py-2 bg-slate-800/30 rounded-lg">
-                <span className="text-[11px] text-slate-400 flex-1">{f.detail || f.label}</span>
-                <span className="text-[11px] font-bold text-red-400">{f.impact}</span>
-              </div>
-            ))}
+            {factors.map((f, i) => {
+              // Map readiness factor labels to drill-down destinations
+              const factorLabel = (f.label || "").toLowerCase();
+              const factorHref = factorLabel.includes("device") ? createPageUrl("Devices")
+                : factorLabel.includes("site") || factorLabel.includes("connectivity") ? createPageUrl("Sites")
+                : factorLabel.includes("incident") ? createPageUrl("Incidents")
+                : factorLabel.includes("verif") || factorLabel.includes("overdue") ? createPageUrl("Sites")
+                : factorLabel.includes("stale") ? createPageUrl("Devices")
+                : null;
+              const Row = factorHref ? Link : "div";
+              const rowProps = factorHref ? { to: factorHref } : {};
+              return (
+                <Row key={i} {...rowProps} className={`flex items-center gap-2.5 px-3 py-2 bg-slate-800/30 rounded-lg transition-colors ${factorHref ? "hover:bg-slate-800/60 cursor-pointer" : ""}`}>
+                  <span className="text-[11px] text-slate-400 flex-1">{f.detail || f.label}</span>
+                  <span className="text-[11px] font-bold text-red-400">{f.impact}</span>
+                  {factorHref && <ChevronRight className="w-3 h-3 text-slate-600" />}
+                </Row>
+              );
+            })}
           </div>
         )}
       </div>
@@ -449,7 +477,7 @@ function SystemHealthCompact({ systems = [] }) {
           const statusColor = sys.status === "healthy" ? "text-emerald-400" : sys.status === "warning" ? "text-amber-400" : "text-red-400";
           const barColor = sys.status === "healthy" ? "bg-emerald-500" : sys.status === "warning" ? "bg-amber-500" : "bg-red-500";
           return (
-            <div key={sys.key} className="px-4 py-3.5 border-b border-r border-slate-800/30 last:border-r-0">
+            <Link key={sys.key} to={createPageUrl("Devices")} className="block px-4 py-3.5 border-b border-r border-slate-800/30 last:border-r-0 hover:bg-slate-800/30 transition-colors cursor-pointer">
               <div className="flex items-center gap-2 mb-2">
                 <SIcon className={`w-4 h-4 ${statusColor}`} />
                 <span className="text-[12px] text-slate-300 font-medium truncate">{sys.label}</span>
@@ -461,7 +489,7 @@ function SystemHealthCompact({ systems = [] }) {
               <div className="w-full bg-slate-800 rounded-full h-1">
                 <div className={`h-1 rounded-full transition-all ${barColor}`} style={{ width: `${sys.health_pct}%` }} />
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
@@ -931,6 +959,7 @@ export default function Command() {
               label="Monitored Sites" value={p.total_sites || 0}
               icon={Building2} iconBg="bg-slate-800/80" iconColor="text-slate-400"
               sub={p.monitored_sites > 0 ? `${p.monitored_sites} with devices assigned` : "Onboarding in progress"}
+              href={createPageUrl("Sites")}
             />
             <MetricCard
               label="Site Connectivity" value={`${healthyPct}%`}
@@ -939,6 +968,7 @@ export default function Command() {
               iconColor={healthyPct >= 90 ? "text-emerald-400" : "text-amber-400"}
               sub={`${p.connected_sites || 0} of ${p.total_sites || 0} sites reporting`}
               trend={healthyPct >= 90 ? "up" : healthyPct >= 70 ? "neutral" : "down"}
+              href={createPageUrl("Sites")}
             />
             <MetricCard
               label="Active Incidents" value={activeIncidents}
@@ -949,6 +979,7 @@ export default function Command() {
               sub={activeIncidents === 0
                 ? (devicesAtRisk > 0 ? "No incidents, but devices need attention" : "No open incidents")
                 : criticalIncidents > 0 ? `${criticalIncidents} critical` : `${activeIncidents} open`}
+              href={createPageUrl("Incidents")}
             />
             <MetricCard
               label="Devices at Risk" value={devicesAtRisk}
@@ -959,6 +990,7 @@ export default function Command() {
                 ? `${p.stale_devices || 0} overdue heartbeat, ${p.devices_missing_telemetry || 0} never reported`
                 : "All devices reporting on schedule"}
               trend={devicesAtRisk > 0 ? "down" : "neutral"}
+              href={createPageUrl("Devices")}
             />
             <MetricCard
               label="Readiness Score" value={`${readiness.score || 0}%`}
@@ -967,11 +999,13 @@ export default function Command() {
               iconColor={readiness.score >= 85 ? "text-emerald-400" : readiness.score >= 60 ? "text-amber-400" : "text-red-400"}
               border={readiness.score < 60 ? "border-red-500/20" : undefined}
               sub={readiness.score >= 85 ? "Operational" : readiness.score >= 60 ? "Degraded — review recommended" : "At risk — action required"}
+              href={createPageUrl("AutomationDashboard")}
             />
             <MetricCard
               label="Total Devices" value={p.total_devices || 0}
               icon={Cpu} iconBg="bg-blue-500/10" iconColor="text-blue-400"
               sub={`${p.active_devices || 0} active, ${p.devices_with_telemetry || 0} reporting`}
+              href={createPageUrl("Devices")}
             />
           </div>
 
