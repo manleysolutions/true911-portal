@@ -531,48 +531,60 @@ async def commit_import(
 
 
 def generate_template_csv() -> str:
-    """Return a CSV template string with headers and one example row."""
+    """Return a production-grade site import CSV template.
+
+    Uses proper csv.writer for correct quoting/escaping.
+    Includes 3 realistic example rows showing different site types.
+    Columns aligned with both the import engine and clean business model.
+    """
+    import csv as _csv
+    import io as _io
+
     headers = [
-        "site_name", "customer_name", "site_code", "address", "city", "state", "zip", "country",
-        "building_type", "floors", "elevator_count",
-        "system_type", "device_type", "device_model", "carrier",
-        "sim_iccid", "phone_number", "device_serial", "firmware_version",
+        "customer_name", "site_name", "site_code",
+        "address", "city", "state", "zip", "country",
+        "building_type", "system_type",
+        "device_type", "device_model", "carrier",
+        "sim_iccid", "phone_number", "device_serial",
         "vendor_name", "vendor_contact", "vendor_email",
-        "verification_frequency", "install_date", "system_priority", "notes",
-        "service_address", "service_city", "service_state", "service_zip",
-        "billing_address", "billing_city", "billing_state", "billing_zip",
-        "shipping_address", "shipping_city", "shipping_state", "shipping_zip",
-        "suggested_address", "suggested_city", "suggested_state", "suggested_zip",
-        "e911_confirmed",
+        "verification_frequency", "system_priority", "notes",
     ]
-    example_1 = [
-        "RH Gallery Dallas", "R&R Technologies", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
-        "retail", "3", "2",
-        "elevator_phone", "Cellular Communicator", "MS130v4", "T-Mobile",
-        "8901260882280000001", "+12145559001", "MS130-SN-00001", "4.2.1",
+
+    output = _io.StringIO()
+    writer = _csv.writer(output, quoting=_csv.QUOTE_MINIMAL)
+    writer.writerow(headers)
+
+    # Example 1: Elevator site at a retail property
+    writer.writerow([
+        "R&R Technologies", "RH Gallery Dallas", "RH-DAL-001",
+        "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
+        "Retail", "Elevator",
+        "Cellular Communicator", "MS130v4", "T-Mobile",
+        "8901260882280000001", "+12145559001", "MS130-SN-00001",
         "Lone Star Elevator", "Mike Torres", "mike@lonestarelev.com",
-        "quarterly", "2025-06-15", "high", "Main gallery elevator bank",
-        "8300 NorthPark Center", "Dallas", "TX", "75225",
-        "", "", "", "",
-        "", "", "", "",
-        "", "", "", "",
-        "yes",
-    ]
-    example_2 = [
-        "RH Gallery Dallas", "R&R Technologies", "RH-DAL-001", "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
-        "retail", "3", "",
-        "fire_alarm_communicator", "Cellular Communicator", "Napco StarLink", "T-Mobile",
-        "8901260882280000002", "+12145559002", "SL-SN-00001", "3.8.0",
+        "quarterly", "high", "Main gallery elevator bank",
+    ])
+
+    # Example 2: Fire alarm at same property (same customer, different system)
+    writer.writerow([
+        "R&R Technologies", "RH Gallery Dallas", "RH-DAL-001",
+        "8300 NorthPark Center", "Dallas", "TX", "75225", "US",
+        "Retail", "Fire Alarm Control Panel",
+        "Cellular Communicator", "Napco StarLink", "T-Mobile",
+        "8901260882280000002", "+12145559002", "SL-SN-00001",
         "Metro Fire Systems", "Sarah Chen", "sarah@metrofire.com",
-        "annual", "2025-06-15", "high", "FACP communicator",
-        "", "", "", "",
-        "100 Commerce Blvd", "Dallas", "TX", "75201",
-        "8300 NorthPark Center", "Dallas", "TX", "75225",
-        "", "", "", "",
-        "",
-    ]
-    return (
-        ",".join(headers) + "\n"
-        + ",".join(example_1) + "\n"
-        + ",".join(example_2) + "\n"
-    )
+        "annual", "high", "FACP communicator",
+    ])
+
+    # Example 3: Emergency phone at a different site (same customer)
+    writer.writerow([
+        "R&R Technologies", "RH Warehouse Fort Worth", "",
+        "1000 Industrial Blvd", "Fort Worth", "TX", "76102", "US",
+        "Industrial", "Emergency Phone",
+        "", "", "Verizon",
+        "", "+18175559001", "",
+        "", "", "",
+        "annual", "medium", "Parking garage call station",
+    ])
+
+    return output.getvalue()

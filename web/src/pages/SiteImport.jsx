@@ -9,8 +9,9 @@ import {
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { config } from "@/config";
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+const API_URL = config.apiUrl;
 const authHeaders = () => ({
   Authorization: `Bearer ${localStorage.getItem("access_token")}`,
 });
@@ -102,15 +103,20 @@ export default function SiteImport() {
       const res = await fetch(`${API_URL}/command/site-import/template-csv`, {
         headers: authHeaders(),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Download failed (${res.status})`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "site_import_template.csv";
+      a.download = "true911_site_import_template.csv";
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to download template");
+      toast.success("Template downloaded");
+    } catch (err) {
+      toast.error(err.message || "Failed to download template");
     }
   };
 
@@ -151,16 +157,29 @@ export default function SiteImport() {
 
         {/* Template download */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-blue-900">Download CSV Template</p>
-              <p className="text-xs text-blue-700 mt-0.5">
-                Includes two example rows showing multi-system site import format.
-              </p>
-            </div>
-            <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium">
-              <Download className="w-3.5 h-3.5" /> Download
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-blue-900">Import Template & Instructions</p>
+            <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium">
+              <Download className="w-3.5 h-3.5" /> Download Template
             </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-800">
+            <div className="flex items-start gap-1.5">
+              <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span><strong>1 row = 1 site / system</strong> — each site gets its own row</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>Customer name may repeat across rows</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>Use consistent site and customer naming</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>Leave optional fields blank if unknown</span>
+            </div>
           </div>
         </div>
 
