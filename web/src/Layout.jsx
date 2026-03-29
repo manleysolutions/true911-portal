@@ -80,16 +80,21 @@ const NOC_NAV = [
   {
     group: "deployment", label: "Deployment", icon: Rocket, minRole: "Admin",
     children: [
-      { name: "New Site Setup",      page: "SiteOnboarding",     icon: Building2 },
-      { name: "Device Provisioning", page: "OnboardingWizard",   icon: Wrench },
-      { name: "Zero-Touch Deploy",   page: "ProvisionDeployment", icon: Zap },
-      { name: "PR12 Deploy",         page: "Pr12QuickDeploy",    icon: Rocket },
-      { name: "VOLA / PR12",         page: "VolaIntegration",    icon: Radio },
-      { name: "Provisioning Queue",  page: "ProvisioningQueue",  icon: Package },
+      { name: "Onboard Site",        page: "OnboardSite",        icon: Building2 },
       { name: "Subscriber Import",   page: "SubscriberImport",   icon: FileSpreadsheet },
-      { name: "Import Verification", page: "ImportVerification", icon: CheckCircle },
       { name: "Site Import",         page: "SiteImport",         icon: Upload },
-      { name: "Bulk Deploy",         page: "BulkDeploy",         icon: Layers },
+      { name: "Import Verification", page: "ImportVerification", icon: CheckCircle },
+      { name: "Provisioning Queue",  page: "ProvisioningQueue",  icon: Package },
+    ],
+  },
+
+  // ── Device Control (Advanced) ──
+  {
+    group: "device_control", label: "Device Control", icon: Wrench, minRole: "Admin",
+    children: [
+      { name: "VOLA / PR12",      page: "VolaIntegration",     icon: Radio },
+      { name: "PR12 Quick Deploy", page: "Pr12QuickDeploy",    icon: Rocket },
+      { name: "Zero-Touch",       page: "ProvisionDeployment", icon: Zap },
     ],
   },
 
@@ -151,8 +156,9 @@ const ADMIN_NAV = [
   {
     group: "management", label: "Management", icon: Settings,
     children: [
-      { name: "Organization", page: "OrgSettings",      icon: Globe },
-      { name: "Site Import",  page: "SiteImport",       icon: Upload },
+      { name: "Onboard Site",  page: "OnboardSite",     icon: Rocket },
+      { name: "Organization",  page: "OrgSettings",     icon: Globe },
+      { name: "Site Import",   page: "SiteImport",      icon: Upload },
     ],
   },
 ];

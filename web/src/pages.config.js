@@ -92,6 +92,7 @@ import ManagerDashboard from './pages/ManagerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
 import AutomationDashboard from './pages/AutomationDashboard';
+import OnboardSite from './pages/OnboardSite';
 import __Layout from './Layout.jsx';
 
 
@@ -141,6 +142,7 @@ export const PAGES = {
     "AdminDashboard": AdminDashboard,
     "UserDashboard": UserDashboard,
     "AutomationDashboard": AutomationDashboard,
+    "OnboardSite": OnboardSite,
 }
 
 export const pagesConfig = {
