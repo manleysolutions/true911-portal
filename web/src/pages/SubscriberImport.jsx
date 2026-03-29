@@ -11,7 +11,8 @@ import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+import { config } from "@/config";
+const API_URL = config.apiUrl;
 const authHeaders = () => ({
   Authorization: `Bearer ${localStorage.getItem("access_token")}`,
 });
@@ -127,15 +128,20 @@ export default function SubscriberImport() {
       const res = await fetch(`${API_URL}/command/subscriber-import/template-csv`, {
         headers: authHeaders(),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Download failed (${res.status})`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "subscriber_import_template.csv";
+      a.download = "true911_import_template.csv";
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to download template");
+      toast.success("Template downloaded");
+    } catch (err) {
+      toast.error(err.message || "Failed to download template");
     }
   };
 
@@ -243,15 +249,23 @@ export default function SubscriberImport() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-800">
             <div className="flex items-start gap-1.5">
               <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span><strong>1 row = 1 line</strong> (service record / subscription)</span>
+              <span><strong>1 row = 1 line / device</strong> — each device gets its own row</span>
             </div>
             <div className="flex items-start gap-1.5">
               <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span>Sites and devices may repeat across rows</span>
+              <span>Customer and site fields may repeat across rows</span>
             </div>
             <div className="flex items-start gap-1.5">
               <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span>Do not merge different devices into one row</span>
+              <span>Do not merge multiple devices into one row</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>Use approved values for endpoint type, carrier, and service class</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>Leave optional fields blank if unknown — do not guess</span>
             </div>
             <div className="flex items-start gap-1.5">
               <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />

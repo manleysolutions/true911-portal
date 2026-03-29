@@ -31,11 +31,12 @@ from ..models.command_activity import CommandActivity
 # ── Constants ──────────────────────────────────────────────────────
 
 TEMPLATE_COLUMNS = [
-    "customer_name", "customer_number", "account_number",
-    "site_name", "site_address", "city", "state", "zip",
-    "device_type", "device_id", "imei",
-    "msisdn", "sim_iccid", "carrier", "line_type",
-    "qb_description", "notes",
+    "customer_name", "customer_account_number",
+    "site_name", "site_code", "street_address", "city", "state", "zip", "country",
+    "endpoint_type", "service_class", "transport", "carrier", "voice_provider",
+    "device_id", "hardware_model", "serial_number", "imei",
+    "iccid", "msisdn", "did",
+    "e911_location", "heartbeat_schedule", "notes",
 ]
 
 US_STATE_ABBREVS = {
@@ -143,25 +144,25 @@ def _get(row: dict, *keys) -> str:
 def _extract_row(row: dict, row_num: int) -> dict:
     """Extract and normalize all fields from a CSV row."""
     customer_name = _strip(row.get("customer_name", ""))
-    customer_number = _strip(row.get("customer_number", ""))
-    account_number = _strip(row.get("account_number", ""))
+    customer_number = _strip(_get(row, "customer_number", "customer_account_number"))
+    account_number = _strip(_get(row, "account_number", "customer_account_number"))
 
     site_name = _strip(row.get("site_name", ""))
-    site_address = _strip(_get(row, "site_address", "address", "e911_street"))
+    site_address = _strip(_get(row, "site_address", "street_address", "address", "e911_street", "e911_location"))
     city = _strip(_get(row, "city", "site_city", "e911_city"))
     state_raw = _strip(_get(row, "state", "site_state", "e911_state"))
     state = _normalize_state(state_raw) if state_raw else ""
     zip_code = _strip(_get(row, "zip", "site_zip", "zip_code", "e911_zip"))
 
-    device_type = _strip(_get(row, "device_type", "equipment_type"))
+    device_type = _strip(_get(row, "device_type", "endpoint_type", "equipment_type"))
     device_id = _strip(row.get("device_id", ""))
     imei = _strip(row.get("imei", ""))
 
     msisdn_raw = _strip(_get(row, "msisdn", "phone_number", "did", "phone"))
     msisdn = _normalize_phone(msisdn_raw) if msisdn_raw else ""
     sim_iccid = _strip(_get(row, "sim_iccid", "iccid"))
-    carrier = _strip(row.get("carrier", ""))
-    line_type = _strip(_get(row, "line_type", "service_type", "protocol"))
+    carrier = _strip(_get(row, "carrier", "voice_provider"))
+    line_type = _strip(_get(row, "line_type", "service_class", "service_type", "protocol", "transport"))
 
     qb_description = _strip(_get(row, "qb_description", "description"))
     notes = _strip(row.get("notes", ""))
@@ -1308,31 +1309,58 @@ async def update_reconciliation_status(
 # ── Template ───────────────────────────────────────────────────────
 
 def generate_subscriber_template_csv() -> str:
-    """Return a CSV template with headers and example rows."""
-    example_1 = [
-        "Metro Hospital Group", "CUST-001", "ACCT-1001",
-        "Metro Hospital Main Campus", "500 Medical Center Dr", "Dallas", "TX", "75201",
-        "elevator_phone", "DEV-ELV-001", "353456789012345",
-        "+12145551001", "89012608822800000010", "T-Mobile", "cellular",
-        "Elevator Phone - Main Lobby Bank", "Bank A, cars 1-3",
-    ]
-    example_2 = [
-        "Metro Hospital Group", "CUST-001", "ACCT-1001",
-        "Metro Hospital Main Campus", "500 Medical Center Dr", "Dallas", "TX", "75201",
-        "fire_alarm", "DEV-FACP-001", "353456789012346",
-        "+12145551002", "89012608822800000011", "T-Mobile", "cellular",
-        "FACP Communicator - Main Building", "Napco StarLink",
-    ]
-    example_3 = [
-        "Metro Hospital Group", "CUST-001", "ACCT-1001",
-        "Metro Hospital North Clinic", "1200 North Ave", "Dallas", "TX", "75204",
-        "elevator_phone", "DEV-ELV-002", "353456789012347",
-        "+12145551003", "89012608822800000012", "T-Mobile", "cellular",
-        "Elevator Phone - Clinic", "Single car",
-    ]
-    return (
-        ",".join(TEMPLATE_COLUMNS) + "\n"
-        + ",".join(example_1) + "\n"
-        + ",".join(example_2) + "\n"
-        + ",".join(example_3) + "\n"
-    )
+    """Return a production-grade CSV import template.
+
+    Uses proper csv.writer for correct quoting/escaping.
+    Includes 4 realistic example rows showing:
+      - repeated customer/site across devices
+      - different endpoint types and carriers
+      - one row per device/line
+    """
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+
+    # Header row
+    writer.writerow(TEMPLATE_COLUMNS)
+
+    # Example 1: Elevator line at hospital main campus
+    writer.writerow([
+        "Metro Hospital Group", "ACCT-1001",
+        "Metro Hospital Main Campus", "", "500 Medical Center Dr", "Dallas", "TX", "75201", "US",
+        "Elevator", "VoLTE (Cellular Voice)", "Cellular", "T-Mobile", "",
+        "DEV-ELV-001", "MS130v4", "MS130-SN-001", "353456789012345",
+        "89012608822800000010", "+12145551001", "",
+        "Main lobby elevator bank", "", "Cars 1-3",
+    ])
+
+    # Example 2: Fire alarm at same campus (same customer/site, different device)
+    writer.writerow([
+        "Metro Hospital Group", "ACCT-1001",
+        "Metro Hospital Main Campus", "", "500 Medical Center Dr", "Dallas", "TX", "75201", "US",
+        "Fire Alarm Control Panel", "Data Only", "Cellular", "T-Mobile", "",
+        "DEV-FACP-001", "Napco StarLink", "SL-SN-001", "353456789012346",
+        "89012608822800000011", "+12145551002", "",
+        "Main building FACP", "", "Napco communicator",
+    ])
+
+    # Example 3: Emergency phone at a different site (same customer)
+    writer.writerow([
+        "Metro Hospital Group", "ACCT-1001",
+        "Metro Hospital North Clinic", "", "1200 North Ave", "Dallas", "TX", "75204", "US",
+        "Emergency Phone", "VoIP (SIP)", "Ethernet (LAN)", "", "Telnyx",
+        "DEV-EMRG-001", "", "", "",
+        "", "", "+12145551005",
+        "Parking garage call station", "", "Level 1 entrance",
+    ])
+
+    # Example 4: Fax at clinic (different endpoint type)
+    writer.writerow([
+        "Metro Hospital Group", "ACCT-1001",
+        "Metro Hospital North Clinic", "", "1200 North Ave", "Dallas", "TX", "75204", "US",
+        "Fax", "Analog (POTS Replacement)", "Cellular", "Verizon", "",
+        "DEV-FAX-001", "", "FAX-SN-001", "353456789012348",
+        "89012608822800000013", "+12145551006", "",
+        "Clinic fax line", "", "",
+    ])
+
+    return output.getvalue()
