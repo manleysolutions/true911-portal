@@ -46,6 +46,8 @@ from app.models.service_unit import ServiceUnit
 from app.models.provisioning_queue import ProvisioningQueueItem
 from app.models.line_intelligence_event import LineIntelligenceEvent
 from app.models.port_state import PortState
+from app.models.import_batch import ImportBatch
+from app.models.import_row import ImportRow
 
 __all__ = [
     "Tenant",
@@ -97,4 +99,6 @@ __all__ = [
     "ProvisioningQueueItem",
     "LineIntelligenceEvent",
     "PortState",
+    "ImportBatch",
+    "ImportRow",
 ]

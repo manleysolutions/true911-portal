@@ -94,6 +94,7 @@ const PERMISSIONS = {
   COMMAND_GENERATE_DIGEST: ["Admin"],
   COMMAND_VIEW_AUTO_LOG: ["Admin", "Manager", "User"],
   COMMAND_SITE_IMPORT: ["Admin"],
+  SUBSCRIBER_IMPORT: ["Admin"],
 };
 
 // Storage key for persisting impersonation across refreshes

@@ -14,6 +14,8 @@ class Customer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(100), index=True)
     name: Mapped[str] = mapped_column(String(255))
+    customer_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    account_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     billing_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     billing_phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     billing_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -69,6 +69,8 @@ PERMISSIONS: dict[str, list[str]] = {
     "COMMAND_VIEW_AUTO_LOG": ["Admin", "Manager", "User"],
     # Site Import
     "COMMAND_SITE_IMPORT": ["Admin"],
+    # Subscriber Import
+    "SUBSCRIBER_IMPORT": ["Admin"],
     # Device management
     "MANAGE_DEVICES": ["Admin"],
 }

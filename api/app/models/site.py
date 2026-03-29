@@ -57,6 +57,9 @@ class Site(Base):
     e911_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     e911_confirmation_required: Mapped[bool] = mapped_column(Boolean, server_default="false", default=False)
     address_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Subscriber import fields
+    reconciliation_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, server_default="imported_unverified")
+    import_batch_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Phase 7 NG911 columns
     psap_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     emergency_class: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

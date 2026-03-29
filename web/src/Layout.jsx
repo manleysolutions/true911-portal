@@ -71,6 +71,8 @@ const NOC_NAV = [
   { name: "Zero-Touch",    page: "ProvisionDeployment", icon: Zap },
   { name: "VOLA / PR12",   page: "VolaIntegration",     icon: Radio },
   { name: "Provisioning",  page: "ProvisioningQueue",   icon: Zap },
+  { name: "Sub. Import",   page: "SubscriberImport",    icon: FileSpreadsheet },
+  { name: "Import Verify", page: "ImportVerification", icon: CheckCircle },
   { name: "Site Onboard",  page: "SiteOnboarding",     icon: Building2 },
   { name: "Device Setup", page: "OnboardingWizard",   icon: Rocket },
   { name: "Organization", page: "OrgSettings",        icon: Globe },

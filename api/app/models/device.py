@@ -54,3 +54,7 @@ class Device(Base):
     vola_org_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     vola_last_sync: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     vola_last_task_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Subscriber import fields
+    reconciliation_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, server_default="imported_unverified")
+    import_batch_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source_row_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

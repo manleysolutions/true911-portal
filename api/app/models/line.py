@@ -28,5 +28,13 @@ class Line(Base):
     subscription_id: Mapped[Optional[int]] = mapped_column(ForeignKey("subscriptions.id"), nullable=True)
     customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Subscriber import fields
+    sim_iccid: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    carrier: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    line_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reconciliation_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, server_default="imported_unverified")
+    import_batch_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source_row_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    qb_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
