@@ -717,7 +717,7 @@ export default function VolaIntegration() {
       <div className="p-6 max-w-5xl mx-auto space-y-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">VOLA / PR12 Integration</h1>
+            <h1 className="text-2xl font-bold text-gray-900">VOLA Integration</h1>
             <p className="text-sm text-gray-500 mt-0.5">Manage FlyingVoice PR12 devices via VOLA Cloud TR-069</p>
           </div>
         </div>

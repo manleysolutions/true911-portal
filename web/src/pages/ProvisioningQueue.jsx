@@ -168,7 +168,7 @@ export default function ProvisioningQueue() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Zap className="w-6 h-6 text-purple-600" />
-              Provisioning Queue
+              Unassigned Devices & SIMs
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               {summary ? `${summary.actionable} items need attention` : "Loading..."}

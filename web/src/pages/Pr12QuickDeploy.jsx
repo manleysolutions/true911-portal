@@ -274,8 +274,8 @@ export default function Pr12QuickDeploy() {
       <div className="p-6 max-w-4xl mx-auto space-y-5">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">PR12 Quick Deploy</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Deploy FlyingVoice PR12 devices to a customer site in a few guided steps</p>
+          <h1 className="text-2xl font-bold text-gray-900">PR12 Device Actions</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Deploy and manage FlyingVoice PR12 devices</p>
         </div>
 
         {/* Status strip */}

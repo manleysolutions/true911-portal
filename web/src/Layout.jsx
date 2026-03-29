@@ -44,7 +44,7 @@ const FEATURE_FLAGS = {
 // ── NOC / Admin portal ──────────────────────────────────────────
 
 const NOC_NAV = [
-  // ── Primary (always visible) ──
+  // ── Primary ──
   { name: "Command Center",  page: "Command",         icon: ShieldCheck },
   { name: "Customers",       page: "Customers",       icon: Users },
   { name: "Sites",           page: "Sites",           icon: Building2 },
@@ -61,6 +61,7 @@ const NOC_NAV = [
       { name: "Network Health",  page: "NetworkDashboard",  icon: Radio },
       { name: "Recordings",      page: "Recordings",        icon: Disc3 },
       { name: "Reports",         page: "Reports",           icon: FileText },
+      { name: "Automation",      page: "AutomationDashboard", icon: Zap },
     ],
   },
 
@@ -68,11 +69,9 @@ const NOC_NAV = [
   {
     group: "network", label: "Network", icon: Layers,
     children: [
-      { name: "Lines",       page: "Lines",           icon: Phone },
-      { name: "SIMs",        page: "SimManagement",   icon: Disc3 },
-      { name: "E911",        page: "E911",            icon: MapPin },
-      { name: "Operator View", page: "OperatorView",  icon: Gauge },
-      { name: "Overview",    page: "Overview",         icon: LayoutDashboard },
+      { name: "Lines",   page: "Lines",          icon: Phone },
+      { name: "SIMs",    page: "SimManagement",  icon: Disc3 },
+      { name: "E911",    page: "E911",           icon: MapPin },
     ],
   },
 
@@ -80,11 +79,11 @@ const NOC_NAV = [
   {
     group: "deployment", label: "Deployment", icon: Rocket, minRole: "Admin",
     children: [
-      { name: "Onboard Site",        page: "OnboardSite",        icon: Building2 },
-      { name: "Subscriber Import",   page: "SubscriberImport",   icon: FileSpreadsheet },
-      { name: "Site Import",         page: "SiteImport",         icon: Upload },
-      { name: "Import Verification", page: "ImportVerification", icon: CheckCircle },
-      { name: "Provisioning Queue",  page: "ProvisioningQueue",  icon: Package },
+      { name: "Onboard Site",              page: "OnboardSite",        icon: Building2 },
+      { name: "Lines & Devices Import",    page: "SubscriberImport",   icon: FileSpreadsheet },
+      { name: "Site Import",               page: "SiteImport",         icon: Upload },
+      { name: "Import Verification",       page: "ImportVerification", icon: CheckCircle },
+      { name: "Unassigned Devices & SIMs", page: "ProvisioningQueue",  icon: Package },
     ],
   },
 
@@ -92,21 +91,8 @@ const NOC_NAV = [
   {
     group: "device_control", label: "Device Control", icon: Wrench, minRole: "Admin",
     children: [
-      { name: "VOLA / PR12",      page: "VolaIntegration",     icon: Radio },
-      { name: "PR12 Quick Deploy", page: "Pr12QuickDeploy",    icon: Rocket },
-      { name: "Zero-Touch",       page: "ProvisionDeployment", icon: Zap },
-    ],
-  },
-
-  // ── Integrations ──
-  {
-    group: "integrations", label: "Integrations", icon: Plug, minRole: "Admin",
-    children: [
-      { name: "Providers",      page: "Providers",        icon: Plug },
-      { name: "Sync Status",    page: "IntegrationSync",  icon: ArrowDownUp },
-      { name: "Auto Ops",       page: "AutoOps",          icon: Bot },
-      { name: "Automation",     page: "AutomationDashboard", icon: Zap },
-      { name: "AI / Samantha",  page: "Samantha",         icon: Sparkles, featureFlag: "samantha" },
+      { name: "VOLA Integration",   page: "VolaIntegration",     icon: Radio },
+      { name: "PR12 Device Actions", page: "Pr12QuickDeploy",    icon: Rocket },
     ],
   },
 
@@ -114,8 +100,9 @@ const NOC_NAV = [
   {
     group: "admin", label: "Administration", icon: Settings, minRole: "Admin",
     children: [
+      { name: "Providers",      page: "Providers",         icon: Plug },
+      { name: "Integrations",   page: "IntegrationSync",   icon: ArrowDownUp },
       { name: "Organization",   page: "OrgSettings",       icon: Globe },
-      { name: "Device Setup",   page: "DeviceAssignment",  icon: SlidersHorizontal },
       { name: "Tenants",        page: "AdminTenants",      icon: Building2,  minRole: "SuperAdmin" },
       { name: "Users & Roles",  page: "AdminUsers",        icon: Shield,     minRole: "SuperAdmin" },
       { name: "Data Imports",   page: "AdminImports",      icon: Upload,     minRole: "SuperAdmin" },
@@ -130,35 +117,42 @@ const ADMIN_NAV = [
   { name: "Dashboard",    page: "AdminDashboard",  icon: LayoutDashboard },
   { name: "Sites",        page: "Sites",           icon: Building2 },
   { name: "Devices",      page: "Devices",         icon: Cpu },
-  { name: "Incidents",    page: "Incidents",        icon: AlertOctagon },
-  { name: "Map",          page: "DeploymentMap",    icon: Map },
+  { name: "Incidents",    page: "Incidents",       icon: AlertOctagon },
+  { name: "Map",          page: "DeploymentMap",   icon: Map },
 
   {
     group: "monitoring", label: "Monitoring", icon: Activity,
     children: [
-      { name: "Alerts",     page: "Notifications",    icon: Bell },
-      { name: "Events",     page: "Events",           icon: Activity },
-      { name: "Network",    page: "NetworkDashboard",  icon: Radio },
-      { name: "Recordings", page: "Recordings",        icon: Disc3 },
-      { name: "Reports",      page: "Reports",              icon: FileText },
-      { name: "Automation",   page: "AutomationDashboard",  icon: Zap },
+      { name: "Alerts",     page: "Notifications",       icon: Bell },
+      { name: "Events",     page: "Events",              icon: Activity },
+      { name: "Network",    page: "NetworkDashboard",    icon: Radio },
+      { name: "Recordings", page: "Recordings",          icon: Disc3 },
+      { name: "Reports",    page: "Reports",             icon: FileText },
+      { name: "Automation", page: "AutomationDashboard", icon: Zap },
+    ],
+  },
+
+  {
+    group: "deployment", label: "Deployment", icon: Rocket,
+    children: [
+      { name: "Onboard Site",           page: "OnboardSite",      icon: Building2 },
+      { name: "Lines & Devices Import", page: "SubscriberImport", icon: FileSpreadsheet },
+      { name: "Site Import",            page: "SiteImport",       icon: Upload },
     ],
   },
 
   {
     group: "network", label: "Network", icon: Layers,
     children: [
-      { name: "Lines",   page: "Lines",          icon: Phone },
-      { name: "E911",    page: "E911",           icon: MapPin },
+      { name: "Lines",   page: "Lines",  icon: Phone },
+      { name: "E911",    page: "E911",   icon: MapPin },
     ],
   },
 
   {
-    group: "management", label: "Management", icon: Settings,
+    group: "settings", label: "Settings", icon: Settings,
     children: [
-      { name: "Onboard Site",  page: "OnboardSite",     icon: Rocket },
-      { name: "Organization",  page: "OrgSettings",     icon: Globe },
-      { name: "Site Import",   page: "SiteImport",      icon: Upload },
+      { name: "Organization", page: "OrgSettings", icon: Globe },
     ],
   },
 ];

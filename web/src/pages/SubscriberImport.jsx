@@ -200,7 +200,7 @@ export default function SubscriberImport() {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-red-600" />
-            <h1 className="text-2xl font-bold text-gray-900">Subscriber Import</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Lines & Devices Import</h1>
           </div>
           <Link
             to={createPageUrl("ImportVerification")}
