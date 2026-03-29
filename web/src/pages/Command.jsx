@@ -42,56 +42,76 @@ function pct(a, b) {
 
 function IntelligenceBanner({ data }) {
   const intel = data?.intelligence?.operational_summary;
+  const p = data?.portfolio || {};
+  const siteSummaries = data?.site_summaries || [];
 
-  const insights = useMemo(() => {
-    // Use backend intelligence when available
+  // Build the summary sentence that sits below the header
+  const summaryLine = useMemo(() => {
+    if (intel?.headline && intel?.subheadline) {
+      // Combine backend headline + subheadline into one flowing statement
+      return `${intel.headline}. ${intel.subheadline}.`;
+    }
+    // Client-side fallback
+    const activeInc = data?.active_incidents || 0;
+    const attentionCount = siteSummaries.filter(s => s.needs_attention).length;
+    const stale = p.stale_devices || 0;
+    const overdue = p.overdue_tasks || 0;
+    const totalSites = p.total_sites || 0;
+    const connected = p.connected_sites || 0;
+    const healthyPct = totalSites > 0 ? pct(connected, totalSites) : 100;
+
+    const parts = [];
+    if (attentionCount > 0) {
+      parts.push(`${attentionCount} site${attentionCount > 1 ? "s" : ""} need${attentionCount === 1 ? "s" : ""} attention`);
+    }
+    if (activeInc === 0) {
+      parts.push("No active incidents");
+    } else {
+      parts.push(`${activeInc} active incident${activeInc > 1 ? "s" : ""}`);
+    }
+    const issues = [];
+    if (stale > 0) issues.push("overdue heartbeat reporting");
+    if (overdue > 0) issues.push(`${overdue} overdue verification task${overdue > 1 ? "s" : ""}`);
+    if (issues.length > 0 && activeInc === 0) {
+      parts.push(`but ${issues.join(" and ")} require follow-up`);
+    }
+    if (attentionCount === 0 && activeInc === 0 && issues.length === 0) {
+      return `System stable across ${healthyPct}% of monitored infrastructure. All sites reporting normally.`;
+    }
+    return parts.join(". ") + ".";
+  }, [data, intel, p, siteSummaries]);
+
+  // Bullet highlights
+  const highlights = useMemo(() => {
     if (intel?.highlights?.length) {
-      const hasCrit = data?.critical_incidents > 0;
-      return [
-        // Headline as first insight
-        {
-          severity: hasCrit ? "critical" : (data?.intelligence?.incident_priority_stack?.length > 0 ? "warning" : "ok"),
-          text: intel.headline,
-        },
-        // Highlights as additional lines
-        ...intel.highlights.slice(0, 3).map(h => ({
-          severity: h.toLowerCase().includes("offline") || h.toLowerCase().includes("critical") ? "critical"
-            : h.toLowerCase().includes("degraded") || h.toLowerCase().includes("overdue") ? "warning"
-            : "info",
-          text: h,
-        })),
-      ];
+      return intel.highlights.slice(0, 4).map(h => ({
+        severity: h.toLowerCase().includes("offline") || h.toLowerCase().includes("critical") ? "critical"
+          : h.toLowerCase().includes("degraded") || h.toLowerCase().includes("overdue") ? "warning"
+          : "info",
+        text: h,
+      }));
     }
-
-    // Fallback: client-side derivation
-    const p = data?.portfolio || {};
+    // Fallback highlights from incident feed
     const incidents = data?.incident_feed || [];
-    const siteSummaries = data?.site_summaries || [];
     const lines = [];
-    const criticalIncidents = incidents.filter(i => i.severity === "critical" && !["resolved", "dismissed", "closed"].includes(i.status));
-    const warningIncidents = incidents.filter(i => i.severity === "warning" && !["resolved", "dismissed", "closed"].includes(i.status));
-
-    if (criticalIncidents.length > 0) {
-      criticalIncidents.slice(0, 2).forEach(inc => {
-        lines.push({ severity: "critical", text: `${inc.summary} — ${inc.site_name || inc.site_id} — ${timeSince(inc.opened_at)}` });
-      });
-    }
-    if (warningIncidents.length > 0 && lines.length < 3) {
-      warningIncidents.slice(0, 2).forEach(inc => {
-        lines.push({ severity: "warning", text: `${inc.summary} — ${inc.site_name || inc.site_id}` });
-      });
-    }
-    if (lines.length === 0) {
-      const healthyPct = p.total_sites > 0 ? pct(p.connected_sites || 0, p.total_sites) : 100;
-      lines.push({ severity: "ok", text: `All systems operational — ${healthyPct}% of monitored infrastructure reporting normally` });
-    }
+    incidents.filter(i => i.severity === "critical" && !["resolved", "dismissed", "closed"].includes(i.status)).slice(0, 2).forEach(inc => {
+      lines.push({ severity: "critical", text: `${inc.summary} — ${inc.site_name || inc.site_id} — ${timeSince(inc.opened_at)}` });
+    });
+    incidents.filter(i => i.severity === "warning" && !["resolved", "dismissed", "closed"].includes(i.status)).slice(0, 2).forEach(inc => {
+      if (lines.length < 3) lines.push({ severity: "warning", text: `${inc.summary} — ${inc.site_name || inc.site_id}` });
+    });
+    const stale = p.stale_devices || 0;
+    if (stale > 0 && lines.length < 4) lines.push({ severity: "warning", text: `${stale} device${stale > 1 ? "s" : ""} with overdue heartbeat reporting` });
+    const overdue = p.overdue_tasks || 0;
+    if (overdue > 0 && lines.length < 4) lines.push({ severity: "info", text: `${overdue} verification task${overdue > 1 ? "s" : ""} overdue — compliance risk` });
     return lines;
-  }, [data, intel]);
+  }, [data, intel, p]);
 
-  const hasCritical = insights.some(i => i.severity === "critical");
-  const hasWarning = insights.some(i => i.severity === "warning");
-  const borderColor = hasCritical ? "border-red-500/30" : hasWarning ? "border-amber-500/20" : "border-emerald-500/20";
-  const glowColor = hasCritical ? "bg-red-500/5" : hasWarning ? "bg-amber-500/5" : "bg-emerald-500/5";
+  const hasCritical = highlights.some(i => i.severity === "critical");
+  const hasWarning = highlights.some(i => i.severity === "warning");
+  const hasAnyIssue = highlights.length > 0;
+  const borderColor = hasCritical ? "border-red-500/30" : hasWarning ? "border-amber-500/20" : hasAnyIssue ? "border-blue-500/15" : "border-emerald-500/20";
+  const glowColor = hasCritical ? "bg-red-500/5" : hasWarning ? "bg-amber-500/5" : hasAnyIssue ? "bg-blue-500/5" : "bg-emerald-500/5";
 
   const sevIcon = {
     critical: <AlertOctagon className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />,
@@ -102,24 +122,28 @@ function IntelligenceBanner({ data }) {
 
   return (
     <div className={`rounded-xl border ${borderColor} ${glowColor} p-5`}>
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-2">
         <Target className="w-4 h-4 text-blue-400" />
         <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Operational Intelligence</span>
         <span className="text-[10px] text-slate-600 ml-auto">Auto-refresh 30s</span>
       </div>
-      <div className="space-y-2">
-        {insights.map((insight, i) => (
-          <div key={i} className="flex items-start gap-2.5">
-            <div className="mt-0.5">{sevIcon[insight.severity]}</div>
-            <p className={`text-[13.5px] leading-relaxed ${
-              insight.severity === "critical" ? "text-red-300 font-medium" :
-              insight.severity === "warning" ? "text-amber-200/90" :
-              insight.severity === "ok" ? "text-emerald-300/90" :
-              "text-slate-300"
-            }`}>{insight.text}</p>
-          </div>
-        ))}
-      </div>
+      {/* Summary sentence */}
+      <p className="text-[14px] text-slate-200 leading-relaxed mb-3">{summaryLine}</p>
+      {/* Bullet highlights */}
+      {highlights.length > 0 && (
+        <div className="space-y-1.5 border-t border-slate-800/40 pt-3">
+          {highlights.map((h, i) => (
+            <div key={i} className="flex items-start gap-2.5">
+              <div className="mt-0.5">{sevIcon[h.severity]}</div>
+              <p className={`text-[12.5px] leading-snug ${
+                h.severity === "critical" ? "text-red-300" :
+                h.severity === "warning" ? "text-amber-200/80" :
+                "text-slate-400"
+              }`}>{h.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -181,7 +205,7 @@ const TRANSITIONS = {
   in_progress:  [{ target: "resolved", label: "Resolve", perm: "COMMAND_RESOLVE", icon: CheckCircle2 }],
 };
 
-function IncidentStack({ incidents = [], onRefresh }) {
+function IncidentStack({ incidents = [], onRefresh, portfolio = {}, siteSummaries = [] }) {
   const { can } = useAuth();
   const [acting, setActing] = useState(null);
 
@@ -221,13 +245,34 @@ function IncidentStack({ incidents = [], onRefresh }) {
       </div>
 
       <div className="divide-y divide-slate-800/40 max-h-[520px] overflow-y-auto">
-        {sorted.length === 0 && (
-          <div className="px-5 py-10 text-center">
-            <CheckCircle2 className="w-7 h-7 text-emerald-500/50 mx-auto mb-2" />
-            <p className="text-sm text-emerald-400/70 font-medium">No active incidents</p>
-            <p className="text-[11px] text-slate-600 mt-1">All systems reporting normally</p>
-          </div>
-        )}
+        {sorted.length === 0 && (() => {
+          const attentionCount = siteSummaries.filter(s => s.needs_attention).length;
+          const stale = portfolio.stale_devices || 0;
+          const overdue = portfolio.overdue_tasks || 0;
+          const hasIssues = attentionCount > 0 || stale > 0 || overdue > 0;
+          const parts = [];
+          if (attentionCount > 0) parts.push(`monitoring ${attentionCount} site${attentionCount > 1 ? "s" : ""} needing attention`);
+          if (stale > 0) parts.push(`${stale} device${stale > 1 ? "s" : ""} with overdue heartbeat`);
+          if (overdue > 0) parts.push(`${overdue} overdue verification task${overdue > 1 ? "s" : ""}`);
+          return (
+            <div className="px-5 py-8 text-center">
+              <CheckCircle2 className={`w-7 h-7 mx-auto mb-2 ${hasIssues ? "text-amber-500/50" : "text-emerald-500/50"}`} />
+              <p className={`text-sm font-medium ${hasIssues ? "text-slate-300" : "text-emerald-400/70"}`}>No active incidents</p>
+              <p className="text-[11px] text-slate-500 mt-1.5 max-w-xs mx-auto leading-relaxed">
+                {hasIssues
+                  ? `No open incidents, but ${parts.join(" and ")} require follow-up.`
+                  : "All systems reporting normally. No issues detected."}
+              </p>
+              {hasIssues && (
+                <div className="flex items-center justify-center gap-3 mt-3">
+                  <Link to={createPageUrl("OperatorView")} className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-0.5">
+                    View Sites <ChevronRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {sorted.slice(0, 12).map(inc => {
           const sev = SEV_CONFIG[inc.severity] || SEV_CONFIG.info;
           const sts = STATUS_BADGE[inc.status] || STATUS_BADGE.open;
@@ -300,7 +345,7 @@ const RISK_CFG = {
   "At Risk":          { icon: ShieldX, color: "text-red-400", stroke: "#ef4444", bg: "bg-red-500/10", border: "border-red-500/20" },
 };
 
-function ReadinessPanel({ readiness = {} }) {
+function ReadinessPanel({ readiness = {}, portfolio = {} }) {
   const { score = 0, risk_label = "Operational", factors = [] } = readiness;
   const cfg = RISK_CFG[risk_label] || RISK_CFG.Operational;
   const RIcon = cfg.icon;
@@ -308,13 +353,29 @@ function ReadinessPanel({ readiness = {} }) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
 
+  // Build plain-English summary from portfolio data
+  const plainSummary = useMemo(() => {
+    const parts = [];
+    const td = portfolio.total_devices || 0;
+    const ad = portfolio.active_devices || 0;
+    const ts = portfolio.total_sites || 0;
+    const cs = portfolio.connected_sites || 0;
+    if (td > 0) parts.push(`${ad} of ${td} device${td > 1 ? "s" : ""} active`);
+    if (ts > 0) parts.push(`${cs} of ${ts} site${ts > 1 ? "s" : ""} fully connected`);
+    const stale = portfolio.stale_devices || 0;
+    if (stale > 0) parts.push(`${stale} with overdue heartbeat`);
+    const overdue = portfolio.overdue_tasks || 0;
+    if (overdue > 0) parts.push(`${overdue} overdue verification task${overdue > 1 ? "s" : ""}`);
+    return parts.join(". ") + (parts.length > 0 ? "." : "");
+  }, [portfolio]);
+
   return (
     <div className={`bg-slate-900/80 rounded-xl border ${cfg.border} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-slate-800/40">
         <h3 className="text-sm font-semibold text-white">Emergency Readiness</h3>
       </div>
       <div className="p-5">
-        <div className="flex items-center gap-5 mb-5">
+        <div className="flex items-center gap-5 mb-4">
           <div className="relative flex-shrink-0">
             <svg width="120" height="120" viewBox="0 0 120 120">
               <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(51,65,85,0.3)" strokeWidth="8" />
@@ -338,14 +399,10 @@ function ReadinessPanel({ readiness = {} }) {
               </div>
               <span className={`text-sm font-bold ${cfg.color}`}>{risk_label}</span>
             </div>
-            {factors.length > 0 && (
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                {factors.slice(0, 2).map(f => f.detail).join(". ")}
-              </p>
-            )}
-            {factors.length === 0 && score >= 85 && (
-              <p className="text-[11px] text-slate-500">All readiness factors nominal</p>
-            )}
+            {/* Plain-English summary */}
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              {plainSummary || (score >= 85 ? "All readiness factors within normal parameters." : "Readiness reflects current deployment and monitoring status.")}
+            </p>
           </div>
         </div>
 
@@ -353,11 +410,11 @@ function ReadinessPanel({ readiness = {} }) {
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 mb-1">
               <TrendingDown className="w-3 h-3 text-slate-600" />
-              <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">Score Factors</span>
+              <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">What is affecting the score</span>
             </div>
             {factors.map((f, i) => (
               <div key={i} className="flex items-center gap-2.5 px-3 py-2 bg-slate-800/30 rounded-lg">
-                <span className="text-[11px] text-slate-400 flex-1">{f.label}</span>
+                <span className="text-[11px] text-slate-400 flex-1">{f.detail || f.label}</span>
                 <span className="text-[11px] font-bold text-red-400">{f.impact}</span>
               </div>
             ))}
@@ -694,12 +751,17 @@ function RecommendationsPanel({ data }) {
         {recs.map((rec, i) => {
           const s = sevStyles[rec.severity] || sevStyles.info;
           const RIcon = s.icon;
+          const isFirst = i === 0 && rec.severity !== "ok";
           const inner = (
-            <div className={`flex items-start gap-3 px-3.5 py-3 rounded-lg border ${s.border} ${s.bg} ${rec.page ? "hover:bg-slate-800/40 cursor-pointer" : ""} transition-colors`}>
-              <RIcon className={`w-4 h-4 ${s.iconColor} flex-shrink-0 mt-0.5`} />
+            <div className={`flex items-start gap-3 rounded-lg border transition-colors ${
+              isFirst
+                ? `px-4 py-3.5 ${s.border} ${s.bg} ${rec.page ? "hover:bg-slate-800/40 cursor-pointer" : ""}`
+                : `px-3.5 py-3 ${s.border} ${s.bg} ${rec.page ? "hover:bg-slate-800/40 cursor-pointer" : ""}`
+            }`}>
+              <RIcon className={`${isFirst ? "w-5 h-5" : "w-4 h-4"} ${s.iconColor} flex-shrink-0 mt-0.5`} />
               <div className="flex-1 min-w-0">
-                <p className="text-[12.5px] text-slate-200 font-medium leading-snug">{rec.action}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">{rec.detail}</p>
+                <p className={`leading-snug text-slate-200 font-medium ${isFirst ? "text-[13px]" : "text-[12.5px]"}`}>{rec.action}</p>
+                <p className={`text-slate-500 mt-0.5 ${isFirst ? "text-[11.5px]" : "text-[11px]"}`}>{rec.detail}</p>
               </div>
               {rec.page && <ChevronRight className="w-3.5 h-3.5 text-slate-600 flex-shrink-0 mt-0.5" />}
             </div>
@@ -854,16 +916,16 @@ export default function Command() {
           {/* Executive Metrics */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
             <MetricCard
-              label="Total Sites" value={p.total_sites || 0}
+              label="Monitored Sites" value={p.total_sites || 0}
               icon={Building2} iconBg="bg-slate-800/80" iconColor="text-slate-400"
-              sub={`${p.monitored_sites || 0} monitored`}
+              sub={p.monitored_sites > 0 ? `${p.monitored_sites} with devices assigned` : "Onboarding in progress"}
             />
             <MetricCard
-              label="Sites Healthy" value={`${healthyPct}%`}
+              label="Site Connectivity" value={`${healthyPct}%`}
               icon={Wifi}
               iconBg={healthyPct >= 90 ? "bg-emerald-500/10" : "bg-amber-500/10"}
               iconColor={healthyPct >= 90 ? "text-emerald-400" : "text-amber-400"}
-              sub={`${p.connected_sites || 0} of ${p.total_sites || 0} connected`}
+              sub={`${p.connected_sites || 0} of ${p.total_sites || 0} sites reporting`}
               trend={healthyPct >= 90 ? "up" : healthyPct >= 70 ? "neutral" : "down"}
             />
             <MetricCard
@@ -872,28 +934,32 @@ export default function Command() {
               iconBg={criticalIncidents > 0 ? "bg-red-500/10" : "bg-slate-800/80"}
               iconColor={criticalIncidents > 0 ? "text-red-400" : "text-slate-400"}
               border={criticalIncidents > 0 ? "border-red-500/20" : undefined}
-              sub={criticalIncidents > 0 ? `${criticalIncidents} critical` : "No critical"}
+              sub={activeIncidents === 0
+                ? (devicesAtRisk > 0 ? "No incidents, but devices need attention" : "No open incidents")
+                : criticalIncidents > 0 ? `${criticalIncidents} critical` : `${activeIncidents} open`}
             />
             <MetricCard
               label="Devices at Risk" value={devicesAtRisk}
               icon={WifiOff}
               iconBg={devicesAtRisk > 0 ? "bg-amber-500/10" : "bg-slate-800/80"}
               iconColor={devicesAtRisk > 0 ? "text-amber-400" : "text-slate-400"}
-              sub={`${p.stale_devices || 0} stale, ${p.devices_missing_telemetry || 0} silent`}
+              sub={devicesAtRisk > 0
+                ? `${p.stale_devices || 0} overdue heartbeat, ${p.devices_missing_telemetry || 0} never reported`
+                : "All devices reporting on schedule"}
               trend={devicesAtRisk > 0 ? "down" : "neutral"}
             />
             <MetricCard
-              label="Readiness" value={`${readiness.score || 0}%`}
+              label="Readiness Score" value={`${readiness.score || 0}%`}
               icon={ShieldCheck}
               iconBg={readiness.score >= 85 ? "bg-emerald-500/10" : readiness.score >= 60 ? "bg-amber-500/10" : "bg-red-500/10"}
               iconColor={readiness.score >= 85 ? "text-emerald-400" : readiness.score >= 60 ? "text-amber-400" : "text-red-400"}
               border={readiness.score < 60 ? "border-red-500/20" : undefined}
-              sub={readiness.risk_label || "Calculating..."}
+              sub={readiness.score >= 85 ? "Operational" : readiness.score >= 60 ? "Degraded — review recommended" : "At risk — action required"}
             />
             <MetricCard
-              label="Registered Devices" value={p.total_devices || 0}
+              label="Total Devices" value={p.total_devices || 0}
               icon={Cpu} iconBg="bg-blue-500/10" iconColor="text-blue-400"
-              sub={`${p.devices_with_telemetry || 0} reporting`}
+              sub={`${p.active_devices || 0} active, ${p.devices_with_telemetry || 0} reporting`}
             />
           </div>
 
@@ -902,7 +968,7 @@ export default function Command() {
 
             {/* Left Column — 8/12 */}
             <div className="lg:col-span-8 space-y-5">
-              <IncidentStack incidents={incidents} onRefresh={fetchData} />
+              <IncidentStack incidents={incidents} onRefresh={fetchData} portfolio={p} siteSummaries={siteSummaries} />
               <SystemHealthCompact systems={systemHealth} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <MapPreview siteSummaries={siteSummaries} />
@@ -912,7 +978,7 @@ export default function Command() {
 
             {/* Right Column — 4/12 */}
             <div className="lg:col-span-4 space-y-5">
-              <ReadinessPanel readiness={readiness} />
+              <ReadinessPanel readiness={readiness} portfolio={p} />
               <RecommendationsPanel data={data} />
               <ActionCenter />
               <TimelinePanel activities={activities} />

@@ -64,9 +64,9 @@ const NOC_NAV = [
     ],
   },
 
-  // ── Fleet ──
+  // ── Network ──
   {
-    group: "fleet", label: "Fleet", icon: Layers,
+    group: "network", label: "Network", icon: Layers,
     children: [
       { name: "Lines",       page: "Lines",           icon: Phone },
       { name: "SIMs",        page: "SimManagement",   icon: Disc3 },
