@@ -8,7 +8,8 @@ import { apiFetch, setTokens } from "@/api/client";
 // Role-aware landing page after login
 function getLandingPage(role) {
   const r = (role || "").toLowerCase();
-  if (r === "superadmin" || r === "admin") return createPageUrl("Command");
+  if (r === "superadmin") return createPageUrl("Command");
+  if (r === "admin") return createPageUrl("AdminDashboard");
   return createPageUrl("ManagerDashboard");
 }
 

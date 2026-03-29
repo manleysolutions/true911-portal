@@ -89,6 +89,7 @@ import ProvisionDeployment from './pages/ProvisionDeployment';
 import SubscriberImport from './pages/SubscriberImport';
 import ImportVerification from './pages/ImportVerification';
 import ManagerDashboard from './pages/ManagerDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -135,6 +136,7 @@ export const PAGES = {
     "SubscriberImport": SubscriberImport,
     "ImportVerification": ImportVerification,
     "ManagerDashboard": ManagerDashboard,
+    "AdminDashboard": AdminDashboard,
 }
 
 export const pagesConfig = {

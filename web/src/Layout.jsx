@@ -118,6 +118,43 @@ const NOC_NAV = [
   },
 ];
 
+// ── Admin / customer admin portal ────────────────────────────────
+
+const ADMIN_NAV = [
+  { name: "Dashboard",    page: "AdminDashboard",  icon: LayoutDashboard },
+  { name: "Sites",        page: "Sites",           icon: Building2 },
+  { name: "Devices",      page: "Devices",         icon: Cpu },
+  { name: "Incidents",    page: "Incidents",        icon: AlertOctagon },
+  { name: "Map",          page: "DeploymentMap",    icon: Map },
+
+  {
+    group: "monitoring", label: "Monitoring", icon: Activity,
+    children: [
+      { name: "Alerts",     page: "Notifications",    icon: Bell },
+      { name: "Events",     page: "Events",           icon: Activity },
+      { name: "Network",    page: "NetworkDashboard",  icon: Radio },
+      { name: "Recordings", page: "Recordings",        icon: Disc3 },
+      { name: "Reports",    page: "Reports",           icon: FileText },
+    ],
+  },
+
+  {
+    group: "network", label: "Network", icon: Layers,
+    children: [
+      { name: "Lines",   page: "Lines",          icon: Phone },
+      { name: "E911",    page: "E911",           icon: MapPin },
+    ],
+  },
+
+  {
+    group: "management", label: "Management", icon: Settings,
+    children: [
+      { name: "Organization", page: "OrgSettings",      icon: Globe },
+      { name: "Site Import",  page: "SiteImport",       icon: Upload },
+    ],
+  },
+];
+
 // ── Customer / user portal ──────────────────────────────────────
 
 const CUSTOMER_NAV = [
@@ -178,9 +215,11 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
 
   const userRole = user?.role || "User";
   const level = roleLevel(userRole);
-  const isNOC = level >= ROLE_LEVEL.Admin;
+  const isSuperAdmin = level >= ROLE_LEVEL.SuperAdmin;
+  const isAdmin = level >= ROLE_LEVEL.Admin;
+  const isNOC = isSuperAdmin; // Only SuperAdmin gets the full NOC nav
 
-  const navSource = isNOC ? NOC_NAV : CUSTOMER_NAV;
+  const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : CUSTOMER_NAV;
   const visibleNav = useMemo(() => filterNav(navSource, level), [navSource, level]);
 
   // Track which groups are expanded — auto-expand the one containing the active page
@@ -222,7 +261,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
               True911<span className={isNOC ? "text-red-500" : "text-slate-500"}>+</span>
             </div>
             <div className="text-[9px] text-gray-500 tracking-[0.18em] uppercase mt-0.5">
-              {isNOC ? "NOC Operations" : "Customer Portal"}
+              {isSuperAdmin ? "NOC Operations" : isAdmin ? "Admin Portal" : "Customer Portal"}
             </div>
           </div>
         </div>
