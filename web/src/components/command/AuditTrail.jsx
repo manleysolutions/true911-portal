@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { ScrollText, Download, Loader2, Filter } from "lucide-react";
-import { apiFetch } from "@/api/client";
+import { apiFetch, getAccessToken } from "@/api/client";
+import { config } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -35,8 +36,8 @@ export default function AuditTrail({ siteId }) {
   const handleExport = async () => {
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL}/command/audit-log/export${category !== "all" ? `?category=${category}` : ""}`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } }
+        `${config.apiUrl}/command/audit-log/export${category !== "all" ? `?category=${category}` : ""}`,
+        { headers: { Authorization: `Bearer ${getAccessToken()}` } }
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

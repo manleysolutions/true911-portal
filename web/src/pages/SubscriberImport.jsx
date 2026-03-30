@@ -12,9 +12,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 import { config } from "@/config";
+import { getAccessToken } from "@/api/client";
 const API_URL = config.apiUrl;
 const authHeaders = () => ({
-  Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+  Authorization: `Bearer ${getAccessToken()}`,
 });
 
 const STEPS = [

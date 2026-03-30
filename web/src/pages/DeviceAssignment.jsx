@@ -10,9 +10,11 @@ import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+import { config } from "@/config";
+import { getAccessToken } from "@/api/client";
+const API_URL = config.apiUrl;
 const authHeaders = () => ({
-  Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+  Authorization: `Bearer ${getAccessToken()}`,
 });
 
 export default function DeviceAssignment() {

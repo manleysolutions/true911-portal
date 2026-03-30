@@ -36,7 +36,8 @@ function pctSafe(a, b) {
 
 // Status colors now come from @/lib/attention (centralized engine)
 
-const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "";
+import { config } from "@/config";
+import { getAccessToken } from "@/api/client";
 
 // ═══════════════════════════════════════════════════════════════════
 // KPI CARD
@@ -468,8 +469,8 @@ function ReportPanel() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const token = localStorage.getItem("access_token");
-      const res = await fetch(`${API_BASE}/api/command/reports/portfolio`, {
+      const token = getAccessToken();
+      const res = await fetch(`${config.apiUrl}/command/reports/portfolio`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);

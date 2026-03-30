@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Download, FileSpreadsheet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-
-const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "";
+import { config } from "@/config";
+import { getAccessToken } from "@/api/client";
 
 export default function ReportExport({ siteId }) {
   const { can } = useAuth();
@@ -14,13 +14,12 @@ export default function ReportExport({ siteId }) {
   async function handleExport() {
     setExporting(true);
     try {
-      const token = localStorage.getItem("access_token");
       const url = siteId
-        ? `${API_BASE}/api/command/reports/site/${siteId}`
-        : `${API_BASE}/api/command/reports/portfolio`;
+        ? `${config.apiUrl}/command/reports/site/${siteId}`
+        : `${config.apiUrl}/command/reports/portfolio`;
 
       const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${getAccessToken()}` },
       });
       if (!resp.ok) throw new Error(`Export failed: ${resp.status}`);
 
