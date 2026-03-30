@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Site, ActionAudit } from "@/api/entities";
 import { Search, Filter, ChevronDown, Building2, RefreshCw, ArrowRight, X, Plus } from "lucide-react";
@@ -21,9 +21,9 @@ function timeSince(iso) {
 }
 
 const STATUS_OPTIONS = ["Connected", "Not Connected", "Attention Needed", "Unknown"];
-const KIT_OPTIONS = ["Elevator", "FACP", "Fax", "SCADA", "Emergency Call Box", "Other"];
-const CARRIER_OPTIONS = ["AT&T", "Verizon", "T-Mobile", "Comcast"];
-const STATES_OPTIONS = ["All States", "NY", "IL", "FL", "TX", "WA", "CA", "MA", "AZ", "CO", "GA", "NV", "TN", "OR", "MN", "MI", "LA", "OH", "MO", "UT", "PA", "NM"];
+const KIT_OPTIONS = ["Elevator", "Fire Alarm Control Panel", "Emergency Phone", "Burglar Alarm", "Fax", "SCADA / Industrial", "Other"];
+const CARRIER_OPTIONS = ["T-Mobile", "Verizon", "AT&T", "Teal", "Napco", "Other"];
+const STATES_OPTIONS = ["All States", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"];
 
 function SelectFilter({ label, value, onChange, options }) {
   return (
@@ -41,8 +41,10 @@ function SelectFilter({ label, value, onChange, options }) {
   );
 }
 
-const ENDPOINT_TYPE_OPTIONS = ["Elevator", "FACP", "Fax", "SCADA", "Emergency Call Box", "Other"];
-const SERVICE_CLASS_OPTIONS = ["E911", "POTS", "SIP", "PRI", "Analog", "Digital"];
+const ENDPOINT_TYPE_OPTIONS = ["Elevator", "Emergency Phone", "Fire Alarm Control Panel", "Burglar Alarm Control Panel", "Fax", "SCADA / Industrial", "Other"];
+const SERVICE_CLASS_OPTIONS = ["VoIP (SIP)", "VoLTE (Cellular Voice)", "Analog (POTS Replacement)", "Data Only"];
+const TRANSPORT_OPTIONS = ["Cellular", "Ethernet (LAN)", "Wi-Fi", "Satellite"];
+const VOICE_PROVIDER_OPTIONS = ["Telnyx", "Twilio", "Bandwidth", "Other"];
 
 const EMPTY_FORM = {
   site_name: "",
@@ -53,7 +55,9 @@ const EMPTY_FORM = {
   e911_zip: "",
   endpoint_type: "",
   service_class: "",
+  transport: "",
   carrier: "",
+  voice_provider: "",
   notes: "",
 };
 
@@ -61,6 +65,14 @@ export default function Sites() {
   const { can } = useAuth();
   const isAdmin = can("VIEW_ADMIN");
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Auto-open Add Site modal when ?action=add is in URL
+  useEffect(() => {
+    if (isAdmin && new URLSearchParams(location.search).get("action") === "add") {
+      setShowAddModal(true);
+    }
+  }, [location.search, isAdmin]);
 
   const [sites, setSites] = useState([]);
   const [audits, setAudits] = useState([]);
@@ -146,8 +158,8 @@ export default function Sites() {
       await Site.create({
         site_id: `SITE-${Date.now()}`,
         site_name: addForm.site_name.trim(),
-        customer_name: addForm.site_name.trim(),
-        status: "Unknown",
+        customer_name: addForm.customer_name.trim() || addForm.site_name.trim(),
+        status: "Not Connected",
         e911_street: addForm.e911_street.trim() || undefined,
         e911_city: addForm.e911_city.trim() || undefined,
         e911_state: addForm.e911_state.trim() || undefined,
@@ -155,6 +167,7 @@ export default function Sites() {
         endpoint_type: addForm.endpoint_type || undefined,
         service_class: addForm.service_class || undefined,
         carrier: addForm.carrier || undefined,
+        kit_type: addForm.endpoint_type || undefined,
         notes: addForm.notes.trim() || undefined,
       });
       setShowAddModal(false);
@@ -345,20 +358,32 @@ export default function Sites() {
             </div>
 
             <form onSubmit={handleAddSite} className="space-y-4">
-              {/* Site Name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Site Name *</label>
-                <input
-                  value={addForm.site_name}
-                  onChange={e => setAddForm(f => ({ ...f, site_name: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                  placeholder="e.g. 123 Main St Elevator"
-                />
+              {/* Site Name + Customer */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Site Name *</label>
+                  <input
+                    value={addForm.site_name}
+                    onChange={e => setAddForm(f => ({ ...f, site_name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    placeholder="e.g. 123 Main St Elevator"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                  <input
+                    value={addForm.customer_name}
+                    onChange={e => setAddForm(f => ({ ...f, customer_name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    placeholder="Customer / account name"
+                  />
+                </div>
               </div>
 
-              {/* Address row */}
+              {/* Address */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
                 <input
                   value={addForm.e911_street}
                   onChange={e => setAddForm(f => ({ ...f, e911_street: e.target.value }))}
@@ -383,7 +408,7 @@ export default function Sites() {
                     value={addForm.e911_state}
                     onChange={e => setAddForm(f => ({ ...f, e911_state: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                    placeholder="NY"
+                    placeholder="TX"
                     maxLength={2}
                   />
                 </div>
@@ -393,49 +418,58 @@ export default function Sites() {
                     value={addForm.e911_zip}
                     onChange={e => setAddForm(f => ({ ...f, e911_zip: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                    placeholder="10001"
+                    placeholder="75201"
                     maxLength={10}
                   />
                 </div>
               </div>
 
-              {/* Endpoint Type + Service Class */}
+              {/* Classification */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Endpoint Type</label>
-                  <select
-                    value={addForm.endpoint_type}
-                    onChange={e => setAddForm(f => ({ ...f, endpoint_type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white"
-                  >
+                  <select value={addForm.endpoint_type} onChange={e => setAddForm(f => ({ ...f, endpoint_type: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
                     <option value="">Select...</option>
                     {ENDPOINT_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Class</label>
-                  <select
-                    value={addForm.service_class}
-                    onChange={e => setAddForm(f => ({ ...f, service_class: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white"
-                  >
+                  <select value={addForm.service_class} onChange={e => setAddForm(f => ({ ...f, service_class: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
                     <option value="">Select...</option>
                     {SERVICE_CLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* Carrier */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
-                <select
-                  value={addForm.carrier}
-                  onChange={e => setAddForm(f => ({ ...f, carrier: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white"
-                >
-                  <option value="">Select...</option>
-                  {CARRIER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
+              {/* Connectivity */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Transport</label>
+                  <select value={addForm.transport} onChange={e => setAddForm(f => ({ ...f, transport: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
+                    <option value="">Select...</option>
+                    {TRANSPORT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
+                  <select value={addForm.carrier} onChange={e => setAddForm(f => ({ ...f, carrier: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
+                    <option value="">Select...</option>
+                    {CARRIER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Voice Provider</label>
+                  <select value={addForm.voice_provider} onChange={e => setAddForm(f => ({ ...f, voice_provider: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
+                    <option value="">Select...</option>
+                    {VOICE_PROVIDER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
               </div>
 
               {/* Notes */}

@@ -125,7 +125,7 @@ function ConfirmDeleteModal({ device, onClose, onConfirm }) {
 /* ── Identity type helpers ── */
 const STARLINK_MODELS = new Set(["napco-slelte", "napco-sle5g"]);
 const ATA_MODELS = new Set(["cisco-ata191", "cisco-ata192"]);
-const CARRIER_OPTIONS_DEV = ["Verizon", "AT&T", "T-Mobile", "Telnyx"];
+const CARRIER_OPTIONS_DEV = ["T-Mobile", "Verizon", "AT&T", "Teal", "Napco", "Other"];
 
 function identityTypeForModel(hwModelId) {
   if (STARLINK_MODELS.has(hwModelId)) return "starlink";
@@ -456,6 +456,10 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
 
   const handleModelChange = (e) => {
     const id = e.target.value;
+    if (id === "__custom") {
+      setForm(f => ({ ...f, hardware_model_id: "__custom", model: "", manufacturer: "", device_type: "", identifier_type: "" }));
+      return;
+    }
     const hm = hardwareModels.find(m => m.id === id);
     const newIdType = identityTypeForModel(id);
     setForm(f => ({
@@ -463,8 +467,8 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
       hardware_model_id: id,
       device_type: hm?.device_type || f.device_type,
       model: hm?.model_name || f.model,
+      manufacturer: hm?.manufacturer || "",
       identifier_type: newIdType,
-      // Clear fields that don't apply to the new type
       ...(newIdType === "starlink" ? { imei: "", iccid: "", msisdn: "", carrier: "" } : {}),
       ...(newIdType === "ata" ? { imei: "", iccid: "", msisdn: "", carrier: "", starlink_id: "" } : {}),
       ...(newIdType === "cellular" ? { starlink_id: "" } : {}),
@@ -486,7 +490,8 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
       const payload = {
         device_id: form.device_id,
         site_id: form.site_id || undefined,
-        hardware_model_id: form.hardware_model_id || undefined,
+        hardware_model_id: (form.hardware_model_id && form.hardware_model_id !== "__custom") ? form.hardware_model_id : undefined,
+        manufacturer: form.manufacturer || undefined,
         device_type: form.device_type || "Other",
         model: form.model || form.device_type,
         identifier_type: idType || undefined,
@@ -573,27 +578,29 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Device ID + Hardware Model */}
+          {/* Device ID */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device ID *</label>
+            <input
+              value={form.device_id}
+              onChange={set("device_id")}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              placeholder="e.g. PR12-001"
+              required
+              disabled={isEdit}
+            />
+          </div>
+
+          {/* Hardware — catalog or custom */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device ID *</label>
-              <input
-                value={form.device_id}
-                onChange={set("device_id")}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="e.g. PR12-001"
-                required
-                disabled={isEdit}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model *</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model</label>
               <select
                 value={form.hardware_model_id}
                 onChange={handleModelChange}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
               >
-                <option value="">-- Select model --</option>
+                <option value="">-- Select from catalog --</option>
                 {mfrs.map(mfr => (
                   <optgroup key={mfr} label={mfr}>
                     {hardwareModels.filter(m => m.manufacturer === mfr).map(m => (
@@ -601,9 +608,51 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
                     ))}
                   </optgroup>
                 ))}
+                <optgroup label="Other">
+                  <option value="__custom">Enter custom manufacturer / model</option>
+                </optgroup>
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                {form.hardware_model_id === "__custom" ? "Custom Model Name" : "Model"}
+              </label>
+              <input
+                value={form.model}
+                onChange={set("model")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder={form.hardware_model_id === "__custom" ? "e.g. Acme Router X100" : "Auto-filled from catalog"}
+                readOnly={form.hardware_model_id && form.hardware_model_id !== "__custom"}
+              />
+            </div>
           </div>
+          {form.hardware_model_id === "__custom" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Manufacturer</label>
+                <input
+                  value={form.manufacturer || ""}
+                  onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="e.g. FlyingVoice, Napco, Cisco"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device Type</label>
+                <select
+                  value={form.device_type}
+                  onChange={set("device_type")}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                >
+                  <option value="">Select...</option>
+                  <option value="cellular">Cellular Router / Communicator</option>
+                  <option value="ata">ATA / Analog Adapter</option>
+                  <option value="starlink">Napco StarLink Panel</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Identity type hint */}
           {idType && (
@@ -704,16 +753,26 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
 
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Assign to Site</label>
-            <select
-              value={form.site_id}
-              onChange={set("site_id")}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-            >
-              <option value="">-- Select site --</option>
-              {sites.map(s => (
-                <option key={s.site_id} value={s.site_id}>{s.site_name} ({s.site_id})</option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                value={form.site_id}
+                onChange={set("site_id")}
+                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              >
+                <option value="">-- Select site --</option>
+                {sites.map(s => (
+                  <option key={s.site_id} value={s.site_id}>{s.site_name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => window.open("/Sites?action=add", "_blank")}
+                className="px-3 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+                title="Create a new site, then refresh this form"
+              >
+                + New Site
+              </button>
+            </div>
           </div>
 
           {isEdit && (

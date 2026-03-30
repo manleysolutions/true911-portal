@@ -273,12 +273,12 @@ function OperationalQueues({ siteSummaries = [], portfolio = {} }) {
 function AdminActionCenter() {
   const { can } = useAuth();
   const links = [
-    { label: "Manage Sites",       page: "Sites",           icon: Building2,      color: "text-blue-500" },
-    { label: "Manage Devices",     page: "Devices",         icon: Cpu,            color: "text-violet-500",   perm: "MANAGE_DEVICES" },
-    { label: "E911 Addresses",     page: "E911",            icon: MapPin,         color: "text-emerald-500",  perm: "UPDATE_E911" },
-    { label: "View Incidents",     page: "Incidents",       icon: AlertOctagon,   color: "text-red-500" },
-    { label: "Reports & Export",   page: "Reports",         icon: FileSpreadsheet, color: "text-amber-500" },
+    { label: "Add Site",           page: "Sites",           icon: Building2,      color: "text-emerald-500", query: "?action=add" },
+    { label: "Register Device",    page: "Devices",         icon: Cpu,            color: "text-blue-500",    perm: "MANAGE_DEVICES" },
+    { label: "Report Incident",    page: "Incidents",       icon: AlertOctagon,   color: "text-red-500" },
     { label: "Deployment Map",     page: "DeploymentMap",   icon: MapPin,         color: "text-cyan-500" },
+    { label: "E911 Addresses",     page: "E911",            icon: MapPin,         color: "text-amber-500",   perm: "UPDATE_E911" },
+    { label: "Reports & Export",   page: "Reports",         icon: FileSpreadsheet, color: "text-gray-500" },
   ];
 
   return (
@@ -289,8 +289,8 @@ function AdminActionCenter() {
       <div className="p-3 space-y-0.5">
         {links.filter(l => !l.perm || can(l.perm)).map(l => (
           <Link
-            key={l.page}
-            to={createPageUrl(l.page)}
+            key={l.label}
+            to={createPageUrl(l.page) + (l.query || "")}
             className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-gray-50 text-gray-600 hover:text-gray-900 text-[12.5px] transition-colors"
           >
             <l.icon className={`w-4 h-4 ${l.color}`} />
