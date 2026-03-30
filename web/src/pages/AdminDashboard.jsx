@@ -6,7 +6,7 @@ import {
   Activity, Radio, Clock, Wifi, WifiOff, MapPin, AlertTriangle,
   CheckCircle2, Search, Download, Eye, ChevronDown, ChevronUp,
   ArrowUpRight, ArrowDownRight, Minus, Phone, FileSpreadsheet,
-  ShieldCheck, Target, RotateCcw, MapPinOff, Wrench, Settings,
+  ShieldCheck, Target, RotateCcw, MapPinOff, Wrench, Settings, Zap,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
@@ -273,6 +273,7 @@ function OperationalQueues({ siteSummaries = [], portfolio = {} }) {
 function AdminActionCenter() {
   const { can } = useAuth();
   const links = [
+    { label: "Start Installation",  page: "Install",         icon: Zap,            color: "text-red-500",     perm: "MANAGE_DEVICES" },
     { label: "Add Site",           page: "Sites",           icon: Building2,      color: "text-emerald-500", query: "?action=add" },
     { label: "Register Device",    page: "Devices",         icon: Cpu,            color: "text-blue-500",    perm: "MANAGE_DEVICES" },
     { label: "Report Incident",    page: "Incidents",       icon: AlertOctagon,   color: "text-red-500" },

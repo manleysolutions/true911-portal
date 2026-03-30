@@ -93,6 +93,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
 import AutomationDashboard from './pages/AutomationDashboard';
 import OnboardSite from './pages/OnboardSite';
+import Install from './pages/Install';
 import __Layout from './Layout.jsx';
 
 
@@ -143,6 +144,7 @@ export const PAGES = {
     "UserDashboard": UserDashboard,
     "AutomationDashboard": AutomationDashboard,
     "OnboardSite": OnboardSite,
+    "Install": Install,
 }
 
 export const pagesConfig = {

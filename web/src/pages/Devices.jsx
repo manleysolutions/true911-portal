@@ -420,7 +420,7 @@ function DeviceSimPanel({ deviceId, deviceMsisdn }) {
 }
 
 /* ── Device form modal (create or edit) ── */
-function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }) {
+function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareModels, editDevice }) {
   const isEdit = !!editDevice;
   const [form, setForm] = useState({
     device_id: editDevice?.device_id || "",
@@ -442,6 +442,38 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState(null);
+
+  // Inline site creation state
+  const [showInlineSiteCreate, setShowInlineSiteCreate] = useState(false);
+  const [inlineSite, setInlineSite] = useState({ site_name: "", e911_street: "", e911_city: "", e911_state: "", e911_zip: "" });
+  const [inlineSiteCreating, setInlineSiteCreating] = useState(false);
+
+  const handleInlineSiteCreate = async () => {
+    if (!inlineSite.site_name.trim()) return;
+    setInlineSiteCreating(true);
+    try {
+      const newSite = await Site.create({
+        site_id: `SITE-${Date.now()}`,
+        site_name: inlineSite.site_name.trim(),
+        customer_name: inlineSite.site_name.trim(),
+        status: "Not Connected",
+        e911_street: inlineSite.e911_street.trim() || undefined,
+        e911_city: inlineSite.e911_city.trim() || undefined,
+        e911_state: inlineSite.e911_state.trim() || undefined,
+        e911_zip: inlineSite.e911_zip.trim() || undefined,
+      });
+      // Refresh parent sites list and auto-select
+      onSitesRefresh?.();
+      setForm(f => ({ ...f, site_id: newSite.site_id }));
+      setShowInlineSiteCreate(false);
+      setInlineSite({ site_name: "", e911_street: "", e911_city: "", e911_state: "", e911_zip: "" });
+      toast.success(`Site "${newSite.site_name}" created`);
+    } catch (err) {
+      toast.error(err.message || "Failed to create site");
+    } finally {
+      setInlineSiteCreating(false);
+    }
+  };
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
@@ -766,14 +798,39 @@ function DeviceFormModal({ onClose, onSaved, sites, hardwareModels, editDevice }
               </select>
               <button
                 type="button"
-                onClick={() => window.open("/Sites?action=add", "_blank")}
+                onClick={() => setShowInlineSiteCreate(true)}
                 className="px-3 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
-                title="Create a new site, then refresh this form"
               >
                 + New Site
               </button>
             </div>
           </div>
+
+          {/* Inline site create */}
+          {showInlineSiteCreate && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Quick Add Site</span>
+                <button type="button" onClick={() => setShowInlineSiteCreate(false)} className="text-blue-400 hover:text-blue-600"><X className="w-3.5 h-3.5" /></button>
+              </div>
+              <input value={inlineSite.site_name} onChange={e => setInlineSite(s => ({...s, site_name: e.target.value}))}
+                className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm" placeholder="Site name *" />
+              <input value={inlineSite.e911_street} onChange={e => setInlineSite(s => ({...s, e911_street: e.target.value}))}
+                className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm" placeholder="Street address" />
+              <div className="grid grid-cols-3 gap-2">
+                <input value={inlineSite.e911_city} onChange={e => setInlineSite(s => ({...s, e911_city: e.target.value}))}
+                  className="px-3 py-2 border border-blue-200 rounded-lg text-sm" placeholder="City" />
+                <input value={inlineSite.e911_state} onChange={e => setInlineSite(s => ({...s, e911_state: e.target.value}))}
+                  className="px-3 py-2 border border-blue-200 rounded-lg text-sm" placeholder="State" maxLength={2} />
+                <input value={inlineSite.e911_zip} onChange={e => setInlineSite(s => ({...s, e911_zip: e.target.value}))}
+                  className="px-3 py-2 border border-blue-200 rounded-lg text-sm" placeholder="ZIP" maxLength={10} />
+              </div>
+              <button type="button" onClick={handleInlineSiteCreate} disabled={inlineSiteCreating || !inlineSite.site_name.trim()}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold">
+                {inlineSiteCreating ? "Creating..." : "Create & Select Site"}
+              </button>
+            </div>
+          )}
 
           {isEdit && (
             <div>
@@ -883,6 +940,11 @@ export default function Devices() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const refreshSites = useCallback(async () => {
+    const siteData = await Site.list("-last_checkin", 200);
+    setSites(siteData);
+  }, []);
 
   const siteMap = Object.fromEntries(sites.map(s => [s.site_id, s]));
 
@@ -1133,6 +1195,7 @@ export default function Devices() {
           hardwareModels={hardwareModels}
           onClose={() => setShowRegister(false)}
           onSaved={fetchData}
+          onSitesRefresh={refreshSites}
         />
       )}
 
@@ -1143,6 +1206,7 @@ export default function Devices() {
           editDevice={editDevice}
           onClose={() => setEditDevice(null)}
           onSaved={fetchData}
+          onSitesRefresh={refreshSites}
         />
       )}
 

@@ -79,6 +79,7 @@ const NOC_NAV = [
   {
     group: "deployment", label: "Deployment", icon: Rocket, minRole: "Admin",
     children: [
+      { name: "New Installation",           page: "Install",            icon: Zap },
       { name: "Onboard Site",              page: "OnboardSite",        icon: Building2 },
       { name: "Lines & Devices Import",    page: "SubscriberImport",   icon: FileSpreadsheet },
       { name: "Site Import",               page: "SiteImport",         icon: Upload },
@@ -135,6 +136,7 @@ const ADMIN_NAV = [
   {
     group: "deployment", label: "Deployment", icon: Rocket,
     children: [
+      { name: "New Installation",        page: "Install",          icon: Zap },
       { name: "Onboard Site",           page: "OnboardSite",      icon: Building2 },
       { name: "Lines & Devices Import", page: "SubscriberImport", icon: FileSpreadsheet },
       { name: "Site Import",            page: "SiteImport",       icon: Upload },
