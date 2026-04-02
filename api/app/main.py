@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support
 
 logger = logging.getLogger("true911")
 
@@ -101,6 +101,7 @@ app.include_router(deployments.router,           prefix="/api/deployments",     
 app.include_router(line_intelligence.router,     prefix="/api/line-intelligence", tags=["line-intelligence"])
 app.include_router(subscriber_import.router,    prefix="/api/command",           tags=["subscriber-import"])
 app.include_router(public.router,              prefix="/api/public",           tags=["public"])
+app.include_router(support.router,            prefix="/api/support",          tags=["support"])
 
 
 @app.get("/api/config/features")

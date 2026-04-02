@@ -52,6 +52,9 @@ const NOC_NAV = [
   { name: "Incidents",       page: "Incidents",       icon: AlertOctagon },
   { name: "Map",             page: "DeploymentMap",   icon: Map },
 
+  // ── Support Console ──
+  { name: "Support Console",  page: "SupportConsole",  icon: HelpCircle, minRole: "Admin" },
+
   // ── Monitoring ──
   {
     group: "monitoring", label: "Monitoring", icon: Activity, minRole: "Manager",
@@ -116,6 +119,7 @@ const NOC_NAV = [
 
 const ADMIN_NAV = [
   { name: "Dashboard",    page: "AdminDashboard",  icon: LayoutDashboard },
+  { name: "Support",      page: "Support",          icon: HelpCircle },
   { name: "Sites",        page: "Sites",           icon: Building2 },
   { name: "Devices",      page: "Devices",         icon: Cpu },
   { name: "Incidents",    page: "Incidents",       icon: AlertOctagon },
@@ -163,6 +167,7 @@ const ADMIN_NAV = [
 
 const MANAGER_NAV = [
   { name: "Dashboard",   page: "ManagerDashboard", icon: LayoutDashboard },
+  { name: "Support",     page: "Support",           icon: HelpCircle },
   { name: "My Sites",    page: "Sites",            icon: Building2 },
   { name: "My Devices",  page: "Devices",          icon: Cpu },
   { name: "Incidents",   page: "Incidents",        icon: AlertOctagon },
@@ -183,6 +188,7 @@ const MANAGER_NAV = [
 
 const USER_NAV = [
   { name: "Status",   page: "UserDashboard",  icon: ShieldCheck },
+  { name: "Support",  page: "Support",         icon: HelpCircle },
   { name: "Sites",    page: "Sites",           icon: Building2 },
   { name: "Map",      page: "DeploymentMap",   icon: Map },
 ];

@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 
+    # ── AI Support Assistant ─────────────────────────────────────
+    ANTHROPIC_API_KEY: str = ""  # empty = rule-based fallback (no LLM calls)
+
+    # ── Zoho Desk (support ticket escalation) ─────────────────────
+    ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
+    ZOHO_DESK_ORG_ID: str = ""
+    ZOHO_DESK_DEPARTMENT_ID: str = ""
+    ZOHO_DESK_CLIENT_ID: str = ""
+    ZOHO_DESK_CLIENT_SECRET: str = ""
+    ZOHO_DESK_REFRESH_TOKEN: str = ""
+    ZOHO_DESK_ACCOUNTS_DOMAIN: str = "https://accounts.zoho.com"
+
     # ── SMTP Email (password resets, invites) ──────────────────────
     SMTP_HOST: str = ""  # empty = log-only (safe for dev). e.g. smtp.sendgrid.net
     SMTP_PORT: int = 587

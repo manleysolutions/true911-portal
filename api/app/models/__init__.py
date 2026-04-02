@@ -48,6 +48,7 @@ from app.models.line_intelligence_event import LineIntelligenceEvent
 from app.models.port_state import PortState
 from app.models.import_batch import ImportBatch
 from app.models.import_row import ImportRow
+from app.models.support import SupportSession, SupportMessage, SupportDiagnostic, SupportEscalation, SupportRemediationAction, SupportAISummary
 
 __all__ = [
     "Tenant",
@@ -101,4 +102,10 @@ __all__ = [
     "PortState",
     "ImportBatch",
     "ImportRow",
+    "SupportSession",
+    "SupportMessage",
+    "SupportDiagnostic",
+    "SupportEscalation",
+    "SupportRemediationAction",
+    "SupportAISummary",
 ]
