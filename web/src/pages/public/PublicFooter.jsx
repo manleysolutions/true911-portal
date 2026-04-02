@@ -17,7 +17,7 @@ export default function PublicFooter() {
               </span>
             </div>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Life-safety device monitoring, management, and compliance for mission-critical environments.
+              POTS line replacement, life-safety monitoring, and E911 compliance for elevators, fire panels, and emergency phones.
             </p>
           </div>
 
@@ -25,20 +25,20 @@ export default function PublicFooter() {
           <div>
             <h4 className="text-sm font-semibold text-white mb-3 uppercase tracking-wider">Solutions</h4>
             <ul className="space-y-2">
-              <li><a href="/#services" className="text-sm text-slate-400 hover:text-white transition-colors">Device Monitoring</a></li>
-              <li><a href="/#services" className="text-sm text-slate-400 hover:text-white transition-colors">E911 Compliance</a></li>
-              <li><a href="/#services" className="text-sm text-slate-400 hover:text-white transition-colors">NOC Operations</a></li>
-              <li><a href="/#services" className="text-sm text-slate-400 hover:text-white transition-colors">Incident Management</a></li>
+              <li><a href="/#solution" className="text-sm text-slate-400 hover:text-white transition-colors">POTS Line Replacement</a></li>
+              <li><a href="/#benefits" className="text-sm text-slate-400 hover:text-white transition-colors">24/7 Device Monitoring</a></li>
+              <li><a href="/#compliance" className="text-sm text-slate-400 hover:text-white transition-colors">E911 Compliance</a></li>
+              <li><a href="/#failover" className="text-sm text-slate-400 hover:text-white transition-colors">Multi-Path Failover</a></li>
             </ul>
           </div>
 
           {/* Company */}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-3 uppercase tracking-wider">Company</h4>
+            <h4 className="text-sm font-semibold text-white mb-3 uppercase tracking-wider">Get Started</h4>
             <ul className="space-y-2">
-              <li><Link to="/get-started" className="text-sm text-slate-400 hover:text-white transition-colors">Get Started</Link></li>
-              <li><Link to="/quote" className="text-sm text-slate-400 hover:text-white transition-colors">Build a Quote</Link></li>
-              <li><Link to="/login" className="text-sm text-slate-400 hover:text-white transition-colors">Portal Login</Link></li>
+              <li><Link to="/quote" className="text-sm text-slate-400 hover:text-white transition-colors">Get a Quote</Link></li>
+              <li><Link to="/get-started" className="text-sm text-slate-400 hover:text-white transition-colors">Free Audit</Link></li>
+              <li><Link to="/login" className="text-sm text-slate-400 hover:text-white transition-colors">Customer Login</Link></li>
             </ul>
           </div>
 

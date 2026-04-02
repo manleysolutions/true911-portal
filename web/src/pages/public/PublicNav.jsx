@@ -3,11 +3,11 @@ import { Link, useLocation } from "react-router-dom";
 import { Shield, Menu, X } from "lucide-react";
 
 const NAV_LINKS = [
-  { label: "Services", href: "/#services" },
+  { label: "The Problem", href: "/#problem" },
+  { label: "Solution", href: "/#solution" },
+  { label: "Failover", href: "/#failover" },
   { label: "Industries", href: "/#industries" },
-  { label: "Why True911", href: "/#why" },
-  { label: "Get Started", href: "/get-started" },
-  { label: "Build a Quote", href: "/quote" },
+  { label: "Get a Quote", href: "/quote" },
 ];
 
 export default function PublicNav() {
