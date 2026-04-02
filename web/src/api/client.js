@@ -71,7 +71,19 @@ export async function apiFetch(path, options = {}) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
 
-  let res = await fetch(url, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (networkErr) {
+    // fetch() itself throws on network failures (DNS, CORS block, offline).
+    // Wrap with actionable context instead of bare "Failed to fetch".
+    const msg =
+      "Network error — unable to reach the API server. " +
+      "This may be a CORS restriction, a DNS issue, or the server may be down.";
+    const err = new Error(msg);
+    err.cause = networkErr;
+    throw err;
+  }
 
   // On 401, try refreshing the token once
   if (res.status === 401 && _refreshToken) {

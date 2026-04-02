@@ -25,7 +25,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        value: "https://true911-web-demo.onrender.com,https://true911-web-prod.onrender.com"
+        value: "https://true911.com,https://www.true911.com,https://true911-web-demo.onrender.com,https://true911-web-prod.onrender.com"
       - key: APP_MODE
         value: production
       - key: REDIS_URL
