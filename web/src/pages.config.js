@@ -148,7 +148,7 @@ export const PAGES = {
 }
 
 export const pagesConfig = {
-    mainPage: "AuthGate",
+    mainPage: null,  // Landing page is handled by App.jsx public routes
     Pages: PAGES,
     Layout: __Layout,
 };

@@ -659,7 +659,7 @@ function AppLayout({ children, currentPageName }) {
   if (!ready) return null;
 
   if (!user) {
-    window.location.href = "/AuthGate";
+    window.location.href = "/login";
     return null;
   }
 

@@ -247,13 +247,13 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
         user.invite_expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
         await db.commit()
 
-        # Log the token — in production this would be emailed instead
-        logger.info(
-            "Password reset token generated for %s — "
-            "reset URL: /AuthGate?reset=%s",
-            email, raw_token,
-        )
-        # TODO: Send email with reset link when email service is configured
+        # Build reset URL and send email (or log if SMTP not configured)
+        reset_url = f"{settings.PUBLIC_URL}/login?reset={raw_token}"
+        logger.info("Password reset token generated for %s — reset URL: %s", email, reset_url)
+
+        from ..services.email_service import send_email, build_reset_email
+        subject, html = build_reset_email(reset_url, user.name)
+        await send_email(user.email, subject, html)
 
     # Always return the same message regardless of whether user exists
     return {

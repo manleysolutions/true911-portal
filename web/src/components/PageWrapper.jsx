@@ -7,7 +7,7 @@ export default function PageWrapper({ children, requiredRole }) {
 
   useEffect(() => {
     if (ready && !user) {
-      window.location.href = createPageUrl("AuthGate");
+      window.location.href = "/login";
     }
   }, [user, ready]);
 

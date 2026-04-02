@@ -6,9 +6,13 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
-const { Pages, Layout, mainPage } = pagesConfig;
-const mainPageKey = mainPage ?? Object.keys(Pages)[0];
-const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
+// Public pages — no auth, no sidebar layout
+import LandingPage from './pages/public/LandingPage';
+import GetStarted from './pages/public/GetStarted';
+import Quote from './pages/public/Quote';
+import AuthGate from './pages/AuthGate';
+
+const { Pages, Layout } = pagesConfig;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   <Layout currentPageName={currentPageName}>{children}</Layout>
@@ -25,17 +29,8 @@ const AuthenticatedApp = () => {
     );
   }
 
-  // Build a lowercase lookup for case-insensitive route matching
-  const lowerPages = {};
-  Object.keys(Pages).forEach(key => { lowerPages[key.toLowerCase()] = key; });
-
   return (
     <Routes>
-      <Route path="/" element={
-        <LayoutWrapper currentPageName={mainPageKey}>
-          <MainPage />
-        </LayoutWrapper>
-      } />
       {Object.entries(Pages).map(([path, Page]) => (
         <Route
           key={path}
@@ -76,7 +71,16 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <AuthenticatedApp />
+          <Routes>
+            {/* Public routes — no auth required, no sidebar layout */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<AuthGate />} />
+            <Route path="/get-started" element={<GetStarted />} />
+            <Route path="/quote" element={<Quote />} />
+
+            {/* Authenticated app routes (includes /AuthGate for backwards compat) */}
+            <Route path="/*" element={<AuthenticatedApp />} />
+          </Routes>
         </Router>
         <Toaster />
       </QueryClientProvider>

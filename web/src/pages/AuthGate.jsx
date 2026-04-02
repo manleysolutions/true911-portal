@@ -267,7 +267,7 @@ export default function AuthGate() {
                 </div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-2">Password Updated</h2>
                 <p className="text-sm text-gray-500 mb-4">Your password has been updated. You can now sign in.</p>
-                <a href="/AuthGate" className="inline-flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
+                <a href="/login" className="inline-flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
                 </a>
               </div>
@@ -333,7 +333,7 @@ export default function AuthGate() {
                 </form>
 
                 <div className="mt-4 text-center">
-                  <a href="/AuthGate" className="text-xs text-gray-500 hover:text-gray-700">
+                  <a href="/login" className="text-xs text-gray-500 hover:text-gray-700">
                     Back to Sign In
                   </a>
                 </div>
@@ -384,7 +384,7 @@ export default function AuthGate() {
                 <h2 className="text-lg font-semibold text-gray-900 mb-2">Invalid Invite Link</h2>
                 <p className="text-sm text-gray-500 mb-4">{inviteError}</p>
                 <p className="text-xs text-gray-400">Contact your administrator for a new invite link.</p>
-                <a href="/AuthGate" className="inline-block mt-4 text-sm text-red-600 hover:text-red-700 font-medium">Back to Sign In</a>
+                <a href="/login" className="inline-block mt-4 text-sm text-red-600 hover:text-red-700 font-medium">Back to Sign In</a>
               </div>
             )}
 
@@ -615,9 +615,11 @@ export default function AuthGate() {
                     <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
                     If that email exists, a reset link has been sent. Check your inbox.
                   </div>
-                  <p className="text-xs text-gray-500 mb-4">
-                    Note: In demo/dev mode, the reset link is logged to the server console. Check the API logs for the reset URL.
-                  </p>
+                  {isDemo && (
+                    <p className="text-xs text-gray-500 mb-4">
+                      Note: In demo mode, the reset link is logged to the server console. Check the API logs for the reset URL.
+                    </p>
+                  )}
                   <button
                     onClick={() => { setShowForgot(false); setForgotSent(false); setForgotEmail(""); setError(""); }}
                     className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1"

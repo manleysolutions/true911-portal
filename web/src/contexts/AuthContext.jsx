@@ -171,7 +171,7 @@ export function AuthProvider({ children }) {
     stopImpersonation();
     clearTokens();
     setRealUser(null);
-    window.location.href = "/AuthGate";
+    window.location.href = "/login";
   }, []);
 
   // ── Impersonation ──────────────────────────────────────────────

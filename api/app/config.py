@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 
+    # ── SMTP Email (password resets, invites) ──────────────────────
+    SMTP_HOST: str = ""  # empty = log-only (safe for dev). e.g. smtp.sendgrid.net
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""  # e.g. "apikey" for SendGrid
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@true911.com"
+    SMTP_FROM_NAME: str = "True911+"
+    PUBLIC_URL: str = "https://www.true911.com"  # base URL for email links
+
     # ── VOLA / FlyingVoice TR-069 ───────────────────────────────────────
     VOLA_BASE_URL: str = "https://cloudapi.volanetworks.net"
     VOLA_EMAIL: str = ""

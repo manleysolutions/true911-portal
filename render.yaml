@@ -41,6 +41,15 @@ services:
         generateValue: true
       - key: SEED_DEMO
         value: "false"
+      - key: PUBLIC_URL
+        value: "https://www.true911.com"
+      # SMTP — set these in Render dashboard for email delivery
+      # - key: SMTP_HOST
+      #   value: smtp.sendgrid.net
+      # - key: SMTP_USER
+      #   value: apikey
+      # - key: SMTP_PASSWORD
+      #   sync: false
 
   # RQ Worker (shares codebase with API)
   - type: worker

@@ -50,7 +50,7 @@ async function refreshAccessToken() {
   });
   if (!res.ok) {
     clearTokens();
-    window.location.href = "/AuthGate";
+    window.location.href = "/login";
     throw new Error("Session expired");
   }
   const data = await res.json();
@@ -102,7 +102,7 @@ export async function apiFetch(path, options = {}) {
 
   if (res.status === 401) {
     clearTokens();
-    window.location.href = "/AuthGate";
+    window.location.href = "/login";
     throw new Error("Unauthorized");
   }
 
