@@ -95,6 +95,7 @@ import AutomationDashboard from './pages/AutomationDashboard';
 import OnboardSite from './pages/OnboardSite';
 import Install from './pages/Install';
 import Support from './pages/Support';
+import SelfHealingConsole from './pages/SelfHealingConsole';
 import SupportConsole from './pages/SupportConsole';
 import __Layout from './Layout.jsx';
 
@@ -148,6 +149,7 @@ export const PAGES = {
     "OnboardSite": OnboardSite,
     "Install": Install,
     "Support": Support,
+    "SelfHealingConsole": SelfHealingConsole,
     "SupportConsole": SupportConsole,
 }
 

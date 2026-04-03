@@ -53,7 +53,8 @@ const NOC_NAV = [
   { name: "Map",             page: "DeploymentMap",   icon: Map },
 
   // ── Support Console ──
-  { name: "Support Console",  page: "SupportConsole",  icon: HelpCircle, minRole: "Admin" },
+  { name: "Support Console",  page: "SupportConsole",       icon: HelpCircle, minRole: "Admin" },
+  { name: "Self-Healing",     page: "SelfHealingConsole",   icon: Wrench,     minRole: "Admin" },
 
   // ── Monitoring ──
   {

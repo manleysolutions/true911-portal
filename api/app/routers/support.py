@@ -298,6 +298,45 @@ async def escalate(
 
 # ── Remediation (Admin only) ────────────────────────────────────
 
+@router.get("/remediation", response_model=list[RemediationActionOut])
+async def list_remediations(
+    status_filter: str | None = Query(None, alias="status"),
+    action_type: str | None = Query(None),
+    verification: str | None = Query(None, alias="verification_status"),
+    tenant_id: str | None = Query(None),
+    site_id: int | None = Query(None),
+    device_id: int | None = Query(None),
+    limit: int = Query(100, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List remediation actions across all sessions. Admin/SuperAdmin only."""
+    if not _is_admin(current_user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
+
+    q = select(SupportRemediationAction)
+
+    if current_user.role == "SuperAdmin" and tenant_id:
+        q = q.where(SupportRemediationAction.tenant_id == tenant_id)
+    elif current_user.role != "SuperAdmin":
+        q = q.where(SupportRemediationAction.tenant_id == current_user.tenant_id)
+
+    if status_filter:
+        q = q.where(SupportRemediationAction.status == status_filter)
+    if action_type:
+        q = q.where(SupportRemediationAction.action_type == action_type)
+    if verification:
+        q = q.where(SupportRemediationAction.verification_status == verification)
+    if site_id is not None:
+        q = q.where(SupportRemediationAction.site_id == site_id)
+    if device_id is not None:
+        q = q.where(SupportRemediationAction.device_id == device_id)
+
+    q = q.order_by(desc(SupportRemediationAction.created_at)).limit(limit)
+    result = await db.execute(q)
+    return [RemediationActionOut.model_validate(r) for r in result.scalars().all()]
+
+
 @router.post("/remediation/run")
 async def run_remediation(
     body: RemediationRunRequest,
