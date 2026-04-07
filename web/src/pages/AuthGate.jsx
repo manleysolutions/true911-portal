@@ -11,6 +11,7 @@ function getLandingPage(role) {
   if (r === "superadmin") return createPageUrl("Command");
   if (r === "admin") return createPageUrl("AdminDashboard");
   if (r === "manager") return createPageUrl("ManagerDashboard");
+  if (r === "dataentry") return createPageUrl("Customers");
   return createPageUrl("UserDashboard");
 }
 

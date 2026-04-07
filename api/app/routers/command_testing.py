@@ -19,11 +19,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, get_current_user, require_permission
 from app.models.infra_test import InfraTest
 from app.models.infra_test_result import InfraTestResult
 from app.models.audit_log_entry import AuditLogEntry
-from app.services.rbac import can
 from app.services.infra_test_engine import run_test, create_verification_from_result
 from app.services.audit_logger import log_audit, export_audit_csv
 from app.schemas.command_phase7 import (
@@ -42,14 +41,12 @@ router = APIRouter()
 
 @router.get("/infra-tests", response_model=list[InfraTestOut])
 async def list_infra_tests(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_INFRA_TESTS")),
     db: AsyncSession = Depends(get_db),
     test_type: str | None = None,
     site_id: str | None = None,
     enabled: bool | None = None,
 ):
-    if not can(user.role, "COMMAND_VIEW_INFRA_TESTS"):
-        raise HTTPException(403, "Not authorized")
 
     q = select(InfraTest).where(
         InfraTest.tenant_id == user.tenant_id,
@@ -69,11 +66,9 @@ async def list_infra_tests(
 @router.post("/infra-tests", response_model=InfraTestOut)
 async def create_infra_test(
     payload: InfraTestCreate,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_MANAGE_INFRA_TESTS")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_MANAGE_INFRA_TESTS"):
-        raise HTTPException(403, "Not authorized")
 
     test = InfraTest(
         test_id=f"it-{uuid.uuid4().hex[:12]}",
@@ -103,11 +98,9 @@ async def create_infra_test(
 async def update_infra_test(
     test_pk: int,
     payload: InfraTestUpdate,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_MANAGE_INFRA_TESTS")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_MANAGE_INFRA_TESTS"):
-        raise HTTPException(403, "Not authorized")
 
     test = (await db.execute(
         select(InfraTest).where(InfraTest.id == test_pk, InfraTest.tenant_id == user.tenant_id)
@@ -133,11 +126,9 @@ async def update_infra_test(
 @router.delete("/infra-tests/{test_pk}")
 async def delete_infra_test(
     test_pk: int,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_MANAGE_INFRA_TESTS")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_MANAGE_INFRA_TESTS"):
-        raise HTTPException(403, "Not authorized")
 
     test = (await db.execute(
         select(InfraTest).where(InfraTest.id == test_pk, InfraTest.tenant_id == user.tenant_id)
@@ -161,11 +152,9 @@ async def delete_infra_test(
 async def execute_infra_test(
     test_pk: int,
     body: RunTestRequest = RunTestRequest(),
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_RUN_INFRA_TESTS")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_RUN_INFRA_TESTS"):
-        raise HTTPException(403, "Not authorized")
 
     test = (await db.execute(
         select(InfraTest).where(InfraTest.id == test_pk, InfraTest.tenant_id == user.tenant_id)
@@ -191,12 +180,10 @@ async def execute_infra_test(
 @router.get("/infra-tests/{test_pk}/results", response_model=list[InfraTestResultOut])
 async def list_test_results(
     test_pk: int,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_INFRA_TESTS")),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, le=200),
 ):
-    if not can(user.role, "COMMAND_VIEW_INFRA_TESTS"):
-        raise HTTPException(403, "Not authorized")
 
     test = (await db.execute(
         select(InfraTest).where(InfraTest.id == test_pk, InfraTest.tenant_id == user.tenant_id)
@@ -216,7 +203,7 @@ async def list_test_results(
 
 @router.get("/audit-log", response_model=list[AuditLogEntryOut])
 async def list_audit_log(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_AUDIT")),
     db: AsyncSession = Depends(get_db),
     category: str | None = None,
     target_type: str | None = None,
@@ -224,8 +211,6 @@ async def list_audit_log(
     limit: int = Query(100, le=500),
     offset: int = 0,
 ):
-    if not can(user.role, "COMMAND_VIEW_AUDIT"):
-        raise HTTPException(403, "Not authorized")
 
     q = select(AuditLogEntry).where(
         AuditLogEntry.tenant_id == user.tenant_id,
@@ -245,12 +230,10 @@ async def list_audit_log(
 
 @router.get("/audit-log/export")
 async def export_audit_log(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_EXPORT_AUDIT")),
     db: AsyncSession = Depends(get_db),
     category: str | None = None,
 ):
-    if not can(user.role, "COMMAND_EXPORT_AUDIT"):
-        raise HTTPException(403, "Not authorized")
 
     csv_data = await export_audit_csv(db, user.tenant_id, category=category)
 

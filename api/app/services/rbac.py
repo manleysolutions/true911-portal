@@ -18,7 +18,18 @@ PERMISSIONS: dict[str, list[str]] = {
     "MANAGE_USERS": ["Admin"],
     "MANAGE_SIMS": ["Admin"],
     "MANAGE_CUSTOMERS": ["Admin"],
-    "VIEW_CUSTOMERS": ["Admin", "Manager"],
+    "VIEW_CUSTOMERS": ["Admin", "Manager", "DataEntry"],
+    "CREATE_CUSTOMERS": ["Admin", "DataEntry"],
+    "EDIT_CUSTOMERS": ["Admin", "DataEntry"],
+    "DELETE_CUSTOMERS": ["Admin"],
+    "VIEW_SITES": ["Admin", "Manager", "User", "DataEntry"],
+    "CREATE_SITES": ["Admin", "Manager", "DataEntry"],
+    "EDIT_SITES": ["Admin", "Manager", "DataEntry"],
+    "DELETE_SITES": ["Admin"],
+    "VIEW_DEVICES": ["Admin", "Manager", "User", "DataEntry"],
+    "CREATE_DEVICES": ["Admin", "Manager", "DataEntry"],
+    "EDIT_DEVICES": ["Admin", "Manager", "DataEntry"],
+    "DELETE_DEVICES": ["Admin", "Manager"],
     "VIEW_JOBS": ["Admin", "Manager"],
     "MANAGE_INTEGRATIONS": ["Admin"],
     "VIEW_INTEGRATIONS": ["Admin", "Manager"],
@@ -68,11 +79,20 @@ PERMISSIONS: dict[str, list[str]] = {
     "COMMAND_GENERATE_DIGEST": ["Admin"],
     "COMMAND_VIEW_AUTO_LOG": ["Admin", "Manager", "User"],
     # Site Import
-    "COMMAND_SITE_IMPORT": ["Admin"],
+    "COMMAND_SITE_IMPORT": ["Admin", "DataEntry"],
     # Subscriber Import
-    "SUBSCRIBER_IMPORT": ["Admin"],
+    "SUBSCRIBER_IMPORT": ["Admin", "DataEntry"],
+    # Line / service-unit destructive actions
+    "DELETE_LINES": ["Admin", "Manager"],
+    "DELETE_SERVICE_UNITS": ["Admin"],
     # Device management
     "MANAGE_DEVICES": ["Admin"],
+    # Import verification (DataEntry can view and manage but not delete)
+    "VIEW_IMPORT_VERIFICATION": ["Admin", "Manager", "DataEntry"],
+    "MANAGE_IMPORT_VERIFICATION": ["Admin", "DataEntry"],
+    # Provisioning queue (unassigned devices)
+    "VIEW_PROVISIONING_QUEUE": ["Admin", "DataEntry"],
+    "MANAGE_PROVISIONING": ["Admin"],
 }
 
 
@@ -81,6 +101,9 @@ ROLE_NORMALIZE = {
     "admin": "Admin",
     "manager": "Manager",
     "user": "User",
+    "dataentry": "DataEntry",
+    "data entry": "DataEntry",
+    "data entry / import operator": "DataEntry",
 }
 
 

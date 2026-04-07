@@ -1150,7 +1150,7 @@ export default function Devices() {
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        {d.status !== "decommissioned" && (
+                        {can("DELETE_DEVICES") && d.status !== "decommissioned" && (
                           <button
                             onClick={() => setDeleteDevice(d)}
                             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-600"

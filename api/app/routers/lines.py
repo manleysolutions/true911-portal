@@ -1,9 +1,13 @@
+import json
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.line import Line
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -108,7 +112,11 @@ async def update_line(
     return LineOut.model_validate(line)
 
 
-@router.delete("/{line_pk}", status_code=204)
+@router.delete(
+    "/{line_pk}",
+    status_code=204,
+    dependencies=[Depends(require_permission("DELETE_LINES"))],
+)
 async def delete_line(
     line_pk: int,
     db: AsyncSession = Depends(get_db),
@@ -120,5 +128,23 @@ async def delete_line(
     line = result.scalar_one_or_none()
     if not line:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Line not found")
+
+    audit = AuditLogEntry(
+        entry_id=f"delete-line-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="destructive",
+        action="delete_line",
+        actor=current_user.email,
+        target_type="line",
+        target_id=str(line.id),
+        summary=f"Line {line.line_id} (DID: {line.did or 'none'}) deleted by {current_user.email}",
+        detail_json=json.dumps({
+            "line_id": line.line_id,
+            "did": line.did,
+            "site_id": line.site_id,
+            "device_id": line.device_id,
+        }),
+    )
+    db.add(audit)
     await db.delete(line)
     await db.commit()

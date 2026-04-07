@@ -14,7 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import json
+import uuid
+
 from ..dependencies import get_db, get_current_user, require_permission
+from ..models.audit_log_entry import AuditLogEntry
 from ..models.user import User
 from ..schemas.site_import import ImportPreviewSummary, ImportCommitResult
 from ..services.site_import_engine import preview_import, commit_import, generate_template_csv
@@ -57,6 +61,25 @@ async def import_commit(
     csv_text = content.decode("utf-8-sig", errors="replace")
 
     result = await commit_import(db, csv_text, current_user.tenant_id, current_user.email)
+
+    # Audit log the import
+    audit = AuditLogEntry(
+        entry_id=f"import-site-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="import",
+        action="site_import_commit",
+        actor=current_user.email,
+        target_type="site",
+        summary=f"Site import committed by {current_user.email} — {result.get('created', 0)} created, {result.get('skipped', 0)} skipped",
+        detail_json=json.dumps({
+            "import_type": "site",
+            "user_role": current_user.role,
+            "records_created": result.get("created", 0),
+            "records_skipped": result.get("skipped", 0),
+            "errors": result.get("errors", []),
+        }),
+    )
+    db.add(audit)
     await db.commit()
     return ImportCommitResult(**result)
 

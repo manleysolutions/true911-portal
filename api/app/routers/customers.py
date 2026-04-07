@@ -11,7 +11,11 @@ from app.schemas.customer import CustomerCreate, CustomerOut, CustomerUpdate
 router = APIRouter()
 
 
-@router.get("", response_model=list[CustomerOut])
+@router.get(
+    "",
+    response_model=list[CustomerOut],
+    dependencies=[Depends(require_permission("VIEW_CUSTOMERS"))],
+)
 async def list_customers(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),
@@ -31,7 +35,11 @@ async def list_customers(
     return [CustomerOut.model_validate(c) for c in result.scalars().all()]
 
 
-@router.get("/{pk}", response_model=CustomerOut)
+@router.get(
+    "/{pk}",
+    response_model=CustomerOut,
+    dependencies=[Depends(require_permission("VIEW_CUSTOMERS"))],
+)
 async def get_customer(
     pk: int,
     db: AsyncSession = Depends(get_db),
@@ -52,7 +60,7 @@ async def get_customer(
     "",
     response_model=CustomerOut,
     status_code=201,
-    dependencies=[Depends(require_permission("MANAGE_CUSTOMERS"))],
+    dependencies=[Depends(require_permission("CREATE_CUSTOMERS"))],
 )
 async def create_customer(
     body: CustomerCreate,
@@ -70,7 +78,7 @@ async def create_customer(
 @router.patch(
     "/{pk}",
     response_model=CustomerOut,
-    dependencies=[Depends(require_permission("MANAGE_CUSTOMERS"))],
+    dependencies=[Depends(require_permission("EDIT_CUSTOMERS"))],
 )
 async def update_customer(
     pk: int,
@@ -96,7 +104,7 @@ async def update_customer(
 @router.delete(
     "/{pk}",
     response_model=CustomerOut,
-    dependencies=[Depends(require_permission("MANAGE_CUSTOMERS"))],
+    dependencies=[Depends(require_permission("DELETE_CUSTOMERS"))],
 )
 async def delete_customer(
     pk: int,

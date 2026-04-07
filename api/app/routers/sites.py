@@ -39,7 +39,11 @@ async def _site_out(site: Site, db: AsyncSession) -> SiteOut:
     return out
 
 
-@router.get("", response_model=list[SiteOut])
+@router.get(
+    "",
+    response_model=list[SiteOut],
+    dependencies=[Depends(require_permission("VIEW_SITES"))],
+)
 async def list_sites(
     sort: str | None = Query("-last_checkin"),
     limit: int = Query(500, le=1000),
@@ -372,7 +376,12 @@ async def get_site_infrastructure(
     }
 
 
-@router.post("", response_model=SiteOut, status_code=201)
+@router.post(
+    "",
+    response_model=SiteOut,
+    status_code=201,
+    dependencies=[Depends(require_permission("CREATE_SITES"))],
+)
 async def create_site(
     body: SiteCreate,
     db: AsyncSession = Depends(get_db),
@@ -394,7 +403,11 @@ async def create_site(
     return await _site_out(site, db)
 
 
-@router.patch("/{site_pk}", response_model=SiteOut)
+@router.patch(
+    "/{site_pk}",
+    response_model=SiteOut,
+    dependencies=[Depends(require_permission("EDIT_SITES"))],
+)
 async def update_site(
     site_pk: int,
     body: SiteUpdate,
@@ -444,7 +457,7 @@ async def update_site(
 @router.delete(
     "/{site_pk}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_permission("VIEW_ADMIN"))],
+    dependencies=[Depends(require_permission("DELETE_SITES"))],
 )
 async def delete_site(
     site_pk: int,

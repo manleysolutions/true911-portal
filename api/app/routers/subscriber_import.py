@@ -16,12 +16,16 @@ Endpoints:
   PATCH /subscriber-import/correct/line/{line_id}    Edit line fields
 """
 
+import json
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..dependencies import get_db, get_current_user, require_permission
+from ..models.audit_log_entry import AuditLogEntry
 from ..models.user import User
 from ..models.line import Line
 from ..models.site import Site
@@ -88,6 +92,28 @@ async def import_commit(
         db, csv_text, current_user.tenant_id,
         current_user.email, file.filename,
     )
+
+    # Audit log the import
+    summary_data = result.get("summary", {})
+    audit = AuditLogEntry(
+        entry_id=f"import-subscriber-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="import",
+        action="subscriber_import_commit",
+        actor=current_user.email,
+        target_type="line",
+        summary=f"Subscriber import committed by {current_user.email} — {result.get('total_rows', 0)} rows, batch {result.get('batch_id', 'unknown')}",
+        detail_json=json.dumps({
+            "import_type": "subscriber",
+            "user_role": current_user.role,
+            "batch_id": result.get("batch_id"),
+            "total_rows": result.get("total_rows", 0),
+            "summary": summary_data,
+            "error_count": len(result.get("errors", [])),
+            "filename": file.filename,
+        }),
+    )
+    db.add(audit)
     await db.commit()
 
     return SubscriberCommitResponse(

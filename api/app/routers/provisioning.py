@@ -1,5 +1,7 @@
 """Provisioning Queue — review and link unassigned infrastructure to sites."""
 
+import json
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -8,7 +10,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.device import Device
 from app.models.line import Line
 from app.models.provisioning_queue import ProvisioningQueueItem
@@ -79,7 +82,11 @@ def _tenant_filter(q, user: User):
 
 # ── Endpoints ────────────────────────────────────────────────────
 
-@router.get("", response_model=list[QueueItemOut])
+@router.get(
+    "",
+    response_model=list[QueueItemOut],
+    dependencies=[Depends(require_permission("VIEW_PROVISIONING_QUEUE"))],
+)
 async def list_queue(
     limit: int = Query(200, le=500),
     item_type: Optional[str] = None,
@@ -99,7 +106,10 @@ async def list_queue(
     return [QueueItemOut.model_validate(i) for i in result.scalars().all()]
 
 
-@router.get("/summary")
+@router.get(
+    "/summary",
+    dependencies=[Depends(require_permission("VIEW_PROVISIONING_QUEUE"))],
+)
 async def queue_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -127,21 +137,42 @@ async def queue_summary(
     return {"total": total, "actionable": actionable, "by_type": by_type, "by_status": by_status}
 
 
-@router.post("/scan")
+@router.post(
+    "/scan",
+    dependencies=[Depends(require_permission("MANAGE_PROVISIONING"))],
+)
 async def scan_queue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from app.services.provisioning_engine import scan_and_enqueue
-    return await scan_and_enqueue(
+    result = await scan_and_enqueue(
         db,
         tenant_id=current_user.tenant_id,
         initiated_by=current_user.email,
         is_superadmin=_is_superadmin(current_user),
     )
 
+    audit = AuditLogEntry(
+        entry_id=f"prov-scan-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="provisioning",
+        action="provisioning_scan",
+        actor=current_user.email,
+        target_type="provisioning_queue",
+        summary=f"Provisioning scan by {current_user.email} — {result.get('created', 0)} new, {result.get('skipped', 0)} skipped",
+        detail_json=json.dumps({"created": result.get("created", 0), "skipped": result.get("skipped", 0)}),
+    )
+    db.add(audit)
+    await db.commit()
+    return result
 
-@router.post("/{item_id}/link", response_model=QueueItemOut)
+
+@router.post(
+    "/{item_id}/link",
+    response_model=QueueItemOut,
+    dependencies=[Depends(require_permission("MANAGE_PROVISIONING"))],
+)
 async def link_to_site(
     item_id: int,
     body: LinkRequest,
@@ -159,12 +190,30 @@ async def link_to_site(
     item.resolved_by = current_user.email
     item.resolved_at = datetime.now(timezone.utc)
     item.resolved_site_id = body.site_id
+
+    audit = AuditLogEntry(
+        entry_id=f"prov-link-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="provisioning",
+        action="provisioning_link",
+        actor=current_user.email,
+        target_type=item.item_type,
+        target_id=str(item.item_id),
+        site_id=body.site_id,
+        summary=f"{item.item_type} {item.external_ref} linked to site {body.site_id} by {current_user.email}",
+        detail_json=json.dumps({"item_id": item.id, "item_type": item.item_type, "external_ref": item.external_ref, "site_id": body.site_id}),
+    )
+    db.add(audit)
     await db.commit()
     await db.refresh(item)
     return QueueItemOut.model_validate(item)
 
 
-@router.post("/{item_id}/approve", response_model=QueueItemOut)
+@router.post(
+    "/{item_id}/approve",
+    response_model=QueueItemOut,
+    dependencies=[Depends(require_permission("MANAGE_PROVISIONING"))],
+)
 async def approve_suggestion(
     item_id: int,
     body: LinkRequest,
@@ -175,7 +224,11 @@ async def approve_suggestion(
     return await link_to_site(item_id, body, db, current_user)
 
 
-@router.post("/{item_id}/ignore", response_model=QueueItemOut)
+@router.post(
+    "/{item_id}/ignore",
+    response_model=QueueItemOut,
+    dependencies=[Depends(require_permission("MANAGE_PROVISIONING"))],
+)
 async def ignore_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
@@ -185,12 +238,28 @@ async def ignore_item(
     item.status = "ignored"
     item.resolved_by = current_user.email
     item.resolved_at = datetime.now(timezone.utc)
+
+    audit = AuditLogEntry(
+        entry_id=f"prov-ignore-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="provisioning",
+        action="provisioning_ignore",
+        actor=current_user.email,
+        target_type=item.item_type,
+        target_id=str(item.item_id),
+        summary=f"{item.item_type} {item.external_ref} ignored by {current_user.email}",
+        detail_json=json.dumps({"item_id": item.id, "item_type": item.item_type, "external_ref": item.external_ref}),
+    )
+    db.add(audit)
     await db.commit()
     await db.refresh(item)
     return QueueItemOut.model_validate(item)
 
 
-@router.post("/bulk-link")
+@router.post(
+    "/bulk-link",
+    dependencies=[Depends(require_permission("MANAGE_PROVISIONING"))],
+)
 async def bulk_link(
     body: BulkLinkRequest,
     db: AsyncSession = Depends(get_db),
@@ -219,11 +288,26 @@ async def bulk_link(
         item.resolved_site_id = body.site_id
         linked += 1
 
+    audit = AuditLogEntry(
+        entry_id=f"prov-bulk-link-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="provisioning",
+        action="provisioning_bulk_link",
+        actor=current_user.email,
+        target_type="provisioning_queue",
+        site_id=body.site_id,
+        summary=f"Bulk link: {linked} items linked to site {body.site_id} by {current_user.email}",
+        detail_json=json.dumps({"linked": linked, "site_id": body.site_id, "item_ids": body.item_ids}),
+    )
+    db.add(audit)
     await db.commit()
     return {"linked": linked, "site_id": body.site_id}
 
 
-@router.post("/bulk-ignore")
+@router.post(
+    "/bulk-ignore",
+    dependencies=[Depends(require_permission("MANAGE_PROVISIONING"))],
+)
 async def bulk_ignore(
     body: BulkIgnoreRequest,
     db: AsyncSession = Depends(get_db),
@@ -246,6 +330,17 @@ async def bulk_ignore(
         item.resolved_at = now
         ignored += 1
 
+    audit = AuditLogEntry(
+        entry_id=f"prov-bulk-ignore-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="provisioning",
+        action="provisioning_bulk_ignore",
+        actor=current_user.email,
+        target_type="provisioning_queue",
+        summary=f"Bulk ignore: {ignored} items ignored by {current_user.email}",
+        detail_json=json.dumps({"ignored": ignored, "item_ids": body.item_ids}),
+    )
+    db.add(audit)
     await db.commit()
     return {"ignored": ignored}
 

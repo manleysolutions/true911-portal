@@ -64,15 +64,16 @@ const EMPTY_FORM = {
 export default function Sites() {
   const { can } = useAuth();
   const isAdmin = can("VIEW_ADMIN");
+  const canCreateSite = can("CREATE_SITES");
   const navigate = useNavigate();
   const location = useLocation();
 
   // Auto-open Add Site modal when ?action=add is in URL
   useEffect(() => {
-    if (isAdmin && new URLSearchParams(location.search).get("action") === "add") {
+    if (canCreateSite && new URLSearchParams(location.search).get("action") === "add") {
       setShowAddModal(true);
     }
-  }, [location.search, isAdmin]);
+  }, [location.search, canCreateSite]);
 
   const [sites, setSites] = useState([]);
   const [audits, setAudits] = useState([]);
@@ -190,7 +191,7 @@ export default function Sites() {
             <p className="text-sm text-gray-500 mt-0.5">{sites.length} monitored sites</p>
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin && (
+            {canCreateSite && (
               <button
                 onClick={() => { setAddForm(EMPTY_FORM); setAddError(""); setShowAddModal(true); }}
                 className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold"

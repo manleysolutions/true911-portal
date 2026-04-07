@@ -16,10 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, get_current_user, require_permission
 from app.models.autonomous_action import AutonomousAction
 from app.models.operational_digest import OperationalDigest
-from app.services.rbac import can
 from app.services.autonomous_engine import run_autonomous_engine
 from app.services.self_healing import attempt_self_healing
 from app.services.digest_engine import generate_daily_digest, generate_weekly_digest
@@ -38,13 +37,10 @@ router = APIRouter()
 
 @router.post("/autonomous/run", response_model=EngineRunResult)
 async def trigger_engine(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_RUN_ENGINE")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger one full cycle of the autonomous engine."""
-    if not can(user.role, "COMMAND_RUN_ENGINE"):
-        raise HTTPException(403, "Not authorized")
-
     stats = await run_autonomous_engine(db, user.tenant_id)
     return EngineRunResult(**stats)
 
@@ -53,13 +49,10 @@ async def trigger_engine(
 
 @router.post("/autonomous/self-heal")
 async def trigger_self_heal(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_MANAGE_AUTO_OPS")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger self-healing scan for auto-resolvable incidents."""
-    if not can(user.role, "COMMAND_MANAGE_AUTO_OPS"):
-        raise HTTPException(403, "Not authorized")
-
     result = await attempt_self_healing(db, user.tenant_id)
     await db.commit()
     return result
@@ -69,15 +62,13 @@ async def trigger_self_heal(
 
 @router.get("/autonomous/actions", response_model=list[AutonomousActionOut])
 async def list_autonomous_actions(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_AUTO_LOG")),
     db: AsyncSession = Depends(get_db),
     action_type: str | None = None,
     site_id: str | None = None,
     limit: int = Query(50, le=500),
     offset: int = 0,
 ):
-    if not can(user.role, "COMMAND_VIEW_AUTO_LOG"):
-        raise HTTPException(403, "Not authorized")
 
     q = select(AutonomousAction).where(
         AutonomousAction.tenant_id == user.tenant_id,
@@ -97,12 +88,9 @@ async def list_autonomous_actions(
 
 @router.get("/autonomous/summary", response_model=AutoOpsSummary)
 async def autonomous_summary(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_AUTO_OPS")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_VIEW_AUTO_OPS"):
-        raise HTTPException(403, "Not authorized")
-
     tid = user.tenant_id
     since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
@@ -184,13 +172,11 @@ async def autonomous_summary(
 
 @router.get("/digests", response_model=list[OperationalDigestOut])
 async def list_digests(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_DIGESTS")),
     db: AsyncSession = Depends(get_db),
     digest_type: str | None = None,
     limit: int = Query(20, le=100),
 ):
-    if not can(user.role, "COMMAND_VIEW_DIGESTS"):
-        raise HTTPException(403, "Not authorized")
 
     q = select(OperationalDigest).where(
         OperationalDigest.tenant_id == user.tenant_id,
@@ -207,11 +193,9 @@ async def list_digests(
 @router.post("/digests/generate", response_model=OperationalDigestOut)
 async def generate_digest(
     body: GenerateDigestRequest,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_GENERATE_DIGEST")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_GENERATE_DIGEST"):
-        raise HTTPException(403, "Not authorized")
 
     if body.digest_type == "weekly":
         digest = await generate_weekly_digest(db, user.tenant_id)
@@ -224,11 +208,9 @@ async def generate_digest(
 @router.get("/digests/{digest_pk}", response_model=OperationalDigestOut)
 async def get_digest(
     digest_pk: int,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_DIGESTS")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_VIEW_DIGESTS"):
-        raise HTTPException(403, "Not authorized")
 
     digest = (await db.execute(
         select(OperationalDigest).where(

@@ -1366,7 +1366,7 @@ async def operator_view(
 async def automation_dashboard(
     hours: int = Query(24, le=168, ge=1),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("COMMAND_VIEW_AUTO_OPS")),
 ):
     """Automation analytics dashboard — aggregated automation event data."""
     return await get_automation_dashboard(db, current_user.tenant_id, hours)

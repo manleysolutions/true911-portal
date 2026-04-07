@@ -15,12 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, case, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, get_current_user, require_permission
 from app.models.device import Device
 from app.models.site import Site
 from app.models.network_event import NetworkEvent
 from app.models.incident import Incident
-from app.services.rbac import can
 from app.services.carrier_adapter import (
     get_adapter, ingest_carrier_telemetry, CarrierTelemetry,
 )
@@ -40,11 +39,9 @@ router = APIRouter()
 @router.post("/carrier-telemetry")
 async def ingest_carrier(
     payload: CarrierTelemetryIngest,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_INGEST_CARRIER")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_INGEST_CARRIER"):
-        raise HTTPException(403, "Not authorized")
 
     adapter = get_adapter(payload.carrier)
     telemetry = adapter.normalize(payload.model_dump())
@@ -92,7 +89,7 @@ async def ingest_carrier(
 
 @router.get("/network-events", response_model=list[NetworkEventOut])
 async def list_network_events(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_NETWORK")),
     db: AsyncSession = Depends(get_db),
     event_type: str | None = None,
     severity: str | None = None,
@@ -101,8 +98,6 @@ async def list_network_events(
     limit: int = Query(100, le=500),
     offset: int = 0,
 ):
-    if not can(user.role, "COMMAND_VIEW_NETWORK"):
-        raise HTTPException(403, "Not authorized")
 
     q = select(NetworkEvent).where(
         NetworkEvent.tenant_id == user.tenant_id,
@@ -125,11 +120,9 @@ async def list_network_events(
 @router.post("/network-events/{event_id}/resolve")
 async def resolve_network_event(
     event_id: int,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_MANAGE_NETWORK")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_MANAGE_NETWORK"):
-        raise HTTPException(403, "Not authorized")
 
     q = select(NetworkEvent).where(
         NetworkEvent.id == event_id,
@@ -155,12 +148,9 @@ async def resolve_network_event(
 
 @router.get("/network/summary", response_model=NetworkSummary)
 async def network_summary(
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_VIEW_NETWORK")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_VIEW_NETWORK"):
-        raise HTTPException(403, "Not authorized")
-
     tid = user.tenant_id
 
     # Device network counts
@@ -212,11 +202,9 @@ async def network_summary(
 async def update_ng911(
     site_id: str,
     payload: SiteNG911Update,
-    user=Depends(get_current_user),
+    user=Depends(require_permission("COMMAND_MANAGE_NETWORK")),
     db: AsyncSession = Depends(get_db),
 ):
-    if not can(user.role, "COMMAND_MANAGE_NETWORK"):
-        raise HTTPException(403, "Not authorized")
 
     site = (await db.execute(
         select(Site).where(Site.site_id == site_id, Site.tenant_id == user.tenant_id)

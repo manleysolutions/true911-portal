@@ -18,7 +18,7 @@ from app.services.auth import generate_invite_token, hash_password, validate_pas
 
 router = APIRouter()
 
-ALLOWED_ROLES = {"SuperAdmin", "Admin", "Manager", "User"}
+ALLOWED_ROLES = {"SuperAdmin", "Admin", "Manager", "User", "DataEntry"}
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────

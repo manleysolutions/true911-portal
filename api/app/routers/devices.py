@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.command_telemetry import CommandTelemetry
 from app.models.device import Device
 from app.models.device_sim import DeviceSim
@@ -35,6 +36,22 @@ from app.services.health_scoring import compute_device_health
 router = APIRouter()
 
 _KEY_PREFIX = "t91_"
+
+# Fields that DataEntry / Import Operator is allowed to set.
+# All other fields are restricted to Admin+ roles.
+_DATAENTRY_ALLOWED_FIELDS = frozenset({
+    "site_id",          # site assignment — core onboarding
+    "device_type",      # endpoint type classification
+    "notes",            # free-text
+    "manufacturer",     # device description
+    "model",            # device description
+    "identifier_type",  # cellular / ata / starlink
+    "activated_at",     # onboarding date
+    "term_end_date",    # contract info
+})
+
+# For create, device_id is additionally required.
+_DATAENTRY_ALLOWED_CREATE_FIELDS = _DATAENTRY_ALLOWED_FIELDS | {"device_id"}
 
 _CONSTRAINT_MESSAGES = {
     "uq_devices_imei": "A device with this IMEI already exists",
@@ -136,7 +153,11 @@ async def _latest_telemetry(
     return out
 
 
-@router.get("", response_model=list[DeviceOut])
+@router.get(
+    "",
+    response_model=list[DeviceOut],
+    dependencies=[Depends(require_permission("VIEW_DEVICES"))],
+)
 async def list_devices(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),
@@ -209,15 +230,42 @@ async def get_device(
     return _device_out(device, telem_map.get(device.device_id))
 
 
-@router.post("", response_model=DeviceCreateOut, status_code=201)
+@router.post(
+    "",
+    response_model=DeviceCreateOut,
+    status_code=201,
+    dependencies=[Depends(require_permission("CREATE_DEVICES"))],
+)
 async def create_device(
     body: DeviceCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    fields = body.model_dump()
+
+    # DataEntry: restrict to onboarding fields only
+    role = (current_user.role or "").lower()
+    if role == "dataentry":
+        restricted = {k for k, v in body.model_dump(exclude_unset=True).items()
+                      if k not in _DATAENTRY_ALLOWED_CREATE_FIELDS}
+        if restricted:
+            audit = AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_create_blocked",
+                actor=current_user.email,
+                target_type="device",
+                summary=f"DataEntry {current_user.email} attempted to set restricted fields on new device: {', '.join(sorted(restricted))}",
+                detail_json=json.dumps({"restricted_fields": sorted(restricted)}),
+            )
+            db.add(audit)
+            # Strip restricted fields, keep defaults for unset ones
+            fields = {k: v for k, v in fields.items() if k in _DATAENTRY_ALLOWED_CREATE_FIELDS}
+
     raw_key, key_hash = _generate_device_key()
     device = Device(
-        **body.model_dump(),
+        **fields,
         tenant_id=current_user.tenant_id,
         api_key_hash=key_hash,
         claimed_at=datetime.now(timezone.utc),
@@ -242,7 +290,11 @@ async def create_device(
     return out
 
 
-@router.patch("/{device_pk}", response_model=DeviceOut)
+@router.patch(
+    "/{device_pk}",
+    response_model=DeviceOut,
+    dependencies=[Depends(require_permission("EDIT_DEVICES"))],
+)
 async def update_device(
     device_pk: int,
     body: DeviceUpdate,
@@ -256,7 +308,39 @@ async def update_device(
     if not device:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+
+    # DataEntry: restrict to onboarding fields only
+    role = (current_user.role or "").lower()
+    if role == "dataentry":
+        restricted = {k for k in updates if k not in _DATAENTRY_ALLOWED_FIELDS}
+        if restricted:
+            # Log the attempt, then strip restricted fields
+            audit = AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_edit_blocked",
+                actor=current_user.email,
+                target_type="device",
+                target_id=str(device.id),
+                device_id=device.device_id,
+                summary=f"DataEntry {current_user.email} attempted to edit restricted device fields: {', '.join(sorted(restricted))}",
+                detail_json=json.dumps({
+                    "device_id": device.device_id,
+                    "restricted_fields": sorted(restricted),
+                    "allowed_fields": sorted(k for k in updates if k in _DATAENTRY_ALLOWED_FIELDS),
+                }),
+            )
+            db.add(audit)
+            updates = {k: v for k, v in updates.items() if k in _DATAENTRY_ALLOWED_FIELDS}
+        if not updates:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Your role does not allow editing the requested fields.",
+            )
+
+    for field, value in updates.items():
         setattr(device, field, value)
     try:
         await db.flush()
@@ -269,7 +353,11 @@ async def update_device(
     return _device_out(device)
 
 
-@router.delete("/{device_pk}", response_model=DeviceOut)
+@router.delete(
+    "/{device_pk}",
+    response_model=DeviceOut,
+    dependencies=[Depends(require_permission("DELETE_DEVICES"))],
+)
 async def delete_device(
     device_pk: int,
     db: AsyncSession = Depends(get_db),

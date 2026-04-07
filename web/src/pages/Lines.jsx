@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Line, Site } from "@/api/entities";
 import { Phone, Search, RefreshCw, Plus, X, Pencil, Trash2 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 const STATUS_BADGE = {
@@ -242,6 +243,7 @@ function ConfirmDeleteLineModal({ line, onClose, onConfirm }) {
 }
 
 export default function Lines() {
+  const { can } = useAuth();
   const [lines, setLines] = useState([]);
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -392,13 +394,15 @@ export default function Lines() {
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={() => setDeleteLine(l)}
-                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-600"
-                            title="Delete line"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {can("DELETE_LINES") && (
+                            <button
+                              onClick={() => setDeleteLine(l)}
+                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-600"
+                              title="Delete line"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

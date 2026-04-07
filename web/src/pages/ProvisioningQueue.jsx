@@ -26,6 +26,7 @@ const STATUS_CONFIG = {
 
 export default function ProvisioningQueue() {
   const { can } = useAuth();
+  const canManage = can("MANAGE_PROVISIONING");
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -175,11 +176,13 @@ export default function ProvisioningQueue() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleScan} disabled={scanning}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold">
-              {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-              Scan Inventory
-            </button>
+            {canManage && (
+              <button onClick={handleScan} disabled={scanning}
+                className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold">
+                {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                Scan Inventory
+              </button>
+            )}
             <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-400">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -205,7 +208,7 @@ export default function ProvisioningQueue() {
         )}
 
         {/* Bulk action bar */}
-        {selected.size > 0 && (
+        {canManage && selected.size > 0 && (
           <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
             <span className="text-purple-800 text-xs font-semibold">{selected.size} item(s) selected</span>
             <div className="flex items-center gap-2">
@@ -267,17 +270,19 @@ export default function ProvisioningQueue() {
           ) : (
             <>
             {/* Select all */}
-            <div className="flex items-center gap-2 px-1">
-              <input type="checkbox"
-                checked={filtered.length > 0 && selected.size === filtered.filter(isActionable).length}
-                onChange={() => {
-                  const actionableIds = filtered.filter(isActionable).map(i => i.id);
-                  if (selected.size === actionableIds.length) setSelected(new Set());
-                  else setSelected(new Set(actionableIds));
-                }}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
-              <span className="text-xs text-gray-500">Select all actionable ({filtered.filter(isActionable).length})</span>
-            </div>
+            {canManage && (
+              <div className="flex items-center gap-2 px-1">
+                <input type="checkbox"
+                  checked={filtered.length > 0 && selected.size === filtered.filter(isActionable).length}
+                  onChange={() => {
+                    const actionableIds = filtered.filter(isActionable).map(i => i.id);
+                    if (selected.size === actionableIds.length) setSelected(new Set());
+                    else setSelected(new Set(actionableIds));
+                  }}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+                <span className="text-xs text-gray-500">Select all actionable ({filtered.filter(isActionable).length})</span>
+              </div>
+            )}
 
             {filtered.map(item => {
               const tc = TYPE_CONFIG[item.item_type] || TYPE_CONFIG.sim;
@@ -288,11 +293,11 @@ export default function ProvisioningQueue() {
               return (
                 <div key={item.id} className={`bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3 ${selected.has(item.id) ? "ring-2 ring-purple-200 bg-purple-50/30" : ""}`}>
                   {/* Checkbox */}
-                  {actionable && (
+                  {canManage && actionable && (
                     <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelect(item.id)}
                       className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 flex-shrink-0" />
                   )}
-                  {!actionable && <div className="w-4" />}
+                  {(!canManage || !actionable) && <div className="w-4" />}
 
                   {/* Type icon */}
                   <div className={`w-8 h-8 rounded-lg ${tc.bg} ${tc.border} border flex items-center justify-center flex-shrink-0`}>
@@ -340,7 +345,7 @@ export default function ProvisioningQueue() {
                   </div>
 
                   {/* Actions */}
-                  {actionable && (
+                  {canManage && actionable && (
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button onClick={() => handleLinkSingle(item)}
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold rounded-lg">

@@ -362,7 +362,7 @@ export default function Customers() {
             </h1>
             <p className="text-sm text-gray-500 mt-1">Manage customer accounts and billing contacts</p>
           </div>
-          {can("MANAGE_CUSTOMERS") && (
+          {can("CREATE_CUSTOMERS") && (
             <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -408,7 +408,7 @@ export default function Customers() {
                   <th className="px-4 py-3">Phone</th>
                   <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3">Updated</th>
-                  {can("MANAGE_CUSTOMERS") && <th className="px-4 py-3 text-right">Actions</th>}
+                  {(can("EDIT_CUSTOMERS") || can("DELETE_CUSTOMERS")) && <th className="px-4 py-3 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -441,16 +441,18 @@ export default function Customers() {
                       <td className="px-4 py-3 text-gray-400 text-xs">
                         {c.updated_at ? new Date(c.updated_at).toLocaleDateString() : "\u2014"}
                       </td>
-                      {can("MANAGE_CUSTOMERS") && (
+                      {(can("EDIT_CUSTOMERS") || can("DELETE_CUSTOMERS")) && (
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => setEditTarget(c)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                            >
-                              <Pencil className="w-3 h-3" /> Edit
-                            </button>
-                            {c.status === "active" && (
+                            {can("EDIT_CUSTOMERS") && (
+                              <button
+                                onClick={() => setEditTarget(c)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                              >
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                            )}
+                            {can("DELETE_CUSTOMERS") && c.status === "active" && (
                               <button
                                 onClick={() => handleArchive(c)}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 hover:border-red-300 transition-colors"

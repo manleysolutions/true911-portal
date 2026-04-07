@@ -16,13 +16,14 @@ import { toast } from "sonner";
 import { config } from "@/config";
 
 // ── Role hierarchy ──────────────────────────────────────────────
-const ROLE_LEVEL = { User: 1, Manager: 2, Admin: 3, SuperAdmin: 4 };
+const ROLE_LEVEL = { User: 1, DataEntry: 1.5, Manager: 2, Admin: 3, SuperAdmin: 4 };
 function roleLevel(role) { return ROLE_LEVEL[role] || 0; }
 
 const ROLE_BADGE = {
   SuperAdmin: "bg-purple-500/20 text-purple-300 border-purple-500/30",
   Admin: "bg-red-500/20 text-red-300 border-red-500/30",
   Manager: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  DataEntry: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   User: "bg-gray-500/20 text-gray-400 border-gray-500/30",
 };
 
@@ -195,6 +196,24 @@ const USER_NAV = [
 ];
 
 
+// ── Data Entry / Import Operator portal ──────────────────────────
+const DATAENTRY_NAV = [
+  { name: "Customers",  page: "Customers",  icon: Users },
+  { name: "Sites",      page: "Sites",      icon: Building2 },
+  { name: "Devices",    page: "Devices",    icon: Cpu },
+
+  {
+    group: "deployment", label: "Deployment", icon: Rocket,
+    children: [
+      { name: "Site Import",               page: "SiteImport",         icon: Upload },
+      { name: "Lines & Devices Import",    page: "SubscriberImport",   icon: FileSpreadsheet },
+      { name: "Import Verification",       page: "ImportVerification", icon: CheckCircle },
+      { name: "Unassigned Devices & SIMs", page: "ProvisioningQueue",  icon: Package },
+    ],
+  },
+];
+
+
 // ═══════════════════════════════════════════════════════════════════
 // NAV FILTERING UTILITIES
 // ═══════════════════════════════════════════════════════════════════
@@ -239,7 +258,8 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
   const isManager = level >= ROLE_LEVEL.Manager;
   const isNOC = isSuperAdmin;
 
-  const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : isManager ? MANAGER_NAV : USER_NAV;
+  const isDataEntry = userRole === "DataEntry";
+  const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : isManager ? MANAGER_NAV : isDataEntry ? DATAENTRY_NAV : USER_NAV;
   const visibleNav = useMemo(() => filterNav(navSource, level), [navSource, level]);
 
   // Track which groups are expanded — auto-expand the one containing the active page
@@ -281,7 +301,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
               True911<span className={isNOC ? "text-red-500" : "text-slate-500"}>+</span>
             </div>
             <div className="text-[9px] text-gray-500 tracking-[0.18em] uppercase mt-0.5">
-              {isSuperAdmin ? "NOC Operations" : isAdmin ? "Admin Portal" : "Customer Portal"}
+              {isSuperAdmin ? "NOC Operations" : isAdmin ? "Admin Portal" : isDataEntry ? "Import Portal" : "Customer Portal"}
             </div>
           </div>
         </div>
@@ -618,7 +638,7 @@ function ViewAsModal({ onClose }) {
         <div className="mb-4">
           <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">View as Role</label>
           <div className="flex gap-2">
-            {["Admin", "Manager", "User"].map(r => (
+            {["Admin", "Manager", "DataEntry", "User"].map(r => (
               <button
                 key={r} onClick={() => setSelectedRole(r)}
                 className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors ${

@@ -4,6 +4,8 @@ Service units represent distinct emergency communications endpoints:
 elevator phones, fire alarm communicators, emergency call stations, etc.
 """
 
+import json
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -12,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.service_unit import ServiceUnit
 from app.models.site import Site
 from app.models.user import User
@@ -132,7 +135,11 @@ async def update_service_unit(
     return ServiceUnitOut.model_validate(unit)
 
 
-@router.delete("/{pk}", status_code=204)
+@router.delete(
+    "/{pk}",
+    status_code=204,
+    dependencies=[Depends(require_permission("DELETE_SERVICE_UNITS"))],
+)
 async def delete_service_unit(
     pk: int,
     db: AsyncSession = Depends(get_db),
@@ -144,6 +151,25 @@ async def delete_service_unit(
     unit = result.scalar_one_or_none()
     if not unit:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service unit not found")
+
+    audit = AuditLogEntry(
+        entry_id=f"delete-svc-unit-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="destructive",
+        action="delete_service_unit",
+        actor=current_user.email,
+        target_type="service_unit",
+        target_id=str(unit.id),
+        site_id=unit.site_id,
+        summary=f"Service unit {unit.unit_id} ({unit.unit_type}) deleted by {current_user.email}",
+        detail_json=json.dumps({
+            "unit_id": unit.unit_id,
+            "unit_name": unit.unit_name,
+            "unit_type": unit.unit_type,
+            "site_id": unit.site_id,
+        }),
+    )
+    db.add(audit)
     await db.delete(unit)
     await db.commit()
 

@@ -24,6 +24,8 @@ const ROLE_MAP = {
   admin: "Admin",
   manager: "Manager",
   user: "User",
+  dataentry: "DataEntry",
+  "data entry": "DataEntry",
 };
 function normalizeRole(role) {
   if (!role) return "User";
@@ -50,7 +52,18 @@ const PERMISSIONS = {
   MANAGE_USERS: ["Admin"],
   MANAGE_SIMS: ["Admin"],
   MANAGE_CUSTOMERS: ["Admin"],
-  VIEW_CUSTOMERS: ["Admin", "Manager"],
+  VIEW_CUSTOMERS: ["Admin", "Manager", "DataEntry"],
+  CREATE_CUSTOMERS: ["Admin", "DataEntry"],
+  EDIT_CUSTOMERS: ["Admin", "DataEntry"],
+  DELETE_CUSTOMERS: ["Admin"],
+  VIEW_SITES: ["Admin", "Manager", "User", "DataEntry"],
+  CREATE_SITES: ["Admin", "Manager", "DataEntry"],
+  EDIT_SITES: ["Admin", "Manager", "DataEntry"],
+  DELETE_SITES: ["Admin"],
+  VIEW_DEVICES: ["Admin", "Manager", "User", "DataEntry"],
+  CREATE_DEVICES: ["Admin", "Manager", "DataEntry"],
+  EDIT_DEVICES: ["Admin", "Manager", "DataEntry"],
+  DELETE_DEVICES: ["Admin", "Manager"],
   VIEW_JOBS: ["Admin", "Manager"],
   MANAGE_INTEGRATIONS: ["Admin"],
   VIEW_INTEGRATIONS: ["Admin", "Manager"],
@@ -93,8 +106,14 @@ const PERMISSIONS = {
   COMMAND_VIEW_DIGESTS: ["Admin", "Manager"],
   COMMAND_GENERATE_DIGEST: ["Admin"],
   COMMAND_VIEW_AUTO_LOG: ["Admin", "Manager", "User"],
-  COMMAND_SITE_IMPORT: ["Admin"],
-  SUBSCRIBER_IMPORT: ["Admin"],
+  DELETE_LINES: ["Admin", "Manager"],
+  DELETE_SERVICE_UNITS: ["Admin"],
+  COMMAND_SITE_IMPORT: ["Admin", "DataEntry"],
+  SUBSCRIBER_IMPORT: ["Admin", "DataEntry"],
+  VIEW_IMPORT_VERIFICATION: ["Admin", "Manager", "DataEntry"],
+  MANAGE_IMPORT_VERIFICATION: ["Admin", "DataEntry"],
+  VIEW_PROVISIONING_QUEUE: ["Admin", "DataEntry"],
+  MANAGE_PROVISIONING: ["Admin"],
 };
 
 // Storage key for persisting impersonation across refreshes
