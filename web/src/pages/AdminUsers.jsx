@@ -96,6 +96,7 @@ export default function AdminUsers() {
     SuperAdmin: "bg-purple-50 text-purple-700 border-purple-200",
     Admin: "bg-red-50 text-red-700 border-red-200",
     Manager: "bg-blue-50 text-blue-700 border-blue-200",
+    DataEntry: "bg-amber-50 text-amber-700 border-amber-200",
     User: "bg-gray-100 text-gray-600 border-gray-200",
   };
 
@@ -213,6 +214,7 @@ export default function AdminUsers() {
                           {isSuperAdmin && <option value="SuperAdmin">SuperAdmin</option>}
                           <option value="Admin">Admin</option>
                           <option value="Manager">Manager</option>
+                          <option value="DataEntry">Data Entry / Import Operator</option>
                           <option value="User">User</option>
                         </select>
                         {updatingId === u.id && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
@@ -385,6 +387,7 @@ function EditUserModal({ user: target, onClose, onSaved, tenants, isSuperAdmin }
                 {isSuperAdmin && <option value="SuperAdmin">SuperAdmin</option>}
                 <option value="Admin">Admin</option>
                 <option value="Manager">Manager</option>
+                <option value="DataEntry">Data Entry / Import Operator</option>
                 <option value="User">User</option>
               </select>
             </div>
@@ -490,6 +493,7 @@ function CreateUserModal({ onClose, onCreated, tenants, currentTenantId, isSuper
                 {isSuperAdmin && <option value="SuperAdmin">SuperAdmin</option>}
                 <option value="Admin">Admin</option>
                 <option value="Manager">Manager</option>
+                <option value="DataEntry">Data Entry / Import Operator</option>
                 <option value="User">User</option>
               </select>
             </div>
