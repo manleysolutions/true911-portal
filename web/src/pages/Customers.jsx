@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/api/client";
-import { Users, Plus, Loader2, Pencil, X, Search, ArrowLeft, ClipboardList, ChevronDown, ChevronUp } from "lucide-react";
+import { Users, Plus, Loader2, Pencil, X, Search, ArrowLeft } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -220,86 +220,6 @@ function EditModal({ customer, onClose, onUpdated }) {
   );
 }
 
-function OnboardingChecklist() {
-  const [open, setOpen] = useState(false);
-
-  const steps = [
-    {
-      title: "1. Create Customer Record",
-      items: ["Customer name", "Billing email", "Billing phone", "Billing address"],
-      note: "Use the \"Add Customer\" button above.",
-    },
-    {
-      title: "2. Run Verizon Sync (if applicable)",
-      items: [
-        "Go to Integration Sync > Verizon Sync",
-        "Run Preview to see available devices/SIMs",
-        "Run Live Sync to import SIMs and auto-create devices",
-      ],
-      note: "This imports ICCIDs, MSISDNs, IMEIs, and links SIMs to devices automatically.",
-    },
-    {
-      title: "3. Import Sites via CSV",
-      items: [
-        "site_name — Site/location name (required)",
-        "customer_name — Must match the customer record exactly",
-        "address, city, state, zip — E911 address",
-        "system_type — elevator_phone, fire_alarm, etc.",
-        "device_serial, imei, sim_iccid, carrier — Device identifiers",
-      ],
-      note: "Go to Imports > Site Import. Download the template, fill it out, preview, then commit.",
-    },
-    {
-      title: "4. Verify Device-SIM Linking",
-      items: [
-        "Check Devices page — each device should show its SIM",
-        "Check SIM Inventory — SIMs should be in 'active' or 'inventory' status",
-        "Devices from Verizon sync will have VZ- prefix IDs",
-      ],
-      note: "Use the device edit modal to manually link SIMs if needed.",
-    },
-    {
-      title: "5. What Comes from Verizon vs Manual Entry",
-      items: [
-        "From Verizon: ICCID, MSISDN, IMEI, SIM status, carrier",
-        "Manual: Site name, address, customer name, building type, system type",
-        "Manual: Device-to-site assignment, E911 address, voice lines",
-      ],
-      note: null,
-    },
-  ];
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <ClipboardList className="w-4 h-4 text-red-600" />
-          <span className="text-sm font-semibold text-gray-900">Verizon Customer Onboarding Checklist</span>
-        </div>
-        {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-      </button>
-      {open && (
-        <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
-          {steps.map((step, i) => (
-            <div key={i}>
-              <div className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-1.5">{step.title}</div>
-              <ul className="space-y-1 ml-4">
-                {step.items.map((item, j) => (
-                  <li key={j} className="text-xs text-gray-600 list-disc">{item}</li>
-                ))}
-              </ul>
-              {step.note && <div className="text-[11px] text-gray-400 mt-1 ml-4">{step.note}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Customers() {
   const { can } = useAuth();
   const [customers, setCustomers] = useState([]);
@@ -470,11 +390,6 @@ export default function Customers() {
             </table>
           </div>
         </div>
-      </div>
-
-      {/* Onboarding Checklist */}
-      <div className="px-6 pb-6 max-w-6xl mx-auto">
-        <OnboardingChecklist />
       </div>
 
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} onCreated={fetchCustomers} />}
