@@ -1,10 +1,12 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { toast } from "sonner";
 
 // Public pages — no auth, no sidebar layout
 import LandingPage from './pages/public/LandingPage';
@@ -15,9 +17,67 @@ import AuthGate from './pages/AuthGate';
 
 const { Pages, Layout } = pagesConfig;
 
+// ── Route-level permission map ──────────────────────────────────
+// Pages that require a specific permission to access.
+// If the user lacks the permission, they are redirected to their
+// role's default landing page instead of seeing a dead-end screen.
+const PAGE_PERMISSIONS = {
+  Admin:               "VIEW_ADMIN",
+  AdminUsers:          "VIEW_ADMIN",
+  AdminTenants:        "VIEW_ADMIN",
+  AdminImports:        "VIEW_ADMIN",
+  E911:                "VIEW_ADMIN",
+  Notifications:       "MANAGE_NOTIFICATIONS",
+  Providers:           "MANAGE_PROVIDERS",
+  IntegrationSync:     "MANAGE_INTEGRATIONS",
+  OrgSettings:         "VIEW_ADMIN",
+  BulkDeploy:          "COMMAND_BULK_IMPORT",
+  Install:             "MANAGE_DEVICES",
+  OnboardSite:         "MANAGE_DEVICES",
+  DeviceAssignment:    "MANAGE_DEVICES",
+  ProvisionDeployment: "MANAGE_DEVICES",
+  Pr12QuickDeploy:     "MANAGE_DEVICES",
+  VolaIntegration:     "MANAGE_DEVICES",
+  SupportConsole:      "VIEW_ADMIN",
+  SelfHealingConsole:  "VIEW_ADMIN",
+};
+
+function getLandingPage(role) {
+  const r = (role || "").toLowerCase();
+  if (r === "superadmin") return "/Command";
+  if (r === "admin") return "/AdminDashboard";
+  if (r === "manager") return "/ManagerDashboard";
+  if (r === "dataentry") return "/Customers";
+  return "/UserDashboard";
+}
+
 const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   <Layout currentPageName={currentPageName}>{children}</Layout>
   : <>{children}</>;
+
+function PermissionRedirect({ role }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    toast.error("You do not have permission to access that page.");
+    navigate(getLandingPage(role), { replace: true });
+  }, [role, navigate]);
+  return null;
+}
+
+function ProtectedPage({ pageName, Page }) {
+  const { can, user } = useAuth();
+  const requiredPermission = PAGE_PERMISSIONS[pageName];
+
+  if (requiredPermission && !can(requiredPermission)) {
+    return <PermissionRedirect role={user?.role} />;
+  }
+
+  return (
+    <LayoutWrapper currentPageName={pageName}>
+      <Page />
+    </LayoutWrapper>
+  );
+}
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -36,11 +96,7 @@ const AuthenticatedApp = () => {
         <Route
           key={path}
           path={`/${path}`}
-          element={
-            <LayoutWrapper currentPageName={path}>
-              <Page />
-            </LayoutWrapper>
-          }
+          element={<ProtectedPage pageName={path} Page={Page} />}
         />
       ))}
       {/* Lowercase aliases — e.g. /admin -> /Admin, /overview -> /Overview */}
@@ -51,11 +107,7 @@ const AuthenticatedApp = () => {
             <Route
               key={`lower-${path}`}
               path={`/${lower}`}
-              element={
-                <LayoutWrapper currentPageName={path}>
-                  <Page />
-                </LayoutWrapper>
-              }
+              element={<ProtectedPage pageName={path} Page={Page} />}
             />
           );
         }
