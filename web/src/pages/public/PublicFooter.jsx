@@ -38,6 +38,7 @@ export default function PublicFooter() {
             <ul className="space-y-2">
               <li><Link to="/quote" className="text-sm text-slate-400 hover:text-white transition-colors">Get a Quote</Link></li>
               <li><Link to="/get-started" className="text-sm text-slate-400 hover:text-white transition-colors">Free Audit</Link></li>
+              <li><Link to="/true911-platform" className="text-sm text-slate-400 hover:text-white transition-colors">Platform Overview</Link></li>
               <li><Link to="/login" className="text-sm text-slate-400 hover:text-white transition-colors">Customer Login</Link></li>
             </ul>
           </div>

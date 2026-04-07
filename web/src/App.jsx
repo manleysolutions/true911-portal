@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import LandingPage from './pages/public/LandingPage';
 import GetStarted from './pages/public/GetStarted';
 import Quote from './pages/public/Quote';
+import True911Platform from './pages/public/True911Platform';
 import AuthGate from './pages/AuthGate';
 
 const { Pages, Layout } = pagesConfig;
@@ -77,6 +78,7 @@ function App() {
             <Route path="/login" element={<AuthGate />} />
             <Route path="/get-started" element={<GetStarted />} />
             <Route path="/quote" element={<Quote />} />
+            <Route path="/true911-platform" element={<True911Platform />} />
 
             {/* Authenticated app routes (includes /AuthGate for backwards compat) */}
             <Route path="/*" element={<AuthenticatedApp />} />
