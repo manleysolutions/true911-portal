@@ -511,9 +511,19 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
     e.preventDefault();
     setError("");
 
-    // Validate required fields per identity type
+    // Validate required fields per identity type.
+    // New stricter cellular/IP rules only run on create so we don't block
+    // editing legacy records that may not have the new identifiers.
     if (isStarlink && !form.starlink_id.trim()) {
       setError("StarLink ID is required for Napco devices.");
+      return;
+    }
+    if (!isEdit && isCellular && !form.imei.trim() && !form.iccid.trim()) {
+      setError("Cellular devices require at least one identifier: IMEI or SIM ICCID.");
+      return;
+    }
+    if (!isEdit && isAta && !form.mac_address.trim()) {
+      setError("IP-based devices require a MAC address.");
       return;
     }
 
@@ -688,10 +698,10 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
 
           {/* Identity type hint */}
           {idType && (
-            <div className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
-              {isStarlink && "Napco StarLink device — StarLink ID required. No SIM or IMEI needed."}
-              {isAta && "ATA / appliance device — Serial and MAC fields shown. No SIM or IMEI needed."}
-              {isCellular && "Cellular device — IMEI, SIM ICCID, and carrier fields shown."}
+            <div className="text-xs text-gray-600 bg-gray-50 border border-gray-100 px-3 py-2 rounded-lg">
+              {isStarlink && "StarLink devices use Panel ID. No MAC or IMEI required."}
+              {isCellular && "Cellular device — at least one of IMEI or SIM ICCID is required. MAC is optional."}
+              {isAta && "IP-based device — MAC address is required."}
             </div>
           )}
 
@@ -700,7 +710,7 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">IMEI</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">IMEI {!isEdit && <span className="text-gray-400 normal-case">(or ICCID)</span>}</label>
                   <input
                     value={form.imei}
                     onChange={set("imei")}
@@ -710,7 +720,7 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">SIM ICCID</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">SIM ICCID {!isEdit && <span className="text-gray-400 normal-case">(or IMEI)</span>}</label>
                   <input
                     value={form.iccid}
                     onChange={set("iccid")}
@@ -769,15 +779,18 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
                 placeholder="Board serial"
               />
             </div>
-            {(isAta || isStarlink || !idType) && (
+            {!isStarlink && (
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">MAC Address</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                  MAC Address {isAta ? "*" : <span className="text-gray-400 normal-case">(optional)</span>}
+                </label>
                 <input
                   value={form.mac_address}
                   onChange={set("mac_address")}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   placeholder="AA:BB:CC:DD:EE:FF"
                   maxLength={17}
+                  required={isAta && !isEdit}
                 />
               </div>
             )}
