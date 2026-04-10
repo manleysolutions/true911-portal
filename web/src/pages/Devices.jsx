@@ -620,54 +620,58 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Device ID */}
+          {/* Internal Device ID */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Device ID *</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Internal Device ID *</label>
             <input
               value={form.device_id}
               onChange={set("device_id")}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              placeholder="e.g. PR12-001"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono"
+              placeholder="e.g. RH-DAL-ELEV-01"
               required
               disabled={isEdit}
             />
+            <p className="mt-1 text-xs text-gray-500">
+              Used by True911 for internal tracking. Suggested pattern <span className="font-mono text-gray-600">CUSTOMER-SITE-ENDPOINT-##</span> — e.g. <span className="font-mono text-gray-600">RH-DAL-ELEV-01</span>, <span className="font-mono text-gray-600">BEN-STJ-FACP-01</span>, <span className="font-mono text-gray-600">RRR-DSM-CALL-01</span>.
+            </p>
           </div>
 
-          {/* Hardware — catalog or custom */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model</label>
-              <select
-                value={form.hardware_model_id}
-                onChange={handleModelChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              >
-                <option value="">-- Select from catalog --</option>
-                {mfrs.map(mfr => (
-                  <optgroup key={mfr} label={mfr}>
-                    {hardwareModels.filter(m => m.manufacturer === mfr).map(m => (
-                      <option key={m.id} value={m.id}>{m.model_name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-                <optgroup label="Other">
-                  <option value="__custom">Enter custom manufacturer / model</option>
+          {/* Hardware Model — catalog (or custom). When a catalog model is picked,
+              `form.model` is auto-filled by handleModelChange and there is no need to
+              show a duplicate "Model" input. The Custom Model Name input is only shown
+              for the __custom selection. */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Hardware Model</label>
+            <select
+              value={form.hardware_model_id}
+              onChange={handleModelChange}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="">-- Select from catalog --</option>
+              {mfrs.map(mfr => (
+                <optgroup key={mfr} label={mfr}>
+                  {hardwareModels.filter(m => m.manufacturer === mfr).map(m => (
+                    <option key={m.id} value={m.id}>{m.model_name}</option>
+                  ))}
                 </optgroup>
-              </select>
-            </div>
+              ))}
+              <optgroup label="Other">
+                <option value="__custom">Enter custom manufacturer / model</option>
+              </optgroup>
+            </select>
+          </div>
+          {form.hardware_model_id === "__custom" && (
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
-                {form.hardware_model_id === "__custom" ? "Custom Model Name" : "Model"}
-              </label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Custom Model Name *</label>
               <input
                 value={form.model}
                 onChange={set("model")}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder={form.hardware_model_id === "__custom" ? "e.g. Acme Router X100" : "Auto-filled from catalog"}
-                readOnly={form.hardware_model_id && form.hardware_model_id !== "__custom"}
+                placeholder="e.g. Acme Router X100"
+                required
               />
             </div>
-          </div>
+          )}
           {form.hardware_model_id === "__custom" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -699,7 +703,12 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
           {/* Identity type hint */}
           {idType && (
             <div className="text-xs text-gray-600 bg-gray-50 border border-gray-100 px-3 py-2 rounded-lg">
-              {isStarlink && "StarLink devices use Panel ID. No MAC or IMEI required."}
+              {isStarlink && (
+                <>
+                  <span className="font-semibold text-gray-700">Napco StarLink device.</span>{" "}
+                  Internal Device ID is your True911 tracking name; Napco Panel ID is the manufacturer identifier. No MAC or IMEI required.
+                </>
+              )}
               {isCellular && "Cellular device — at least one of IMEI or SIM ICCID is required. MAC is optional."}
               {isAta && "IP-based device — MAC address is required."}
             </div>
@@ -757,14 +766,17 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
           {/* ── StarLink fields ── */}
           {isStarlink && (
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">StarLink ID *</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Napco Panel ID / StarLink ID *</label>
               <input
                 value={form.starlink_id}
                 onChange={set("starlink_id")}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="Napco StarLink panel ID"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono"
+                placeholder="Napco Panel ID"
                 required
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Required for Napco StarLink devices. This is the manufacturer / network identifier — not your internal Device ID.
+              </p>
             </div>
           )}
 
