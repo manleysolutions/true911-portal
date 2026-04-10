@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Site, ActionAudit } from "@/api/entities";
+import { Site, ActionAudit, Customer } from "@/api/entities";
 import { Search, Filter, ChevronDown, Building2, RefreshCw, ArrowRight, X, Plus } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -41,11 +41,10 @@ function SelectFilter({ label, value, onChange, options }) {
   );
 }
 
-const ENDPOINT_TYPE_OPTIONS = ["Elevator", "Emergency Phone", "Fire Alarm Control Panel", "Burglar Alarm Control Panel", "Fax", "SCADA / Industrial", "Other"];
-const SERVICE_CLASS_OPTIONS = ["VoIP (SIP)", "VoLTE (Cellular Voice)", "Analog (POTS Replacement)", "Data Only"];
-const TRANSPORT_OPTIONS = ["Cellular", "Ethernet (LAN)", "Wi-Fi", "Satellite"];
-const VOICE_PROVIDER_OPTIONS = ["Telnyx", "Twilio", "Bandwidth", "Other"];
-
+// Add Site captures location-level data only.
+// Service-level fields (carrier, service_class, transport, voice_provider, endpoint_type, kit_type)
+// belong on devices/lines and are intentionally not exposed here. Their DB columns remain for
+// backward compatibility with existing records, filters, reports, and importers.
 const EMPTY_FORM = {
   site_name: "",
   customer_name: "",
@@ -53,11 +52,9 @@ const EMPTY_FORM = {
   e911_city: "",
   e911_state: "",
   e911_zip: "",
-  endpoint_type: "",
-  service_class: "",
-  transport: "",
-  carrier: "",
-  voice_provider: "",
+  poc_name: "",
+  poc_phone: "",
+  poc_email: "",
   notes: "",
 };
 
@@ -89,6 +86,37 @@ export default function Sites() {
   const [addForm, setAddForm] = useState(EMPTY_FORM);
   const [addError, setAddError] = useState("");
   const [addSaving, setAddSaving] = useState(false);
+
+  // Customer typeahead state for the Add Site modal
+  const [customers, setCustomers] = useState([]);
+  const [customersLoaded, setCustomersLoaded] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const customerBlurTimer = useRef(null);
+
+  // Load customers when the modal opens (lazy)
+  useEffect(() => {
+    if (!showAddModal || customersLoaded) return;
+    let cancelled = false;
+    Customer.list("name", 500)
+      .then(rows => {
+        if (cancelled) return;
+        setCustomers(Array.isArray(rows) ? rows : []);
+        setCustomersLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCustomers([]);
+        setCustomersLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, [showAddModal, customersLoaded]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerQuery.trim().toLowerCase();
+    if (!q) return customers.slice(0, 50);
+    return customers.filter(c => (c.name || "").toLowerCase().includes(q)).slice(0, 50);
+  }, [customers, customerQuery]);
 
   const fetchData = useCallback(async () => {
     const [sitesData, auditData] = await Promise.all([
@@ -145,6 +173,13 @@ export default function Sites() {
     setSearch("");
   };
 
+  const resetAddForm = () => {
+    setAddForm(EMPTY_FORM);
+    setAddError("");
+    setCustomerQuery("");
+    setCustomerOpen(false);
+  };
+
   const handleAddSite = async (e) => {
     e.preventDefault();
     setAddError("");
@@ -154,25 +189,35 @@ export default function Sites() {
       return;
     }
 
+    // Customer must be selected from the typeahead (no free-text)
+    const selectedCustomerName = addForm.customer_name.trim();
+    if (!selectedCustomerName) {
+      setAddError("Customer is required. Select one from the list.");
+      return;
+    }
+    if (customersLoaded && !customers.some(c => (c.name || "") === selectedCustomerName)) {
+      setAddError("Customer must be selected from the list. Add the customer first if it doesn't exist.");
+      return;
+    }
+
     setAddSaving(true);
     try {
       await Site.create({
         site_id: `SITE-${Date.now()}`,
         site_name: addForm.site_name.trim(),
-        customer_name: addForm.customer_name.trim() || addForm.site_name.trim(),
+        customer_name: selectedCustomerName,
         status: "Not Connected",
         e911_street: addForm.e911_street.trim() || undefined,
         e911_city: addForm.e911_city.trim() || undefined,
         e911_state: addForm.e911_state.trim() || undefined,
         e911_zip: addForm.e911_zip.trim() || undefined,
-        endpoint_type: addForm.endpoint_type || undefined,
-        service_class: addForm.service_class || undefined,
-        carrier: addForm.carrier || undefined,
-        kit_type: addForm.endpoint_type || undefined,
+        poc_name: addForm.poc_name.trim() || undefined,
+        poc_phone: addForm.poc_phone.trim() || undefined,
+        poc_email: addForm.poc_email.trim() || undefined,
         notes: addForm.notes.trim() || undefined,
       });
       setShowAddModal(false);
-      setAddForm(EMPTY_FORM);
+      resetAddForm();
       fetchData();
     } catch (err) {
       setAddError(err?.message || "Failed to create site.");
@@ -193,7 +238,7 @@ export default function Sites() {
           <div className="flex items-center gap-2">
             {canCreateSite && (
               <button
-                onClick={() => { setAddForm(EMPTY_FORM); setAddError(""); setShowAddModal(true); }}
+                onClick={() => { resetAddForm(); setShowAddModal(true); }}
                 className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold"
               >
                 <Plus className="w-4 h-4" /> Add Site
@@ -353,36 +398,78 @@ export default function Sites() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">Add Site</h2>
-              <button onClick={() => setShowAddModal(false)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+              <button onClick={() => { setShowAddModal(false); resetAddForm(); }} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleAddSite} className="space-y-4">
-              {/* Site Name + Customer */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Site Name *</label>
-                  <input
-                    value={addForm.site_name}
-                    onChange={e => setAddForm(f => ({ ...f, site_name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                    placeholder="e.g. 123 Main St Elevator"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                  <input
-                    value={addForm.customer_name}
-                    onChange={e => setAddForm(f => ({ ...f, customer_name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                    placeholder="Customer / account name"
-                  />
-                </div>
+              {/* Site Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Site Name *</label>
+                <input
+                  value={addForm.site_name}
+                  onChange={e => setAddForm(f => ({ ...f, site_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                  placeholder="e.g. 123 Main St Elevator"
+                  required
+                />
               </div>
 
-              {/* Address */}
+              {/* Customer typeahead (no free-text) */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+                <input
+                  value={customerQuery || addForm.customer_name}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setCustomerQuery(v);
+                    // Clear any prior selection until the user picks again
+                    setAddForm(f => ({ ...f, customer_name: "" }));
+                    setCustomerOpen(true);
+                  }}
+                  onFocus={() => setCustomerOpen(true)}
+                  onBlur={() => {
+                    // Delay so a click on a list item registers before close
+                    customerBlurTimer.current = setTimeout(() => setCustomerOpen(false), 150);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                  placeholder={customersLoaded && customers.length === 0 ? "No customers yet" : "Search customers…"}
+                  autoComplete="off"
+                  disabled={customersLoaded && customers.length === 0}
+                />
+                {customerOpen && customersLoaded && customers.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                    {filteredCustomers.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-400">No matches</div>
+                    ) : (
+                      filteredCustomers.map(c => (
+                        <button
+                          type="button"
+                          key={c.id ?? c.name}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => {
+                            if (customerBlurTimer.current) clearTimeout(customerBlurTimer.current);
+                            setAddForm(f => ({ ...f, customer_name: c.name || "" }));
+                            setCustomerQuery(c.name || "");
+                            setCustomerOpen(false);
+                          }}
+                          className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                        >
+                          {c.name}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                {customersLoaded && customers.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    No customers found. <Link to={createPageUrl("Customers")} className="text-red-600 hover:underline">Add one in Customers</Link> first.
+                  </p>
+                )}
+              </div>
+
+              {/* Address (also serves as the E911 / location address) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
                 <input
@@ -391,6 +478,9 @@ export default function Sites() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
                   placeholder="Street address"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Used as the E911 / location address. Compliance status is set automatically — leaving fields blank will not block creation.
+                </p>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -425,51 +515,40 @@ export default function Sites() {
                 </div>
               </div>
 
-              {/* Classification */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Site Contact (optional). Service-level fields like carrier, service class,
+                  transport, and voice provider live on devices/lines, not the site. */}
+              <div className="space-y-3 pt-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Site Contact (optional)</p>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Endpoint Type</label>
-                  <select value={addForm.endpoint_type} onChange={e => setAddForm(f => ({ ...f, endpoint_type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
-                    <option value="">Select...</option>
-                    {ENDPOINT_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+                  <input
+                    value={addForm.poc_name}
+                    onChange={e => setAddForm(f => ({ ...f, poc_name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    placeholder="On-site point of contact"
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Class</label>
-                  <select value={addForm.service_class} onChange={e => setAddForm(f => ({ ...f, service_class: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
-                    <option value="">Select...</option>
-                    {SERVICE_CLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* Connectivity */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Transport</label>
-                  <select value={addForm.transport} onChange={e => setAddForm(f => ({ ...f, transport: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
-                    <option value="">Select...</option>
-                    {TRANSPORT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
-                  <select value={addForm.carrier} onChange={e => setAddForm(f => ({ ...f, carrier: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
-                    <option value="">Select...</option>
-                    {CARRIER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Voice Provider</label>
-                  <select value={addForm.voice_provider} onChange={e => setAddForm(f => ({ ...f, voice_provider: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500 bg-white">
-                    <option value="">Select...</option>
-                    {VOICE_PROVIDER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Phone</label>
+                    <input
+                      type="tel"
+                      value={addForm.poc_phone}
+                      onChange={e => setAddForm(f => ({ ...f, poc_phone: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                      placeholder="(555) 555-0100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+                    <input
+                      type="email"
+                      value={addForm.poc_email}
+                      onChange={e => setAddForm(f => ({ ...f, poc_email: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                      placeholder="contact@example.com"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -492,7 +571,7 @@ export default function Sites() {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { setShowAddModal(false); resetAddForm(); }}
                   className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-100"
                 >
                   Cancel
