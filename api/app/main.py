@@ -1,4 +1,5 @@
 import logging
+import os
 import traceback
 
 from fastapi import FastAPI, Request
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback
 
 logger = logging.getLogger("true911")
 
@@ -16,7 +17,19 @@ app = FastAPI(title="TRUE911 API", version="1.0.0")
 
 @app.on_event("startup")
 async def startup():
-    await ensure_bootstrap_admin()
+    # Dev-only escape hatch: when ALLOW_START_WITHOUT_DB=true, tolerate a failed
+    # bootstrap so uvicorn can serve routes that don't need Postgres (e.g. the
+    # T-Mobile PIT callback). Unset in prod → original behavior is preserved.
+    if os.getenv("ALLOW_START_WITHOUT_DB", "").lower() in ("1", "true", "yes"):
+        try:
+            await ensure_bootstrap_admin()
+        except Exception as e:
+            logger.warning(
+                "ALLOW_START_WITHOUT_DB=true — bootstrap skipped due to error: %s: %s",
+                type(e).__name__, e,
+            )
+    else:
+        await ensure_bootstrap_admin()
 
 # CORS — when CORS_ORIGINS is "*" (the default), we use allow_origin_regex
 # to match any origin.  This lets Starlette echo the actual origin back
@@ -102,6 +115,7 @@ app.include_router(line_intelligence.router,     prefix="/api/line-intelligence"
 app.include_router(subscriber_import.router,    prefix="/api/command",           tags=["subscriber-import"])
 app.include_router(public.router,              prefix="/api/public",           tags=["public"])
 app.include_router(support.router,            prefix="/api/support",          tags=["support"])
+app.include_router(tmobile_callback.router,   prefix="/tmobile/wholesale",    tags=["tmobile-callback"])
 
 
 @app.get("/api/config/features")
