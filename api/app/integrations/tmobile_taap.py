@@ -152,7 +152,7 @@ def generate_pop_token(
             payload,
             private_key_pem,
             algorithm="RS256",
-            headers={"alg": "RS256", "typ": "JWT"},
+            headers={"alg": "RS256", "typ": "pop"},
         )
     except Exception as exc:
         logger.error("Failed to sign PoP token: %s", exc)
