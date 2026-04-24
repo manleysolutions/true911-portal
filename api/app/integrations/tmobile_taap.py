@@ -131,7 +131,7 @@ def generate_pop_token(
     ehts = ",".join(name for name, _ in ehts_headers)
     # T-Mobile TAAP PopTokenBuilder: edts = SHA-256 of the ehts header
     # values concatenated in ehts order. The request body is NOT hashed.
-    digest_input = "".join(f"{name}={value}" for name, value in ehts_headers).encode("utf-8")
+    digest_input = "&".join(f"{name}={value}" for name, value in ehts_headers).encode("utf-8")
     edts = (
         base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest())
         .rstrip(b"=")
