@@ -149,7 +149,6 @@ async def main():
         test_uri = settings.TMOBILE_TOKEN_URL or (PIT_TOKEN_URL if _env == "pit" else PROD_TOKEN_URL)
         info(f"PoP test URI: {test_uri}")
         pop = generate_pop_token(
-            body='{"grant_type": "client_credentials"}',
             ehts_headers=[("Content-Type", "application/json")],
         )
 
@@ -166,7 +165,7 @@ async def main():
         ok(f"  jti={claims.get('jti')}")
         ok(f"  ehts={claims.get('ehts')}")
         if claims.get("edts"):
-            ok(f"  edts={claims['edts'][:24]}... (header+body hash, base64url)")
+            ok(f"  edts={claims['edts'][:24]}... (ehts header-pairs hash, base64url)")
         ok("PoP token structure is valid")
 
     except Exception as exc:

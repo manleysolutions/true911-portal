@@ -101,7 +101,6 @@ def _derive_public_key_pem(private_key_pem: str) -> str:
 # ── PoP Token Generation ───────────────────────────────────────────────────
 
 def generate_pop_token(
-    body: str | bytes | None = None,
     *,
     ehts_headers: list[tuple[str, str]],
 ) -> str:
@@ -111,14 +110,15 @@ def generate_pop_token(
     Claims:
       iss  — consumer key
       iat / exp / jti — standard
-      ehts — semicolon-separated list of HTTP header names being signed
-      edts — base64url(SHA-256(header_value_1 || header_value_2 || ... || body))
+      ehts — comma-separated list of HTTP header names being signed
+      edts — base64url(SHA-256("name1=value1&name2=value2&...")) over the
+             ehts header pairs in order, names lower-cased. The request
+             body is NEVER included.
 
     Args:
-        body: request body string/bytes (optional)
-        ehts_headers: ordered list of (header_name, header_value) tuples
-            whose values are concatenated into the edts hash input.
-            Header names (not values) appear in the `ehts` claim.
+        ehts_headers: ordered list of (header_name, header_value) tuples.
+            Names appear in the `ehts` claim; the canonical
+            "name=value"-joined string is hashed into `edts`.
 
     Returns:
         Signed JWT string for the X-Authorization header.
