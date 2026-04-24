@@ -283,7 +283,7 @@ class TMobileTAAPClient:
                 ("Content-Type", headers["Content-Type"]),
             ],
         )
-        headers["X-Authorization"] = pop
+        headers["X-Authorization"] = "PoP " + pop
         x_auth = pop
 
         # Opt-in diagnostics for local troubleshooting. Enable with
