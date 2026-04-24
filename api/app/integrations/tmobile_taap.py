@@ -102,7 +102,8 @@ def _derive_public_key_pem(private_key_pem: str) -> str:
 
 def generate_pop_token(
     body: str | bytes | None = None,
-    ehts_headers: list[tuple[str, str]] | None = None,
+    *,
+    ehts_headers: list[tuple[str, str]],
 ) -> str:
     """Generate a T-Mobile TAAP PoP (Proof of Possession) token.
 
@@ -124,9 +125,6 @@ def generate_pop_token(
     """
     private_key_pem = _load_private_key()
     now = int(time.time())
-
-    if ehts_headers is None:
-        ehts_headers = []
 
     ehts = ",".join(name for name, _ in ehts_headers)
     # T-Mobile TAAP PopTokenBuilder: edts = SHA-256 of the ehts header
