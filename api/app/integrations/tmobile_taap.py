@@ -259,21 +259,20 @@ class TMobileTAAPClient:
         _ck = self.consumer_key.strip()
         _cs = self.consumer_secret.strip()
         basic_creds = f"{_ck}:{_cs}".encode("utf-8")
-        authorization_value = "Basic " + base64.b64encode(basic_creds).decode("ascii")
+        auth_header = "Basic " + base64.b64encode(basic_creds).decode("ascii")
+        print("AUTH HEADER EXACT:", repr(auth_header))
 
-        # Finalize the wire headers FIRST, then derive the PoP edts/ehts
-        # directly from this same dict. This guarantees the Authorization
-        # bytes in the hash input are byte-for-byte identical to what is
-        # sent on the wire — no second computation anywhere.
+        # Single source of truth: auth_header is the exact string used in
+        # BOTH the wire Authorization header and the PoP edts/ehts input.
         headers = {
-            "Authorization": authorization_value,
+            "Authorization": auth_header,
             "Content-Type": token_content_type,
             "Accept": "application/json",
         }
         pop = generate_pop_token(
             ehts_headers=[
-                ("Content-Type", headers["Content-Type"]),
-                ("Authorization", headers["Authorization"]),
+                ("Content-Type", token_content_type),
+                ("Authorization", auth_header),
             ],
         )
         headers["X-Authorization"] = "PoP " + pop
