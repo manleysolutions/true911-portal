@@ -129,13 +129,9 @@ def generate_pop_token(
         ehts_headers = []
 
     ehts = ",".join(name for name, _ in ehts_headers)
-    # T-Mobile TAAP: edts is SHA-256 of the request body bytes ONLY.
-    # Header values are listed in ehts but are NOT concatenated into
-    # the digest input.
-    if body is None:
-        digest_input = b""
-    else:
-        digest_input = body if isinstance(body, bytes) else body.encode("utf-8")
+    # T-Mobile TAAP PopTokenBuilder: edts = SHA-256 of the ehts header
+    # values concatenated in ehts order. The request body is NOT hashed.
+    digest_input = "".join(f"{name}={value}" for name, value in ehts_headers).encode("utf-8")
     edts = (
         base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest())
         .rstrip(b"=")
@@ -277,10 +273,9 @@ class TMobileTAAPClient:
             "Accept": "application/json",
         }
         pop = generate_pop_token(
-            body=body_str,
             ehts_headers=[
-                ("Authorization", headers["Authorization"]),
                 ("Content-Type", headers["Content-Type"]),
+                ("Authorization", headers["Authorization"]),
             ],
         )
         headers["X-Authorization"] = "PoP " + pop
@@ -366,18 +361,13 @@ class TMobileTAAPClient:
         body_str = _json.dumps(json_body) if json_body is not None else None
 
         req_content_type = "application/json"
-        if body_str is not None:
-            req_content_length = str(len(body_str.encode("utf-8")))
-            req_ehts = [
-                ("Content-Type", req_content_type),
-                ("Content-Length", req_content_length),
-            ]
-        else:
-            req_ehts = []
-        pop = generate_pop_token(body=body_str, ehts_headers=req_ehts)
+        authorization_value = f"Bearer {access_token}"
+        pop = generate_pop_token(
+            ehts_headers=[("Authorization", authorization_value)],
+        )
 
         headers: dict[str, str] = {
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": authorization_value,
             "X-Authorization": pop,
             "Content-Type": req_content_type,
             "Accept": "application/json",
