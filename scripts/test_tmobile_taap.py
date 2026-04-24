@@ -64,6 +64,10 @@ async def main():
     parser = argparse.ArgumentParser(description="T-Mobile TAAP test")
     parser.add_argument("--dry-run", action="store_true", help="Only test key loading and PoP generation")
     parser.add_argument("--msisdn", help="Test MSISDN for SubscriberInquiry call")
+    parser.add_argument("--activate", action="store_true", help="Test Activation API (requires --iccid, --market-zip, --product-id)")
+    parser.add_argument("--iccid", help="SIM ICCID for activation test")
+    parser.add_argument("--market-zip", help="5-digit market ZIP for activation")
+    parser.add_argument("--product-id", help="T-Mobile product ID for activation")
     args = parser.parse_args()
 
     from app.config import settings
@@ -135,10 +139,19 @@ async def main():
     step("Step 3: PoP Token Generation")
 
     try:
-        from app.integrations.tmobile_taap import generate_pop_token
+        from app.integrations.tmobile_taap import (
+            generate_pop_token,
+            PIT_TOKEN_URL,
+            PROD_TOKEN_URL,
+        )
 
-        test_uri = "https://pit-oauth.t-mobile.com/oauth2/v2/tokens"
-        pop = generate_pop_token(uri=test_uri, http_method="POST", body="grant_type=client_credentials")
+        _env = settings.TMOBILE_ENV.lower()
+        test_uri = settings.TMOBILE_TOKEN_URL or (PIT_TOKEN_URL if _env == "pit" else PROD_TOKEN_URL)
+        info(f"PoP test URI: {test_uri}")
+        pop = generate_pop_token(
+            body='{"grant_type": "client_credentials"}',
+            ehts_headers=[("Content-Type", "application/json")],
+        )
 
         ok(f"PoP token generated ({len(pop)} chars)")
 
@@ -151,10 +164,9 @@ async def main():
         ok(f"Claims: iss={claims.get('iss', '(none)')[:20]}...")
         ok(f"  iat={claims.get('iat')}, exp={claims.get('exp')}")
         ok(f"  jti={claims.get('jti')}")
-        ok(f"  at.htm={claims.get('at', {}).get('htm')}")
-        ok(f"  at.htu={claims.get('at', {}).get('htu', '')[:60]}...")
-        if claims.get("at", {}).get("ath"):
-            ok(f"  at.ath={claims['at']['ath'][:20]}... (body hash)")
+        ok(f"  ehts={claims.get('ehts')}")
+        if claims.get("edts"):
+            ok(f"  edts={claims['edts'][:24]}... (header+body hash, base64url)")
         ok("PoP token structure is valid")
 
     except Exception as exc:
@@ -197,7 +209,32 @@ async def main():
         return
 
     # ── Step 5: Proof API Call ─────────────────────────────────────────
-    if args.msisdn:
+    CALLBACK_URL = "https://pit-api.manleysolutions.com/tmobile/wholesale/callback"
+
+    if args.activate:
+        if not args.iccid or not args.market_zip or not args.product_id:
+            fail("--activate requires --iccid, --market-zip, and --product-id")
+            return
+        step(f"Step 5: Activation for iccid={args.iccid} marketZIP={args.market_zip} productId={args.product_id}")
+        info(f"call-back-location: {CALLBACK_URL}")
+        try:
+            payload = {
+                "marketZIP": args.market_zip,
+                "ICCID": args.iccid,
+                "productId": args.product_id,
+            }
+            result = await client.post_json(
+                "/wholesale/subscriber/v2/activate",
+                payload,
+                extra_headers={"call-back-location": CALLBACK_URL},
+            )
+            ok("Activation request accepted.")
+            print(json.dumps(result, indent=2, default=str)[:2000])
+        except Exception as exc:
+            fail(f"Activation failed: {exc}")
+            import traceback
+            traceback.print_exc()
+    elif args.msisdn:
         step(f"Step 5: SubscriberInquiry for {args.msisdn}")
         try:
             result = await client.subscriber_inquiry(args.msisdn)

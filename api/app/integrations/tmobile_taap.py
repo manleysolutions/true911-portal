@@ -17,8 +17,10 @@ References:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -34,8 +36,8 @@ logger = logging.getLogger("true911.integrations.tmobile_taap")
 # ── Constants ───────────────────────────────────────────────────────────────
 
 # PIT (Partner Integration Testing) endpoints
-PIT_BASE_URL = "https://pit-apis.t-mobile.com"
-PIT_TOKEN_URL = "https://pit-oauth.t-mobile.com/oauth2/v2/tokens"
+PIT_BASE_URL = "https://wholesaleapi-test.t-mobile.com"
+PIT_TOKEN_URL = "https://wholesaleapi-test.t-mobile.com/oauth2/v1/tokens"
 
 # Production endpoints
 PROD_BASE_URL = "https://apis.t-mobile.com"
@@ -77,23 +79,45 @@ def _load_private_key() -> str:
     )
 
 
+def _derive_public_key_pem(private_key_pem: str) -> str:
+    """Derive the RSA public key PEM from a private key PEM.
+
+    T-Mobile's token endpoint requires the PoP public key in the request
+    body as the `cnf` attribute for proof-of-possession confirmation.
+    """
+    from cryptography.hazmat.primitives import serialization
+
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode("utf-8"),
+        password=None,
+    )
+    pub_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return pub_bytes.decode("utf-8")
+
+
 # ── PoP Token Generation ───────────────────────────────────────────────────
 
 def generate_pop_token(
-    uri: str,
-    http_method: str = "POST",
     body: str | bytes | None = None,
+    ehts_headers: list[tuple[str, str]] | None = None,
 ) -> str:
-    """Generate a T-Mobile PoP (Proof of Possession) token.
+    """Generate a T-Mobile TAAP PoP (Proof of Possession) token.
 
-    The PoP token is a JWT signed with our RSA private key that proves
-    we possess the key pair. T-Mobile validates the signature using our
-    registered public key.
+    T-Mobile TAAP uses the Apigee PoP format (not RFC 9449 DPoP).
+    Claims:
+      iss  — consumer key
+      iat / exp / jti — standard
+      ehts — semicolon-separated list of HTTP header names being signed
+      edts — base64url(SHA-256(header_value_1 || header_value_2 || ... || body))
 
     Args:
-        uri: The full request URI (e.g. https://pit-apis.t-mobile.com/...)
-        http_method: GET, POST, PUT, DELETE
-        body: Request body bytes for body hash (optional)
+        body: request body string/bytes (optional)
+        ehts_headers: ordered list of (header_name, header_value) tuples
+            whose values are concatenated into the edts hash input.
+            Header names (not values) appear in the `ehts` claim.
 
     Returns:
         Signed JWT string for the X-Authorization header.
@@ -101,31 +125,34 @@ def generate_pop_token(
     private_key_pem = _load_private_key()
     now = int(time.time())
 
-    # Build the PoP token payload per T-Mobile TAAP spec
+    if ehts_headers is None:
+        ehts_headers = []
+
+    ehts = ",".join(name for name, _ in ehts_headers)
+    digest_input = "".join(val for _, val in ehts_headers).encode("utf-8")
+    if body is not None:
+        digest_input += body if isinstance(body, bytes) else body.encode("utf-8")
+    edts = (
+        base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
     payload: dict[str, Any] = {
         "iss": settings.TMOBILE_CONSUMER_KEY,
         "iat": now,
         "exp": now + POP_TOKEN_EXPIRY_SECONDS,
         "jti": str(uuid.uuid4()),
-        "at": {
-            "htm": http_method.upper(),
-            "htu": uri,
-        },
+        "ehts": ehts,
+        "edts": edts,
     }
 
-    # If there's a request body, include its SHA-256 hash
-    if body:
-        body_bytes = body if isinstance(body, bytes) else body.encode("utf-8")
-        body_hash = hashlib.sha256(body_bytes).hexdigest()
-        payload["at"]["ath"] = body_hash
-
-    # Sign with RS256 using our private key
     try:
         token = jose_jwt.encode(
             payload,
             private_key_pem,
             algorithm="RS256",
-            headers={"alg": "RS256", "typ": "pop"},
+            headers={"alg": "RS256", "typ": "JWT"},
         )
     except Exception as exc:
         logger.error("Failed to sign PoP token: %s", exc)
@@ -210,28 +237,87 @@ class TMobileTAAPClient:
                 "T-Mobile TAAP: TMOBILE_CONSUMER_KEY and TMOBILE_CONSUMER_SECRET required"
             )
 
-        # Generate PoP token for the token endpoint
+        # T-Mobile TAAP requires the PoP public key in the token request body
+        # as the `cnf` attribute (Security-1018 / Missing Public Key otherwise).
+        import json as _json
+        public_key_pem = _derive_public_key_pem(_load_private_key())
+        body_obj = {
+            "grant_type": "client_credentials",
+            "cnf": public_key_pem,
+        }
+        body_str = _json.dumps(body_obj)
+
+        # Generate PoP token for the token endpoint. Per T-Mobile TAAP
+        # guidance, Authorization is the mandatory header in the signed
+        # set (ehts); Content-Type is included but Content-Length is not.
+        # The edts digest input is the exact header values (in ehts
+        # order) concatenated with the JSON body bytes.
+        token_content_type = "application/json"
+        # Strip stray whitespace (common when credentials come from a
+        # .env file) so the Basic auth bytes — and therefore the single
+        # authorization_value used in BOTH the PoP edts digest and the
+        # wire Authorization header — exactly match what T-Mobile has
+        # registered for this consumer key.
+        _ck = self.consumer_key.strip()
+        _cs = self.consumer_secret.strip()
+        basic_creds = f"{_ck}:{_cs}".encode("utf-8")
+        authorization_value = "Basic " + base64.b64encode(basic_creds).decode("ascii")
+
+        # Finalize the wire headers FIRST, then derive the PoP edts/ehts
+        # directly from this same dict. This guarantees the Authorization
+        # bytes in the hash input are byte-for-byte identical to what is
+        # sent on the wire — no second computation anywhere.
+        headers = {
+            "Authorization": authorization_value,
+            "Content-Type": token_content_type,
+            "Accept": "application/json",
+        }
         pop = generate_pop_token(
-            uri=self.token_url,
-            http_method="POST",
-            body="grant_type=client_credentials",
+            body=body_str,
+            ehts_headers=[
+                ("Authorization", headers["Authorization"]),
+                ("Content-Type", headers["Content-Type"]),
+            ],
         )
+        headers["X-Authorization"] = pop
+        x_auth = pop
+
+        # Opt-in diagnostics for local troubleshooting. Enable with
+        # `TMOBILE_TAAP_DEBUG=1` in your shell — never leave on in prod.
+        debug = os.environ.get("TMOBILE_TAAP_DEBUG", "").lower() in ("1", "true", "yes")
+        if debug:
+            body_hash_hex = hashlib.sha256(body_str.encode("utf-8")).hexdigest()
+            try:
+                pop_hdr = jose_jwt.get_unverified_header(pop)
+                pop_clm = jose_jwt.get_unverified_claims(pop)
+            except Exception:
+                pop_hdr, pop_clm = {}, {}
+            print(f"[TAAP-DEBUG] Token URL: {self.token_url}")
+            print(f"[TAAP-DEBUG] Body bytes len: {len(body_str.encode('utf-8'))}")
+            print(f"[TAAP-DEBUG] Body SHA-256 (hex): {body_hash_hex}")
+            print(f"[TAAP-DEBUG] Body JSON (exact wire bytes): {body_str}")
+            print(f"[TAAP-DEBUG] X-Authorization prefix: "
+                  + ("'PoP ' (with space)" if x_auth.startswith("PoP ")
+                     else "(raw JWT, no prefix)"))
+            print(f"[TAAP-DEBUG] X-Authorization (first 80): {x_auth[:80]}...")
+            print(f"[TAAP-DEBUG] PoP header: {pop_hdr}")
+            print(f"[TAAP-DEBUG] PoP claims: {pop_clm}")
 
         client = await self._client()
         logger.info("T-Mobile TAAP: requesting access token from %s", self.token_url)
 
         resp = await client.post(
             self.token_url,
-            data={"grant_type": "client_credentials"},
-            auth=(self.consumer_key, self.consumer_secret),
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-Authorization": f"PoP {pop}",
-            },
+            content=body_str,
+            headers=headers,
         )
 
         if resp.status_code != 200:
-            body = resp.text[:500]
+            body = resp.text if debug else resp.text[:500]
+            if debug:
+                print(f"[TAAP-DEBUG] Response status: {resp.status_code}")
+                print(f"[TAAP-DEBUG] Response headers: {dict(resp.headers)}")
+                print(f"[TAAP-DEBUG] Response body (full): {body}")
             logger.error(
                 "T-Mobile TAAP token request failed: %s %s",
                 resp.status_code, body,
@@ -271,21 +357,25 @@ class TMobileTAAPClient:
         access_token = await self.get_access_token()
         url = f"{self.base_url}/{path.lstrip('/')}"
 
-        # Serialize body for PoP hash
+        # Serialize body once — the exact same bytes are both hashed and sent.
         import json as _json
-        body_str = _json.dumps(json_body) if json_body else None
+        body_str = _json.dumps(json_body) if json_body is not None else None
 
-        # Generate PoP token for this specific request
-        pop = generate_pop_token(
-            uri=url,
-            http_method=method.upper(),
-            body=body_str,
-        )
+        req_content_type = "application/json"
+        if body_str is not None:
+            req_content_length = str(len(body_str.encode("utf-8")))
+            req_ehts = [
+                ("Content-Type", req_content_type),
+                ("Content-Length", req_content_length),
+            ]
+        else:
+            req_ehts = []
+        pop = generate_pop_token(body=body_str, ehts_headers=req_ehts)
 
         headers: dict[str, str] = {
             "Authorization": f"Bearer {access_token}",
-            "X-Authorization": f"PoP {pop}",
-            "Content-Type": "application/json",
+            "X-Authorization": pop,
+            "Content-Type": req_content_type,
             "Accept": "application/json",
             "X-Correlation-Id": str(uuid.uuid4()),
         }
@@ -307,7 +397,7 @@ class TMobileTAAPClient:
         try:
             resp = await client.request(
                 method.upper(), url,
-                json=json_body,
+                content=body_str,
                 params=params,
                 headers=headers,
             )

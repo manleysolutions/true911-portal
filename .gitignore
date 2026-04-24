@@ -14,6 +14,9 @@ __pycache__/
 .env.local
 .env.*.local
 
+# Local-only secrets (never commit private keys, certs, tokens)
+api/secrets/
+
 # OS
 .DS_Store
 Thumbs.db
