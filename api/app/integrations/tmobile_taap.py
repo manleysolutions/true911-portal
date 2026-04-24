@@ -301,9 +301,9 @@ class TMobileTAAPClient:
             print(f"[TAAP-DEBUG] Body SHA-256 (hex): {body_hash_hex}")
             print(f"[TAAP-DEBUG] Body JSON (exact wire bytes): {body_str}")
             print(f"[TAAP-DEBUG] X-Authorization prefix: "
-                  + ("'PoP ' (with space)" if x_auth.startswith("PoP ")
+                  + ("'PoP ' (with space)" if headers["X-Authorization"].startswith("PoP ")
                      else "(raw JWT, no prefix)"))
-            print(f"[TAAP-DEBUG] X-Authorization (first 80): {x_auth[:80]}...")
+            print(f"[TAAP-DEBUG] X-Authorization (first 80): {headers['X-Authorization'][:80]}...")
             print(f"[TAAP-DEBUG] PoP header: {pop_hdr}")
             print(f"[TAAP-DEBUG] PoP claims: {pop_clm}")
 
