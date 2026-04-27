@@ -40,18 +40,31 @@ _KEY_PREFIX = "t91_"
 # Fields that DataEntry / Import Operator is allowed to set.
 # All other fields are restricted to Admin+ roles.
 _DATAENTRY_ALLOWED_FIELDS = frozenset({
-    "site_id",          # site assignment — core onboarding
-    "device_type",      # endpoint type classification
-    "notes",            # free-text
-    "manufacturer",     # device description
-    "model",            # device description
-    "identifier_type",  # cellular / ata / starlink
-    "activated_at",     # onboarding date
-    "term_end_date",    # contract info
+    "site_id",            # site assignment — core onboarding
+    "device_type",        # endpoint type classification
+    "notes",              # free-text
+    "manufacturer",       # device description
+    "model",              # device description
+    "identifier_type",    # cellular / ata / starlink
+    "activated_at",       # onboarding date
+    "term_end_date",      # contract info
+    "serial_number",      # hardware identifier
+    "mac_address",        # hardware identifier
+    "imei",               # cellular identifier
+    "iccid",              # SIM identifier
+    "msisdn",             # phone / DID
+    "carrier",            # cellular carrier
+    "hardware_model_id",  # catalog model linkage
+    "starlink_id",        # StarLink / Napco panel ID
 })
 
 # For create, device_id is additionally required.
 _DATAENTRY_ALLOWED_CREATE_FIELDS = _DATAENTRY_ALLOWED_FIELDS | {"device_id"}
+
+# Unique identifier fields. PATCH must reject a value already used by another
+# device with an explicit field-level error rather than waiting for the DB
+# IntegrityError, which only reports one constraint at a time.
+_UNIQUE_IDENTIFIER_FIELDS = ("imei", "msisdn", "serial_number")
 
 _CONSTRAINT_MESSAGES = {
     "uq_devices_imei": "A device with this IMEI already exists",
@@ -67,6 +80,46 @@ def _parse_device_conflict(e: IntegrityError) -> str:
         if constraint in msg:
             return detail
     return "Duplicate value: a device with one of these identifiers already exists"
+
+
+async def _assert_no_identifier_conflict(
+    db: AsyncSession,
+    tenant_id: str,
+    updates: dict,
+    current_device: Device | None,
+) -> None:
+    """Raise 409 if any unique identifier in `updates` is already used by
+    another device in the same tenant.  Pre-flight check that complements the
+    DB constraint by naming the exact conflicting field and the device that
+    holds it.
+    """
+    for field in _UNIQUE_IDENTIFIER_FIELDS:
+        new_value = updates.get(field)
+        if not new_value:
+            continue
+        if current_device is not None and getattr(current_device, field) == new_value:
+            continue
+        column = getattr(Device, field)
+        q = select(Device).where(
+            column == new_value,
+            Device.tenant_id == tenant_id,
+        )
+        if current_device is not None:
+            q = q.where(Device.id != current_device.id)
+        existing = (await db.execute(q)).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={
+                    "field": field,
+                    "value": new_value,
+                    "conflicting_device_id": existing.device_id,
+                    "message": (
+                        f"{field.upper()} {new_value} is already assigned to "
+                        f"device {existing.device_id}."
+                    ),
+                },
+            )
 
 
 def _generate_device_key() -> tuple[str, str]:
@@ -263,6 +316,10 @@ async def create_device(
             # Strip restricted fields, keep defaults for unset ones
             fields = {k: v for k, v in fields.items() if k in _DATAENTRY_ALLOWED_CREATE_FIELDS}
 
+    await _assert_no_identifier_conflict(
+        db, current_user.tenant_id, fields, current_device=None,
+    )
+
     raw_key, key_hash = _generate_device_key()
     device = Device(
         **fields,
@@ -339,6 +396,10 @@ async def update_device(
                 status.HTTP_403_FORBIDDEN,
                 "Your role does not allow editing the requested fields.",
             )
+
+    await _assert_no_identifier_conflict(
+        db, current_user.tenant_id, updates, current_device=device,
+    )
 
     for field, value in updates.items():
         setattr(device, field, value)

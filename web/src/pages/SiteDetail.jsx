@@ -5,12 +5,181 @@ import { apiFetch } from "@/api/client";
 import {
   Building2, ArrowLeft, MapPin, Phone, Mail, User, Cpu, Disc3, PhoneCall, ShieldCheck,
   AlertTriangle, CheckCircle2, XCircle, HelpCircle, Loader2, Plus, RefreshCw, ChevronRight,
-  Video, Mic, MessageSquare, ExternalLink, Clock, Radio, FileText, Pencil,
+  Video, Mic, MessageSquare, ExternalLink, Clock, Radio, FileText, Pencil, X, Save,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SitePickerModal from "@/components/SitePickerModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+
+const KIT_OPTIONS = ["Elevator", "Fire Alarm Control Panel", "Emergency Phone", "Burglar Alarm", "Fax", "SCADA / Industrial", "Other"];
+const ENDPOINT_OPTIONS = ["Elevator", "Fire Alarm Control Panel", "Emergency Phone", "Burglar Alarm", "Fax", "SCADA / Industrial", "Other"];
+const SERVICE_CLASS_OPTIONS = ["Hosted Voice", "Plain Old Telephone Service", "POTS Replacement", "Mission Critical", "Other"];
+const BUILDING_OPTIONS = ["Office", "Apartment / Multi-family", "Hospital", "School", "Retail", "Industrial", "Other"];
+
+function SiteEditModal({ site, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    site_name: site.site_name || "",
+    e911_street: site.e911_street || "",
+    e911_city: site.e911_city || "",
+    e911_state: site.e911_state || "",
+    e911_zip: site.e911_zip || "",
+    poc_name: site.poc_name || "",
+    poc_phone: site.poc_phone || "",
+    poc_email: site.poc_email || "",
+    kit_type: site.kit_type || "",
+    endpoint_type: site.endpoint_type || "",
+    service_class: site.service_class || "",
+    building_type: site.building_type || "",
+    address_notes: site.address_notes || "",
+    notes: site.notes || "",
+  });
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!form.site_name.trim()) {
+      setError("Site name is required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      // Send only fields with a value (or that were cleared from a prior value).
+      const payload = {};
+      Object.entries(form).forEach(([k, v]) => { payload[k] = v.trim ? v.trim() : v; });
+      await apiFetch(`/sites/${site.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      toast.success("Site updated");
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Failed to update site");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+          <h2 className="text-base font-bold text-gray-900">Edit Site</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Site Name *</label>
+            <input value={form.site_name} onChange={set("site_name")} required
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Customer</label>
+            <input value={site.customer_name || ""} disabled
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500" />
+            <p className="mt-1 text-[11px] text-gray-400">Customer linkage is read-only here. Use Customers to rename a customer.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Street Address</label>
+            <input value={form.e911_street} onChange={set("e911_street")}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <input value={form.e911_city} onChange={set("e911_city")} placeholder="City"
+              className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+            <input value={form.e911_state} onChange={set("e911_state")} placeholder="State" maxLength={2}
+              className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+            <input value={form.e911_zip} onChange={set("e911_zip")} placeholder="ZIP" maxLength={10}
+              className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Address Notes</label>
+            <input value={form.address_notes} onChange={set("address_notes")}
+              placeholder="Suite, floor, gate code, etc."
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Kit Type</label>
+              <select value={form.kit_type} onChange={set("kit_type")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                <option value="">—</option>
+                {KIT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Endpoint Type</label>
+              <select value={form.endpoint_type} onChange={set("endpoint_type")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                <option value="">—</option>
+                {ENDPOINT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Service Class</label>
+              <select value={form.service_class} onChange={set("service_class")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                <option value="">—</option>
+                {SERVICE_CLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Building Type</label>
+              <select value={form.building_type} onChange={set("building_type")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                <option value="">—</option>
+                {BUILDING_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Site Contact</p>
+            <input value={form.poc_name} onChange={set("poc_name")} placeholder="Name"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+            <div className="grid grid-cols-2 gap-3">
+              <input type="tel" value={form.poc_phone} onChange={set("poc_phone")} placeholder="Phone"
+                className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+              <input type="email" value={form.poc_email} onChange={set("poc_email")} placeholder="Email"
+                className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Notes</label>
+            <textarea value={form.notes} onChange={set("notes")} rows={3}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" />
+          </div>
+
+          {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">{error}</div>}
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 /* ── Helpers ── */
 function timeSince(iso) {
@@ -84,6 +253,8 @@ export default function SiteDetail() {
   const [infra, setInfra] = useState(null);
   const [compliance, setCompliance] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const canEditSite = can("EDIT_SITES");
 
   const fetchAll = useCallback(async () => {
     if (!siteId) return;
@@ -172,6 +343,15 @@ export default function SiteDetail() {
             </div>
             <div className="flex items-center gap-2">
               <Badge status={site.status} />
+              {canEditSite && (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-medium"
+                  title="Edit site details"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit
+                </button>
+              )}
               <button onClick={fetchAll} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-400">
                 <RefreshCw className="w-4 h-4" />
               </button>
@@ -462,6 +642,14 @@ export default function SiteDetail() {
         )}
 
       </div>
+
+      {editing && (
+        <SiteEditModal
+          site={site}
+          onClose={() => setEditing(false)}
+          onSaved={fetchAll}
+        />
+      )}
     </PageWrapper>
   );
 }

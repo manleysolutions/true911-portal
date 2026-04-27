@@ -112,6 +112,8 @@ function CreateModal({ onClose, onCreated }) {
 }
 
 function EditModal({ customer, onClose, onUpdated }) {
+  const { can } = useAuth();
+  const canEditStatus = can("DELETE_CUSTOMERS");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: customer.name,
@@ -125,9 +127,16 @@ function EditModal({ customer, onClose, onUpdated }) {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload = {
+        name: form.name,
+        billing_email: form.billing_email,
+        billing_phone: form.billing_phone,
+        billing_address: form.billing_address,
+        ...(canEditStatus ? { status: form.status } : {}),
+      };
       await apiFetch(`/customers/${customer.id}`, {
         method: "PATCH",
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       toast.success("Customer updated");
       onUpdated();
@@ -185,18 +194,20 @@ function EditModal({ customer, onClose, onUpdated }) {
               rows={2}
             />
           </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Status</label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="suspended">Suspended</option>
-            </select>
-          </div>
+          {canEditStatus && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+          )}
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"

@@ -1,14 +1,28 @@
+import json
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.customer import Customer
 from app.models.user import User
 from app.routers.helpers import apply_sort
 from app.schemas.customer import CustomerCreate, CustomerOut, CustomerUpdate
 
 router = APIRouter()
+
+# Customer fields DataEntry / Import Operator may correct after import.
+# All other fields (status, customer_number, account_number, zoho_*, etc.)
+# remain Admin-only.
+_DATAENTRY_ALLOWED_FIELDS = frozenset({
+    "name",
+    "billing_email",
+    "billing_phone",
+    "billing_address",
+})
 
 
 @router.get(
@@ -94,7 +108,40 @@ async def update_customer(
     customer = result.scalar_one_or_none()
     if not customer:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Customer not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+
+    updates = body.model_dump(exclude_unset=True)
+
+    if (current_user.role or "").lower() == "dataentry":
+        restricted = {k for k in updates if k not in _DATAENTRY_ALLOWED_FIELDS}
+        if restricted:
+            db.add(AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_edit_blocked",
+                actor=current_user.email,
+                target_type="customer",
+                target_id=str(customer.id),
+                summary=(
+                    f"DataEntry {current_user.email} attempted to edit "
+                    f"restricted customer fields: {', '.join(sorted(restricted))}"
+                ),
+                detail_json=json.dumps({
+                    "customer_id": customer.id,
+                    "restricted_fields": sorted(restricted),
+                    "allowed_fields": sorted(
+                        k for k in updates if k in _DATAENTRY_ALLOWED_FIELDS
+                    ),
+                }),
+            ))
+            updates = {k: v for k, v in updates.items() if k in _DATAENTRY_ALLOWED_FIELDS}
+        if not updates:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Your role does not allow editing the requested fields.",
+            )
+
+    for field, value in updates.items():
         setattr(customer, field, value)
     await db.commit()
     await db.refresh(customer)

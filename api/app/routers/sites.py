@@ -1,8 +1,12 @@
+import json
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.device import Device
 from app.models.incident import Incident
 from app.models.line import Line
@@ -19,6 +23,29 @@ from app.services.health_scoring import compute_device_health, compute_site_heal
 from app.services.geocoding import geocode_address, has_valid_coords
 
 router = APIRouter()
+
+# Site fields DataEntry / Import Operator may correct after import.
+# customer_name is intentionally excluded — it is a denormalized string and
+# changing it would corrupt the implicit site → customer linkage.
+# Monitoring / heartbeat / health / firmware / lat-lng / status fields and
+# all NG911 / address-source / reconciliation / template_id fields remain
+# Admin-only.
+_DATAENTRY_ALLOWED_FIELDS = frozenset({
+    "site_name",
+    "e911_street",
+    "e911_city",
+    "e911_state",
+    "e911_zip",
+    "address_notes",
+    "notes",
+    "poc_name",
+    "poc_phone",
+    "poc_email",
+    "kit_type",
+    "endpoint_type",
+    "service_class",
+    "building_type",
+})
 
 
 async def _site_out(site: Site, db: AsyncSession) -> SiteOut:
@@ -422,6 +449,37 @@ async def update_site(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
 
     updates = body.model_dump(exclude_unset=True)
+
+    if (current_user.role or "").lower() == "dataentry":
+        restricted = {k for k in updates if k not in _DATAENTRY_ALLOWED_FIELDS}
+        if restricted:
+            db.add(AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_edit_blocked",
+                actor=current_user.email,
+                target_type="site",
+                target_id=str(site.id),
+                site_id=site.site_id,
+                summary=(
+                    f"DataEntry {current_user.email} attempted to edit "
+                    f"restricted site fields: {', '.join(sorted(restricted))}"
+                ),
+                detail_json=json.dumps({
+                    "site_id": site.site_id,
+                    "restricted_fields": sorted(restricted),
+                    "allowed_fields": sorted(
+                        k for k in updates if k in _DATAENTRY_ALLOWED_FIELDS
+                    ),
+                }),
+            ))
+            updates = {k: v for k, v in updates.items() if k in _DATAENTRY_ALLOWED_FIELDS}
+        if not updates:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Your role does not allow editing the requested fields.",
+            )
 
     # Validate lat/lng ranges if provided
     if "lat" in updates and updates["lat"] is not None:

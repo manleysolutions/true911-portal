@@ -421,6 +421,8 @@ function DeviceSimPanel({ deviceId, deviceMsisdn }) {
 
 /* ── Device form modal (create or edit) ── */
 function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareModels, editDevice }) {
+  const { can } = useAuth();
+  const canEditStatus = can("DELETE_DEVICES");
   const isEdit = !!editDevice;
   const [form, setForm] = useState({
     device_id: editDevice?.device_id || "",
@@ -554,7 +556,10 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
       };
 
       if (isEdit) {
-        await Device.update(editDevice.id, { ...payload, status: form.status });
+        const editPayload = canEditStatus
+          ? { ...payload, status: form.status }
+          : payload;
+        await Device.update(editDevice.id, editPayload);
         toast.success(`Device ${form.device_id} updated`);
         onSaved();
         onClose();
@@ -857,7 +862,7 @@ function DeviceFormModal({ onClose, onSaved, onSitesRefresh, sites, hardwareMode
             </div>
           )}
 
-          {isEdit && (
+          {isEdit && canEditStatus && (
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Status</label>
               <select
