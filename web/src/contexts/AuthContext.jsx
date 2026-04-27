@@ -114,6 +114,12 @@ const PERMISSIONS = {
   MANAGE_IMPORT_VERIFICATION: ["Admin", "DataEntry"],
   VIEW_PROVISIONING_QUEUE: ["Admin", "DataEntry"],
   MANAGE_PROVISIONING: ["Admin"],
+  CREATE_SERVICE_UNITS: ["Admin", "Manager", "DataEntry"],
+  EDIT_SERVICE_UNITS: ["Admin", "Manager", "DataEntry"],
+  CREATE_SIMS: ["Admin", "DataEntry"],
+  EDIT_SIMS: ["Admin", "DataEntry"],
+  CREATE_LINES: ["Admin", "Manager", "DataEntry"],
+  EDIT_LINES: ["Admin", "Manager", "DataEntry"],
 };
 
 // Storage key for persisting impersonation across refreshes

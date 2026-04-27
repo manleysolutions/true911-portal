@@ -93,6 +93,20 @@ PERMISSIONS: dict[str, list[str]] = {
     # Provisioning queue (unassigned devices)
     "VIEW_PROVISIONING_QUEUE": ["Admin", "DataEntry"],
     "MANAGE_PROVISIONING": ["Admin"],
+    # Service units — onboarding-safe scope for DataEntry/Manager.
+    # DELETE_SERVICE_UNITS remains Admin-only (defined above).
+    "CREATE_SERVICE_UNITS": ["Admin", "Manager", "DataEntry"],
+    "EDIT_SERVICE_UNITS": ["Admin", "Manager", "DataEntry"],
+    # SIMs — carrier/billing/provisioning layer; Manager intentionally
+    # excluded so they cannot casually touch SIM records.  MANAGE_SIMS
+    # still required for assign/unassign/activate/suspend/resume/sync/
+    # bulk/delete.
+    "CREATE_SIMS": ["Admin", "DataEntry"],
+    "EDIT_SIMS": ["Admin", "DataEntry"],
+    # Voice lines — onboarding-safe scope.  DELETE_LINES remains
+    # Admin/Manager (defined above).
+    "CREATE_LINES": ["Admin", "Manager", "DataEntry"],
+    "EDIT_LINES": ["Admin", "Manager", "DataEntry"],
 }
 
 

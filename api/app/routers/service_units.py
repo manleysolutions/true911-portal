@@ -24,6 +24,36 @@ from app.services.compliance_engine import evaluate_service_unit, evaluate_site_
 
 router = APIRouter()
 
+# Fields DataEntry / Import Operator may set on service units.  Status,
+# compliance_status, video stream config, and metadata stay Admin-only.
+_DATAENTRY_ALLOWED_FIELDS = frozenset({
+    "unit_name",
+    "unit_type",
+    "location_description",
+    "floor",
+    "install_type",
+    "voice_supported",
+    "video_supported",
+    "text_supported",
+    "visual_messaging_supported",
+    "onsite_takeover_supported",
+    "backup_power_supported",
+    "monitoring_station_type",
+    "jurisdiction_code",
+    "governing_code_edition",
+    "compliance_notes",
+    "camera_present",
+    "video_transport_type",
+    "device_id",
+    "line_id",
+    "sim_id",
+    "notes",
+})
+
+# unit_id and site_id are required at create time and therefore allowed
+# for DataEntry on POST.
+_DATAENTRY_ALLOWED_CREATE_FIELDS = _DATAENTRY_ALLOWED_FIELDS | {"unit_id", "site_id"}
+
 
 # ── CRUD ──────────────────────────────────────────────────────────
 
@@ -78,7 +108,12 @@ async def get_service_unit(
     return ServiceUnitOut.model_validate(unit)
 
 
-@router.post("", response_model=ServiceUnitOut, status_code=201)
+@router.post(
+    "",
+    response_model=ServiceUnitOut,
+    status_code=201,
+    dependencies=[Depends(require_permission("CREATE_SERVICE_UNITS"))],
+)
 async def create_service_unit(
     body: ServiceUnitCreate,
     db: AsyncSession = Depends(get_db),
@@ -91,7 +126,32 @@ async def create_service_unit(
     if not site_result.scalar_one_or_none():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
 
-    unit = ServiceUnit(**body.model_dump(), tenant_id=current_user.tenant_id)
+    fields = body.model_dump()
+
+    if (current_user.role or "").lower() == "dataentry":
+        restricted = {k for k, v in body.model_dump(exclude_unset=True).items()
+                      if k not in _DATAENTRY_ALLOWED_CREATE_FIELDS}
+        if restricted:
+            db.add(AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_create_blocked",
+                actor=current_user.email,
+                target_type="service_unit",
+                site_id=body.site_id,
+                summary=(
+                    f"DataEntry {current_user.email} attempted to set "
+                    f"restricted service-unit fields on create: {', '.join(sorted(restricted))}"
+                ),
+                detail_json=json.dumps({
+                    "site_id": body.site_id,
+                    "restricted_fields": sorted(restricted),
+                }),
+            ))
+            fields = {k: v for k, v in fields.items() if k in _DATAENTRY_ALLOWED_CREATE_FIELDS}
+
+    unit = ServiceUnit(**fields, tenant_id=current_user.tenant_id)
 
     # Auto-evaluate compliance on creation
     result = evaluate_service_unit(unit)
@@ -108,7 +168,11 @@ async def create_service_unit(
     return ServiceUnitOut.model_validate(unit)
 
 
-@router.patch("/{pk}", response_model=ServiceUnitOut)
+@router.patch(
+    "/{pk}",
+    response_model=ServiceUnitOut,
+    dependencies=[Depends(require_permission("EDIT_SERVICE_UNITS"))],
+)
 async def update_service_unit(
     pk: int,
     body: ServiceUnitUpdate,
@@ -122,7 +186,41 @@ async def update_service_unit(
     if not unit:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service unit not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+
+    if (current_user.role or "").lower() == "dataentry":
+        restricted = {k for k in updates if k not in _DATAENTRY_ALLOWED_FIELDS}
+        if restricted:
+            db.add(AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_edit_blocked",
+                actor=current_user.email,
+                target_type="service_unit",
+                target_id=str(unit.id),
+                site_id=unit.site_id,
+                summary=(
+                    f"DataEntry {current_user.email} attempted to edit "
+                    f"restricted service-unit fields: {', '.join(sorted(restricted))}"
+                ),
+                detail_json=json.dumps({
+                    "unit_id": unit.unit_id,
+                    "site_id": unit.site_id,
+                    "restricted_fields": sorted(restricted),
+                    "allowed_fields": sorted(
+                        k for k in updates if k in _DATAENTRY_ALLOWED_FIELDS
+                    ),
+                }),
+            ))
+            updates = {k: v for k, v in updates.items() if k in _DATAENTRY_ALLOWED_FIELDS}
+        if not updates:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Your role does not allow editing the requested fields.",
+            )
+
+    for field, value in updates.items():
         setattr(unit, field, value)
 
     # Re-evaluate compliance after update

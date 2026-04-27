@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { apiFetch } from "@/api/client";
+import { Site as SiteEntity, HardwareModel } from "@/api/entities";
 import {
   Building2, ArrowLeft, MapPin, Phone, Mail, User, Cpu, Disc3, PhoneCall, ShieldCheck,
   AlertTriangle, CheckCircle2, XCircle, HelpCircle, Loader2, Plus, RefreshCw, ChevronRight,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import SitePickerModal from "@/components/SitePickerModal";
+import DeviceFormModal from "@/components/DeviceFormModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -218,6 +220,375 @@ function Badge({ status }) {
 }
 
 
+const UNIT_TYPE_OPTIONS = [
+  { value: "elevator_phone", label: "Elevator Emergency Phone" },
+  { value: "fire_alarm", label: "Fire Alarm Communicator" },
+  { value: "emergency_call_station", label: "Emergency Call Station" },
+  { value: "fax_line", label: "Fax Line" },
+  { value: "voice_line", label: "Generic Voice Line" },
+  { value: "other", label: "Other" },
+];
+const INSTALL_TYPE_OPTIONS = [
+  { value: "new", label: "New Installation" },
+  { value: "modernization", label: "Modernization" },
+  { value: "existing", label: "Existing System" },
+];
+const SIM_CARRIER_OPTIONS = ["Verizon", "T-Mobile", "AT&T", "Telnyx", "Teal", "Unknown"];
+const LINE_PROVIDER_OPTIONS = ["telnyx", "tmobile", "bandwidth", "verizon", "att", "other"];
+const LINE_PROTOCOL_OPTIONS = ["SIP", "POTS", "cellular"];
+
+const FIELD_INPUT = "w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent";
+const FIELD_LABEL = "block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide";
+
+/* ── Add Service Unit Modal ─────────────────────────────────────── */
+function AddServiceUnitModal({ site, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    unit_id: `UNIT-${site.site_id}-${Date.now().toString().slice(-6)}`,
+    unit_name: "",
+    unit_type: "elevator_phone",
+    install_type: "new",
+    location_description: "",
+    floor: "",
+    monitoring_station_type: "",
+    notes: "",
+  });
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.unit_name.trim()) { setError("Unit name is required."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      await apiFetch("/service-units", {
+        method: "POST",
+        body: JSON.stringify({
+          site_id: site.site_id,
+          unit_id: form.unit_id.trim(),
+          unit_name: form.unit_name.trim(),
+          unit_type: form.unit_type,
+          install_type: form.install_type || undefined,
+          location_description: form.location_description.trim() || undefined,
+          floor: form.floor.trim() || undefined,
+          monitoring_station_type: form.monitoring_station_type.trim() || undefined,
+          notes: form.notes.trim() || undefined,
+        }),
+      });
+      toast.success(`Service unit "${form.unit_name}" added`);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Failed to create service unit");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Phone className="w-4 h-4 text-red-600" />
+            <h2 className="text-base font-bold text-gray-900">Add Service Unit</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className={FIELD_LABEL}>Site</label>
+            <input value={site.site_name} disabled className={`${FIELD_INPUT} bg-gray-50 text-gray-500`} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>Unit ID *</label>
+              <input value={form.unit_id} onChange={set("unit_id")} required className={`${FIELD_INPUT} font-mono`} />
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>Unit Name *</label>
+              <input value={form.unit_name} onChange={set("unit_name")} required placeholder="e.g. Elevator #1 Phone" className={FIELD_INPUT} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>Type</label>
+              <select value={form.unit_type} onChange={set("unit_type")} className={FIELD_INPUT}>
+                {UNIT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>Install Type</label>
+              <select value={form.install_type} onChange={set("install_type")} className={FIELD_INPUT}>
+                <option value="">—</option>
+                {INSTALL_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>Location</label>
+              <input value={form.location_description} onChange={set("location_description")} placeholder="e.g. Elevator #3, South Tower" className={FIELD_INPUT} />
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>Floor</label>
+              <input value={form.floor} onChange={set("floor")} placeholder="e.g. 5" className={FIELD_INPUT} />
+            </div>
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Monitoring Station</label>
+            <input value={form.monitoring_station_type} onChange={set("monitoring_station_type")} placeholder="e.g. UL-listed central station" className={FIELD_INPUT} />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Notes</label>
+            <textarea value={form.notes} onChange={set("notes")} rows={3} className={`${FIELD_INPUT} resize-none`} />
+          </div>
+          {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">{error}</div>}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? "Saving..." : "Add Service Unit"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Add SIM Modal ──────────────────────────────────────────────── */
+function AddSimModal({ site, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    iccid: "",
+    msisdn: "",
+    imsi: "",
+    imei: "",
+    carrier: "",
+    plan: "",
+    notes: "",
+  });
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.iccid.trim()) { setError("ICCID is required."); return; }
+    if (!form.carrier) { setError("Carrier is required."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      await apiFetch("/sims", {
+        method: "POST",
+        body: JSON.stringify({
+          iccid: form.iccid.trim(),
+          carrier: form.carrier,
+          msisdn: form.msisdn.trim() || undefined,
+          imsi: form.imsi.trim() || undefined,
+          imei: form.imei.trim() || undefined,
+          plan: form.plan.trim() || undefined,
+          site_id: site.site_id,
+          notes: form.notes.trim() || undefined,
+        }),
+      });
+      toast.success(`SIM ${form.iccid} added`);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Failed to create SIM");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Disc3 className="w-4 h-4 text-red-600" />
+            <h2 className="text-base font-bold text-gray-900">Add SIM</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className={FIELD_LABEL}>Site</label>
+            <input value={site.site_name} disabled className={`${FIELD_INPUT} bg-gray-50 text-gray-500`} />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>ICCID *</label>
+            <input value={form.iccid} onChange={set("iccid")} required placeholder="SIM card number" className={`${FIELD_INPUT} font-mono`} maxLength={22} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>MSISDN / Phone</label>
+              <input value={form.msisdn} onChange={set("msisdn")} placeholder="e.g. +12145550101" className={FIELD_INPUT} />
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>Carrier *</label>
+              <select value={form.carrier} onChange={set("carrier")} required className={FIELD_INPUT}>
+                <option value="">-- Select --</option>
+                {SIM_CARRIER_OPTIONS.map(c => <option key={c} value={c.toLowerCase()}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>IMSI</label>
+              <input value={form.imsi} onChange={set("imsi")} className={FIELD_INPUT} />
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>IMEI</label>
+              <input value={form.imei} onChange={set("imei")} className={FIELD_INPUT} />
+            </div>
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Plan</label>
+            <input value={form.plan} onChange={set("plan")} placeholder="Optional plan label" className={FIELD_INPUT} />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Notes</label>
+            <textarea value={form.notes} onChange={set("notes")} rows={2} className={`${FIELD_INPUT} resize-none`} />
+          </div>
+          {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">{error}</div>}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? "Saving..." : "Add SIM"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Add Voice Line Modal ───────────────────────────────────────── */
+function AddLineModal({ site, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    line_id: `LINE-${site.site_id}-${Date.now().toString().slice(-6)}`,
+    provider: "telnyx",
+    did: "",
+    sip_uri: "",
+    protocol: "SIP",
+    carrier: "",
+    line_type: "",
+    notes: "",
+  });
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.line_id.trim()) { setError("Line ID is required."); return; }
+    if (!form.did.trim()) { setError("DID / phone number is required."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      await apiFetch("/lines", {
+        method: "POST",
+        body: JSON.stringify({
+          line_id: form.line_id.trim(),
+          provider: form.provider,
+          did: form.did.trim(),
+          sip_uri: form.sip_uri.trim() || undefined,
+          protocol: form.protocol,
+          site_id: site.site_id,
+          carrier: form.carrier.trim() || undefined,
+          line_type: form.line_type.trim() || undefined,
+          notes: form.notes.trim() || undefined,
+        }),
+      });
+      toast.success(`Voice line ${form.did} added`);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Failed to create line");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <PhoneCall className="w-4 h-4 text-red-600" />
+            <h2 className="text-base font-bold text-gray-900">Add Voice Line</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className={FIELD_LABEL}>Site</label>
+            <input value={site.site_name} disabled className={`${FIELD_INPUT} bg-gray-50 text-gray-500`} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>Line ID *</label>
+              <input value={form.line_id} onChange={set("line_id")} required className={`${FIELD_INPUT} font-mono`} />
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>DID / Phone *</label>
+              <input value={form.did} onChange={set("did")} required placeholder="+12145550101" className={FIELD_INPUT} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>Provider</label>
+              <select value={form.provider} onChange={set("provider")} className={FIELD_INPUT}>
+                {LINE_PROVIDER_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>Protocol</label>
+              <select value={form.protocol} onChange={set("protocol")} className={FIELD_INPUT}>
+                {LINE_PROTOCOL_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>SIP URI</label>
+            <input value={form.sip_uri} onChange={set("sip_uri")} placeholder="sip:user@host" className={FIELD_INPUT} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FIELD_LABEL}>Carrier</label>
+              <input value={form.carrier} onChange={set("carrier")} placeholder="Optional" className={FIELD_INPUT} />
+            </div>
+            <div>
+              <label className={FIELD_LABEL}>Line Type</label>
+              <input value={form.line_type} onChange={set("line_type")} placeholder="e.g. POTS, SIP, cellular" className={FIELD_INPUT} />
+            </div>
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Notes</label>
+            <textarea value={form.notes} onChange={set("notes")} rows={2} className={`${FIELD_INPUT} resize-none`} />
+          </div>
+          {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-4 py-3 rounded-xl">{error}</div>}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-sm">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold py-2.5 px-4 rounded-xl text-sm">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? "Saving..." : "Add Voice Line"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
 /* ═══════════════════════════════════════════════════════════════════
    Section card wrapper
    ═══════════════════════════════════════════════════════════════════ */
@@ -254,7 +625,32 @@ export default function SiteDetail() {
   const [compliance, setCompliance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(null); // null | "service_unit" | "device" | "sim" | "line"
+  const [allSites, setAllSites] = useState([]);
+  const [hardwareModels, setHardwareModels] = useState([]);
   const canEditSite = can("EDIT_SITES");
+  const canAddServiceUnit = can("CREATE_SERVICE_UNITS");
+  const canAddDevice = can("CREATE_DEVICES");
+  const canAddSim = can("CREATE_SIMS");
+  const canAddLine = can("CREATE_LINES");
+  const canShowAddRow = canAddServiceUnit || canAddDevice || canAddSim || canAddLine;
+
+  // Lookup data needed by the Add Device modal (site list + hw catalog).
+  // Loaded lazily the first time the user opens the device modal.
+  const ensureDeviceLookups = useCallback(async () => {
+    if (allSites.length === 0) {
+      try {
+        const data = await SiteEntity.list("-last_checkin", 200);
+        setAllSites(data);
+      } catch { /* leave empty; modal still works with the locked site */ }
+    }
+    if (hardwareModels.length === 0) {
+      try {
+        const data = await HardwareModel.list();
+        setHardwareModels(data);
+      } catch { setHardwareModels([]); }
+    }
+  }, [allSites.length, hardwareModels.length]);
 
   const fetchAll = useCallback(async () => {
     if (!siteId) return;
@@ -389,6 +785,47 @@ export default function SiteDetail() {
             )}
           </div>
         </div>
+
+
+        {/* ═══════════════════════════════════════════════════════════
+            Onboarding actions — add records under this site
+            ═══════════════════════════════════════════════════════════ */}
+        {canShowAddRow && (
+          <div className="flex flex-wrap gap-2">
+            {canAddServiceUnit && (
+              <button
+                onClick={() => setAdding("service_unit")}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
+              >
+                <Phone className="w-3.5 h-3.5" /> Add Service Unit
+              </button>
+            )}
+            {canAddDevice && (
+              <button
+                onClick={() => { ensureDeviceLookups(); setAdding("device"); }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
+              >
+                <Cpu className="w-3.5 h-3.5" /> Add Device
+              </button>
+            )}
+            {canAddSim && (
+              <button
+                onClick={() => setAdding("sim")}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
+              >
+                <Disc3 className="w-3.5 h-3.5" /> Add SIM
+              </button>
+            )}
+            {canAddLine && (
+              <button
+                onClick={() => setAdding("line")}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
+              >
+                <PhoneCall className="w-3.5 h-3.5" /> Add Voice Line
+              </button>
+            )}
+          </div>
+        )}
 
 
         {/* ═══════════════════════════════════════════════════════════
@@ -648,6 +1085,41 @@ export default function SiteDetail() {
           site={site}
           onClose={() => setEditing(false)}
           onSaved={fetchAll}
+        />
+      )}
+
+      {adding === "service_unit" && (
+        <AddServiceUnitModal
+          site={site}
+          onClose={() => setAdding(null)}
+          onSaved={fetchAll}
+        />
+      )}
+
+      {adding === "sim" && (
+        <AddSimModal
+          site={site}
+          onClose={() => setAdding(null)}
+          onSaved={fetchAll}
+        />
+      )}
+
+      {adding === "line" && (
+        <AddLineModal
+          site={site}
+          onClose={() => setAdding(null)}
+          onSaved={fetchAll}
+        />
+      )}
+
+      {adding === "device" && (
+        <DeviceFormModal
+          onClose={() => setAdding(null)}
+          onSaved={fetchAll}
+          sites={allSites}
+          hardwareModels={hardwareModels}
+          defaultSiteId={site.site_id}
+          lockSite={true}
         />
       )}
     </PageWrapper>

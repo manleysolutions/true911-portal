@@ -1,4 +1,6 @@
+import json
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_permission
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.device import Device
 from app.models.device_sim import DeviceSim
 from app.models.sim import Sim
@@ -18,6 +21,28 @@ from app.schemas.sim import SimActionOut, SimAssign, SimBulkSiteAssign, SimCreat
 logger = logging.getLogger("true911.sims")
 
 router = APIRouter()
+
+# Fields DataEntry / Import Operator may set on a SIM.  Lifecycle status,
+# carrier-derived activation state, reconciliation, and inferred location
+# remain Admin-only (set by sync jobs / lifecycle endpoints).
+_DATAENTRY_ALLOWED_FIELDS = frozenset({
+    "msisdn",
+    "imsi",
+    "imei",
+    "carrier",
+    "plan",
+    "apn",
+    "site_id",
+    "device_id",
+    "notes",
+})
+
+# iccid is required at create time and therefore allowed for DataEntry on POST.
+_DATAENTRY_ALLOWED_CREATE_FIELDS = _DATAENTRY_ALLOWED_FIELDS | {"iccid"}
+
+# Unique identifier fields on the SIM table.  Pre-flight check returns an
+# explicit field-level 409 instead of a generic constraint violation.
+_UNIQUE_IDENTIFIER_FIELDS = ("iccid", "msisdn", "imsi")
 
 def _upsert_sim_from_carrier(sim: Sim, cs, now) -> bool:
     """Update a SIM record from carrier data. Returns True if any field changed."""
@@ -58,6 +83,42 @@ def _parse_sim_conflict(e: IntegrityError) -> str:
         if constraint in msg:
             return detail
     return "Duplicate value: a SIM with one of these identifiers already exists"
+
+
+async def _assert_no_sim_identifier_conflict(
+    db: AsyncSession,
+    updates: dict,
+    current_sim: Sim | None,
+) -> None:
+    """Raise 409 if any unique identifier in `updates` is already used by
+    another SIM.  ICCID is globally unique; MSISDN / IMSI conflicts are
+    surfaced per-tenant for clarity.
+    """
+    for field in _UNIQUE_IDENTIFIER_FIELDS:
+        new_value = updates.get(field)
+        if not new_value:
+            continue
+        if current_sim is not None and getattr(current_sim, field) == new_value:
+            continue
+        column = getattr(Sim, field)
+        q = select(Sim).where(column == new_value)
+        if current_sim is not None:
+            q = q.where(Sim.id != current_sim.id)
+        existing = (await db.execute(q)).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={
+                    "field": field,
+                    "value": new_value,
+                    "conflicting_sim_id": existing.id,
+                    "conflicting_iccid": existing.iccid,
+                    "message": (
+                        f"{field.upper()} {new_value} is already assigned to "
+                        f"SIM {existing.iccid}."
+                    ),
+                },
+            )
 
 
 # ── CRUD ──────────────────────────────────────────────────────────
@@ -131,14 +192,41 @@ async def get_sim(
     "",
     response_model=SimOut,
     status_code=201,
-    dependencies=[Depends(require_permission("MANAGE_SIMS"))],
+    dependencies=[Depends(require_permission("CREATE_SIMS"))],
 )
 async def create_sim(
     body: SimCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sim = Sim(**body.model_dump(), tenant_id=current_user.tenant_id)
+    fields = body.model_dump()
+
+    if (current_user.role or "").lower() == "dataentry":
+        restricted = {k for k, v in body.model_dump(exclude_unset=True).items()
+                      if k not in _DATAENTRY_ALLOWED_CREATE_FIELDS}
+        if restricted:
+            db.add(AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_create_blocked",
+                actor=current_user.email,
+                target_type="sim",
+                site_id=fields.get("site_id"),
+                summary=(
+                    f"DataEntry {current_user.email} attempted to set "
+                    f"restricted SIM fields on create: {', '.join(sorted(restricted))}"
+                ),
+                detail_json=json.dumps({
+                    "iccid": fields.get("iccid"),
+                    "restricted_fields": sorted(restricted),
+                }),
+            ))
+            fields = {k: v for k, v in fields.items() if k in _DATAENTRY_ALLOWED_CREATE_FIELDS}
+
+    await _assert_no_sim_identifier_conflict(db, fields, current_sim=None)
+
+    sim = Sim(**fields, tenant_id=current_user.tenant_id)
     db.add(sim)
     try:
         await db.flush()
@@ -153,7 +241,7 @@ async def create_sim(
 @router.patch(
     "/{pk}",
     response_model=SimOut,
-    dependencies=[Depends(require_permission("MANAGE_SIMS"))],
+    dependencies=[Depends(require_permission("EDIT_SIMS"))],
 )
 async def update_sim(
     pk: int,
@@ -167,7 +255,43 @@ async def update_sim(
     sim = result.scalar_one_or_none()
     if not sim:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "SIM not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+
+    updates = body.model_dump(exclude_unset=True)
+
+    if (current_user.role or "").lower() == "dataentry":
+        restricted = {k for k in updates if k not in _DATAENTRY_ALLOWED_FIELDS}
+        if restricted:
+            db.add(AuditLogEntry(
+                entry_id=f"field-block-{uuid.uuid4().hex[:12]}",
+                tenant_id=current_user.tenant_id,
+                category="security",
+                action="restricted_field_edit_blocked",
+                actor=current_user.email,
+                target_type="sim",
+                target_id=str(sim.id),
+                site_id=sim.site_id,
+                summary=(
+                    f"DataEntry {current_user.email} attempted to edit "
+                    f"restricted SIM fields: {', '.join(sorted(restricted))}"
+                ),
+                detail_json=json.dumps({
+                    "iccid": sim.iccid,
+                    "restricted_fields": sorted(restricted),
+                    "allowed_fields": sorted(
+                        k for k in updates if k in _DATAENTRY_ALLOWED_FIELDS
+                    ),
+                }),
+            ))
+            updates = {k: v for k, v in updates.items() if k in _DATAENTRY_ALLOWED_FIELDS}
+        if not updates:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Your role does not allow editing the requested fields.",
+            )
+
+    await _assert_no_sim_identifier_conflict(db, updates, current_sim=sim)
+
+    for field, value in updates.items():
         setattr(sim, field, value)
     try:
         await db.flush()
