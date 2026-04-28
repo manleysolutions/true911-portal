@@ -636,20 +636,6 @@ export default function SiteDetail() {
   const canAddLine = can("CREATE_LINES");
   const canShowAddRow = canAddServiceUnit || canAddDevice || canAddSim || canAddLine;
 
-  const handleAutoFixLocation = useCallback(async () => {
-    if (!site) return;
-    setGeocoding(true);
-    try {
-      await SiteEntity.geocode(site.id);
-      toast.success("Location resolved from E911 address");
-      fetchAll();
-    } catch (err) {
-      toast.error(err?.message || "Could not auto-fix location — try entering coordinates manually.");
-    } finally {
-      setGeocoding(false);
-    }
-  }, [site, fetchAll]);
-
   // Lookup data needed by the Add Device modal (site list + hw catalog).
   // Loaded lazily the first time the user opens the device modal.
   const ensureDeviceLookups = useCallback(async () => {
@@ -687,6 +673,23 @@ export default function SiteDetail() {
     } catch { setSite(null); }
     setLoading(false);
   }, [siteId]);
+
+  // Declared AFTER fetchAll because the dependency array references it;
+  // declaring this earlier produces a "Cannot access 'fetchAll' before
+  // initialization" temporal-dead-zone ReferenceError on first render.
+  const handleAutoFixLocation = useCallback(async () => {
+    if (!site) return;
+    setGeocoding(true);
+    try {
+      await SiteEntity.geocode(site.id);
+      toast.success("Location resolved from E911 address");
+      fetchAll();
+    } catch (err) {
+      toast.error(err?.message || "Could not auto-fix location — try entering coordinates manually.");
+    } finally {
+      setGeocoding(false);
+    }
+  }, [site, fetchAll]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
