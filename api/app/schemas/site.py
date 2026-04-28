@@ -76,6 +76,8 @@ class SiteOut(BaseModel):
     heartbeat_interval: Optional[int] = None
     uptime_percent: Optional[float] = None
     update_channel: Optional[str] = None
+    building_type: Optional[str] = None
+    address_notes: Optional[str] = None
     computed_status: Optional[str] = None
     health_status: Optional[str] = None
 
@@ -127,6 +129,8 @@ class SiteCreate(BaseModel):
     heartbeat_interval: Optional[int] = None
     uptime_percent: Optional[float] = None
     update_channel: Optional[str] = None
+    building_type: Optional[str] = None
+    address_notes: Optional[str] = None
 
 
 class SiteUpdate(BaseModel):
@@ -164,3 +168,5 @@ class SiteUpdate(BaseModel):
     heartbeat_interval: Optional[int] = None
     uptime_percent: Optional[float] = None
     update_channel: Optional[str] = None
+    building_type: Optional[str] = None
+    address_notes: Optional[str] = None

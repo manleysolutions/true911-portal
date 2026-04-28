@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -21,6 +22,10 @@ from app.services.continuity import (
 )
 from app.services.health_scoring import compute_device_health, compute_site_health
 from app.services.geocoding import geocode_address, has_valid_coords
+
+# TEMP: persistence-path debug logger.  Remove these log lines once
+# building_type / address_notes save behavior is confirmed in prod.
+logger = logging.getLogger("true911.sites")
 
 router = APIRouter()
 
@@ -282,14 +287,16 @@ async def list_missing_coords(
 @router.post(
     "/{site_pk}/geocode",
     response_model=SiteOut,
-    dependencies=[Depends(require_permission("VIEW_ADMIN"))],
+    dependencies=[Depends(require_permission("EDIT_SITES"))],
 )
 async def geocode_site(
     site_pk: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Geocode a site from its E911 address. Admin only."""
+    """Geocode a site from its E911 address.  Available to any role that
+    can edit sites (Admin, Manager, DataEntry) so non-admin operators can
+    fix locations on their own sites."""
     result = await db.execute(
         select(Site).where(Site.id == site_pk, Site.tenant_id == current_user.tenant_id)
     )
@@ -449,6 +456,13 @@ async def update_site(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
 
     updates = body.model_dump(exclude_unset=True)
+    # TEMP: persistence-path debug — confirm building_type / address_notes
+    # arrive at the route and survive role-stripping.  Remove once verified.
+    logger.info(
+        "PATCH /sites/%s incoming=%s",
+        site_pk,
+        list(updates.keys()),
+    )
 
     if (current_user.role or "").lower() == "dataentry":
         restricted = {k for k in updates if k not in _DATAENTRY_ALLOWED_FIELDS}
@@ -495,12 +509,26 @@ async def update_site(
                 "Longitude must be between -180 and 180",
             )
 
+    # TEMP: persistence-path debug — list of fields actually written to
+    # the ORM instance after the role strip.  Remove once verified.
+    logger.info(
+        "PATCH /sites/%s applying=%s",
+        site_pk,
+        list(updates.keys()),
+    )
     for field, value in updates.items():
         setattr(site, field, value)
 
-    # Auto-geocode when any E911 address field is updated
+    # Auto-geocode when:
+    #   (a) the request changed an E911 address field, OR
+    #   (b) coords are missing and an address is on file (backfill).
+    # Geocoding failures never block the save — geocode_address returns
+    # None on any error and the lat/lng simply stays unchanged.
     e911_fields = {"e911_street", "e911_city", "e911_state", "e911_zip"}
-    if e911_fields & body.model_fields_set:
+    address_changed = bool(e911_fields & body.model_fields_set)
+    has_address_now = any([site.e911_street, site.e911_city, site.e911_state, site.e911_zip])
+    coords_missing_now = not has_valid_coords(site.lat, site.lng)
+    if address_changed or (coords_missing_now and has_address_now):
         coords = await geocode_address(
             site.e911_street, site.e911_city, site.e911_state, site.e911_zip
         )
