@@ -21,6 +21,7 @@ import base64
 import hashlib
 import logging
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -98,6 +99,32 @@ def _derive_public_key_pem(private_key_pem: str) -> str:
     return pub_bytes.decode("utf-8")
 
 
+def _derive_public_key_jwk(private_key_pem: str) -> dict[str, str]:
+    """Derive an RFC 7517 JWK (RSA) from a private key PEM.
+
+    Returns {"kty": "RSA", "n": <base64url(modulus)>, "e": <base64url(exp)>}
+    with unpadded base64url per RFC 7518 §6.3.1.
+    """
+    from cryptography.hazmat.primitives import serialization
+
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode("utf-8"),
+        password=None,
+    )
+    public_numbers = private_key.public_key().public_numbers()
+
+    def _int_to_b64url(i: int) -> str:
+        byte_len = (i.bit_length() + 7) // 8
+        raw = i.to_bytes(byte_len, "big")
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    return {
+        "kty": "RSA",
+        "n": _int_to_b64url(public_numbers.n),
+        "e": _int_to_b64url(public_numbers.e),
+    }
+
+
 # ── PoP Token Generation ───────────────────────────────────────────────────
 
 def generate_pop_token(
@@ -112,8 +139,9 @@ def generate_pop_token(
       iat / exp / jti — standard
       ehts — comma-separated list of HTTP header names being signed
       edts — base64url(SHA-256("name1=value1&name2=value2&...")) over the
-             ehts header pairs in order, names lower-cased. The request
-             body is NEVER included.
+             ehts header pairs in order, names verbatim from the ehts
+             list (case preserved, matching the Apigee PopTokenBuilder
+             reference impl). The request body is NEVER included.
 
     Args:
         ehts_headers: ordered list of (header_name, header_value) tuples.
@@ -129,7 +157,13 @@ def generate_pop_token(
     ehts = ",".join(name for name, _ in ehts_headers)
     # T-Mobile TAAP PopTokenBuilder: edts = SHA-256 of the ehts header
     # values concatenated in ehts order. The request body is NOT hashed.
-    digest_input = "&".join(f"{name.lower()}={value}" for name, value in ehts_headers).encode("utf-8")
+    # EXPERIMENT: Apigee-style canonicalization — values only, newline
+    # separated, no header names, no '&'. Header values are used verbatim
+    # (Authorization keeps its single space after "Basic").
+    digest_input_str = "\n".join(value for _, value in ehts_headers)
+    digest_input = digest_input_str.encode("utf-8")
+    if os.environ.get("TMOBILE_TAAP_DEBUG", "").lower() in ("1", "true", "yes"):
+        print("[TAAP-DEBUG] edts digest_input (NEW):", repr(digest_input_str))
     edts = (
         base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest())
         .rstrip(b"=")
@@ -237,11 +271,14 @@ class TMobileTAAPClient:
 
         # T-Mobile TAAP requires the PoP public key in the token request body
         # as the `cnf` attribute (Security-1018 / Missing Public Key otherwise).
+        # JWK form returned Security-1018; T-Mobile's validator wants PEM,
+        # but as a single-line string (BEGIN/END markers preserved, all
+        # newlines stripped) so JSON-escaped \n sequences don't break parsing.
         import json as _json
-        public_key_pem = _derive_public_key_pem(_load_private_key())
+        cnf_string = _derive_public_key_pem(_load_private_key()).replace("\n", "")
         body_obj = {
             "grant_type": "client_credentials",
-            "cnf": public_key_pem,
+            "cnf": cnf_string,
         }
         body_str = _json.dumps(body_obj)
 
@@ -259,8 +296,19 @@ class TMobileTAAPClient:
         _ck = self.consumer_key.strip()
         _cs = self.consumer_secret.strip()
         basic_creds = f"{_ck}:{_cs}".encode("utf-8")
-        auth_header = "Basic " + base64.b64encode(basic_creds).decode("ascii")
+        # Standard RFC 4648 base64 (NOT base64url): alphabet [A-Za-z0-9+/]
+        # with `=` padding. ASCII output. T-Mobile's header validator
+        # rejects base64url substitutions (-/_) and missing padding.
+        basic_b64 = base64.b64encode(basic_creds).decode("ascii")
+        auth_header = "Basic " + basic_b64
         print("AUTH HEADER EXACT:", repr(auth_header))
+        b64_valid = bool(re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", basic_b64))
+        try:
+            roundtrip_ok = base64.b64decode(basic_b64) == basic_creds
+        except Exception:
+            roundtrip_ok = False
+        print("AUTH BASIC B64 VALID:", b64_valid)
+        print("AUTH BASIC ROUNDTRIP OK:", roundtrip_ok)
 
         # Single source of truth: auth_header is the exact string used in
         # BOTH the wire Authorization header and the PoP edts/ehts input.
@@ -275,7 +323,11 @@ class TMobileTAAPClient:
                 ("Authorization", auth_header),
             ],
         )
-        headers["X-Authorization"] = "PoP " + pop
+        # T-Mobile's TAAP validator parses the entire X-Authorization value
+        # as a JWT — adding a "PoP " prefix breaks base64 decoding of the
+        # header part and yields JWTDecodeException server-side. Send the
+        # raw JWT only.
+        headers["X-Authorization"] = pop
         x_auth = pop
 
         # Opt-in diagnostics for local troubleshooting. Enable with
@@ -289,12 +341,16 @@ class TMobileTAAPClient:
             except Exception:
                 pop_hdr, pop_clm = {}, {}
             print(f"[TAAP-DEBUG] Token URL: {self.token_url}")
+            print(f"[TAAP-DEBUG] Token URL repr: {repr(self.token_url)}")
+            print(f"[TAAP-DEBUG] Token URL len: {len(self.token_url)}")
+            print(f"[TAAP-DEBUG] cnf format: single-line PEM")
+            print(f"[TAAP-DEBUG] cnf length: {len(cnf_string)}")
             print(f"[TAAP-DEBUG] Body bytes len: {len(body_str.encode('utf-8'))}")
             print(f"[TAAP-DEBUG] Body SHA-256 (hex): {body_hash_hex}")
             print(f"[TAAP-DEBUG] Body JSON (exact wire bytes): {body_str}")
-            print(f"[TAAP-DEBUG] X-Authorization prefix: "
-                  + ("'PoP ' (with space)" if headers["X-Authorization"].startswith("PoP ")
-                     else "(raw JWT, no prefix)"))
+            print(f"[TAAP-DEBUG] X-Authorization format: "
+                  + ("(raw JWT, no prefix)" if not headers["X-Authorization"].startswith("PoP ")
+                     else "'PoP ' (with space) — UNEXPECTED, T-Mobile expects raw JWT"))
             print(f"[TAAP-DEBUG] X-Authorization (first 80): {headers['X-Authorization'][:80]}...")
             print(f"[TAAP-DEBUG] PoP header: {pop_hdr}")
             print(f"[TAAP-DEBUG] PoP claims: {pop_clm}")

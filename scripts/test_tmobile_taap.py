@@ -29,6 +29,7 @@ Environment variables required (set in .env or shell):
 
 import argparse
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -148,8 +149,23 @@ async def main():
         _env = settings.TMOBILE_ENV.lower()
         test_uri = settings.TMOBILE_TOKEN_URL or (PIT_TOKEN_URL if _env == "pit" else PROD_TOKEN_URL)
         info(f"PoP test URI: {test_uri}")
+
+        # Build the SAME Authorization header that get_access_token() does,
+        # so Step 3's PoP exactly mirrors Step 4's PoP construction path
+        # (same ehts, same digest_input). If creds aren't configured yet,
+        # we still build the header from whatever's there (possibly empty)
+        # — the construction path is what we're validating, not the value.
+        _ck = (settings.TMOBILE_CONSUMER_KEY or "").strip()
+        _cs = (settings.TMOBILE_CONSUMER_SECRET or "").strip()
+        _basic_b64 = base64.b64encode(f"{_ck}:{_cs}".encode("utf-8")).decode("ascii")
+        auth_header = "Basic " + _basic_b64
+        info(f"PoP Authorization header (first 16): {auth_header[:16]}...")
+
         pop = generate_pop_token(
-            ehts_headers=[("Content-Type", "application/json")],
+            ehts_headers=[
+                ("Content-Type", "application/json"),
+                ("Authorization", auth_header),
+            ],
         )
 
         ok(f"PoP token generated ({len(pop)} chars)")
