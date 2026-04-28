@@ -108,11 +108,68 @@ export async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const err = new Error(body.detail || `API error ${res.status}`);
+    const err = new Error(extractDetailMessage(body, res));
     err.status = res.status;
     err.body = body;
     throw err;
   }
 
   return res.json();
+}
+
+/**
+ * Build a user-readable error message from a FastAPI/Pydantic error body.
+ *
+ * FastAPI's `HTTPException(detail=…)` can hand us a string, an object, or
+ * an array (Pydantic validation).  This helper produces a single string
+ * for `new Error(...)` so the UI doesn't end up showing "[object Object]"
+ * or stringified arrays.
+ *
+ * 401 responses do NOT use this — that path keeps its existing message
+ * and still redirects to /login.
+ */
+function extractDetailMessage(body, res) {
+  const detail = body && body.detail;
+
+  // Plain string detail — most common shape.
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  // Pydantic validation errors: array of { loc, msg, type, ... }.
+  if (Array.isArray(detail) && detail.length > 0) {
+    const lines = detail.map((item) => {
+      if (!item || typeof item !== "object") return String(item);
+      const loc = Array.isArray(item.loc)
+        ? item.loc.filter((p) => p !== "body").join(".")
+        : "";
+      const msg = item.msg || item.message || "Invalid value";
+      return loc ? `${loc}: ${msg}` : msg;
+    });
+    return lines.join("\n");
+  }
+
+  // Structured object detail (e.g. our 409 conflict payloads:
+  // { field, value, conflicting_*_id, message }).  Prefer an
+  // explicit message field; otherwise fall back to a JSON dump so the
+  // user at least sees the real fields instead of "[object Object]".
+  if (detail && typeof detail === "object") {
+    if (typeof detail.message === "string" && detail.message.trim()) {
+      return detail.message;
+    }
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // fall through to status-based fallback
+    }
+  }
+
+  // Some routes return { message } at the top level instead of detail.
+  if (typeof body?.message === "string" && body.message.trim()) {
+    return body.message;
+  }
+
+  // Final fallback — prefer the HTTP status text (e.g. "Unprocessable
+  // Entity") over our old generic "API error 422".
+  return res.statusText || `Request failed (${res.status})`;
 }
