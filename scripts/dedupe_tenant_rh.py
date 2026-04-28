@@ -97,7 +97,12 @@ DRY_RUN = _DRY_ENV not in ("0", "false", "no", "off")
 # every step (both slugs exist throughout the run).  AuditLogEntry is not
 # included in the bulk move — its rows record historical actor/tenant
 # context and rewriting them would falsify audit history.
-TENANT_TABLES: list[tuple[str, type]] = [
+#
+# Each entry is filtered at startup to drop any model that does not
+# actually expose a ``tenant_id`` column (e.g. an import points at the
+# parent class in a multi-class file rather than the per-tenant child).
+# Skipped entries are logged so the operator can see what was excluded.
+_CANDIDATE_TENANT_TABLES: list[tuple[str, type]] = [
     ("users", User),
     ("customers", Customer),
     ("sites", Site),
@@ -141,6 +146,27 @@ TENANT_TABLES: list[tuple[str, type]] = [
     ("vendor", Vendor),
     ("verification_task", VerificationTask),
 ]
+
+
+def _filter_tenant_tables(
+    candidates: list[tuple[str, type]],
+) -> tuple[list[tuple[str, type]], list[tuple[str, type]]]:
+    """Drop any (label, model) whose model class does not expose a
+    ``tenant_id`` attribute.  Returns (kept, skipped).
+    """
+    kept: list[tuple[str, type]] = []
+    skipped: list[tuple[str, type]] = []
+    for label, model in candidates:
+        if hasattr(model, "tenant_id"):
+            kept.append((label, model))
+        else:
+            skipped.append((label, model))
+    return kept, skipped
+
+
+TENANT_TABLES, _SKIPPED_TENANT_TABLES = _filter_tenant_tables(
+    _CANDIDATE_TENANT_TABLES
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -229,6 +255,11 @@ async def main() -> int:
     print(f"  FROM_TENANT (duplicate)  = {FROM_TENANT!r}")
     print(f"  TO_TENANT   (canonical)  = {TO_TENANT!r}")
     print(f"  PROTECTED                = {sorted(PROTECTED_TENANTS)}")
+
+    if _SKIPPED_TENANT_TABLES:
+        _section("Skipped tables (no tenant_id column)")
+        for label, model in _SKIPPED_TENANT_TABLES:
+            print(f"  Skipping {model.__name__}: no tenant_id column  (label={label!r})")
 
     async with AsyncSessionLocal() as db:
         _section("Resolving tenants")
