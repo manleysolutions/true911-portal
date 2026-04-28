@@ -33,13 +33,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run pytest
-        # NOTE: tests/test_tmobile_taap.py is excluded because it's an
-        # in-progress integration test in the working tree (predates this
-        # CI workflow; tracked by Stuart's TAAP work).  Remove the
-        # --ignore flag once that test is updated to match the current
-        # generate_pop_token signature.
         run: |
-          python -m pytest -q --ignore=tests/test_tmobile_taap.py
+          python -m pytest -q
 
   frontend:
     name: Frontend (vite build)
