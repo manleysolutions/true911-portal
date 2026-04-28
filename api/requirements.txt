@@ -5,7 +5,14 @@ asyncpg==0.30.0
 alembic==1.13.0
 pydantic-settings==2.5.0
 python-jose[cryptography]==3.3.0
-bcrypt==4.2.1
+# bcrypt pinned to 4.0.1 — last release that exposes ``__about__.__version__``,
+# which passlib 1.7.4's bcrypt backend reads at import time.  Newer bcrypt
+# (>=4.1) removed ``__about__`` and triggers the
+#   "(trapped) error reading bcrypt version
+#    AttributeError: module 'bcrypt' has no attribute '__about__'"
+# warning on every login.  passlib's last release is 1.7.4 (June 2020), so
+# we hold bcrypt back rather than upgrade passlib.
+bcrypt==4.0.1
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 email-validator==2.1.1
