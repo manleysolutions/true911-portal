@@ -1,113 +1,61 @@
-"""RBAC permission matrix — ported from web/src/components/AuthContext.jsx."""
+"""RBAC permission matrix — single source of truth shared with the
+frontend.
 
-PERMISSIONS: dict[str, list[str]] = {
-    "PING": ["Admin", "Manager"],
-    "REBOOT": ["Admin"],
-    "GENERATE_REPORT": ["Admin", "Manager"],
-    "UPDATE_E911": ["Admin"],
-    "UPDATE_HEARTBEAT": ["Admin"],
-    "VIEW_ADMIN": ["Admin", "SuperAdmin"],
-    "RESTART_CONTAINER": ["Admin"],
-    "PULL_LOGS": ["Admin"],
-    "SWITCH_CHANNEL": ["Admin"],
-    "ACK_INCIDENT": ["Admin", "Manager"],
-    "CLOSE_INCIDENT": ["Admin", "Manager"],
-    "MANAGE_NOTIFICATIONS": ["Admin"],
-    "MANAGE_PROVIDERS": ["Admin"],
-    "ROTATE_DEVICE_KEY": ["Admin"],
-    "MANAGE_USERS": ["Admin"],
-    "MANAGE_SIMS": ["Admin"],
-    "MANAGE_CUSTOMERS": ["Admin"],
-    "VIEW_CUSTOMERS": ["Admin", "Manager", "DataEntry"],
-    "CREATE_CUSTOMERS": ["Admin", "DataEntry"],
-    "EDIT_CUSTOMERS": ["Admin", "DataEntry"],
-    "DELETE_CUSTOMERS": ["Admin"],
-    "VIEW_SITES": ["Admin", "Manager", "User", "DataEntry"],
-    "CREATE_SITES": ["Admin", "Manager", "DataEntry"],
-    "EDIT_SITES": ["Admin", "Manager", "DataEntry"],
-    "DELETE_SITES": ["Admin"],
-    "VIEW_DEVICES": ["Admin", "Manager", "User", "DataEntry"],
-    "CREATE_DEVICES": ["Admin", "Manager", "DataEntry"],
-    "EDIT_DEVICES": ["Admin", "Manager", "DataEntry"],
-    "DELETE_DEVICES": ["Admin", "Manager"],
-    "VIEW_JOBS": ["Admin", "Manager"],
-    "MANAGE_INTEGRATIONS": ["Admin"],
-    "VIEW_INTEGRATIONS": ["Admin", "Manager"],
-    "RUN_RECONCILIATION": ["Admin"],
-    "GLOBAL_ADMIN": ["SuperAdmin"],
-    # Command Phase 2
-    "COMMAND_ACK": ["Admin", "Manager"],
-    "COMMAND_ASSIGN": ["Admin", "Manager"],
-    "COMMAND_RESOLVE": ["Admin", "Manager"],
-    "COMMAND_DISMISS": ["Admin"],
-    "COMMAND_CREATE_INCIDENT": ["Admin", "Manager"],
-    # Command Phase 3
-    "COMMAND_VIEW_NOTIFICATIONS": ["Admin", "Manager", "User"],
-    "COMMAND_MANAGE_ESCALATION": ["Admin"],
-    "COMMAND_INGEST_TELEMETRY": ["Admin", "Manager"],
-    "COMMAND_EXPORT_REPORTS": ["Admin", "Manager"],
-    # Command Phase 4
-    "COMMAND_MANAGE_VENDORS": ["Admin"],
-    "COMMAND_VIEW_VENDORS": ["Admin", "Manager", "User"],
-    "COMMAND_MANAGE_VERIFICATION": ["Admin", "Manager"],
-    "COMMAND_COMPLETE_VERIFICATION": ["Admin", "Manager"],
-    "COMMAND_VIEW_VERIFICATION": ["Admin", "Manager", "User"],
-    "COMMAND_MANAGE_AUTOMATION": ["Admin"],
-    "COMMAND_VIEW_OPERATOR": ["Admin", "Manager", "User"],
-    # Command Phase 5
-    "COMMAND_MANAGE_TEMPLATES": ["Admin"],
-    "COMMAND_VIEW_TEMPLATES": ["Admin", "Manager", "User"],
-    "COMMAND_BULK_IMPORT": ["Admin"],
-    "COMMAND_MANAGE_WEBHOOKS": ["Admin"],
-    "COMMAND_VIEW_CONTRACTS": ["Admin", "Manager"],
-    "COMMAND_MANAGE_ORG": ["Admin"],
-    "COMMAND_VIEW_ORG": ["Admin", "Manager", "User"],
-    # Command Phase 7
-    "COMMAND_VIEW_NETWORK": ["Admin", "Manager", "User"],
-    "COMMAND_MANAGE_NETWORK": ["Admin"],
-    "COMMAND_INGEST_CARRIER": ["Admin"],
-    "COMMAND_MANAGE_INFRA_TESTS": ["Admin", "Manager"],
-    "COMMAND_RUN_INFRA_TESTS": ["Admin", "Manager"],
-    "COMMAND_VIEW_INFRA_TESTS": ["Admin", "Manager", "User"],
-    "COMMAND_VIEW_AUDIT": ["Admin", "Manager"],
-    "COMMAND_EXPORT_AUDIT": ["Admin"],
-    # Command Phase 8
-    "COMMAND_VIEW_AUTO_OPS": ["Admin", "Manager", "User"],
-    "COMMAND_MANAGE_AUTO_OPS": ["Admin"],
-    "COMMAND_RUN_ENGINE": ["Admin"],
-    "COMMAND_VIEW_DIGESTS": ["Admin", "Manager"],
-    "COMMAND_GENERATE_DIGEST": ["Admin"],
-    "COMMAND_VIEW_AUTO_LOG": ["Admin", "Manager", "User"],
-    # Site Import
-    "COMMAND_SITE_IMPORT": ["Admin", "DataEntry"],
-    # Subscriber Import
-    "SUBSCRIBER_IMPORT": ["Admin", "DataEntry"],
-    # Line / service-unit destructive actions
-    "DELETE_LINES": ["Admin", "Manager"],
-    "DELETE_SERVICE_UNITS": ["Admin"],
-    # Device management
-    "MANAGE_DEVICES": ["Admin"],
-    # Import verification (DataEntry can view and manage but not delete)
-    "VIEW_IMPORT_VERIFICATION": ["Admin", "Manager", "DataEntry"],
-    "MANAGE_IMPORT_VERIFICATION": ["Admin", "DataEntry"],
-    # Provisioning queue (unassigned devices)
-    "VIEW_PROVISIONING_QUEUE": ["Admin", "DataEntry"],
-    "MANAGE_PROVISIONING": ["Admin"],
-    # Service units — onboarding-safe scope for DataEntry/Manager.
-    # DELETE_SERVICE_UNITS remains Admin-only (defined above).
-    "CREATE_SERVICE_UNITS": ["Admin", "Manager", "DataEntry"],
-    "EDIT_SERVICE_UNITS": ["Admin", "Manager", "DataEntry"],
-    # SIMs — carrier/billing/provisioning layer; Manager intentionally
-    # excluded so they cannot casually touch SIM records.  MANAGE_SIMS
-    # still required for assign/unassign/activate/suspend/resume/sync/
-    # bulk/delete.
-    "CREATE_SIMS": ["Admin", "DataEntry"],
-    "EDIT_SIMS": ["Admin", "DataEntry"],
-    # Voice lines — onboarding-safe scope.  DELETE_LINES remains
-    # Admin/Manager (defined above).
-    "CREATE_LINES": ["Admin", "Manager", "DataEntry"],
-    "EDIT_LINES": ["Admin", "Manager", "DataEntry"],
-}
+The map lives in ``permissions.json`` at the repo root.  The frontend
+(``web/src/contexts/AuthContext.jsx``) imports the same file via the
+``@permissions`` Vite alias, so the two sides cannot drift.
+
+To change a role's grant: edit ``permissions.json`` only.
+"""
+
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List
+
+_PERMISSIONS_PATH = (
+    Path(__file__).resolve().parent.parent.parent.parent / "permissions.json"
+)
+
+
+def _load_permissions() -> Dict[str, List[str]]:
+    """Load the permission matrix from the shared JSON file.
+
+    Loaded once at module import.  If the file is missing or invalid,
+    raise loudly — running the API with no RBAC matrix is far worse
+    than refusing to start.
+    """
+    try:
+        raw = _PERMISSIONS_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"RBAC permissions file not found at {_PERMISSIONS_PATH!s}. "
+            "This file is the single source of truth for the permission "
+            "matrix and must exist at the repo root."
+        ) from e
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"RBAC permissions file at {_PERMISSIONS_PATH!s} is not valid JSON: {e}"
+        ) from e
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"RBAC permissions file at {_PERMISSIONS_PATH!s} must be a JSON object."
+        )
+    # Light schema check — every value must be a list of role strings.
+    for action, roles in data.items():
+        if not isinstance(roles, list) or not all(isinstance(r, str) for r in roles):
+            raise RuntimeError(
+                f"RBAC permissions[{action!r}] must be a list of role strings."
+            )
+    logging.getLogger("true911").info(
+        "RBAC: loaded %d permissions from %s", len(data), _PERMISSIONS_PATH,
+    )
+    return data
+
+
+PERMISSIONS: Dict[str, List[str]] = _load_permissions()
 
 
 ROLE_NORMALIZE = {
