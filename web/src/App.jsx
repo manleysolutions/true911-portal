@@ -21,11 +21,17 @@ const { Pages, Layout } = pagesConfig;
 // Pages that require a specific permission to access.
 // If the user lacks the permission, they are redirected to their
 // role's default landing page instead of seeing a dead-end screen.
+//
+// DataEntry-allowed pages use granular permissions (VIEW_CUSTOMERS,
+// VIEW_SITES, VIEW_DEVICES, COMMAND_SITE_IMPORT, etc.) so they are
+// never accidentally locked behind VIEW_ADMIN.
 const PAGE_PERMISSIONS = {
+  // Admin-only pages
   Admin:               "VIEW_ADMIN",
   AdminUsers:          "VIEW_ADMIN",
   AdminTenants:        "VIEW_ADMIN",
   AdminImports:        "VIEW_ADMIN",
+  AdminDashboard:      "VIEW_ADMIN",
   E911:                "VIEW_ADMIN",
   Notifications:       "MANAGE_NOTIFICATIONS",
   Providers:           "MANAGE_PROVIDERS",
@@ -40,6 +46,16 @@ const PAGE_PERMISSIONS = {
   VolaIntegration:     "MANAGE_DEVICES",
   SupportConsole:      "VIEW_ADMIN",
   SelfHealingConsole:  "VIEW_ADMIN",
+
+  // DataEntry-allowed onboarding pages — granular permissions
+  Customers:           "VIEW_CUSTOMERS",
+  Sites:               "VIEW_SITES",
+  SiteDetail:          "VIEW_SITES",
+  Devices:             "VIEW_DEVICES",
+  SiteImport:          "COMMAND_SITE_IMPORT",
+  SubscriberImport:    "SUBSCRIBER_IMPORT",
+  ImportVerification:  "VIEW_IMPORT_VERIFICATION",
+  ProvisioningQueue:   "VIEW_PROVISIONING_QUEUE",
 };
 
 function getLandingPage(role) {
