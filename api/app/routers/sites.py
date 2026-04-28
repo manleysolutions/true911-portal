@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db, require_permission
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    maybe_log_default_tenant_create,
+    require_permission,
+)
 from app.models.audit_log_entry import AuditLogEntry
 from app.models.device import Device
 from app.models.incident import Incident
@@ -430,6 +435,13 @@ async def create_site(
         )
         if coords:
             site.lat, site.lng = coords
+
+    maybe_log_default_tenant_create(
+        db, current_user,
+        target_type="site",
+        target_id=site.site_id,
+        target_name=site.site_name,
+    )
 
     db.add(site)
     await db.commit()

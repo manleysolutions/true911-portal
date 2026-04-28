@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db, require_permission
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    maybe_log_default_tenant_create,
+    require_permission,
+)
 from app.models.audit_log_entry import AuditLogEntry
 from app.models.customer import Customer
 from app.models.user import User
@@ -82,6 +87,11 @@ async def create_customer(
     current_user: User = Depends(get_current_user),
 ):
     customer = Customer(**body.model_dump(), tenant_id=current_user.tenant_id)
+    maybe_log_default_tenant_create(
+        db, current_user,
+        target_type="customer",
+        target_name=customer.name,
+    )
     db.add(customer)
     await db.flush()
     await db.commit()

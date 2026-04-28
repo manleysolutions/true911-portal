@@ -652,6 +652,16 @@ export default function SiteOnboarding() {
   const handleNext = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
   const handleBack = () => setStep(s => Math.max(s - 1, 0));
 
+  // Phase 2 guardrail: SuperAdmin must explicitly choose an existing
+  // tenant or define a new one before leaving the Account step.  Other
+  // roles always use their own tenant_id and are unaffected.
+  const accountStepBlockedForSuperAdmin = (
+    isSuperAdmin
+    && !data.tenant_id
+    && !(data.new_tenant_id && data.new_tenant_name)
+  );
+  const nextDisabled = step === 0 && accountStepBlockedForSuperAdmin;
+
   const handleComplete = async () => {
     setError("");
     setSubmitting(true);
@@ -805,10 +815,21 @@ export default function SiteOnboarding() {
           </button>
 
           {step < STEPS.length - 1 ? (
-            <button onClick={handleNext}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl">
-              Next <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={handleNext}
+                disabled={nextDisabled}
+                title={nextDisabled ? "Select an existing tenant or define a new one to continue." : undefined}
+                className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed rounded-xl"
+              >
+                Next <ChevronRight className="w-4 h-4" />
+              </button>
+              {nextDisabled && (
+                <span className="text-[11px] text-amber-700">
+                  Select an existing tenant or define a new one to continue.
+                </span>
+              )}
+            </div>
           ) : (
             <button onClick={handleComplete} disabled={submitting}
               className="flex items-center gap-1.5 px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-xl">

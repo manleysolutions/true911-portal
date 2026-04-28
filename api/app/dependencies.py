@@ -1,5 +1,6 @@
+import json
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 import bcrypt
 from fastapi import Depends, Header, HTTPException, status
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
+from app.models.audit_log_entry import AuditLogEntry
 from app.models.device import Device
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -48,6 +50,9 @@ async def get_current_user(
 
     # Always store the original tenant_id for audit purposes
     user._original_tenant_id = user.tenant_id
+    # Phase 1 default-tenant guardrail uses this flag to suppress warnings
+    # when a SuperAdmin has explicitly impersonated some tenant.
+    user._is_impersonating = bool(x_act_as_tenant)
 
     if x_act_as_tenant:
         if user.role != "SuperAdmin":
@@ -112,3 +117,64 @@ def require_permission(action: str):
         return current_user
 
     return _check
+
+
+# ── Phase 1 guardrail: warning-only audit on default-tenant creates ──
+# Detects the common "SuperAdmin forgot to View As" footgun where a new
+# record gets stamped with tenant_id="default" because the acting user's
+# home tenant is "default" and no impersonation header was sent.  This
+# helper writes an AuditLogEntry but does NOT block the request — it
+# just produces a signal we can grep for in the audit log to gauge how
+# often the leak happens before deciding whether to add a hard refusal.
+def maybe_log_default_tenant_create(
+    db: AsyncSession,
+    current_user: User,
+    target_type: str,
+    target_id: Optional[str] = None,
+    target_name: Optional[str] = None,
+    extra: Optional[dict] = None,
+) -> None:
+    """Add an AuditLogEntry to ``db`` if a SuperAdmin is creating a
+    record while resolved to ``tenant_id='default'`` without
+    impersonation.  No-op for any other case.
+
+    Caller is responsible for ``db.commit()`` — this function only
+    enqueues the row in the same transaction as the create.
+    """
+    if (current_user.role or "") != "SuperAdmin":
+        return
+    if (current_user.tenant_id or "") != "default":
+        return
+    if getattr(current_user, "_is_impersonating", False):
+        return
+
+    detail = {
+        "actor": current_user.email,
+        "actor_role": current_user.role,
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_name": target_name,
+        "resolved_tenant_id": current_user.tenant_id,
+        "user_home_tenant_id": getattr(
+            current_user, "_original_tenant_id", current_user.tenant_id
+        ),
+        "is_impersonating": False,
+    }
+    if extra:
+        detail.update(extra)
+
+    db.add(AuditLogEntry(
+        entry_id=f"default-create-{uuid.uuid4().hex[:12]}",
+        tenant_id=current_user.tenant_id,
+        category="security",
+        action="create_on_default_tenant",
+        actor=current_user.email,
+        target_type=target_type,
+        target_id=target_id,
+        summary=(
+            f"SuperAdmin {current_user.email} created {target_type}"
+            f"{f' {target_id!r}' if target_id else ''} on tenant 'default' "
+            "without impersonation."
+        ),
+        detail_json=json.dumps(detail),
+    ))

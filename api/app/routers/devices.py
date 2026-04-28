@@ -9,7 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db, require_permission
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    maybe_log_default_tenant_create,
+    require_permission,
+)
 from app.models.audit_log_entry import AuditLogEntry
 from app.models.command_telemetry import CommandTelemetry
 from app.models.device import Device
@@ -327,6 +332,12 @@ async def create_device(
         api_key_hash=key_hash,
         claimed_at=datetime.now(timezone.utc),
         claimed_by=current_user.email,
+    )
+    maybe_log_default_tenant_create(
+        db, current_user,
+        target_type="device",
+        target_id=device.device_id,
+        target_name=device.model or device.device_type,
     )
     db.add(device)
     try:
