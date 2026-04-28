@@ -506,11 +506,89 @@ function ComplianceSection({ site }) {
 }
 
 
+/* ── Tabbed drawer body ─────────────────────────────────────────── */
+const DRAWER_TABS = [
+  { key: "status",     label: "Status" },
+  { key: "actions",    label: "Actions" },
+  { key: "compliance", label: "Compliance" },
+  { key: "details",    label: "Details" },
+];
+
+function TabBar({ active, onChange }) {
+  return (
+    <div className="flex border-b border-gray-200 bg-white sticky top-0 z-10">
+      {DRAWER_TABS.map(({ key, label }) => {
+        const isActive = active === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            className={`flex-1 px-2 py-2.5 text-xs font-semibold transition-colors ${
+              isActive
+                ? "text-red-600 border-b-2 border-red-600 -mb-px bg-white"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50 border-b-2 border-transparent -mb-px"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SiteFacts({ site }) {
+  const rows = [
+    ["Tenant", site.tenant_id],
+    ["Site Name", site.site_name],
+    ["Site ID", site.site_id],
+    ["Customer", site.customer_name],
+    ["Status", site.status],
+    [
+      "Location",
+      [site.e911_city, site.e911_state].filter(Boolean).join(", ") || null,
+    ],
+    [
+      "E911 Address",
+      [site.e911_street, site.e911_city, site.e911_state, site.e911_zip]
+        .filter(Boolean)
+        .join(", ") || null,
+    ],
+    [
+      "Coordinates",
+      site.has_coords ? `${site.lat?.toFixed(4)}, ${site.lng?.toFixed(4)}` : null,
+    ],
+    ["Device Model", site.device_model],
+    ["Device Serial", site.device_serial],
+    ["Firmware", site.device_firmware],
+    ["Container", site.container_version],
+    ["Carrier", site.carrier],
+    ["Network", site.network_tech],
+  ];
+  return (
+    <div className="space-y-1.5">
+      {rows.filter(([, v]) => v).map(([label, value]) => (
+        <div
+          key={label}
+          className="flex justify-between items-start gap-3 py-1 border-b border-gray-50 last:border-0"
+        >
+          <span className="text-xs text-gray-500 flex-shrink-0">{label}</span>
+          <span className="text-xs font-mono text-gray-700 text-right break-all">
+            {value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
   const [lastActionResult, setLastActionResult] = useState(null);
   const [showE911, setShowE911] = useState(false);
   const [showCreateIncident, setShowCreateIncident] = useState(false);
   const [timelineKey, setTimelineKey] = useState(0);
+  const [activeTab, setActiveTab] = useState("status");
 
   if (!site) return null;
 
@@ -524,58 +602,53 @@ export default function SiteDrawer({ site, onClose, onSiteUpdated }) {
       <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={onClose} />
       <div className="fixed top-0 right-0 h-full w-full max-w-[400px] bg-white shadow-2xl z-50 flex flex-col border-l border-gray-200">
         <DrawerHeader site={site} lastActionResult={lastActionResult} onClose={onClose} />
+        <TabBar active={activeTab} onChange={setActiveTab} />
 
-        <div className="flex-1 overflow-y-auto px-5 py-2">
-          {/* Ops Summary */}
-          <div className="py-3 border-b border-gray-50">
-            <OpsSummary site={site} />
-          </div>
-
-          {/* Quick Actions */}
-          <div className="py-3 border-b border-gray-50">
-            <QuickActions
-              site={site}
-              onSiteUpdated={handleSiteUpdated}
-              onOpenE911={() => setShowE911(true)}
-              onCreateIncident={() => setShowCreateIncident(true)}
-            />
-          </div>
-
-          <InfrastructureSection site={site} />
-
-          <ComplianceSection site={site} />
-
-          <Section title="Health Snapshot">
-            <HealthSnapshot site={site} />
-          </Section>
-
-          <Section title="Incident Status" defaultOpen={true}>
-            <IncidentStatus site={site} refreshKey={timelineKey} />
-          </Section>
-
-          <Section title="Action Timeline">
-            <ActionTimeline site={site} refreshKey={timelineKey} />
-          </Section>
-
-          <ContactPOCSection site={site} onSiteUpdated={handleSiteUpdated} />
-
-          <E911CoordsSection site={site} onSiteUpdated={handleSiteUpdated} />
-
-          <Section title="Device Info" defaultOpen={false}>
-            <div className="space-y-1.5">
-              {[
-                ["Model", site.device_model],
-                ["Serial", site.device_serial],
-                ["Firmware", site.device_firmware],
-                ["Container", site.container_version],
-              ].filter(([, v]) => v).map(([label, value]) => (
-                <div key={label} className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
-                  <span className="text-xs text-gray-500">{label}</span>
-                  <span className="text-xs font-mono text-gray-700">{value}</span>
-                </div>
-              ))}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {activeTab === "status" && (
+            <div className="space-y-3">
+              {/* Critical state surfaces here first — OpsSummary renders a
+                  red/amber banner when the site is offline or degraded. */}
+              <OpsSummary site={site} />
+              <Section title="Incident Status" defaultOpen={true}>
+                <IncidentStatus site={site} refreshKey={timelineKey} />
+              </Section>
+              <Section title="Health Snapshot" defaultOpen={true}>
+                <HealthSnapshot site={site} />
+              </Section>
+              <InfrastructureSection site={site} />
             </div>
-          </Section>
+          )}
+
+          {activeTab === "actions" && (
+            <div className="space-y-3">
+              <QuickActions
+                site={site}
+                onSiteUpdated={handleSiteUpdated}
+                onOpenE911={() => setShowE911(true)}
+                onCreateIncident={() => setShowCreateIncident(true)}
+              />
+              <E911CoordsSection site={site} onSiteUpdated={handleSiteUpdated} />
+              <Section title="Action Timeline" defaultOpen={false}>
+                <ActionTimeline site={site} refreshKey={timelineKey} />
+              </Section>
+            </div>
+          )}
+
+          {activeTab === "compliance" && (
+            <div className="space-y-3">
+              <ComplianceSection site={site} />
+            </div>
+          )}
+
+          {activeTab === "details" && (
+            <div className="space-y-3">
+              <Section title="Site Facts" defaultOpen={true}>
+                <SiteFacts site={site} />
+              </Section>
+              <ContactPOCSection site={site} onSiteUpdated={handleSiteUpdated} />
+            </div>
+          )}
         </div>
       </div>
 
