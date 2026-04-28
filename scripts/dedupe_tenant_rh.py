@@ -35,52 +35,10 @@ from sqlalchemy import func, select, update  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.database import AsyncSessionLocal  # noqa: E402
-from app.models.action_audit import ActionAudit  # noqa: E402
 from app.models.audit_log_entry import AuditLogEntry  # noqa: E402
-from app.models.automation_rule import AutomationRule  # noqa: E402
-from app.models.autonomous_action import AutonomousAction  # noqa: E402
-from app.models.command_activity import CommandActivity  # noqa: E402
-from app.models.command_telemetry import CommandTelemetry  # noqa: E402
-from app.models.customer import Customer  # noqa: E402
-from app.models.device import Device  # noqa: E402
-from app.models.e911_change_log import E911ChangeLog  # noqa: E402
-from app.models.escalation_rule import EscalationRule  # noqa: E402
-from app.models.event import Event  # noqa: E402
-from app.models.import_batch import ImportBatch  # noqa: E402
-from app.models.incident import Incident  # noqa: E402
-from app.models.infra_test import InfraTest  # noqa: E402
-from app.models.infra_test_result import InfraTestResult  # noqa: E402
-from app.models.integration import Integration  # noqa: E402
-from app.models.job import Job  # noqa: E402
-from app.models.line import Line  # noqa: E402
-from app.models.line_intelligence_event import LineIntelligenceEvent  # noqa: E402
-from app.models.network_event import NetworkEvent  # noqa: E402
-from app.models.notification import CommandNotification  # noqa: E402
-from app.models.notification_rule import NotificationRule  # noqa: E402
-from app.models.operational_digest import OperationalDigest  # noqa: E402
-from app.models.outbound_webhook import OutboundWebhook  # noqa: E402
-from app.models.port_state import PortState  # noqa: E402
-from app.models.provider import Provider  # noqa: E402
-from app.models.provisioning_queue import ProvisioningQueueItem  # noqa: E402
-from app.models.recording import Recording  # noqa: E402
-from app.models.service_contract import ServiceContract  # noqa: E402
-from app.models.service_unit import ServiceUnit  # noqa: E402
-from app.models.sim import Sim  # noqa: E402
-from app.models.site import Site  # noqa: E402
-from app.models.site_template import SiteTemplate  # noqa: E402
-from app.models.site_vendor import SiteVendorAssignment  # noqa: E402
-from app.models.subscription import Subscription  # noqa: E402
-from app.models.support import (  # noqa: E402
-    SupportSession,
-    SupportDiagnostic,
-    SupportEscalation,
-    SupportRemediationAction,
-)
-from app.models.telemetry_event import TelemetryEvent  # noqa: E402
+from app.models.line import Line  # noqa: E402  — used by DID collision check
 from app.models.tenant import Tenant  # noqa: E402
-from app.models.user import User  # noqa: E402
-from app.models.vendor import Vendor  # noqa: E402
-from app.models.verification_task import VerificationTask  # noqa: E402
+from app.services.tenant_registry import tenant_models  # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────────
 FROM_TENANT = "rh"
@@ -91,82 +49,18 @@ PROTECTED_TENANTS = {"default"}  # never touched even if listed accidentally
 _DRY_ENV = os.environ.get("DRY_RUN", "true").strip().lower()
 DRY_RUN = _DRY_ENV not in ("0", "false", "no", "off")
 
-# Tables that hold a ``tenant_id`` slug column.  Order is informational —
-# the actual update order does not matter because the FK from
-# ``sites.tenant_id`` (and others) to ``tenants.tenant_id`` is satisfied at
-# every step (both slugs exist throughout the run).  AuditLogEntry is not
-# included in the bulk move — its rows record historical actor/tenant
-# context and rewriting them would falsify audit history.
-#
-# Each entry is filtered at startup to drop any model that does not
-# actually expose a ``tenant_id`` column (e.g. an import points at the
-# parent class in a multi-class file rather than the per-tenant child).
-# Skipped entries are logged so the operator can see what was excluded.
-_CANDIDATE_TENANT_TABLES: list[tuple[str, type]] = [
-    ("users", User),
-    ("customers", Customer),
-    ("sites", Site),
-    ("devices", Device),
-    ("sims", Sim),
-    ("lines", Line),
-    ("service_units", ServiceUnit),
-    ("incidents", Incident),
-    ("events", Event),
-    ("notifications", CommandNotification),
-    ("notification_rules", NotificationRule),
-    ("escalation_rules", EscalationRule),
-    ("automation_rule", AutomationRule),
-    ("autonomous_action", AutonomousAction),
-    ("action_audit", ActionAudit),
-    ("command_activity", CommandActivity),
-    ("command_telemetry", CommandTelemetry),
-    ("e911_change_log", E911ChangeLog),
-    ("import_batch", ImportBatch),
-    ("infra_test", InfraTest),
-    ("infra_test_result", InfraTestResult),
-    ("integration", Integration),
-    ("job", Job),
-    ("line_intelligence_event", LineIntelligenceEvent),
-    ("network_event", NetworkEvent),
-    ("operational_digest", OperationalDigest),
-    ("outbound_webhook", OutboundWebhook),
-    ("port_state", PortState),
-    ("provider", Provider),
-    ("provisioning_queue", ProvisioningQueueItem),
-    ("recording", Recording),
-    ("service_contract", ServiceContract),
-    ("site_template", SiteTemplate),
-    ("site_vendor_assignments", SiteVendorAssignment),
-    ("subscription", Subscription),
-    ("support_sessions", SupportSession),
-    ("support_diagnostics", SupportDiagnostic),
-    ("support_escalations", SupportEscalation),
-    ("support_remediation_actions", SupportRemediationAction),
-    ("telemetry_event", TelemetryEvent),
-    ("vendor", Vendor),
-    ("verification_task", VerificationTask),
+# Tables we deliberately leave alone.  ``audit_log_entries`` records
+# historical actor/tenant context — rewriting it would falsify audit
+# history.  Every other tenant_id-bearing model gets moved.
+_EXCLUDE_TABLES = {"audit_log_entries"}
+
+# Auto-discovered list of (table_name, mapped_class) for every model
+# with a ``tenant_id`` column, minus our explicit exclusions.  See
+# app.services.tenant_registry for how discovery works.
+TENANT_TABLES: list[tuple[str, type]] = [
+    (name, cls) for (name, cls) in tenant_models()
+    if name not in _EXCLUDE_TABLES
 ]
-
-
-def _filter_tenant_tables(
-    candidates: list[tuple[str, type]],
-) -> tuple[list[tuple[str, type]], list[tuple[str, type]]]:
-    """Drop any (label, model) whose model class does not expose a
-    ``tenant_id`` attribute.  Returns (kept, skipped).
-    """
-    kept: list[tuple[str, type]] = []
-    skipped: list[tuple[str, type]] = []
-    for label, model in candidates:
-        if hasattr(model, "tenant_id"):
-            kept.append((label, model))
-        else:
-            skipped.append((label, model))
-    return kept, skipped
-
-
-TENANT_TABLES, _SKIPPED_TENANT_TABLES = _filter_tenant_tables(
-    _CANDIDATE_TENANT_TABLES
-)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -255,11 +149,8 @@ async def main() -> int:
     print(f"  FROM_TENANT (duplicate)  = {FROM_TENANT!r}")
     print(f"  TO_TENANT   (canonical)  = {TO_TENANT!r}")
     print(f"  PROTECTED                = {sorted(PROTECTED_TENANTS)}")
-
-    if _SKIPPED_TENANT_TABLES:
-        _section("Skipped tables (no tenant_id column)")
-        for label, model in _SKIPPED_TENANT_TABLES:
-            print(f"  Skipping {model.__name__}: no tenant_id column  (label={label!r})")
+    print(f"  movable tables           = {len(TENANT_TABLES)}  "
+          f"(auto-discovered; excluded={sorted(_EXCLUDE_TABLES)})")
 
     async with AsyncSessionLocal() as db:
         _section("Resolving tenants")

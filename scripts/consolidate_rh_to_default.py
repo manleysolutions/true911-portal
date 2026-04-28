@@ -62,48 +62,10 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.database import AsyncSessionLocal  # noqa: E402
 from app.models.audit_log_entry import AuditLogEntry  # noqa: E402
-from app.models.automation_rule import AutomationRule  # noqa: E402
-from app.models.autonomous_action import AutonomousAction  # noqa: E402
-from app.models.command_activity import CommandActivity  # noqa: E402
-from app.models.command_telemetry import CommandTelemetry  # noqa: E402
-from app.models.device import Device  # noqa: E402
-from app.models.e911_change_log import E911ChangeLog  # noqa: E402
-from app.models.escalation_rule import EscalationRule  # noqa: E402
-from app.models.event import Event  # noqa: E402
-from app.models.import_batch import ImportBatch  # noqa: E402
-from app.models.incident import Incident  # noqa: E402
-from app.models.infra_test import InfraTest  # noqa: E402
-from app.models.infra_test_result import InfraTestResult  # noqa: E402
-from app.models.job import Job  # noqa: E402
-from app.models.line import Line  # noqa: E402
-from app.models.line_intelligence_event import LineIntelligenceEvent  # noqa: E402
-from app.models.network_event import NetworkEvent  # noqa: E402
-from app.models.notification import CommandNotification  # noqa: E402
-from app.models.notification_rule import NotificationRule  # noqa: E402
-from app.models.operational_digest import OperationalDigest  # noqa: E402
-from app.models.outbound_webhook import OutboundWebhook  # noqa: E402
-from app.models.port_state import PortState  # noqa: E402
-from app.models.provider import Provider  # noqa: E402
-from app.models.provisioning_queue import ProvisioningQueueItem  # noqa: E402
-from app.models.recording import Recording  # noqa: E402
-from app.models.service_contract import ServiceContract  # noqa: E402
-from app.models.service_unit import ServiceUnit  # noqa: E402
-from app.models.sim import Sim  # noqa: E402
-from app.models.site import Site  # noqa: E402
-from app.models.site_template import SiteTemplate  # noqa: E402
-from app.models.site_vendor import SiteVendorAssignment  # noqa: E402
-from app.models.subscription import Subscription  # noqa: E402
-from app.models.support import (  # noqa: E402
-    SupportDiagnostic,
-    SupportEscalation,
-    SupportRemediationAction,
-    SupportSession,
-)
-from app.models.telemetry_event import TelemetryEvent  # noqa: E402
+from app.models.line import Line  # noqa: E402  — used by DID collision check
 from app.models.tenant import Tenant  # noqa: E402
-from app.models.user import User  # noqa: E402
-from app.models.vendor import Vendor  # noqa: E402
-from app.models.verification_task import VerificationTask  # noqa: E402
+from app.models.user import User  # noqa: E402  — used for the Sivmey row check
+from app.services.tenant_registry import tenant_models  # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────────
 FROM_TENANT = "restoration-hardware"
@@ -113,80 +75,29 @@ PROTECTED_TENANTS = {"default"}  # never used as FROM, even if edited
 _DRY_ENV = os.environ.get("DRY_RUN", "true").strip().lower()
 DRY_RUN = _DRY_ENV not in ("0", "false", "no", "off")
 
-# Tables we MOVE.  Order is informational; FK satisfaction is preserved
-# at every step because both tenant slugs exist throughout the run.
-_CANDIDATE_TENANT_TABLES: list[tuple[str, type]] = [
-    # Named operational entities
-    ("sites", Site),
-    ("devices", Device),
-    ("sims", Sim),
-    ("lines", Line),
-    ("service_units", ServiceUnit),
-    # Linked child records with tenant_id
-    ("incidents", Incident),
-    ("events", Event),
-    ("notifications", CommandNotification),
-    ("notification_rules", NotificationRule),
-    ("escalation_rules", EscalationRule),
-    ("automation_rule", AutomationRule),
-    ("autonomous_action", AutonomousAction),
-    ("command_activity", CommandActivity),
-    ("command_telemetry", CommandTelemetry),
-    ("e911_change_log", E911ChangeLog),
-    ("import_batch", ImportBatch),
-    ("infra_test", InfraTest),
-    ("infra_test_result", InfraTestResult),
-    ("job", Job),
-    ("line_intelligence_event", LineIntelligenceEvent),
-    ("network_event", NetworkEvent),
-    ("operational_digest", OperationalDigest),
-    ("outbound_webhook", OutboundWebhook),
-    ("port_state", PortState),
-    ("provider", Provider),
-    ("provisioning_queue", ProvisioningQueueItem),
-    ("recording", Recording),
-    ("service_contract", ServiceContract),
-    ("site_template", SiteTemplate),
-    ("site_vendor_assignments", SiteVendorAssignment),
-    ("subscription", Subscription),
-    ("support_sessions", SupportSession),
-    ("support_diagnostics", SupportDiagnostic),
-    ("support_escalations", SupportEscalation),
-    ("support_remediation_actions", SupportRemediationAction),
-    ("telemetry_event", TelemetryEvent),
-    ("vendor", Vendor),
-    ("verification_task", VerificationTask),
-]
+# Tables we deliberately leave alone per the approved Option-B spec.
+# Each entry has a one-line rationale so the carve-out can't drift
+# into "I forgot why this was excluded" territory.
+_HANDS_OFF_RATIONALE: dict[str, str] = {
+    "users":             "explicit carve-out — Sivmey already on default",
+    "audit_log_entries": "audit history preserves original tenant",
+    "action_audits":     "audit family — same reason as audit_log_entries",
+    "customers":         "tenant-tier; default already holds the operational set",
+}
+_EXCLUDE_TABLES: set[str] = set(_HANDS_OFF_RATIONALE)
 
-# Tables we deliberately leave alone.  Surfaced in dry-run output.
-# These rows on FROM_TENANT are NOT migrated; they keep their existing
-# tenant_id.
+# Auto-discovered list of (table_name, mapped_class) for every model
+# with a ``tenant_id`` column, minus our explicit exclusions.  See
+# app.services.tenant_registry for how discovery works.
+TENANT_TABLES: list[tuple[str, type]] = [
+    (name, cls) for (name, cls) in tenant_models()
+    if name not in _EXCLUDE_TABLES
+]
 _HANDS_OFF_TABLES: list[tuple[str, type, str]] = [
-    ("users",             User,          "explicit carve-out — Sivmey already on default"),
-    ("audit_log_entries", AuditLogEntry, "audit history preserves original tenant"),
-    # action_audit is also an audit family; we leave it alone too if present.
-    # customers: tenant-tier; default already holds the operational set.
+    (name, cls, _HANDS_OFF_RATIONALE[name])
+    for (name, cls) in tenant_models()
+    if name in _EXCLUDE_TABLES
 ]
-
-
-def _filter_tenant_tables(
-    candidates: list[tuple[str, type]],
-) -> tuple[list[tuple[str, type]], list[tuple[str, type]]]:
-    """Drop any (label, model) whose model class does not expose a
-    ``tenant_id`` attribute (e.g. wrong import in a multi-class file)."""
-    kept: list[tuple[str, type]] = []
-    skipped: list[tuple[str, type]] = []
-    for label, model in candidates:
-        if hasattr(model, "tenant_id"):
-            kept.append((label, model))
-        else:
-            skipped.append((label, model))
-    return kept, skipped
-
-
-TENANT_TABLES, _SKIPPED_TENANT_TABLES = _filter_tenant_tables(
-    _CANDIDATE_TENANT_TABLES
-)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -266,11 +177,8 @@ async def main() -> int:
     print(f"  FROM_TENANT  = {FROM_TENANT!r}")
     print(f"  TO_TENANT    = {TO_TENANT!r}")
     print(f"  PROTECTED    = {sorted(PROTECTED_TENANTS)}")
-
-    if _SKIPPED_TENANT_TABLES:
-        _section("Skipped tables (no tenant_id column on imported class)")
-        for label, model in _SKIPPED_TENANT_TABLES:
-            print(f"  Skipping {model.__name__}: no tenant_id column  (label={label!r})")
+    print(f"  movable      = {len(TENANT_TABLES)} tables (auto-discovered)")
+    print(f"  hands-off    = {sorted(_EXCLUDE_TABLES)}")
 
     async with AsyncSessionLocal() as db:
         _section("Resolving tenants")
