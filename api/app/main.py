@@ -10,6 +10,22 @@ from .config import settings
 from .bootstrap import ensure_bootstrap_admin
 from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback
 
+# Configure app-level logging so INFO emits to Render's stdout stream.
+# Uvicorn manages its own access/error loggers; this sets the level on
+# the "true911" namespace (and all children: true911.auth, true911.sites,
+# etc.) so application diagnostics aren't silently dropped at WARNING.
+# Override with LOG_LEVEL env var if needed (DEBUG / INFO / WARNING).
+_app_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.getLogger("true911").setLevel(_app_log_level)
+# Make sure messages reach stdout even if no handler is yet attached on
+# the root logger.  basicConfig is a no-op if the root logger already
+# has handlers (which uvicorn typically attaches), so this is safe to
+# call unconditionally.
+logging.basicConfig(
+    level=_app_log_level,
+    format="%(levelname)s  %(name)s  %(message)s",
+)
+
 logger = logging.getLogger("true911")
 
 app = FastAPI(title="TRUE911 API", version="1.0.0")
