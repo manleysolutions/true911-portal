@@ -1,5 +1,7 @@
 import json
+import logging
 import uuid
+from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
 
 import bcrypt
@@ -17,6 +19,33 @@ from app.models.user import User
 from app.services.auth import decode_token
 from app.services.rbac import can as rbac_can, normalize_role
 
+# TEMP diagnostic logger for the Sivmey 401 investigation.  Remove the
+# log lines once root cause is identified.  Logger name is "true911.auth"
+# so it groups with the rest of the auth chatter in Render logs.
+_auth_logger = logging.getLogger("true911.auth")
+
+
+def _summarize_token(token: str | None) -> str:
+    """Return a non-sensitive fingerprint of a token for logs.
+
+    Logs the first 8 chars and the length only — never the full token.
+    """
+    if not token:
+        return "<missing>"
+    return f"<len={len(token)} prefix={token[:8]!r}>"
+
+
+def _summarize_exp(exp: int | float | None) -> str:
+    if exp is None:
+        return "<missing>"
+    try:
+        ts = datetime.fromtimestamp(float(exp), tz=timezone.utc)
+        delta = (ts - datetime.now(timezone.utc)).total_seconds()
+        return f"{ts.isoformat()} ({delta:+.0f}s from now)"
+    except (TypeError, ValueError, OverflowError):
+        return f"<invalid exp={exp!r}>"
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
@@ -31,18 +60,67 @@ async def get_current_user(
     x_act_as_tenant: str | None = Header(None),
 ) -> User:
     if not token:
+        _auth_logger.warning(
+            "Auth 401: reason=no_token  token=%s  x_act_as_tenant=%s",
+            _summarize_token(token), x_act_as_tenant,
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+
+    payload: dict | None = None
     try:
         payload = decode_token(token)
-        if payload.get("type") != "access":
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token type")
-        user_id = uuid.UUID(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+    except JWTError as e:
+        _auth_logger.warning(
+            "Auth 401: reason=jwt_decode_failed  token=%s  err=%s: %s",
+            _summarize_token(token), type(e).__name__, e,
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
+
+    token_type = payload.get("type") if payload else None
+    payload_sub = payload.get("sub") if payload else None
+    payload_exp = payload.get("exp") if payload else None
+    payload_role = payload.get("role") if payload else None
+    payload_tenant = payload.get("tenant_id") if payload else None
+
+    if token_type != "access":
+        _auth_logger.warning(
+            "Auth 401: reason=wrong_token_type  token=%s  type=%r  sub=%s  exp=%s",
+            _summarize_token(token), token_type, payload_sub,
+            _summarize_exp(payload_exp),
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token type")
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, ValueError, TypeError) as e:
+        _auth_logger.warning(
+            "Auth 401: reason=bad_sub  token=%s  sub=%r  err=%s",
+            _summarize_token(token), payload_sub, e,
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
+
+    # Decode succeeded — log a single INFO line so successful auth and
+    # subsequent failures share a payload context in the same request.
+    _auth_logger.info(
+        "Auth: token decoded — sub=%s type=%s exp=%s payload_role=%r payload_tenant=%r",
+        payload_sub, token_type, _summarize_exp(payload_exp),
+        payload_role, payload_tenant,
+    )
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    if not user or not user.is_active:
+    if not user:
+        _auth_logger.warning(
+            "Auth 401: reason=user_not_found  sub=%s  payload_tenant=%r",
+            payload_sub, payload_tenant,
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
+    if not user.is_active:
+        _auth_logger.warning(
+            "Auth 401: reason=user_inactive  email=%s  is_active=%s  "
+            "raw_role=%r  tenant_id=%s",
+            user.email, user.is_active, user.role, user.tenant_id,
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
 
     # Normalize role to canonical PascalCase (handles "superadmin" -> "SuperAdmin" etc.)

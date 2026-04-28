@@ -102,12 +102,43 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     )
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
+        # TEMP: log misses so a wrong password vs missing user doesn't
+        # silently look like the same thing in Render logs.  Never logs
+        # the password.
+        logger.warning(
+            "Login 401: reason=%s  email=%s",
+            "user_not_found" if not user else "wrong_password",
+            email,
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
     if not user.is_active:
+        logger.warning("Login 403: reason=user_inactive  email=%s", email)
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account disabled")
 
     access = create_access_token(user.id, user.tenant_id, user.role)
     refresh = create_refresh_token(user.id)
+
+    # TEMP: round-trip the just-issued access token through decode_token
+    # to prove the issuing pod can read its own signature.  If this ever
+    # raises, the pod's JWT_SECRET is misconfigured (token would fail
+    # the same way later in get_current_user).  This catches the
+    # "different SECRET on different pods" failure mode.
+    try:
+        from app.services.auth import decode_token
+        roundtrip = decode_token(access)
+        logger.info(
+            "Login ok — email=%s role=%s tenant_id=%s issued sub=%s type=%s exp=%s",
+            email, user.role, user.tenant_id,
+            roundtrip.get("sub"),
+            roundtrip.get("type"),
+            roundtrip.get("exp"),
+        )
+    except Exception as e:
+        logger.error(
+            "Login: just-issued token failed self-decode — email=%s err=%s: %s",
+            email, type(e).__name__, e,
+        )
+
     return TokenResponse(
         access_token=access,
         refresh_token=refresh,

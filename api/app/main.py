@@ -17,6 +17,30 @@ app = FastAPI(title="TRUE911 API", version="1.0.0")
 
 @app.on_event("startup")
 async def startup():
+    # TEMP: log a non-reversible fingerprint of the JWT secret so two
+    # pods can be compared in Render logs.  sha256(secret)[:8] reveals
+    # nothing about the secret itself but yields a stable identifier
+    # for diagnosing "different secret on different pod" issues.  Also
+    # warns loudly if the default development secret is in use.
+    import hashlib
+    secret = (settings.JWT_SECRET or "")
+    fp = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8] if secret else "<empty>"
+    is_default = secret == "change-me-in-production"
+    logger.info(
+        "Auth: JWT_SECRET fingerprint=%s  algorithm=%s  access_ttl_min=%s  "
+        "refresh_ttl_days=%s  using_default_secret=%s",
+        fp, settings.JWT_ALGORITHM,
+        settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        settings.REFRESH_TOKEN_EXPIRE_DAYS,
+        is_default,
+    )
+    if is_default:
+        logger.warning(
+            "Auth: JWT_SECRET is the development default — tokens will not "
+            "validate across services that override it.  Set JWT_SECRET in "
+            "the environment for production."
+        )
+
     # Dev-only escape hatch: when ALLOW_START_WITHOUT_DB=true, tolerate a failed
     # bootstrap so uvicorn can serve routes that don't need Postgres (e.g. the
     # T-Mobile PIT callback). Unset in prod → original behavior is preserved.
