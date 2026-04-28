@@ -33,19 +33,16 @@ app = FastAPI(title="TRUE911 API", version="1.0.0")
 
 @app.on_event("startup")
 async def startup():
-    # TEMP: log a non-reversible fingerprint of the JWT secret so two
-    # pods can be compared in Render logs.  sha256(secret)[:8] reveals
-    # nothing about the secret itself but yields a stable identifier
-    # for diagnosing "different secret on different pod" issues.  Also
-    # warns loudly if the default development secret is in use.
-    import hashlib
-    secret = (settings.JWT_SECRET or "")
-    fp = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8] if secret else "<empty>"
-    is_default = secret == "change-me-in-production"
+    # Log a non-reversible fingerprint of the JWT secret so two pods
+    # can be compared in Render logs without ever exposing the secret.
+    # The fingerprint helper is shared with /api/health/auth so the
+    # value rendered there matches what gets logged here.
+    from .services.auth import secret_fingerprint, is_default_secret
+    is_default = is_default_secret()
     logger.info(
         "Auth: JWT_SECRET fingerprint=%s  algorithm=%s  access_ttl_min=%s  "
         "refresh_ttl_days=%s  using_default_secret=%s",
-        fp, settings.JWT_ALGORITHM,
+        secret_fingerprint(), settings.JWT_ALGORITHM,
         settings.ACCESS_TOKEN_EXPIRE_MINUTES,
         settings.REFRESH_TOKEN_EXPIRE_DAYS,
         is_default,
@@ -170,6 +167,40 @@ async def feature_flags():
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app_mode": settings.APP_MODE}
+
+
+# SuperAdmin-only auth-config probe.  Lets an operator confirm at
+# runtime that JWT signing config matches what they expect — same
+# fingerprint that gets logged at startup, plus token TTLs.
+# require_permission("GLOBAL_ADMIN") restricts to SuperAdmin because
+# permissions.json grants GLOBAL_ADMIN to ["SuperAdmin"] only and the
+# ``can()`` SuperAdmin shortcut is the only way past the gate.
+from fastapi import Depends as _AuthDepends  # noqa: E402  (kept local to this view)
+from .dependencies import require_permission as _require_permission  # noqa: E402
+from .services.auth import (  # noqa: E402
+    is_default_secret as _is_default_secret,
+    secret_fingerprint as _secret_fingerprint,
+)
+
+
+@app.get(
+    "/api/health/auth",
+    dependencies=[_AuthDepends(_require_permission("GLOBAL_ADMIN"))],
+)
+async def health_auth():
+    """Return JWT signing context.  SuperAdmin only.
+
+    Never returns the secret itself — only an 8-hex sha256 fingerprint
+    of it.  Operators can compare this value across pods or against
+    the value logged at startup to verify configuration consistency.
+    """
+    return {
+        "fingerprint": _secret_fingerprint(),
+        "algorithm": settings.JWT_ALGORITHM,
+        "access_token_ttl_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "refresh_token_ttl_days": settings.REFRESH_TOKEN_EXPIRE_DAYS,
+        "using_default_secret": _is_default_secret(),
+    }
 
 
 @app.get("/api/debug/cors")

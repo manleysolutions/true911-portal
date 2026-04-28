@@ -1,3 +1,4 @@
+import hashlib
 import re
 import secrets
 import uuid
@@ -9,6 +10,27 @@ from passlib.context import CryptContext
 from app.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+_DEFAULT_JWT_SECRET = "change-me-in-production"
+
+
+def secret_fingerprint() -> str:
+    """Return a stable, non-reversible 8-hex fingerprint of JWT_SECRET.
+
+    Used to verify configuration consistency (e.g. that two pods are
+    signing tokens with the same secret) without ever logging or
+    returning the secret itself.  Identical secret → identical
+    fingerprint; different secret → different fingerprint.
+    """
+    secret = settings.JWT_SECRET or ""
+    if not secret:
+        return "<empty>"
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8]
+
+
+def is_default_secret() -> bool:
+    """True when JWT_SECRET is still the dev-time placeholder."""
+    return (settings.JWT_SECRET or "") == _DEFAULT_JWT_SECRET
 
 
 def hash_password(password: str) -> str:
