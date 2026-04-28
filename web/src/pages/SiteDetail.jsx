@@ -625,6 +625,7 @@ export default function SiteDetail() {
   const [compliance, setCompliance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [adding, setAdding] = useState(null); // null | "service_unit" | "device" | "sim" | "line"
   const [allSites, setAllSites] = useState([]);
   const [hardwareModels, setHardwareModels] = useState([]);
@@ -634,6 +635,20 @@ export default function SiteDetail() {
   const canAddSim = can("CREATE_SIMS");
   const canAddLine = can("CREATE_LINES");
   const canShowAddRow = canAddServiceUnit || canAddDevice || canAddSim || canAddLine;
+
+  const handleAutoFixLocation = useCallback(async () => {
+    if (!site) return;
+    setGeocoding(true);
+    try {
+      await SiteEntity.geocode(site.id);
+      toast.success("Location resolved from E911 address");
+      fetchAll();
+    } catch (err) {
+      toast.error(err?.message || "Could not auto-fix location — try entering coordinates manually.");
+    } finally {
+      setGeocoding(false);
+    }
+  }, [site, fetchAll]);
 
   // Lookup data needed by the Add Device modal (site list + hw catalog).
   // Loaded lazily the first time the user opens the device modal.
@@ -925,9 +940,23 @@ export default function SiteDetail() {
               <div className="space-y-2">
                 <div className="text-sm text-gray-800">{site.e911_street}</div>
                 <div className="text-sm text-gray-600">{site.e911_city}, {site.e911_state} {site.e911_zip}</div>
-                {site.has_coords && (
+                {site.has_coords ? (
                   <div className="text-[10px] text-gray-400 font-mono">{site.lat?.toFixed(4)}, {site.lng?.toFixed(4)}</div>
-                )}
+                ) : canEditSite ? (
+                  <div className="pt-1">
+                    <div className="flex items-center gap-1.5 text-[11px] text-amber-700 mb-2">
+                      <AlertTriangle className="w-3 h-3" /> Missing coordinates — site won't appear on the map.
+                    </div>
+                    <button
+                      onClick={handleAutoFixLocation}
+                      disabled={geocoding}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-60 transition-colors"
+                    >
+                      {geocoding ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />}
+                      {geocoding ? "Resolving..." : "Auto-Fix Location"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="text-center py-4">

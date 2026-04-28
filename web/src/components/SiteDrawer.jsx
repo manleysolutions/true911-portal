@@ -120,7 +120,9 @@ function ContactPOCSection({ site, onSiteUpdated }) {
 
 function E911CoordsSection({ site, onSiteUpdated }) {
   const { can } = useAuth();
-  const isAdmin = can("VIEW_ADMIN");
+  // Geocode + manual coords are now available to anyone who can edit the
+  // site (Admin, Manager, DataEntry).  Previously locked to VIEW_ADMIN.
+  const isAdmin = can("EDIT_SITES");
   const [geocoding, setGeocoding] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualLat, setManualLat] = useState(site.lat != null ? String(site.lat) : "");
