@@ -142,6 +142,27 @@ async def list_sites(
     return out
 
 
+@router.get(
+    "/count",
+    dependencies=[Depends(require_permission("VIEW_SITES"))],
+)
+async def count_sites(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return total site count for the current tenant.
+
+    Used by the Sites page header so the count reflects all sites in the
+    tenant, not just the rows loaded into the current page.
+    """
+    total = await db.scalar(
+        select(func.count())
+        .select_from(Site)
+        .where(Site.tenant_id == current_user.tenant_id)
+    )
+    return {"total": int(total or 0)}
+
+
 @router.post(
     "/bulk-geocode",
     dependencies=[Depends(require_permission("VIEW_ADMIN"))],

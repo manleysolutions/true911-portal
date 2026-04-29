@@ -73,6 +73,7 @@ export default function Sites() {
   }, [location.search, canCreateSite]);
 
   const [sites, setSites] = useState([]);
+  const [totalSites, setTotalSites] = useState(null);
   const [audits, setAudits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSite, setSelectedSite] = useState(null);
@@ -119,12 +120,21 @@ export default function Sites() {
   }, [customers, customerQuery]);
 
   const fetchData = useCallback(async () => {
-    const [sitesData, auditData] = await Promise.all([
-      Site.list("-last_checkin", 100),
+    // Load up to 1000 rows (backend max) so search/filter cover the full
+    // tenant; the header count comes from a dedicated count endpoint so it
+    // is accurate regardless of the loaded page size.
+    const [sitesData, auditData, countData] = await Promise.all([
+      Site.list("-last_checkin", 1000),
       ActionAudit.list("-timestamp", 100),
+      Site.count().catch(() => null),
     ]);
     setSites(sitesData);
     setAudits(auditData);
+    if (countData && typeof countData.total === "number") {
+      setTotalSites(countData.total);
+    } else {
+      setTotalSites(Array.isArray(sitesData) ? sitesData.length : 0);
+    }
     setLoading(false);
   }, []);
 
@@ -233,7 +243,7 @@ export default function Sites() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Sites</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{sites.length} monitored sites</p>
+            <p className="text-sm text-gray-500 mt-0.5">{totalSites ?? sites.length} monitored sites</p>
           </div>
           <div className="flex items-center gap-2">
             {canCreateSite && (

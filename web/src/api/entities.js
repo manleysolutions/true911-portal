@@ -60,6 +60,7 @@ function makeEntity(basePath) {
 
 export const Site = {
   ...makeEntity("/sites"),
+  count: () => apiFetch("/sites/count"),
   missingCoords: () => apiFetch("/sites/missing-coords"),
   geocode: (id) => apiFetch(`/sites/${id}/geocode`, { method: "POST" }),
   bulkGeocode: () => apiFetch("/sites/bulk-geocode", { method: "POST" }),
