@@ -36,23 +36,31 @@ class RequestVisibilityMiddleware(BaseHTTPMiddleware):
             response: Response = await call_next(request)
         except Exception:
             duration_ms = (time.perf_counter() - start) * 1000
+            # request.state may have user_id/tenant_id if get_current_user
+            # ran successfully before the failure; otherwise both are None.
             logger.exception(
-                "request_failed method=%s path=%s duration_ms=%.2f request_id=%s",
+                "request_failed method=%s path=%s duration_ms=%.2f request_id=%s "
+                "user_id=%s tenant_id=%s",
                 request.method,
                 request.url.path,
                 duration_ms,
                 request_id,
+                getattr(request.state, "user_id", None),
+                getattr(request.state, "tenant_id", None),
             )
             raise
 
         duration_ms = (time.perf_counter() - start) * 1000
         response.headers[REQUEST_ID_HEADER] = request_id
         logger.info(
-            "request method=%s path=%s status_code=%d duration_ms=%.2f request_id=%s",
+            "request method=%s path=%s status_code=%d duration_ms=%.2f request_id=%s "
+            "user_id=%s tenant_id=%s",
             request.method,
             request.url.path,
             response.status_code,
             duration_ms,
             request_id,
+            getattr(request.state, "user_id", None),
+            getattr(request.state, "tenant_id", None),
         )
         return response

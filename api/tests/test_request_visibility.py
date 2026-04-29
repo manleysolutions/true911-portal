@@ -3,7 +3,7 @@
 import logging
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from app.middleware import REQUEST_ID_HEADER, RequestVisibilityMiddleware
@@ -22,6 +22,14 @@ def _build_app() -> FastAPI:
     def teapot():
         from fastapi import HTTPException
         raise HTTPException(status_code=418, detail="i'm a teapot")
+
+    # Mimics what get_current_user does on a successful auth: attach the
+    # resolved identity to request.state so the middleware can log it.
+    @app.get("/authed")
+    def authed(request: Request):
+        request.state.user_id = "user-abc-123"
+        request.state.tenant_id = "tenant-xyz"
+        return {"ok": True}
 
     return app
 
@@ -80,4 +88,57 @@ class TestRequestLogging:
             text = rec.getMessage()
             assert "super-secret-token-xyz" not in text
             assert "Authorization" not in text
+            assert "Bearer" not in text
+
+
+class TestUserTenantLogging:
+    """user_id / tenant_id are read from request.state by the middleware.
+
+    The auth dependency (get_current_user) is responsible for attaching them
+    on successful auth; these tests stand in for that contract by setting
+    request.state directly inside a route, so the middleware behavior is
+    verified independently of the full auth/DB chain.
+    """
+
+    def test_unauthenticated_logs_user_and_tenant_as_none(self, client, caplog):
+        with caplog.at_level(logging.INFO, logger="true911.request"):
+            r = client.get("/ok")
+        assert r.status_code == 200
+
+        records = [rec for rec in caplog.records if rec.name == "true911.request"]
+        assert records
+        msg = records[-1].getMessage()
+        assert "user_id=None" in msg
+        assert "tenant_id=None" in msg
+
+    def test_authenticated_logs_user_and_tenant(self, client, caplog):
+        with caplog.at_level(logging.INFO, logger="true911.request"):
+            r = client.get("/authed")
+        assert r.status_code == 200
+
+        records = [rec for rec in caplog.records if rec.name == "true911.request"]
+        assert records
+        msg = records[-1].getMessage()
+        assert "user_id=user-abc-123" in msg
+        assert "tenant_id=tenant-xyz" in msg
+
+    def test_user_tenant_log_does_not_leak_authorization_header(self, client, caplog):
+        """Belt-and-suspenders: the new fields must not introduce a leak."""
+        with caplog.at_level(logging.INFO, logger="true911.request"):
+            client.get(
+                "/authed",
+                headers={
+                    "Authorization": "Bearer secret-token-abcdef",
+                    "Cookie": "session=should-not-appear",
+                },
+            )
+
+        for rec in caplog.records:
+            if rec.name != "true911.request":
+                continue
+            text = rec.getMessage()
+            assert "secret-token-abcdef" not in text
+            assert "should-not-appear" not in text
+            assert "Authorization" not in text
+            assert "Cookie" not in text
             assert "Bearer" not in text
