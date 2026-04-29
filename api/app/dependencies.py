@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
 
 import bcrypt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy import select
@@ -55,6 +55,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
+    request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
     x_act_as_tenant: str | None = Header(None),
@@ -150,6 +151,13 @@ async def get_current_user(
         # Detach user from session so tenant_id override never flushes to DB
         db.expunge(user)
         user.tenant_id = x_act_as_tenant
+
+    # Attach resolved identity to request.state so the request visibility
+    # middleware can include user_id / tenant_id in its per-request log line.
+    # tenant_id is the effective resolved value (post-impersonation), so the
+    # log reflects which tenant the request actually operated on.
+    request.state.user_id = str(user.id)
+    request.state.tenant_id = user.tenant_id
 
     return user
 
