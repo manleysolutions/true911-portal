@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/api/client";
 import {
   Cpu, RefreshCw, Search, Play, Pause, RotateCcw, Loader2,
@@ -381,6 +381,8 @@ export default function SimManagement() {
   const [syncing, setSyncing] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [showSitePicker, setShowSitePicker] = useState(false);
+  const [syncMenuOpen, setSyncMenuOpen] = useState(false);
+  const syncMenuRef = useRef(null);
 
   const carrierWriteEnabled = config.featureCarrierWriteOps;
 
@@ -488,6 +490,26 @@ export default function SimManagement() {
 
   useEffect(() => { fetchSims(); }, [fetchSims]);
 
+  // Close the Sync dropdown on outside-click or Escape. The listeners are
+  // only attached while the menu is open so we don't pay the cost when idle.
+  useEffect(() => {
+    if (!syncMenuOpen) return;
+    const handleClick = (e) => {
+      if (syncMenuRef.current && !syncMenuRef.current.contains(e.target)) {
+        setSyncMenuOpen(false);
+      }
+    };
+    const handleKey = (e) => {
+      if (e.key === "Escape") setSyncMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [syncMenuOpen]);
+
   const filtered = sims.filter(s => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -525,45 +547,57 @@ export default function SimManagement() {
                   <Plus className="w-4 h-4" /> Add SIM
                 </button>
                 {/* Sync dropdown */}
-                <div className="relative group">
+                <div className="relative" ref={syncMenuRef}>
                   <button
+                    onClick={() => setSyncMenuOpen(o => !o)}
+                    aria-haspopup="menu"
+                    aria-expanded={syncMenuOpen}
                     className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700 transition-colors"
                     disabled={!!syncing}
                   >
                     {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
                     Sync
                   </button>
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[160px] hidden group-hover:block">
-                    <button
-                      onClick={() => handleSync("verizon")}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
-                      disabled={!!syncing}
+                  {syncMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[160px]"
                     >
-                      Sync Verizon
-                    </button>
-                    <button
-                      onClick={() => handleSync("tmobile")}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
-                      disabled={!!syncing}
-                    >
-                      Sync T-Mobile
-                    </button>
-                    <button
-                      onClick={() => handleSync("att")}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
-                      disabled={!!syncing}
-                    >
-                      Sync AT&T
-                    </button>
-                    <hr className="my-1 border-gray-100" />
-                    <button
-                      onClick={() => handleSync("all")}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700 font-medium"
-                      disabled={!!syncing}
-                    >
-                      Sync All Providers
-                    </button>
-                  </div>
+                      <button
+                        role="menuitem"
+                        onClick={() => { setSyncMenuOpen(false); handleSync("verizon"); }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
+                        disabled={!!syncing}
+                      >
+                        Sync Verizon
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={() => { setSyncMenuOpen(false); handleSync("tmobile"); }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
+                        disabled={!!syncing}
+                      >
+                        Sync T-Mobile
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={() => { setSyncMenuOpen(false); handleSync("att"); }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
+                        disabled={!!syncing}
+                      >
+                        Sync AT&T
+                      </button>
+                      <hr className="my-1 border-gray-100" />
+                      <button
+                        role="menuitem"
+                        onClick={() => { setSyncMenuOpen(false); handleSync("all"); }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 text-gray-700 font-medium"
+                        disabled={!!syncing}
+                      >
+                        Sync All Providers
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}
