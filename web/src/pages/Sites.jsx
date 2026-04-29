@@ -189,10 +189,29 @@ export default function Sites() {
       return;
     }
 
-    // Customer must be selected from the typeahead (no free-text)
-    const selectedCustomerName = addForm.customer_name.trim();
+    // Customer must resolve to a real loaded customer (no free-text creation).
+    //
+    // Recover the selection if the typeahead query matches a loaded customer,
+    // even when addForm.customer_name was cleared by a stray keystroke after
+    // the click (the onChange handler clears it on every key event so any
+    // edit-after-click leaves the input visually populated but the form
+    // state empty — which silently blocked DataEntry users on submit).
+    let selectedCustomerName = addForm.customer_name.trim();
+    if (!selectedCustomerName && customersLoaded && customerQuery.trim()) {
+      const typedLower = customerQuery.trim().toLowerCase();
+      const match = customers.find(
+        c => (c.name || "").trim().toLowerCase() === typedLower,
+      );
+      if (match) selectedCustomerName = match.name;
+    }
+
     if (!selectedCustomerName) {
-      setAddError("Customer is required. Select one from the list.");
+      const typed = customerQuery.trim();
+      setAddError(
+        typed
+          ? `Customer "${typed}" not found. Pick one from the list.`
+          : "Customer is required. Select one from the list.",
+      );
       return;
     }
     if (customersLoaded && !customers.some(c => (c.name || "") === selectedCustomerName)) {
