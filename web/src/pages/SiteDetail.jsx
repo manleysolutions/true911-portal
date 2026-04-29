@@ -634,7 +634,7 @@ export default function SiteDetail() {
   const canAddDevice = can("CREATE_DEVICES");
   const canAddSim = can("CREATE_SIMS");
   const canAddLine = can("CREATE_LINES");
-  const canShowAddRow = canAddServiceUnit || canAddDevice || canAddSim || canAddLine;
+  const canManageInventory = can("MANAGE_SIMS");
 
   // Lookup data needed by the Add Device modal (site list + hw catalog).
   // Loaded lazily the first time the user opens the device modal.
@@ -806,44 +806,86 @@ export default function SiteDetail() {
 
 
         {/* ═══════════════════════════════════════════════════════════
-            Onboarding actions — add records under this site
+            Site Actions — single unified hierarchy
+            • Primary:   Add Service Unit (always-on when perm allows)
+            • Secondary: Add Device / Add SIM / Add Voice Line (modal)
+            • Secondary: Assign SIMs / Assign Devices — only when the
+              site already has corresponding inventory to manage
+            • Secondary: Command View — NOC only, only when something
+              on the site can actually be commanded
             ═══════════════════════════════════════════════════════════ */}
-        {canShowAddRow && (
-          <div className="flex flex-wrap gap-2">
-            {canAddServiceUnit && (
-              <button
-                onClick={() => setAdding("service_unit")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5" /> Add Service Unit
-              </button>
-            )}
-            {canAddDevice && (
-              <button
-                onClick={() => { ensureDeviceLookups(); setAdding("device"); }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
-              >
-                <Cpu className="w-3.5 h-3.5" /> Add Device
-              </button>
-            )}
-            {canAddSim && (
-              <button
-                onClick={() => setAdding("sim")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
-              >
-                <Disc3 className="w-3.5 h-3.5" /> Add SIM
-              </button>
-            )}
-            {canAddLine && (
-              <button
-                onClick={() => setAdding("line")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 rounded-lg text-xs font-semibold transition-colors"
-              >
-                <PhoneCall className="w-3.5 h-3.5" /> Add Voice Line
-              </button>
-            )}
-          </div>
-        )}
+        {(() => {
+          const showAssignSims    = canManageInventory && sims.length > 0;
+          const showAssignDevices = canManageInventory && devices.length > 0;
+          const hasCommandable    = (compliance?.unit_count || 0) > 0 || devices.length > 0 || lines.length > 0;
+          const showCommandView   = isNOC && hasCommandable;
+          const showActions =
+            canAddServiceUnit || canAddDevice || canAddSim || canAddLine ||
+            showAssignSims || showAssignDevices || showCommandView;
+
+          if (!showActions) return null;
+
+          const secondaryBtn =
+            "flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 " +
+            "hover:border-red-300 hover:bg-red-50 text-gray-700 hover:text-red-700 " +
+            "rounded-lg text-xs font-semibold transition-colors";
+          const secondaryLink =
+            "flex items-center gap-1.5 px-3 py-2 border border-gray-200 " +
+            "hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium";
+
+          return (
+            <div className="flex flex-wrap gap-2">
+              {/* Primary action */}
+              {canAddServiceUnit && (
+                <button
+                  onClick={() => setAdding("service_unit")}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Service Unit
+                </button>
+              )}
+
+              {/* Secondary — Add */}
+              {canAddDevice && (
+                <button
+                  onClick={() => { ensureDeviceLookups(); setAdding("device"); }}
+                  className={secondaryBtn}
+                >
+                  <Cpu className="w-3.5 h-3.5" /> Add Device
+                </button>
+              )}
+              {canAddSim && (
+                <button onClick={() => setAdding("sim")} className={secondaryBtn}>
+                  <Disc3 className="w-3.5 h-3.5" /> Add SIM
+                </button>
+              )}
+              {canAddLine && (
+                <button onClick={() => setAdding("line")} className={secondaryBtn}>
+                  <PhoneCall className="w-3.5 h-3.5" /> Add Voice Line
+                </button>
+              )}
+
+              {/* Secondary — Assign (conditional on existing inventory) */}
+              {showAssignSims && (
+                <Link to={createPageUrl("SimManagement")} className={secondaryLink}>
+                  <Disc3 className="w-3.5 h-3.5" /> Assign SIMs
+                </Link>
+              )}
+              {showAssignDevices && (
+                <Link to={createPageUrl("Devices")} className={secondaryLink}>
+                  <Cpu className="w-3.5 h-3.5" /> Assign Devices
+                </Link>
+              )}
+
+              {/* Secondary — Command View (NOC + something to command) */}
+              {showCommandView && (
+                <Link to={`${createPageUrl("CommandSite")}?site=${site.site_id}`} className={secondaryLink}>
+                  <ShieldCheck className="w-3.5 h-3.5" /> Command View
+                </Link>
+              )}
+            </div>
+          );
+        })()}
 
 
         {/* ═══════════════════════════════════════════════════════════
@@ -866,33 +908,6 @@ export default function SiteDetail() {
 
 
         {/* ═══════════════════════════════════════════════════════════
-            Quick Actions
-            ═══════════════════════════════════════════════════════════ */}
-        {can("MANAGE_SIMS") && (
-          <div className="flex flex-wrap gap-2">
-            <Link to={`${createPageUrl("SiteOnboarding")}?site=${site.site_id}`}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold">
-              <Plus className="w-3.5 h-3.5" /> Add Service Unit
-            </Link>
-            <Link to={`${createPageUrl("SimManagement")}`}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
-              <Disc3 className="w-3.5 h-3.5" /> Assign SIMs
-            </Link>
-            <Link to={`${createPageUrl("Devices")}`}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
-              <Cpu className="w-3.5 h-3.5" /> Assign Devices
-            </Link>
-            {isNOC && (
-              <Link to={`${createPageUrl("CommandSite")}?site=${site.site_id}`}
-                className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
-                <ShieldCheck className="w-3.5 h-3.5" /> Command View
-              </Link>
-            )}
-          </div>
-        )}
-
-
-        {/* ═══════════════════════════════════════════════════════════
             Main grid — 2 columns on desktop
             ═══════════════════════════════════════════════════════════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -901,11 +916,12 @@ export default function SiteDetail() {
           <Card title="Service Units" icon={Phone} count={compliance?.unit_count || 0}>
             {(compliance?.unit_count || 0) === 0 ? (
               <div className="text-center py-4">
-                <p className="text-xs text-gray-400 mb-2">No service units configured.</p>
-                {can("MANAGE_SIMS") && (
-                  <Link to={`${createPageUrl("SiteOnboarding")}?site=${site.site_id}`}
-                    className="text-xs text-red-600 hover:text-red-700 font-medium">Add Service Units</Link>
-                )}
+                <p className="text-xs text-gray-400">
+                  No service units configured.
+                  {canAddServiceUnit && (
+                    <> Use <span className="font-semibold text-gray-600">Add Service Unit</span> above to get started.</>
+                  )}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
