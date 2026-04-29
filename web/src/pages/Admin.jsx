@@ -172,11 +172,12 @@ function SiteAdminRow({ site, onSaved }) {
           >
             <Clock className="w-3 h-3" /> Heartbeat
           </button>
+          <div className="w-px h-6 bg-gray-200 mx-1" aria-hidden="true" />
           <button
             onClick={handleDelete}
             disabled={deleting}
             title="Delete site"
-            className="flex items-center p-1.5 text-gray-400 border border-gray-200 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-50"
+            className="flex items-center p-1.5 text-red-500 border border-red-200 rounded-lg hover:bg-red-50 hover:text-red-700 hover:border-red-300 transition-colors disabled:opacity-50"
           >
             {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
           </button>
@@ -620,7 +621,13 @@ function TenantManagement() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {tenants.map(t => (
+            {tenants.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-5 py-8 text-center text-sm text-gray-400">
+                  No tenants found.
+                </td>
+              </tr>
+            ) : tenants.map(t => (
               <tr key={t.tenant_id} className="hover:bg-gray-50">
                 <td className="px-5 py-3 font-mono text-xs text-gray-700">{t.tenant_id}</td>
                 <td className="px-5 py-3">
@@ -806,7 +813,13 @@ function UserManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.map(u => (
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={isSuperAdmin ? 7 : 6} className="px-5 py-8 text-center text-sm text-gray-400">
+                    No users found.
+                  </td>
+                </tr>
+              ) : users.map(u => (
                 <tr key={u.id} className={`hover:bg-gray-50 ${!u.is_active ? "opacity-50" : ""}`}>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
@@ -980,7 +993,7 @@ export default function Admin() {
   const [saTenants, setSaTenants] = useState([]);
 
   const fetchData = useCallback(async () => {
-    const data = await Site.list("-last_checkin", 100);
+    const data = await Site.list("-last_checkin", 1000);
     setSites(data);
     setLoading(false);
   }, []);
@@ -1081,6 +1094,10 @@ export default function Admin() {
                 {loading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <div className="text-center text-sm text-gray-400 py-8">
+                    {sites.length === 0 ? "No sites configured." : "No sites match your search."}
                   </div>
                 ) : (
                   filtered.map(site => (
