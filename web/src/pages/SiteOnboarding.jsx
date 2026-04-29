@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { apiFetch } from "@/api/client";
 import {
   Building2, Users, Cpu, Disc3, ShieldCheck, CheckCircle2, ChevronRight, ChevronLeft,
@@ -400,7 +402,12 @@ function StepSims({ data, setData }) {
         {loading ? (
           <div className="flex items-center gap-2 text-xs text-gray-400 py-6 justify-center"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-xs text-gray-400 text-center py-6">No unassigned SIMs available.</div>
+          <div className="text-xs text-gray-400 text-center py-6">
+            No unassigned SIMs available.{" "}
+            <Link to={createPageUrl("SimManagement")} className="text-red-600 hover:underline">
+              Manage SIM inventory
+            </Link>
+          </div>
         ) : (
           <div className="p-2 space-y-0.5">
             {recommended.length > 0 && (
@@ -494,7 +501,12 @@ function StepDevices({ data, setData }) {
         {loading ? (
           <div className="flex items-center gap-2 text-xs text-gray-400 py-6 justify-center"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-xs text-gray-400 text-center py-6">No unassigned devices available.</div>
+          <div className="text-xs text-gray-400 text-center py-6">
+            No unassigned devices available.{" "}
+            <Link to={createPageUrl("Devices")} className="text-red-600 hover:underline">
+              Manage device inventory
+            </Link>
+          </div>
         ) : (
           <div className="p-2 space-y-0.5">
             {recommended.length > 0 && (
@@ -745,6 +757,14 @@ export default function SiteOnboarding() {
     }
   };
 
+  if (!can("CREATE_SITES")) {
+    return (
+      <PageWrapper>
+        <div className="p-6 text-center text-gray-500">You do not have permission to access this page.</div>
+      </PageWrapper>
+    );
+  }
+
   if (complete) {
     const units = data.service_units || [];
     const simCount = (data.selected_sim_ids || []).length;
@@ -767,9 +787,9 @@ export default function SiteOnboarding() {
             <div><div className="text-xl font-bold text-gray-900">{devCount}</div><div className="text-[10px] text-gray-500 uppercase">Devices</div></div>
           </div>
           <div className="flex justify-center gap-3">
-            <a href="/Sites" className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold">
+            <Link to={createPageUrl("Sites")} className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold">
               View Sites
-            </a>
+            </Link>
             <button onClick={() => { setComplete(false); setStep(0); setData({ service_units: [], tenant_id: user?.tenant_id || "" }); setCreatedSiteId(null); }}
               className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-medium">
               Onboard Another
