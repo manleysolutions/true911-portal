@@ -421,10 +421,10 @@ export default function SubscriberImport() {
                           <th className="px-3 py-2 text-left font-medium text-gray-600">Device</th>
                           <th className="px-3 py-2 text-left font-medium text-gray-600">MSISDN</th>
                           <th className="px-3 py-2 text-left font-medium text-gray-600">SIM ICCID</th>
-                          <th className="px-3 py-2 text-left font-medium text-gray-600">Customer</th>
-                          <th className="px-3 py-2 text-left font-medium text-gray-600">Site</th>
-                          <th className="px-3 py-2 text-left font-medium text-gray-600">Device</th>
-                          <th className="px-3 py-2 text-left font-medium text-gray-600">Line</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600">Customer Action</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600">Site Action</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600">Device Action</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600">Line Action</th>
                           <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
                         </tr>
                       </thead>
