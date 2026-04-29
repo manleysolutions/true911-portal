@@ -643,10 +643,11 @@ function TimelinePanel({ activities = [] }) {
 function ActionCenter() {
   const { can } = useAuth();
 
+  // Quick Actions are workflows the operator initiates from this dashboard,
+  // not navigation. Pages already linked from metric cards or panels above
+  // (Incidents, Deployment Map, Network Status) intentionally do not appear
+  // here — those routes are reached via the contextual links tied to data.
   const actions = [
-    { label: "View Incidents",     icon: AlertOctagon,    page: "Incidents",          color: "text-red-400" },
-    { label: "Deployment Map",     icon: MapPin,          page: "DeploymentMap",      color: "text-blue-400" },
-    { label: "Network Status",     icon: Radio,           page: "NetworkDashboard",   color: "text-cyan-400" },
     { label: "Export Report",      custom: true },
     { label: "Provisioning",       icon: Zap,             page: "ProvisioningQueue",  color: "text-amber-400",   perm: "COMMAND_BULK_IMPORT" },
     { label: "Subscriber Import",  icon: FileSpreadsheet, page: "SubscriberImport",   color: "text-emerald-400", perm: "SUBSCRIBER_IMPORT" },
