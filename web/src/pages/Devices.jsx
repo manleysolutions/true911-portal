@@ -249,12 +249,14 @@ export default function Devices() {
             <p className="text-sm text-gray-500 mt-0.5">{devices.length} devices registered</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowRegister(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Register Device
-            </button>
+            {can("CREATE_DEVICES") && (
+              <button
+                onClick={() => setShowRegister(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Register Device
+              </button>
+            )}
             <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -383,13 +385,15 @@ export default function Devices() {
                     <td className="px-4 py-2.5 text-xs text-gray-500">{d.last_heartbeat ? timeSince(d.last_heartbeat) : "Awaiting"}</td>
                     <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setEditDevice(d)}
-                          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600"
-                          title="Edit device"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
+                        {can("EDIT_DEVICES") && (
+                          <button
+                            onClick={() => setEditDevice(d)}
+                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600"
+                            title="Edit device"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {can("DELETE_DEVICES") && d.status !== "decommissioned" && (
                           <button
                             onClick={() => setDeleteDevice(d)}

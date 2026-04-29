@@ -313,10 +313,12 @@ export default function Lines() {
             <p className="text-sm text-gray-500 mt-0.5">{lines.length} voice lines / DIDs</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowAdd(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors">
-              <Plus className="w-4 h-4" /> Add Line
-            </button>
+            {can("CREATE_LINES") && (
+              <button onClick={() => setShowAdd(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors">
+                <Plus className="w-4 h-4" /> Add Line
+              </button>
+            )}
             <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -387,13 +389,15 @@ export default function Lines() {
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => setEditLine(l)}
-                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600"
-                            title="Edit line"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
+                          {can("EDIT_LINES") && (
+                            <button
+                              onClick={() => setEditLine(l)}
+                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600"
+                              title="Edit line"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {can("DELETE_LINES") && (
                             <button
                               onClick={() => setDeleteLine(l)}
