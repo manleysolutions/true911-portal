@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
+from .middleware import RequestVisibilityMiddleware
 from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback
 
 # Configure app-level logging so INFO emits to Render's stdout stream.
@@ -54,6 +55,17 @@ async def startup():
             "the environment for production."
         )
 
+    # Local/dev escape hatch: TRUE911_SKIP_BOOTSTRAP=true skips the admin
+    # bootstrap entirely so the app can start without Postgres on localhost.
+    # Default is unset → production behavior is preserved.
+    if os.getenv("TRUE911_SKIP_BOOTSTRAP", "").lower() in ("1", "true", "yes"):
+        logger.warning(
+            "TRUE911_SKIP_BOOTSTRAP=true — ensure_bootstrap_admin() not called. "
+            "Intended for local/dev startup without Postgres; do NOT set this "
+            "in production."
+        )
+        return
+
     # Dev-only escape hatch: when ALLOW_START_WITHOUT_DB=true, tolerate a failed
     # bootstrap so uvicorn can serve routes that don't need Postgres (e.g. the
     # T-Mobile PIT callback). Unset in prod → original behavior is preserved.
@@ -92,6 +104,11 @@ else:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Added after CORS so it wraps as the outermost middleware: every response
+# (including CORS preflight and 5xx fallbacks) gets an X-Request-ID, and
+# we log a single per-request line for traceability without leaking secrets.
+app.add_middleware(RequestVisibilityMiddleware)
 
 
 @app.exception_handler(Exception)
