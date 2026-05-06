@@ -8,6 +8,8 @@ no DB required.
 from types import SimpleNamespace
 
 from app.services.subscriber_import_engine import (
+    PROTOCOL_MAX_LEN,
+    _canonical_protocol,
     _extract_row,
     _is_napco_starlink_row,
     _validate_row,
@@ -209,6 +211,93 @@ def test_starlink_collision_with_existing_device_errors():
     row = _extract_row(raw, 1)
     errors, _ = _validate_row(row, _empty_seen(), existing_devices=existing_devices)
     assert any("SL-TAKEN" in e and "DEV-EXISTING" in e for e in errors)
+
+
+# ── Protocol canonicalization (VARCHAR(20) for lines.protocol) ────
+
+def test_canonical_protocol_maps_volte_long_label():
+    assert _canonical_protocol("VoLTE (Cellular Voice)") == "VoLTE"
+
+
+def test_canonical_protocol_maps_analog_pots_long_label():
+    assert _canonical_protocol("Analog (POTS Replacement)") == "POTS"
+
+
+def test_canonical_protocol_maps_voip_sip():
+    assert _canonical_protocol("VoIP (SIP)") == "SIP"
+
+
+def test_canonical_protocol_maps_data_only():
+    assert _canonical_protocol("Data Only") == "DATA"
+
+
+def test_canonical_protocol_maps_ethernet_lan():
+    assert _canonical_protocol("Ethernet (LAN)") == "ethernet"
+
+
+def test_canonical_protocol_empty_defaults_to_cellular():
+    assert _canonical_protocol("") == "cellular"
+    assert _canonical_protocol(None) == "cellular"
+
+
+def test_canonical_protocol_passes_short_unknown_through():
+    assert _canonical_protocol("DECT") == "DECT"
+
+
+def test_canonical_protocol_returns_none_for_overlong_unknown():
+    overlong = "X" * (PROTOCOL_MAX_LEN + 1)
+    assert _canonical_protocol(overlong) is None
+
+
+def test_canonical_protocol_output_always_fits_column():
+    samples = [
+        "VoLTE (Cellular Voice)",
+        "Analog (POTS Replacement)",
+        "VoIP (SIP)",
+        "Data Only",
+        "Ethernet (LAN)",
+        "Cellular",
+        "",
+        "SIP",
+    ]
+    for s in samples:
+        out = _canonical_protocol(s)
+        assert out is not None
+        assert len(out) <= PROTOCOL_MAX_LEN
+
+
+def test_validate_row_template_volte_value_passes():
+    """Regression: rows with the project's own template 'service_class'
+    values must not be rejected."""
+    row = _extract_row(
+        _row(
+            endpoint_type="Elevator",
+            service_class="VoLTE (Cellular Voice)",
+            carrier="T-Mobile",
+            msisdn="+12145551001",
+            iccid="89012608822800000010",
+        ),
+        1,
+    )
+    errors, _ = _validate_row(row, _empty_seen())
+    assert errors == []
+
+
+def test_validate_row_overlong_unmappable_protocol_errors_in_preview():
+    """Defensive: an unmapped >20-char service_class surfaces in preview
+    rather than crashing at commit-time INSERT."""
+    overlong = "Frobnicated Hyperbolic Trans-Multi-Carrier"
+    row = _extract_row(
+        _row(
+            endpoint_type="Elevator",
+            service_class=overlong,
+            carrier="T-Mobile",
+            msisdn="+12145551001",
+        ),
+        1,
+    )
+    errors, _ = _validate_row(row, _empty_seen())
+    assert any("canonical protocol code" in e for e in errors)
 
 
 def test_serial_match_without_device_id_is_not_a_collision():
