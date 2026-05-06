@@ -157,6 +157,11 @@ def _extract_row(row: dict, row_num: int) -> dict:
     device_type = _strip(_get(row, "device_type", "endpoint_type", "equipment_type"))
     device_id = _strip(row.get("device_id", ""))
     imei = _strip(row.get("imei", ""))
+    serial_number = _strip(_get(row, "serial_number", "serial"))
+    starlink_id = _strip(_get(row, "starlink_id", "starlink_device_id"))
+    model = _strip(_get(row, "model", "hardware_model"))
+    vendor_name = _strip(_get(row, "vendor_name", "vendor", "manufacturer"))
+    system_type = _strip(_get(row, "system_type"))
 
     msisdn_raw = _strip(_get(row, "msisdn", "phone_number", "did", "phone"))
     msisdn = _normalize_phone(msisdn_raw) if msisdn_raw else ""
@@ -180,6 +185,11 @@ def _extract_row(row: dict, row_num: int) -> dict:
         "device_type": device_type,
         "device_id": device_id,
         "imei": imei,
+        "serial_number": serial_number,
+        "starlink_id": starlink_id,
+        "model": model,
+        "vendor_name": vendor_name,
+        "system_type": system_type,
         "msisdn": msisdn,
         "sim_iccid": sim_iccid,
         "carrier": carrier,
@@ -189,9 +199,44 @@ def _extract_row(row: dict, row_num: int) -> dict:
     }
 
 
+# ── Endpoint classification ────────────────────────────────────────
+
+def _is_napco_starlink_row(extracted: dict) -> bool:
+    """True if the row represents a Napco / SLELTE / StarLink fire-alarm communicator.
+
+    Identifier rules for these endpoints differ — they typically have
+    serial_number / starlink_id / device_id in place of MSISDN/ICCID.
+    Classifier is intentionally narrow to avoid sweeping in regular
+    cellular voice, elevator, or DID-based endpoints.
+    """
+    carrier = (extracted.get("carrier") or "").strip().lower()
+    vendor = (extracted.get("vendor_name") or "").strip().lower()
+    model = (extracted.get("model") or "").strip().lower()
+    device_type = (extracted.get("device_type") or "").strip().lower()
+    system_type = (extracted.get("system_type") or "").strip().lower()
+
+    if carrier == "napco":
+        return True
+    if "napco" in vendor:
+        return True
+    if "slelte" in model or "starlink" in model:
+        return True
+    if re.search(r"\bsle\b", model):
+        return True
+    if "starlink" in device_type or "fire communicator" in device_type:
+        return True
+    if "fire alarm" in device_type or "fire alarm" in system_type:
+        return True
+    return False
+
+
 # ── Validation ─────────────────────────────────────────────────────
 
-def _validate_row(extracted: dict, seen: dict) -> tuple[list[str], list[str]]:
+def _validate_row(
+    extracted: dict,
+    seen: dict,
+    existing_devices: dict | None = None,
+) -> tuple[list[str], list[str]]:
     """Validate a single extracted row. Returns (errors, warnings)."""
     errors = []
     warnings = []
@@ -202,9 +247,22 @@ def _validate_row(extracted: dict, seen: dict) -> tuple[list[str], list[str]]:
     if not extracted["site_name"]:
         errors.append("Missing site_name")
 
-    # Line must have at least msisdn or sim_iccid
-    if not extracted["msisdn"] and not extracted["sim_iccid"]:
-        errors.append("Missing both msisdn and sim_iccid — at least one required")
+    # Identifier requirement — branch by endpoint type.
+    # Napco/SLELTE/StarLink fire alarm communicators may use
+    # serial_number / starlink_id / device_id in place of MSISDN/ICCID.
+    if _is_napco_starlink_row(extracted):
+        if not (
+            extracted.get("serial_number")
+            or extracted.get("starlink_id")
+            or extracted.get("device_id")
+        ):
+            errors.append(
+                "Napco/SLELTE devices may use serial_number, starlink_id, or "
+                "device_id in place of MSISDN/ICCID."
+            )
+    else:
+        if not extracted["msisdn"] and not extracted["sim_iccid"]:
+            errors.append("Missing both msisdn and sim_iccid — at least one required")
 
     # ICCID format
     if extracted["sim_iccid"]:
@@ -248,6 +306,37 @@ def _validate_row(extracted: dict, seen: dict) -> tuple[list[str], list[str]]:
             prev = seen["iccids"][key]
             warnings.append(f"sim_iccid '{extracted['sim_iccid']}' also on row {prev['row']}")
 
+    if extracted.get("serial_number"):
+        key = extracted["serial_number"].lower()
+        if key in seen.get("serials", {}):
+            prev = seen["serials"][key]
+            warnings.append(f"serial_number '{extracted['serial_number']}' also on row {prev['row']}")
+
+    if extracted.get("starlink_id"):
+        key = extracted["starlink_id"].lower()
+        if key in seen.get("starlinks", {}):
+            prev = seen["starlinks"][key]
+            warnings.append(f"starlink_id '{extracted['starlink_id']}' also on row {prev['row']}")
+
+    # Cross-DB collision: serial_number / starlink_id already owned by a
+    # different existing device. Only an error when the row also names a
+    # device_id that disagrees — otherwise it's a normal serial-based match.
+    if existing_devices is not None and extracted.get("device_id"):
+        if extracted.get("serial_number"):
+            owner = existing_devices.get(f"serial:{extracted['serial_number'].lower()}")
+            if owner is not None and owner.device_id != extracted["device_id"]:
+                errors.append(
+                    f"serial_number '{extracted['serial_number']}' already belongs to "
+                    f"existing device '{owner.device_id}' (row specifies '{extracted['device_id']}')"
+                )
+        if extracted.get("starlink_id"):
+            owner = existing_devices.get(f"starlink:{extracted['starlink_id'].lower()}")
+            if owner is not None and owner.device_id != extracted["device_id"]:
+                errors.append(
+                    f"starlink_id '{extracted['starlink_id']}' already belongs to "
+                    f"existing device '{owner.device_id}' (row specifies '{extracted['device_id']}')"
+                )
+
     return errors, warnings
 
 
@@ -275,7 +364,7 @@ async def preview_import(
     existing_lines = await _load_lines(db, tenant_id)
 
     # Track intra-CSV state
-    seen = {"device_ids": {}, "msisdns": {}, "iccids": {}}
+    seen = {"device_ids": {}, "msisdns": {}, "iccids": {}, "serials": {}, "starlinks": {}}
     # Track planned creates within this CSV
     planned_customers = {}  # norm_name -> "create"
     planned_sites = {}  # (tenant_key, norm_name, norm_addr) -> "create"
@@ -301,7 +390,7 @@ async def preview_import(
         extracted["_site_key"] = site_key
         extracted["_device_key"] = device_key
 
-        errors, warnings = _validate_row(extracted, seen)
+        errors, warnings = _validate_row(extracted, seen, existing_devices)
 
         # Track in seen
         if extracted["device_id"]:
@@ -310,6 +399,10 @@ async def preview_import(
             seen["msisdns"][extracted["msisdn"]] = {"row": i, "device_key": device_key}
         if extracted["sim_iccid"]:
             seen["iccids"][extracted["sim_iccid"].lower()] = {"row": i}
+        if extracted.get("serial_number"):
+            seen["serials"][extracted["serial_number"].lower()] = {"row": i}
+        if extracted.get("starlink_id"):
+            seen["starlinks"][extracted["starlink_id"].lower()] = {"row": i}
 
         # Determine actions
         tenant_action = "skip"
@@ -333,7 +426,13 @@ async def preview_import(
                 summary["matched_sites"] += 1
 
             # Device matching (only if device info present)
-            if extracted["device_id"] or extracted["imei"] or extracted["device_type"]:
+            if (
+                extracted["device_id"]
+                or extracted["imei"]
+                or extracted["device_type"]
+                or extracted.get("serial_number")
+                or extracted.get("starlink_id")
+            ):
                 device_action = _match_device(extracted, existing_devices, planned_devices)
                 if device_action == "create":
                     summary["new_devices"] += 1
@@ -430,7 +529,11 @@ async def commit_import(
 
     for i, row in enumerate(rows, 1):
         extracted = _extract_row(row, i)
-        errors, warnings = _validate_row(extracted, {"device_ids": {}, "msisdns": {}, "iccids": {}})
+        errors, warnings = _validate_row(
+            extracted,
+            {"device_ids": {}, "msisdns": {}, "iccids": {}, "serials": {}, "starlinks": {}},
+            existing_devices,
+        )
 
         if errors:
             stats["rows_failed"] += 1
@@ -464,7 +567,13 @@ async def commit_import(
             # 3. Find or create device
             device = None
             d_action = "skip"
-            if extracted["device_id"] or extracted["imei"] or extracted["device_type"]:
+            if (
+                extracted["device_id"]
+                or extracted["imei"]
+                or extracted["device_type"]
+                or extracted.get("serial_number")
+                or extracted.get("starlink_id")
+            ):
                 device, d_action = await _find_or_create_device(
                     db, extracted, tenant_id, site.site_id, existing_devices, created_devices, batch_id
                 )
@@ -590,6 +699,8 @@ async def _load_devices(db: AsyncSession, tenant_id: str) -> dict:
             result[f"imei:{d.imei.lower()}"] = d
         if d.serial_number:
             result[f"serial:{d.serial_number.lower()}"] = d
+        if d.starlink_id:
+            result[f"starlink:{d.starlink_id.lower()}"] = d
     return result
 
 
@@ -648,19 +759,33 @@ def _match_device(extracted: dict, existing: dict, planned: dict) -> str:
     """Return 'match' or 'create'."""
     if extracted["device_id"]:
         key = f"id:{extracted['device_id']}"
-        if key in existing:
-            return "match"
-        if key in planned:
+        if key in existing or key in planned:
             return "match"
     if extracted["imei"]:
         key = f"imei:{extracted['imei'].lower()}"
-        if key in existing:
+        if key in existing or key in planned:
             return "match"
-        if key in planned:
+    if extracted.get("serial_number"):
+        key = f"serial:{extracted['serial_number'].lower()}"
+        if key in existing or key in planned:
+            return "match"
+    if extracted.get("starlink_id"):
+        key = f"starlink:{extracted['starlink_id'].lower()}"
+        if key in existing or key in planned:
             return "match"
 
-    # Use device_id or imei as planned key
-    plan_key = f"id:{extracted['device_id']}" if extracted["device_id"] else f"imei:{extracted['imei']}" if extracted["imei"] else None
+    # Choose planned key in identifier-priority order
+    if extracted["device_id"]:
+        plan_key = f"id:{extracted['device_id']}"
+    elif extracted["imei"]:
+        plan_key = f"imei:{extracted['imei'].lower()}"
+    elif extracted.get("serial_number"):
+        plan_key = f"serial:{extracted['serial_number'].lower()}"
+    elif extracted.get("starlink_id"):
+        plan_key = f"starlink:{extracted['starlink_id'].lower()}"
+    else:
+        plan_key = None
+
     if plan_key:
         if plan_key in planned:
             return "match"
@@ -787,7 +912,7 @@ async def _find_or_create_device(
     created: dict,
     batch_id: str,
 ) -> tuple:
-    """Returns (Device, action)."""
+    """Returns (Device, action). Existing devices are returned unchanged."""
     # Match by device_id
     if extracted["device_id"]:
         key = f"id:{extracted['device_id']}"
@@ -804,6 +929,22 @@ async def _find_or_create_device(
         if key in created:
             return created[key], "match"
 
+    # Match by serial_number (Napco/SLELTE common case)
+    if extracted.get("serial_number"):
+        key = f"serial:{extracted['serial_number'].lower()}"
+        if key in existing:
+            return existing[key], "match"
+        if key in created:
+            return created[key], "match"
+
+    # Match by starlink_id
+    if extracted.get("starlink_id"):
+        key = f"starlink:{extracted['starlink_id'].lower()}"
+        if key in existing:
+            return existing[key], "match"
+        if key in created:
+            return created[key], "match"
+
     # Create
     dev_id = extracted["device_id"] or f"DEV-{uuid.uuid4().hex[:8].upper()}"
     device = Device(
@@ -812,7 +953,10 @@ async def _find_or_create_device(
         site_id=site_id,
         status="provisioning",
         device_type=extracted["device_type"] or None,
+        model=extracted.get("model") or None,
+        serial_number=extracted.get("serial_number") or None,
         imei=extracted["imei"] or None,
+        starlink_id=extracted.get("starlink_id") or None,
         carrier=extracted["carrier"] or None,
         iccid=extracted["sim_iccid"] or None,
         msisdn=extracted["msisdn"] or None,
@@ -825,6 +969,10 @@ async def _find_or_create_device(
     existing[f"id:{dev_id}"] = device
     if extracted["imei"]:
         existing[f"imei:{extracted['imei'].lower()}"] = device
+    if extracted.get("serial_number"):
+        existing[f"serial:{extracted['serial_number'].lower()}"] = device
+    if extracted.get("starlink_id"):
+        existing[f"starlink:{extracted['starlink_id'].lower()}"] = device
     created[f"id:{dev_id}"] = device
     return device, "create"
 
