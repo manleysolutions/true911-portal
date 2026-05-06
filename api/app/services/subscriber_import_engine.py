@@ -105,6 +105,55 @@ def _validate_msisdn(msisdn: str) -> list[str]:
     return []
 
 
+# ── Protocol normalization ────────────────────────────────────────
+#
+# `lines.protocol` is VARCHAR(20). The CSV `service_class`/`transport`
+# columns carry display-friendly labels (e.g. "VoLTE (Cellular Voice)")
+# that overflow that column. The display label is preserved in
+# `lines.line_type` (VARCHAR(50)); only the canonical short code goes
+# into `lines.protocol`.
+
+PROTOCOL_MAX_LEN = 20
+
+_PROTOCOL_CANONICAL = {
+    "": "cellular",
+    "volte": "VoLTE",
+    "volte (cellular voice)": "VoLTE",
+    "volte cellular voice": "VoLTE",
+    "voip": "SIP",
+    "voip (sip)": "SIP",
+    "sip": "SIP",
+    "pots": "POTS",
+    "analog": "POTS",
+    "analog (pots replacement)": "POTS",
+    "analog pots": "POTS",
+    "analog pots replacement": "POTS",
+    "data": "DATA",
+    "data only": "DATA",
+    "cellular": "cellular",
+    "lte": "LTE",
+    "5g": "5G",
+    "ethernet": "ethernet",
+    "ethernet (lan)": "ethernet",
+    "lan": "ethernet",
+}
+
+
+def _canonical_protocol(raw: str | None) -> str | None:
+    """Map a free-text service_class/transport label to a canonical
+    protocol code (≤ 20 chars). Returns None if the input is overlong
+    AND not in the canonical map — caller should surface a validation
+    error in that case.
+    """
+    s = (raw or "").strip()
+    norm = s.lower()
+    if norm in _PROTOCOL_CANONICAL:
+        return _PROTOCOL_CANONICAL[norm]
+    if len(s) <= PROTOCOL_MAX_LEN:
+        return s or "cellular"
+    return None
+
+
 # ── CSV Parsing ────────────────────────────────────────────────────
 
 def _parse_csv(csv_text: str) -> tuple[list[dict], list[str]]:
@@ -271,6 +320,17 @@ def _validate_row(
     # MSISDN format
     if extracted["msisdn"]:
         errors.extend(_validate_msisdn(extracted["msisdn"]))
+
+    # Protocol mappability: lines.protocol is VARCHAR(20). Surface a
+    # preview-time error rather than crashing at INSERT.
+    if extracted["line_type"]:
+        if _canonical_protocol(extracted["line_type"]) is None:
+            errors.append(
+                f"line_type '{extracted['line_type']}' "
+                f"({len(extracted['line_type'])} chars) cannot be mapped to a "
+                f"canonical protocol code (max {PROTOCOL_MAX_LEN} chars). "
+                f"Add it to the canonical mapping or shorten the source value."
+            )
 
     # State validation
     if extracted["state"] and extracted["state"] not in VALID_US_STATES:
@@ -1032,6 +1092,9 @@ async def _find_or_create_line(
 
     # Create new line
     line_id = f"LINE-{uuid.uuid4().hex[:8].upper()}"
+    # Canonical short code for VARCHAR(20) protocol column; full label
+    # is preserved separately in line_type (VARCHAR(50)).
+    canonical = _canonical_protocol(extracted["line_type"]) or "cellular"
     line = Line(
         line_id=line_id,
         tenant_id=tenant_id,
@@ -1039,7 +1102,7 @@ async def _find_or_create_line(
         device_id=device_id,
         provider=extracted["carrier"] or "other",
         did=extracted["msisdn"] or None,
-        protocol=extracted["line_type"] or "cellular",
+        protocol=canonical,
         status="provisioning",
         sim_iccid=extracted["sim_iccid"] or None,
         carrier=extracted["carrier"] or None,
