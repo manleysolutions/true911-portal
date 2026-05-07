@@ -95,6 +95,7 @@ async def _ensure_site(
     address: str | None = None,
     carrier: str | None = None,
     contact_email: str | None = None,
+    customer_id: int | None = None,
 ) -> Site:
     """Find site by site_id within tenant, or create."""
     sid = site_id or _slugify(site_name)
@@ -125,6 +126,10 @@ async def _ensure_site(
         tenant_id=tenant_id,
         site_name=site_name,
         customer_name=customer_name,
+        # Phase 3a dual-write: caller passes the resolved customer.id; we
+        # ignore it if it claims a different tenant (defense in depth —
+        # the FK constraint would also catch this).
+        customer_id=customer_id,
         status="Provisioning",
         carrier=carrier,
         e911_street=e911_street,
@@ -245,10 +250,13 @@ async def run_provision_deployment(
 
     # Step 3: Create site
     try:
+        # Phase 3a dual-write: caller already resolved the Customer at
+        # step 2; pass its id so the new site is FK-linked from creation.
         site = await _ensure_site(
             db, tenant_id, customer_name, site_name,
             site_id=site_id, address=address, carrier=carrier,
             contact_email=contact_email,
+            customer_id=customer.id if customer.tenant_id == tenant_id else None,
         )
         result["steps"]["site"] = "ok"
         result["site"] = {

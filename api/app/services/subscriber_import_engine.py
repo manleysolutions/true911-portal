@@ -941,11 +941,21 @@ async def _find_or_create_site(
 
     # Create
     site_id = f"SITE-{uuid.uuid4().hex[:8].upper()}"
+    # Phase 3a dual-write: when the upstream resolver produced a Customer
+    # whose tenant matches the site's tenant, populate the FK alongside
+    # the cached customer_name.  Tenant equality is enforced here so the
+    # FK never crosses tenant boundaries even if the caller is wrong.
+    resolved_customer_id = (
+        customer.id
+        if customer is not None and customer.tenant_id == tenant_id
+        else None
+    )
     site = Site(
         site_id=site_id,
         tenant_id=tenant_id,
         site_name=extracted["site_name"],
         customer_name=extracted["customer_name"],
+        customer_id=resolved_customer_id,
         status="Not Connected",
         onboarding_status="onboarding",
         e911_street=extracted["site_address"] or None,

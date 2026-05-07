@@ -13,11 +13,13 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.customer import Customer
 from ..models.device import Device
 from ..models.site import Site
 from ..models.site_template import SiteTemplate
 from ..models.command_activity import CommandActivity
 from .template_engine import apply_template
+from .site_customer_resolution import CustomerResolver
 
 
 REQUIRED_COLUMNS = {"site_name"}
@@ -149,6 +151,12 @@ async def import_sites_from_csv(
     )
     templates_by_name = {t.name.lower(): t for t in templates_q.scalars().all()}
 
+    # Phase 3a dual-write: preload customers once for FK resolution.
+    customers_q = await db.execute(
+        select(Customer).where(Customer.tenant_id == tenant_id)
+    )
+    customer_resolver = CustomerResolver(customers_q.scalars().all())
+
     rows = list(reader)
     created = 0
     skipped = 0
@@ -174,11 +182,17 @@ async def import_sites_from_csv(
         building_type = (row.get("building_type") or "").strip() or None
         template_name = (row.get("template_name") or "").strip().lower()
 
+        customer_name_for_site = _resolve_customer_name(row) or site_name
+        # Phase 3a dual-write: best-effort resolve customer_name -> customer_id
+        # within the tenant.  Unresolved sites keep customer_id NULL and the
+        # cached customer_name remains authoritative.
+        resolution = customer_resolver.resolve(tenant_id, customer_name_for_site)
         site = Site(
             site_id=site_id,
             tenant_id=tenant_id,
             site_name=site_name,
-            customer_name=_resolve_customer_name(row) or site_name,
+            customer_name=customer_name_for_site,
+            customer_id=resolution.customer_id,
             status=(row.get("status") or "").strip() or "Not Connected",
             e911_street=(row.get("e911_street") or "").strip() or None,
             e911_city=(row.get("e911_city") or "").strip() or None,
