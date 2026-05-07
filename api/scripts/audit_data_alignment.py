@@ -5,6 +5,12 @@ Verifies that customers, sites, devices, lines, SIMs and service units are
 correctly connected to the right tenant and the right customer / site /
 device, and surfaces likely duplicates.
 
+The site → customer link is the ``sites.customer_id`` FK introduced in
+Phase 1 and populated by Phase 2 backfill + Phase 3a writers.  The
+``sites.customer_name`` column is now a denormalized cache that can drift
+after a customer rename; this audit reports both signals so reviewers
+can spot drift and any rows still pending backfill.
+
 READ ONLY.  Issues only SELECT statements via the existing app database
 session.  Writes nothing to the database.  Does not change schema, tenant
 logic, or auth behavior.  Output is CSV + a plain-text summary written
@@ -212,8 +218,14 @@ async def check_tenant_distribution(db) -> tuple[list[str], list[list[Any]], dic
     return header, rows, counts
 
 
-async def check_site_customer_alignment(db) -> tuple[list[str], list[list[Any]], int]:
-    """For each site, look up its customer by name and surface mismatches."""
+async def check_site_customer_alignment(db) -> tuple[list[str], list[list[Any]], int, dict[str, int]]:
+    """For each site, surface alignment issues using the customer_id FK
+    as the primary signal and the customer_name cache as a fallback.
+
+    Returns (header, rows, flag_count, linkage_counts).  ``linkage_counts``
+    is a histogram over linkage_type values: linked_via_fk |
+    linked_via_name_only | unresolved | fk_orphan.
+    """
     sites_r = await db.execute(select(Site))
     sites = sites_r.scalars().all()
 
@@ -233,10 +245,13 @@ async def check_site_customer_alignment(db) -> tuple[list[str], list[list[Any]],
         "site_name",
         "site_tenant_id",
         "customer_name_on_site",
-        "matched_customer_found",
+        "site_customer_id",
+        "linkage_type",
         "matched_customer_id",
+        "matched_customer_name",
         "matched_customer_tenant_id",
         "tenant_mismatch",
+        "cache_drift",
         "e911_street",
         "e911_city",
         "e911_state",
@@ -245,44 +260,87 @@ async def check_site_customer_alignment(db) -> tuple[list[str], list[list[Any]],
     ]
     rows: list[list[Any]] = []
     flag_count = 0
+    linkage_counts: dict[str, int] = defaultdict(int)
     for s in sites:
-        cust_list = by_tenant_name.get((s.tenant_id, norm_name(s.customer_name)), [])
         flags: list[str] = []
+        matched_id: Any = ""
+        matched_name = ""
+        matched_tenant: Any = ""
+        tenant_mismatch = ""
+        cache_drift = ""
+        linkage_type = ""
+        site_customer_id = s.customer_id  # may be None
 
-        if not s.customer_name or not s.customer_name.strip():
-            flags.append("site_customer_name_missing")
-            matched_id: Any = ""
-            matched_tenant: Any = ""
-            tenant_mismatch = ""
-            found = "no"
-        elif not cust_list:
-            # Try matching across tenants to detect tenant drift.
-            cross_tenant = [c for c in customers if norm_name(c.name) == norm_name(s.customer_name)]
-            if cross_tenant:
-                flags.append("customer_match_in_other_tenant")
-                matched_id = ";".join(str(c.id) for c in cross_tenant)
-                matched_tenant = ";".join(c.tenant_id for c in cross_tenant)
+        if site_customer_id is not None:
+            # Primary path: site is linked via FK.
+            c = by_id.get(site_customer_id)
+            if c is None:
+                # The FK constraint should prevent this; flag if seen.
+                linkage_type = "fk_orphan"
+                flags.append("fk_points_to_missing_customer")
+            elif c.tenant_id != s.tenant_id:
+                # Phase 4 trigger should prevent this; flag for now.
+                linkage_type = "fk_orphan"
+                matched_id = c.id
+                matched_name = c.name
+                matched_tenant = c.tenant_id
                 tenant_mismatch = "yes"
-                found = "no"  # not in same tenant
+                flags.append("fk_tenant_mismatch")
             else:
-                flags.append("site_customer_name_no_match")
-                matched_id = ""
-                matched_tenant = ""
-                tenant_mismatch = ""
-                found = "no"
-        elif len(cust_list) > 1:
-            flags.append("multiple_customers_match_name")
-            matched_id = ";".join(str(c.id) for c in cust_list)
-            matched_tenant = ";".join(c.tenant_id for c in cust_list)
-            tenant_mismatch = "no"
-            found = "yes"
+                linkage_type = "linked_via_fk"
+                matched_id = c.id
+                matched_name = c.name
+                matched_tenant = c.tenant_id
+                tenant_mismatch = "no"
+                # Cache drift: cached customer_name diverges from the
+                # canonical name on the linked customer.
+                if norm_name(s.customer_name) != norm_name(c.name):
+                    cache_drift = "yes"
+                    flags.append("cache_drift")
+                else:
+                    cache_drift = "no"
         else:
-            c = cust_list[0]
-            matched_id = c.id
-            matched_tenant = c.tenant_id
-            tenant_mismatch = "no"
-            found = "yes"
+            # Fallback path: customer_id IS NULL, fall back to name match.
+            if not s.customer_name or not s.customer_name.strip():
+                linkage_type = "unresolved"
+                flags.append("site_customer_name_missing")
+            else:
+                cust_list = by_tenant_name.get(
+                    (s.tenant_id, norm_name(s.customer_name)), []
+                )
+                if not cust_list:
+                    cross_tenant = [
+                        c for c in customers
+                        if norm_name(c.name) == norm_name(s.customer_name)
+                    ]
+                    if cross_tenant:
+                        linkage_type = "unresolved"
+                        flags.append("customer_match_in_other_tenant")
+                        matched_id = ";".join(str(c.id) for c in cross_tenant)
+                        matched_tenant = ";".join(c.tenant_id for c in cross_tenant)
+                        tenant_mismatch = "yes"
+                    else:
+                        linkage_type = "unresolved"
+                        flags.append("site_customer_name_no_match")
+                elif len(cust_list) > 1:
+                    linkage_type = "unresolved"
+                    flags.append("multiple_customers_match_name")
+                    matched_id = ";".join(str(c.id) for c in cust_list)
+                    matched_tenant = ";".join(c.tenant_id for c in cust_list)
+                    tenant_mismatch = "no"
+                else:
+                    # Exactly one in-tenant match — would resolve via the
+                    # Phase 2 backfill but isn't FK-linked yet.  Still
+                    # correctly aligned today; flag for visibility.
+                    c = cust_list[0]
+                    linkage_type = "linked_via_name_only"
+                    matched_id = c.id
+                    matched_name = c.name
+                    matched_tenant = c.tenant_id
+                    tenant_mismatch = "no"
+                    flags.append("backfill_pending")
 
+        linkage_counts[linkage_type] += 1
         if flags:
             flag_count += 1
 
@@ -293,10 +351,13 @@ async def check_site_customer_alignment(db) -> tuple[list[str], list[list[Any]],
                 s.site_name,
                 s.tenant_id,
                 s.customer_name,
-                found,
+                site_customer_id if site_customer_id is not None else "",
+                linkage_type,
                 matched_id,
+                matched_name,
                 matched_tenant,
                 tenant_mismatch,
+                cache_drift,
                 s.e911_street,
                 s.e911_city,
                 s.e911_state,
@@ -304,7 +365,7 @@ async def check_site_customer_alignment(db) -> tuple[list[str], list[list[Any]],
                 ";".join(flags),
             ]
         )
-    return header, rows, flag_count
+    return header, rows, flag_count, linkage_counts
 
 
 async def check_device_site_alignment(db) -> tuple[list[str], list[list[Any]], int]:
@@ -722,9 +783,13 @@ async def main() -> int:
 
         # ── 2. site → customer alignment ──────────────────────────
         _banner("2. Site → customer alignment")
-        sc_header, sc_rows, sc_flags = await check_site_customer_alignment(db)
+        sc_header, sc_rows, sc_flags, sc_linkage = await check_site_customer_alignment(db)
         sc_path = _write_csv("site_customer_alignment.csv", sc_header, sc_rows)
         print(f"  wrote {sc_path.name}  ({len(sc_rows)} sites, {sc_flags} flagged)")
+        for lt in ("linked_via_fk", "linked_via_name_only", "unresolved", "fk_orphan"):
+            n = sc_linkage.get(lt, 0)
+            if n:
+                print(f"    linkage_type={lt:<22} {n:>6}")
 
         # ── 3. device → site alignment ────────────────────────────
         _banner("3. Device → site alignment")
@@ -770,6 +835,13 @@ async def main() -> int:
             summary_lines.append(f"  {lbl:<14} total = {totals.get(lbl, 0)}")
         summary_lines += [
             "",
+            "Site → customer linkage (post-Phase 3a)",
+            "---------------------------------------",
+            f"  linked_via_fk          : {sc_linkage.get('linked_via_fk', 0)}",
+            f"  linked_via_name_only   : {sc_linkage.get('linked_via_name_only', 0)}  (backfill pending)",
+            f"  unresolved             : {sc_linkage.get('unresolved', 0)}",
+            f"  fk_orphan              : {sc_linkage.get('fk_orphan', 0)}",
+            "",
             "Alignment flags",
             "----------------",
             f"  sites flagged    : {sc_flags}",
@@ -793,7 +865,14 @@ async def main() -> int:
             "Notes",
             "-----",
             "  - Read only.  No data was modified.",
-            "  - Site→customer link is name-based (sites.customer_name); no customer_id FK on sites.",
+            "  - Site→customer link is the customer_id FK (Phase 1).  sites.customer_name is",
+            "    a denormalized cache; the cache_drift flag marks rows where it diverges from",
+            "    the canonical customers.name.",
+            "  - linked_via_name_only rows have customer_id=NULL but resolve to one in-tenant",
+            "    customer; they are correctly aligned today and will be FK-linked once the",
+            "    Phase 2 backfill is re-run for them.",
+            "  - fk_orphan rows are unexpected — the FK constraint should prevent missing",
+            "    targets, and the Phase 4 trigger should prevent tenant drift; investigate.",
             "  - Duplicate detection uses normalized text/phone keys; review before any merges.",
         ]
         summary_path = REPORTS_DIR / "audit_summary.txt"
