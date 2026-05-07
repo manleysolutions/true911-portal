@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.customer import Customer
 from ..models.site import Site
 from ..models.device import Device
 from ..models.vendor import Vendor
@@ -28,6 +29,7 @@ from ..models.command_activity import CommandActivity
 
 from .address_enrichment import enrich_row
 from .csv_importer import _resolve_site_name, _resolve_customer_name
+from .site_customer_resolution import CustomerResolver
 
 REQUIRED_COLUMNS = {"site_name", "system_type"}
 # Accept Zoho aliases for site_name
@@ -346,6 +348,12 @@ async def commit_import(
     )
     existing_vendors = {v.name.lower(): v for v in existing_vendors_q.scalars().all()}
 
+    # Phase 3a dual-write: preload customers once for FK resolution.
+    customers_q = await db.execute(
+        select(Customer).where(Customer.tenant_id == tenant_id)
+    )
+    customer_resolver = CustomerResolver(customers_q.scalars().all())
+
     # Track created entities within this import
     created_sites = {}  # site_code_or_key -> site_id
     created_vendors = {}  # vendor_name_lower -> Vendor
@@ -403,11 +411,17 @@ async def commit_import(
             e_city = enriched.final_address_city or row.get("city") or None
             e_state = enriched.final_address_state or row.get("state") or None
             e_zip = enriched.final_address_zip or row.get("zip") or None
+            customer_name_for_site = _resolve_customer_name(row) or site_name
+            # Phase 3a dual-write: best-effort resolve to customers.id.
+            # Unresolved rows leave customer_id NULL; the cached
+            # customer_name remains authoritative for those sites.
+            resolution = customer_resolver.resolve(tenant_id, customer_name_for_site)
             site = Site(
                 site_id=site_id,
                 tenant_id=tenant_id,
                 site_name=site_name,
-                customer_name=_resolve_customer_name(row) or site_name,
+                customer_name=customer_name_for_site,
+                customer_id=resolution.customer_id,
                 status="Not Connected",
                 onboarding_status="onboarding",
                 e911_street=e_street,

@@ -27,6 +27,12 @@ from app.services.continuity import (
 )
 from app.services.health_scoring import compute_device_health, compute_site_health
 from app.services.geocoding import geocode_address, has_valid_coords
+from app.services.site_customer_resolution import (
+    CustomerNotFoundError,
+    CustomerTenantMismatchError,
+    resolve_customer_for_site,
+    validate_customer_id_for_tenant,
+)
 
 # TEMP: persistence-path debug logger.  Remove these log lines once
 # building_type / address_notes save behavior is confirmed in prod.
@@ -447,7 +453,55 @@ async def create_site(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    site = Site(**body.model_dump(), tenant_id=current_user.tenant_id)
+    payload = body.model_dump()
+
+    # Phase 3a dual-write: reconcile customer_id and customer_name before
+    # constructing the Site.  Tenant equality is enforced at the API
+    # layer in addition to the FK constraint.
+    incoming_customer_id = payload.pop("customer_id", None)
+    incoming_customer_name = payload.get("customer_name")
+
+    if incoming_customer_id is not None:
+        try:
+            customer = await validate_customer_id_for_tenant(
+                db, current_user.tenant_id, incoming_customer_id
+            )
+        except (CustomerNotFoundError, CustomerTenantMismatchError) as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+        # If the client supplied both, they must agree.  Compare by id
+        # rather than by string so trivial casing differences in the
+        # cached name don't trigger a false reject.
+        if incoming_customer_name:
+            resolution = await resolve_customer_for_site(
+                db, current_user.tenant_id, incoming_customer_name
+            )
+            if resolution.is_resolved and resolution.customer_id != customer.id:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"customer_id={customer.id} does not match customer_name="
+                    f"'{incoming_customer_name}' (resolves to id={resolution.customer_id})",
+                )
+        # Refresh the cached name to the canonical value.
+        payload["customer_name"] = customer.name
+        resolved_customer_id = customer.id
+    elif incoming_customer_name:
+        # Name-only path: best-effort resolution.  Unresolved names
+        # leave customer_id NULL — preserving today's behavior.
+        resolution = await resolve_customer_for_site(
+            db, current_user.tenant_id, incoming_customer_name
+        )
+        resolved_customer_id = resolution.customer_id  # None unless RESOLVED
+    else:
+        # Neither field supplied — SiteCreate already requires
+        # customer_name as a string, so this branch is unreachable
+        # under normal use; defensive default keeps mypy happy.
+        resolved_customer_id = None
+
+    site = Site(
+        **payload,
+        customer_id=resolved_customer_id,
+        tenant_id=current_user.tenant_id,
+    )
 
     # Auto-geocode if E911 address fields were provided
     if any([site.e911_street, site.e911_city, site.e911_state, site.e911_zip]):
@@ -541,6 +595,45 @@ async def update_site(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Longitude must be between -180 and 180",
             )
+
+    # Phase 3a dual-write: when the request changes customer_id and/or
+    # customer_name, validate tenant membership and keep the cached
+    # name in lockstep with the FK.  customer_id is intentionally not in
+    # _DATAENTRY_ALLOWED_FIELDS, so this branch only runs for Admins.
+    if "customer_id" in updates or "customer_name" in updates:
+        new_id = updates.get("customer_id", site.customer_id)
+        new_name = updates.get("customer_name", site.customer_name)
+
+        if "customer_id" in updates and new_id is not None:
+            try:
+                customer = await validate_customer_id_for_tenant(
+                    db, site.tenant_id, new_id
+                )
+            except (CustomerNotFoundError, CustomerTenantMismatchError) as exc:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+            # Refresh the cached name.  If the request also supplied a
+            # customer_name, it must match by id; the client doesn't get
+            # to silently override the canonical name.
+            if "customer_name" in updates:
+                resolution = await resolve_customer_for_site(
+                    db, site.tenant_id, new_name
+                )
+                if resolution.is_resolved and resolution.customer_id != customer.id:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        f"customer_id={customer.id} does not match customer_name="
+                        f"'{new_name}' (resolves to id={resolution.customer_id})",
+                    )
+            updates["customer_name"] = customer.name
+        elif "customer_name" in updates and new_name:
+            # Name-only update.  Try to align the FK with the new name;
+            # if the name doesn't resolve, leave customer_id alone (do
+            # not silently clear an existing FK).
+            resolution = await resolve_customer_for_site(
+                db, site.tenant_id, new_name
+            )
+            if resolution.is_resolved:
+                updates["customer_id"] = resolution.customer_id
 
     # TEMP: persistence-path debug — list of fields actually written to
     # the ORM instance after the role strip.  Remove once verified.

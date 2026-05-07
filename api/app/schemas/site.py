@@ -138,6 +138,7 @@ class SiteCreate(BaseModel):
 class SiteUpdate(BaseModel):
     site_name: Optional[str] = None
     customer_name: Optional[str] = None
+    customer_id: Optional[int] = None
     status: Optional[str] = None
     last_checkin: Optional[datetime] = None
     e911_street: Optional[str] = None
