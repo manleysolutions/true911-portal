@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Float, Integer, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, Float, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -17,6 +17,13 @@ class Site(Base):
     )
     site_name: Mapped[str] = mapped_column(String(255))
     customer_name: Mapped[str] = mapped_column(String(255))
+    # Phase 1 — nullable FK to customers.id.  Indexes and constraint
+    # are owned by Alembic migration 039.  Stays nullable until the
+    # backfill in Phase 2 + the NOT NULL flip in Phase 5.
+    customer_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("customers.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(50))
     last_checkin: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     e911_street: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -66,3 +73,8 @@ class Site(Base):
     ng911_uri: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_sites_customer_id", "customer_id"),
+        Index("ix_sites_tenant_customer", "tenant_id", "customer_id"),
+    )

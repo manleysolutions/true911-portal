@@ -44,6 +44,7 @@ class SiteOut(BaseModel):
     tenant_id: str
     site_name: str
     customer_name: str
+    customer_id: Optional[int] = None
     status: str
     last_checkin: Optional[datetime] = None
     e911_street: Optional[str] = None
@@ -97,6 +98,7 @@ class SiteCreate(BaseModel):
     site_id: str
     site_name: str
     customer_name: str
+    customer_id: Optional[int] = None
     status: str
     last_checkin: Optional[datetime] = None
     e911_street: Optional[str] = None
