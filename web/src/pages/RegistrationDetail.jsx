@@ -15,8 +15,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   ArrowLeft, ClipboardList, Building2, User, MapPin, Phone, Calendar, CreditCard,
-  AlertCircle, Clock, Loader2, Save, MessageSquare, X,
-  Hash, ShieldCheck, Rocket, Package,
+  AlertCircle, AlertTriangle, Clock, Loader2, Save, MessageSquare, X,
+  Hash, ShieldCheck, Rocket, Package, KeyRound, Copy, UserCheck, UserPlus,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
@@ -188,6 +188,17 @@ export default function RegistrationDetail() {
   // the card falls back to whatever the registration record already
   // carries (target_tenant_id, customer_id).
   const [lastConvertResult, setLastConvertResult] = useState(null);
+  // Phase R5 — the one-time invite payload the backend hands back on
+  // the ready_for_activation transition.  Held separately from `reg`
+  // because subsequent GETs of the registration return invite=null
+  // (the plaintext token is not recoverable from storage), and
+  // unrelated UI actions that re-fetch the registration would
+  // otherwise wipe it out before the operator gets a chance to copy.
+  const [lastIssuedInvite, setLastIssuedInvite] = useState(null);
+  // Read-only invite/portal-access status — refreshed from the
+  // GET /invite-status endpoint after the registration loads and
+  // after each transition that might change it.
+  const [inviteStatus, setInviteStatus] = useState(null);
 
   const reload = useCallback(async () => {
     if (!registrationId) return;
@@ -211,25 +222,68 @@ export default function RegistrationDetail() {
     if (canView) reload();
   }, [reload, canView]);
 
+  // Pull the invite-status whenever the registration loads or its
+  // tenant-linkage changes.  Cheap (one query) and the endpoint is
+  // safe to call even when the registration hasn't been converted
+  // yet — it just returns has_invite=false.
+  const reloadInviteStatus = useCallback(async () => {
+    if (!registrationId) return;
+    try {
+      const status = await RegistrationAdminAPI.getInviteStatus(registrationId);
+      setInviteStatus(status);
+    } catch {
+      // Surfacing a fetch error inline would crowd the page for a
+      // non-critical read.  Silent failure is acceptable — the card
+      // simply won't render the portal-access row.
+      setInviteStatus(null);
+    }
+  }, [registrationId]);
+
+  useEffect(() => {
+    if (reg && canView) reloadInviteStatus();
+  }, [reg?.id, reg?.target_tenant_id, reg?.status, canView, reloadInviteStatus]);
+
+  // Extract the operator-friendly message from a Phase R5
+  // ActivationError so the toast carries actionable detail rather
+  // than the stringified JSON apiFetch produces by default.
+  const formatTransitionError = (err) => {
+    const detail = err?.body?.detail;
+    if (detail && typeof detail === "object" && detail.stage) {
+      const tail = detail.next_steps ? ` — ${detail.next_steps}` : "";
+      return `${detail.stage}: ${detail.message || "Transition failed"}${tail}`;
+    }
+    return err?.message || "Transition failed";
+  };
+
   const handleTransition = async (toStatus, note) => {
     try {
       const updated = await RegistrationAdminAPI.transition(registrationId, toStatus, note);
       setReg(updated);
+      // Phase R5 — the ready_for_activation transition surfaces a
+      // one-time invite payload.  Capture it into a separate piece
+      // of state so a subsequent re-fetch (which carries invite=null)
+      // doesn't wipe the operator's chance to copy the plaintext URL.
+      if (updated?.invite?.invite_url) {
+        setLastIssuedInvite(updated.invite);
+      }
+      await reloadInviteStatus();
       toast.success(`Moved to ${STATUS_LABELS[toStatus] || toStatus}`);
     } catch (err) {
-      toast.error(err?.message || "Transition failed");
+      toast.error(formatTransitionError(err));
     }
   };
 
   const handleRequestInfo = async (message) => {
     const updated = await RegistrationAdminAPI.requestInfo(registrationId, message);
     setReg(updated);
+    await reloadInviteStatus();
     toast.success("Marked as awaiting customer information");
   };
 
   const handleCancel = async (reason) => {
     const updated = await RegistrationAdminAPI.cancel(registrationId, reason);
     setReg(updated);
+    await reloadInviteStatus();
     toast.success("Registration cancelled");
   };
 
@@ -240,6 +294,11 @@ export default function RegistrationDetail() {
   const handleConverted = (result) => {
     if (result?.registration) setReg(result.registration);
     setLastConvertResult(result);
+    // After conversion the (email, target_tenant_id) pair changes;
+    // re-pull the portal-access status so the card reflects the new
+    // tenant rather than whatever (likely empty) result it had
+    // before.
+    reloadInviteStatus();
     toast.success("Registration converted to production rows");
   };
 
@@ -388,12 +447,26 @@ export default function RegistrationDetail() {
             </div>
           )}
 
+          {/* One-time invite alert — only after a transition that just
+              created or rotated an invite.  Dismissed manually by the
+              operator once they've copied the URL. */}
+          {lastIssuedInvite && (
+            <InviteIssuedAlert
+              invite={lastIssuedInvite}
+              onDismiss={() => setLastIssuedInvite(null)}
+            />
+          )}
+
           {/* Two-column body */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left two-thirds — record content */}
             <div className="lg:col-span-2 space-y-4">
-              {(reg.target_tenant_id || reg.customer_id || lastConvertResult) && (
-                <ProductionLinkageCard reg={reg} convertResult={lastConvertResult} />
+              {(reg.target_tenant_id || reg.customer_id || lastConvertResult || inviteStatus?.has_invite) && (
+                <ProductionLinkageCard
+                  reg={reg}
+                  convertResult={lastConvertResult}
+                  inviteStatus={inviteStatus}
+                />
               )}
 
               <Card icon={Building2} title="Customer">
@@ -539,7 +612,7 @@ export default function RegistrationDetail() {
 
 // ── Production Linkage card ─────────────────────────────────────────
 
-function ProductionLinkageCard({ reg, convertResult }) {
+function ProductionLinkageCard({ reg, convertResult, inviteStatus }) {
   // When we have a fresh convert response in memory, show the rich
   // version (per-site + subscription breakdown).  After a page
   // reload, fall back to whatever the registration row carries.
@@ -548,7 +621,7 @@ function ProductionLinkageCard({ reg, convertResult }) {
   const sites = convertResult?.sites || [];
   const subscription = convertResult?.subscription || null;
 
-  if (!tenantId && !customer) return null;
+  if (!tenantId && !customer && !inviteStatus?.has_invite) return null;
 
   return (
     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
@@ -604,12 +677,167 @@ function ProductionLinkageCard({ reg, convertResult }) {
             </div>
           </div>
         )}
+        <PortalAccessRow inviteStatus={inviteStatus} />
       </div>
       {!convertResult && (
         <p className="mt-3 text-[11px] text-emerald-800 bg-emerald-100/60 rounded px-2 py-1.5">
           This registration has been converted. Re-run the modal to view the full materialisation summary again.
         </p>
       )}
+    </div>
+  );
+}
+
+
+/** Single-line summary of the customer's portal-access state.
+ *
+ *  Three meaningful states:
+ *    - has_invite=false           → "No portal invite issued yet"
+ *    - has_invite=true, active    → "Portal active — email signed in"
+ *    - has_invite=true, pending   → "Invite pending — expires …"
+ *    - has_invite=true, neither   → invite was issued but is expired
+ *
+ *  Never renders the plaintext token — the inviteStatus endpoint
+ *  deliberately omits it.  The one-time copy chance lives on
+ *  InviteIssuedAlert.
+ */
+function PortalAccessRow({ inviteStatus }) {
+  if (!inviteStatus) return null;
+  if (!inviteStatus.has_invite) {
+    return (
+      <div className="flex items-start gap-2">
+        <UserPlus className="w-3.5 h-3.5 text-gray-400 mt-0.5" />
+        <span className="text-sm text-gray-500">No portal invite issued yet</span>
+      </div>
+    );
+  }
+  if (inviteStatus.is_active) {
+    return (
+      <div className="flex items-start gap-2">
+        <UserCheck className="w-3.5 h-3.5 text-emerald-700 mt-0.5" />
+        <div>
+          <span className="text-gray-700">Portal access </span>
+          <span className="text-gray-900">active</span>
+          {inviteStatus.email && (
+            <span className="ml-1 text-[11px] text-gray-500">· {inviteStatus.email}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (inviteStatus.has_pending_invite) {
+    return (
+      <div className="flex items-start gap-2">
+        <Clock className="w-3.5 h-3.5 text-amber-600 mt-0.5" />
+        <div>
+          <span className="text-gray-700">Portal invite </span>
+          <span className="text-gray-900">pending</span>
+          {inviteStatus.email && (
+            <span className="ml-1 text-[11px] text-gray-500">· {inviteStatus.email}</span>
+          )}
+          {inviteStatus.invite_expires_at && (
+            <div className="text-[11px] text-gray-500">
+              Expires {formatDate(inviteStatus.invite_expires_at)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  // has_invite=true but the user is not active AND has no pending
+  // invite → the token expired.  Operator can retrigger the
+  // ready_for_activation transition to rotate.
+  return (
+    <div className="flex items-start gap-2">
+      <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5" />
+      <div>
+        <span className="text-gray-700">Portal invite </span>
+        <span className="text-red-700">expired</span>
+        {inviteStatus.email && (
+          <span className="ml-1 text-[11px] text-gray-500">· {inviteStatus.email}</span>
+        )}
+        <div className="text-[11px] text-gray-500">
+          Re-trigger the ready_for_activation action to issue a fresh invite.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/** One-time alert that renders the plaintext invite URL.
+ *
+ *  Only shown briefly — after a transition into ready_for_activation
+ *  that just created or rotated an invite, the backend returns the
+ *  plaintext token on that single response.  Subsequent GETs don't
+ *  carry the token, so the operator gets one chance to copy.
+ *
+ *  Dismissible via the X button; the operator should click X once
+ *  they've copied or sent the URL.
+ */
+function InviteIssuedAlert({ invite, onDismiss }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(invite.invite_url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Clipboard API can be blocked on http:// — the operator can
+      // still select-all and copy manually from the read-only input.
+    }
+  };
+
+  const expires = invite.invite_expires_at
+    ? formatDate(invite.invite_expires_at)
+    : "—";
+
+  return (
+    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+      <div className="flex items-start gap-3">
+        <KeyRound className="w-5 h-5 text-amber-700 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-amber-900 flex items-center gap-2 flex-wrap">
+            {invite.was_rotated ? "Portal Invite Rotated" : "Portal Invite Issued"}
+            <span className="text-[10px] uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">
+              one-time
+            </span>
+          </div>
+          <p className="text-xs text-amber-800 mt-1">
+            This is the only time the server will display this URL.
+            Copy it now and share it with{" "}
+            <span className="font-medium">{invite.email}</span>.
+          </p>
+          <div className="mt-2 flex flex-col sm:flex-row gap-2">
+            <input
+              readOnly
+              value={invite.invite_url}
+              onFocus={(e) => e.target.select()}
+              className="flex-1 min-w-0 px-2 py-1.5 bg-white border border-amber-300 rounded text-[11px] font-mono text-amber-900 truncate"
+              aria-label="One-time portal invite URL"
+            />
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded whitespace-nowrap"
+            >
+              <Copy className="w-3 h-3" />
+              {copied ? "Copied" : "Copy URL"}
+            </button>
+          </div>
+          <p className="text-[11px] text-amber-700 mt-2">
+            Expires {expires}
+            {invite.was_rotated && " · previous token has been invalidated"}
+          </p>
+        </div>
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="p-1 text-amber-700 hover:text-amber-900 rounded hover:bg-amber-100 flex-shrink-0"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 }
