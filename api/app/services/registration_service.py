@@ -597,3 +597,250 @@ async def list_service_units_for(
         .order_by(RegistrationServiceUnit.id.asc())
     )
     return result.scalars().all()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Internal review surface (Phase R3)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Helpers below back /api/registrations.  None of them create or
+# modify production rows (customers, sites, service_units, devices,
+# users) — that lives in a later conversion phase.
+
+from sqlalchemy import func  # noqa: E402  (local to admin helpers)
+
+# Fields the admin-update path is permitted to write on a Registration
+# ORM row.  Everything else stays read-only on this surface — including
+# status (use transition_status), submitter_email (immutable identity),
+# resume_token_hash / expires_at (only the resume flow rotates them),
+# and customer_id (only the future convert_registration endpoint sets
+# it).  Keeping this allow-list local to the service module means the
+# router can't accidentally widen it.
+_ADMIN_WRITABLE_FIELDS = frozenset({
+    "reviewer_notes",
+    "target_tenant_id",
+    "selected_plan_code",
+    "plan_quantity_estimate",
+    "billing_method",
+    "installer_notes",
+})
+
+
+async def list_registrations_admin(
+    db: AsyncSession,
+    *,
+    status_filter: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 100,
+    sort: str = "-created_at",
+) -> list[Registration]:
+    """Return a filtered, sorted list of registrations.
+
+    `search` is matched against registration_id, customer_name, and
+    submitter_email — the three values a reviewer is most likely to
+    type when hunting for a specific record.
+
+    The function deliberately does NOT scope by current_user.tenant_id:
+    registrations all live in the "ops" tenant during staging and the
+    internal queue is a global ops queue gated by RBAC, not tenancy.
+    """
+
+    q = select(Registration)
+    if status_filter:
+        q = q.where(Registration.status == status_filter)
+    if search:
+        pattern = f"%{search.lower()}%"
+        q = q.where(
+            func.lower(Registration.registration_id).like(pattern)
+            | func.lower(Registration.customer_name).like(pattern)
+            | func.lower(Registration.submitter_email).like(pattern)
+        )
+
+    # Sort: leading "-" means descending.  Falls back to created_at on
+    # an unknown column rather than raising — keeps the router simple.
+    desc = sort.startswith("-")
+    col_name = sort.lstrip("-") or "created_at"
+    column = getattr(Registration, col_name, Registration.created_at)
+    q = q.order_by(column.desc() if desc else column.asc())
+
+    q = q.limit(limit)
+    result = await db.execute(q)
+    return list(result.scalars().all())
+
+
+async def get_child_counts(
+    db: AsyncSession, registration_ids: list[int]
+) -> dict[int, tuple[int, int]]:
+    """Return (locations_count, service_units_count) per registration id.
+
+    Two single grouped queries — avoids the N+1 the frontend would
+    otherwise need to issue when rendering the queue.
+    """
+
+    if not registration_ids:
+        return {}
+
+    loc_rows = await db.execute(
+        select(
+            RegistrationLocation.registration_id,
+            func.count(RegistrationLocation.id),
+        )
+        .where(RegistrationLocation.registration_id.in_(registration_ids))
+        .group_by(RegistrationLocation.registration_id)
+    )
+    unit_rows = await db.execute(
+        select(
+            RegistrationServiceUnit.registration_id,
+            func.count(RegistrationServiceUnit.id),
+        )
+        .where(RegistrationServiceUnit.registration_id.in_(registration_ids))
+        .group_by(RegistrationServiceUnit.registration_id)
+    )
+
+    out: dict[int, tuple[int, int]] = {rid: (0, 0) for rid in registration_ids}
+    for rid, count in loc_rows.all():
+        existing = out.get(rid, (0, 0))
+        out[rid] = (int(count or 0), existing[1])
+    for rid, count in unit_rows.all():
+        existing = out.get(rid, (0, 0))
+        out[rid] = (existing[0], int(count or 0))
+    return out
+
+
+async def get_unit_summary(
+    db: AsyncSession, registration_ids: list[int]
+) -> dict[int, tuple[Optional[str], Optional[str]]]:
+    """Return (hardware_summary, carrier_summary) per registration id.
+
+    Summaries are comma-joined distinct values from the registration's
+    service units, capped to a short string suitable for the list
+    column.
+    """
+
+    if not registration_ids:
+        return {}
+
+    result = await db.execute(
+        select(
+            RegistrationServiceUnit.registration_id,
+            RegistrationServiceUnit.hardware_model_request,
+            RegistrationServiceUnit.carrier_request,
+        ).where(RegistrationServiceUnit.registration_id.in_(registration_ids))
+    )
+    hardware: dict[int, set[str]] = {}
+    carrier: dict[int, set[str]] = {}
+    for rid, hw, ca in result.all():
+        if hw:
+            hardware.setdefault(rid, set()).add(hw)
+        if ca:
+            carrier.setdefault(rid, set()).add(ca)
+
+    def _summarize(values: set[str]) -> Optional[str]:
+        if not values:
+            return None
+        joined = ", ".join(sorted(values))
+        return joined if len(joined) <= 80 else joined[:77] + "…"
+
+    out: dict[int, tuple[Optional[str], Optional[str]]] = {}
+    for rid in registration_ids:
+        out[rid] = (_summarize(hardware.get(rid, set())), _summarize(carrier.get(rid, set())))
+    return out
+
+
+async def count_registrations_by_status(db: AsyncSession) -> dict[str, int]:
+    """Return a {status: count} map across all registrations.
+
+    Backs the count badges on the internal list page.
+    """
+
+    result = await db.execute(
+        select(Registration.status, func.count(Registration.id)).group_by(Registration.status)
+    )
+    return {status: int(n or 0) for status, n in result.all()}
+
+
+async def list_status_events(
+    db: AsyncSession, registration_id: int
+) -> list[RegistrationStatusEvent]:
+    """Return the full status timeline for a registration, oldest first."""
+
+    result = await db.execute(
+        select(RegistrationStatusEvent)
+        .where(RegistrationStatusEvent.registration_id == registration_id)
+        .order_by(RegistrationStatusEvent.created_at.asc(), RegistrationStatusEvent.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def admin_update_registration(
+    db: AsyncSession,
+    registration: Registration,
+    updates: dict,
+) -> Registration:
+    """Apply admin-editable fields to a registration.
+
+    Any keys not in :data:`_ADMIN_WRITABLE_FIELDS` are silently dropped.
+    This is the single chokepoint for non-status mutations from the
+    internal surface — direct ORM assignment in the router is
+    prohibited by convention so future field additions land here and
+    nowhere else.
+    """
+
+    filtered = {k: v for k, v in updates.items() if k in _ADMIN_WRITABLE_FIELDS}
+    for field, value in filtered.items():
+        setattr(registration, field, value)
+    if filtered:
+        await db.commit()
+        await db.refresh(registration)
+    return registration
+
+
+async def request_more_info(
+    db: AsyncSession,
+    registration: Registration,
+    *,
+    message: str,
+    actor_user_id: Optional[uuid.UUID],
+    actor_email: Optional[str],
+) -> Registration:
+    """Move a registration to ``pending_customer_info`` with a note
+    that records the reviewer's question.
+
+    Phase R3 does not email the customer — that hook lives in a later
+    phase.  The recorded note is the source of truth for "what we
+    asked them".
+    """
+
+    return await transition_status(
+        db,
+        registration,
+        to_status=Status.PENDING_CUSTOMER_INFO,
+        actor_user_id=actor_user_id,
+        actor_email=actor_email,
+        note=f"request_info: {message}",
+    )
+
+
+async def cancel_registration(
+    db: AsyncSession,
+    registration: Registration,
+    *,
+    reason: str,
+    actor_user_id: Optional[uuid.UUID],
+    actor_email: Optional[str],
+) -> Registration:
+    """Move a registration to ``cancelled`` and stamp the reason.
+
+    The reason is mirrored onto registrations.cancel_reason so the
+    list view can show it without joining the status events table.
+    """
+
+    registration.cancel_reason = reason
+    return await transition_status(
+        db,
+        registration,
+        to_status=Status.CANCELLED,
+        actor_user_id=actor_user_id,
+        actor_email=actor_email,
+        note=reason,
+    )

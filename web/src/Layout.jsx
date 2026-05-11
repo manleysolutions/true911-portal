@@ -7,7 +7,7 @@ import {
   ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users,
   KeyRound, Eye, EyeOff, AlertTriangle, CheckCircle, Loader2, HelpCircle,
   UserCog, XCircle, Zap, ChevronRight, Gauge, Package, Wrench, MonitorCog,
-  Layers, SlidersHorizontal,
+  Layers, SlidersHorizontal, ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -47,6 +47,7 @@ const FEATURE_FLAGS = {
 const NOC_NAV = [
   // ── Primary ──
   { name: "Command Center",  page: "Command",         icon: ShieldCheck },
+  { name: "Registrations",   page: "Registrations",   icon: ClipboardList },
   { name: "Customers",       page: "Customers",       icon: Users },
   { name: "Sites",           page: "Sites",           icon: Building2 },
   { name: "Devices",         page: "Devices",         icon: Cpu },
@@ -120,12 +121,13 @@ const NOC_NAV = [
 // ── Admin / customer admin portal ────────────────────────────────
 
 const ADMIN_NAV = [
-  { name: "Dashboard",    page: "AdminDashboard",  icon: LayoutDashboard },
-  { name: "Support",      page: "Support",          icon: HelpCircle },
-  { name: "Sites",        page: "Sites",           icon: Building2 },
-  { name: "Devices",      page: "Devices",         icon: Cpu },
-  { name: "Incidents",    page: "Incidents",       icon: AlertOctagon },
-  { name: "Map",          page: "DeploymentMap",   icon: Map },
+  { name: "Dashboard",     page: "AdminDashboard",  icon: LayoutDashboard },
+  { name: "Support",       page: "Support",          icon: HelpCircle },
+  { name: "Registrations", page: "Registrations",   icon: ClipboardList },
+  { name: "Sites",         page: "Sites",           icon: Building2 },
+  { name: "Devices",       page: "Devices",         icon: Cpu },
+  { name: "Incidents",     page: "Incidents",       icon: AlertOctagon },
+  { name: "Map",           page: "DeploymentMap",   icon: Map },
 
   {
     group: "monitoring", label: "Monitoring", icon: Activity,
@@ -198,9 +200,10 @@ const USER_NAV = [
 
 // ── Data Entry / Import Operator portal ──────────────────────────
 const DATAENTRY_NAV = [
-  { name: "Customers",  page: "Customers",  icon: Users },
-  { name: "Sites",      page: "Sites",      icon: Building2 },
-  { name: "Devices",    page: "Devices",    icon: Cpu },
+  { name: "Registrations", page: "Registrations", icon: ClipboardList },
+  { name: "Customers",     page: "Customers",     icon: Users },
+  { name: "Sites",         page: "Sites",         icon: Building2 },
+  { name: "Devices",       page: "Devices",       icon: Cpu },
 
   {
     group: "deployment", label: "Deployment", icon: Rocket,

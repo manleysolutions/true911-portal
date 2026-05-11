@@ -63,3 +63,78 @@ export const RegistrationAPI = {
     );
   },
 };
+
+
+/**
+ * Internal review API (Phase R3) — authenticated, gated by
+ * VIEW_REGISTRATIONS / MANAGE_REGISTRATIONS server-side.
+ *
+ * Lives under /api/registrations (not /api/public).  The JWT in the
+ * Authorization header is the sole credential here — no resume tokens.
+ */
+function buildQuery(params = {}) {
+  const usp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") usp.set(k, v);
+  });
+  const s = usp.toString();
+  return s ? `?${s}` : "";
+}
+
+export const RegistrationAdminAPI = {
+  /** List/filter registrations.
+   *  Accepts: { status, search, sort, limit }
+   *  status is sent as ?status=, NOT ?status_filter= (the backend
+   *  aliases the param). */
+  list(params = {}) {
+    return apiFetch(`/registrations${buildQuery(params)}`);
+  },
+
+  /** { total, by_status: { draft: N, submitted: N, ... } } */
+  count() {
+    return apiFetch("/registrations/count");
+  },
+
+  /** Full detail incl. locations, service units, and status timeline. */
+  get(registrationId) {
+    return apiFetch(`/registrations/${registrationId}`);
+  },
+
+  /** Admin-side partial update (reviewer notes, plan, target tenant, etc.).
+   *  Status is not editable here — use transition().  Unknown fields
+   *  are silently dropped server-side. */
+  update(registrationId, body) {
+    return apiFetch(`/registrations/${registrationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Move a registration to a new status.
+   *  body: { to_status, note? }
+   *  409 on illegal transitions. */
+  transition(registrationId, toStatus, note) {
+    return apiFetch(`/registrations/${registrationId}/transition`, {
+      method: "POST",
+      body: JSON.stringify({ to_status: toStatus, note: note || null }),
+    });
+  },
+
+  /** Move to pending_customer_info with a recorded question.
+   *  R3 stores the message in the status event note only — no email is sent. */
+  requestInfo(registrationId, message) {
+    return apiFetch(`/registrations/${registrationId}/request-info`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  /** Cancel from any non-terminal state.  The reason is stamped on
+   *  both the registration row and the status event. */
+  cancel(registrationId, reason) {
+    return apiFetch(`/registrations/${registrationId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+};
