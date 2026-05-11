@@ -162,4 +162,25 @@ export const RegistrationAdminAPI = {
       body: JSON.stringify(body),
     });
   },
+
+  /** Read-only status of the registration's customer portal invite.
+   *
+   *  Response shape (RegistrationInviteStatusOut):
+   *    {
+   *      has_invite: bool,
+   *      user_id: str | null,
+   *      email: str | null,
+   *      is_active: bool,          // customer already signed in
+   *      has_pending_invite: bool, // unaccepted invite with valid expiry
+   *      invite_expires_at: datetime | null,
+   *    }
+   *
+   *  The plaintext invite_token is deliberately NOT returned here —
+   *  the operator's only chance to see it is on the transition
+   *  response that just created or rotated it.
+   *
+   *  Permission: VIEW_REGISTRATIONS (server-enforced). */
+  getInviteStatus(registrationId) {
+    return apiFetch(`/registrations/${registrationId}/invite-status`);
+  },
 };
