@@ -37,6 +37,8 @@ from app.schemas.registration import (
     RegistrationConvertResponse,
     RegistrationCountByStatus,
     RegistrationDetailOut,
+    RegistrationInviteOut,
+    RegistrationInviteStatusOut,
     RegistrationListItemOut,
     RegistrationLocationOut,
     RegistrationRequestInfoRequest,
@@ -44,6 +46,7 @@ from app.schemas.registration import (
     RegistrationStatusEventOut,
     RegistrationTransitionRequest,
 )
+from app.services import registration_activation as reg_activation
 from app.services import registration_conversion as reg_convert
 from app.services import registration_service as reg_svc
 
@@ -182,6 +185,38 @@ async def get_registration(
     return await _build_detail(db, reg)
 
 
+@router.get(
+    "/{registration_id}/invite-status",
+    response_model=RegistrationInviteStatusOut,
+    dependencies=[Depends(require_permission("VIEW_REGISTRATIONS"))],
+)
+async def get_invite_status(
+    registration_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Read-only check of whether the registration's submitter has
+    portal access yet.
+
+    Returns ``has_invite=False`` when no User row exists for the
+    (submitter_email, target_tenant_id) pair — i.e. the registration
+    hasn't reached ready_for_activation or it hasn't been converted.
+
+    The plaintext invite token is intentionally NOT returned here.
+    The operator's only chance to see it is on the transition
+    response that just created or rotated it.
+    """
+    reg = await _require_registration(db, registration_id)
+    result = await reg_activation.get_invite_status(db, reg)
+    return RegistrationInviteStatusOut(
+        has_invite=result.has_invite,
+        user_id=result.user_id,
+        email=result.email,
+        is_active=result.is_active,
+        has_pending_invite=result.has_pending_invite,
+        invite_expires_at=result.invite_expires_at,
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Mutations (MANAGE_REGISTRATIONS)
 # ─────────────────────────────────────────────────────────────────────
@@ -224,6 +259,14 @@ async def transition_registration(
 
     The state machine in registration_service rejects illegal
     transitions with IllegalStatusTransitionError → 409.
+
+    Phase R5 — when the target status is ``ready_for_activation`` or
+    ``active``, the state machine also runs an activation side effect
+    (invite or customer-onboarding-complete).  Side-effect failures
+    surface as ActivationError → 422 with the structured
+    ``{stage, message, next_steps, details}`` body the operator UI
+    can render directly.  The status mutation is rolled back when the
+    side effect fails.
     """
 
     reg = await _require_registration(db, registration_id)
@@ -238,7 +281,41 @@ async def transition_registration(
         )
     except reg_svc.IllegalStatusTransitionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
-    return await _build_detail(db, reg)
+    except reg_activation.ActivationError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            {
+                "stage": exc.stage,
+                "message": exc.message,
+                "next_steps": exc.next_steps,
+                "details": exc.details,
+            },
+        )
+
+    detail = await _build_detail(db, reg)
+
+    # If the transition just issued or rotated an invite, surface the
+    # plaintext token on this response — the only time the server will
+    # ever expose it.  Subsequent GETs of the registration return
+    # invite=None because the plaintext is not recoverable.
+    activation = getattr(reg, "_activation_result", None)
+    if (
+        isinstance(activation, reg_activation.InviteOutcome)
+        and activation.action in ("created", "rotated")
+        and activation.invite_token is not None
+        and activation.invite_url is not None
+        and activation.invite_expires_at is not None
+    ):
+        detail.invite = RegistrationInviteOut(
+            user_id=activation.user_id,
+            email=activation.email,
+            invite_token=activation.invite_token,
+            invite_url=activation.invite_url,
+            invite_expires_at=activation.invite_expires_at,
+            was_rotated=(activation.action == "rotated"),
+        )
+
+    return detail
 
 
 @router.post(
