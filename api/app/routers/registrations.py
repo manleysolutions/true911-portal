@@ -425,6 +425,12 @@ async def convert_registration(
             http_status = status.HTTP_409_CONFLICT
         elif exc.stage == "resolve_tenant" and "already taken" in exc.message:
             http_status = status.HTTP_409_CONFLICT
+        elif exc.stage == "resolve_customer" and "already linked" in exc.message:
+            # Prior-stamp guards from the strict customer resolver.
+            # 409 signals the operator's request conflicts with the
+            # registration's current linkage state — they should pick
+            # attach_existing with the stamped id (or admin-clear).
+            http_status = status.HTTP_409_CONFLICT
         else:
             http_status = status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(

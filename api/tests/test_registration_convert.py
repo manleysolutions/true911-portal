@@ -736,9 +736,12 @@ class TestConvertIntegrityPropertyManagement:
         assert "create_service_unit" in actions
         assert "create_subscription" in actions
 
-        # ── Idempotency: a second convert is a no-op ──────────────
-        # Use the same request body — the stamps on the registration
-        # / locations / units must cause every step to short-circuit.
+        # ── Idempotency on retry ─────────────────────────────────
+        # The strict customer resolver added after the production
+        # incident on REG-EE9B668655CC refuses to silently reuse a
+        # stamped customer.id when the operator asks for create_new.
+        # A safe retry must therefore explicitly switch to
+        # attach_existing with the previously-issued customer id.
         before_counts = {
             Tenant: db.count(Tenant),
             Customer: db.count(Customer),
@@ -746,6 +749,7 @@ class TestConvertIntegrityPropertyManagement:
             ServiceUnit: db.count(ServiceUnit),
             Subscription: db.count(Subscription),
         }
+        prior_customer_id = result.customer.id
 
         result_2 = await conv.convert_registration(
             db, reg,
@@ -753,8 +757,8 @@ class TestConvertIntegrityPropertyManagement:
             existing_tenant_id=None,
             new_tenant_id="integrity-property-management",
             new_tenant_name="Integrity Property Management",
-            customer_choice="create_new",
-            existing_customer_id=None,
+            customer_choice="attach_existing",
+            existing_customer_id=prior_customer_id,
             create_subscription=True,
             dry_run=False,
             actor_user_id=None,
@@ -767,7 +771,9 @@ class TestConvertIntegrityPropertyManagement:
                 f"retry created extra {model.__name__} rows "
                 f"(before={before}, after={after}) — idempotency broken"
             )
-        # Every section of the second result reports was_created=False.
+        # Tenant retry-by-stamp is preserved (user explicitly asked
+        # tenant attach behaviour stays unchanged).  Customer attach
+        # via the explicit id reports was_created=False.
         assert result_2.tenant.was_created is False
         assert result_2.customer.was_created is False
         assert all(s.was_created is False for s in result_2.sites)
@@ -806,3 +812,317 @@ class TestConvertIntegrityPropertyManagement:
         assert db.count(Customer) == 1
         assert db.count(Site) == 2
         assert db.count(ServiceUnit) == 4
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Strict customer resolution — regression for REG-EE9B668655CC
+# ─────────────────────────────────────────────────────────────────────
+
+class TestStrictCustomerResolution:
+    """Locks in the strict customer-resolution behaviour added after
+    the production silent-attach bug.
+
+    Before the fix, ``_resolve_customer`` honoured a previously-stamped
+    ``registration.customer_id`` over the operator's ``customer_choice``.
+    That meant ``customer_choice='create_new'`` silently returned a
+    legacy customer ("Integrity Property Management, Inc" with
+    unrelated old billing) instead of creating a fresh one.
+
+    The strict resolver:
+      * NEVER silently attaches by stamp, name, fuzzy match, or any
+        other heuristic
+      * Honours create_new strictly — always creates fresh OR refuses
+        with a structured 409 when the stamp would conflict
+      * Honours attach_existing strictly — requires explicit id, and
+        refuses to relink across customers
+    """
+
+    def _seed_with_existing_customer_stamp(self, db, *, stamp_customer_id=None, legacy_customer_name=None):
+        """Build the registration the way the production bug looked.
+
+        The legacy customer is created and then registration.customer_id
+        is pointed at it — simulating either a partial prior convert
+        or a manual data poke.
+        """
+        reg = _build_integrity_property_management(db)
+        if legacy_customer_name is not None:
+            legacy = Customer(
+                tenant_id="integrity-property-management",
+                name=legacy_customer_name,
+                billing_email="old-finance@somewhere.example",
+                billing_phone="(800) 555-LEGACY",
+                billing_address="123 Stale Way",
+                status="active",
+            )
+            db.seed_committed(legacy)
+            reg.customer_id = legacy.id if stamp_customer_id is None else stamp_customer_id
+        elif stamp_customer_id is not None:
+            reg.customer_id = stamp_customer_id
+        return reg
+
+    @pytest.mark.asyncio
+    async def test_create_new_refuses_when_registration_already_linked(self):
+        # Exactly the production scenario: registration.customer_id is
+        # already pointing at a legacy customer.  Operator opens the
+        # convert modal, leaves customer_choice on the default
+        # "create_new", clicks Convert.  Before the fix the server
+        # silently reused the legacy customer.  Now it must refuse
+        # with a structured error.
+        db = FakeAsyncSession()
+        reg = self._seed_with_existing_customer_stamp(
+            db, legacy_customer_name="Integrity Property Management, Inc",
+        )
+
+        with pytest.raises(conv.ConversionError) as exc_info:
+            await conv.convert_registration(
+                db, reg,
+                tenant_choice="create_new",
+                existing_tenant_id=None,
+                new_tenant_id="integrity-property-management",
+                new_tenant_name="Integrity Property Management",
+                customer_choice="create_new",
+                existing_customer_id=None,
+                create_subscription=False,
+                dry_run=False,
+                actor_user_id=None,
+                actor_email="ops@true911.com",
+            )
+
+        err = exc_info.value
+        assert err.stage == "resolve_customer"
+        assert "already linked" in err.message
+        # The next_steps must surface BOTH escape valves so the
+        # operator can self-serve.
+        assert "attach_existing" in err.next_steps
+        assert "UPDATE registrations SET customer_id" in err.next_steps
+        # Details must carry the legacy customer's id and name so the
+        # frontend can render a "this is the existing customer" pane
+        # without a second round trip.
+        assert err.details["current_customer_id"] is not None
+        assert err.details["current_customer_name"] == "Integrity Property Management, Inc"
+
+        # Critically: NO new customer was created.  The legacy
+        # customer's billing fields stay intact.
+        legacy = db.all_committed(Customer)[0]
+        assert legacy.name == "Integrity Property Management, Inc"
+        assert legacy.billing_phone == "(800) 555-LEGACY"
+        # The transaction must have rolled back — no tenant created
+        # for this run either.
+        assert db.count(Tenant) == 0, (
+            "the failed convert must roll back any earlier-stage writes"
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_new_does_not_attach_to_fuzzy_or_partial_name_match(self):
+        # User-spec item 9: create_new must NOT attach to
+        # "Integrity Property Management, Inc" or any fuzzy match.
+        #
+        # The registration's customer_name is the *unsuffixed* form;
+        # the legacy customer in the DB has the same prefix plus
+        # ", Inc".  A naive name-based resolver would treat these as
+        # the same account.  The strict resolver MUST NOT — every
+        # call here ends with a freshly-created customer named
+        # exactly "Integrity Property Management".
+        db = FakeAsyncSession()
+        legacy = Customer(
+            tenant_id="integrity-property-management",
+            name="Integrity Property Management, Inc",
+            billing_email="legacy@example.com",
+            billing_phone="(555) 555-OLD",
+            status="active",
+        )
+        db.seed_committed(legacy)
+        # Pre-create the tenant the registration will be converted
+        # into so the legacy customer shares its tenant — the
+        # strongest fuzzy-match temptation.
+        tenant = Tenant(
+            tenant_id="integrity-property-management",
+            name="Integrity Property Management",
+        )
+        db.seed_committed(tenant)
+        # Build the registration WITHOUT a customer_id stamp — the
+        # operator's create_new request should produce a brand-new
+        # customer even though a same-tenant near-namesake exists.
+        reg = _build_integrity_property_management(db)
+        assert reg.customer_id is None
+
+        result = await conv.convert_registration(
+            db, reg,
+            tenant_choice="attach_existing",
+            existing_tenant_id="integrity-property-management",
+            new_tenant_id=None,
+            new_tenant_name=None,
+            customer_choice="create_new",
+            existing_customer_id=None,
+            create_subscription=False,
+            dry_run=False,
+            actor_user_id=None,
+            actor_email="ops@true911.com",
+        )
+
+        assert result.customer.was_created is True
+        # Two customers in this tenant now — the legacy one (untouched)
+        # and the freshly-created one.  Duplicates by name are
+        # permitted; silent fuzzy-attach is not.
+        customers = db.all_committed(Customer)
+        assert len(customers) == 2
+        names = sorted(c.name for c in customers)
+        assert names == [
+            "Integrity Property Management",
+            "Integrity Property Management, Inc",
+        ]
+        # The legacy customer's billing data is untouched.
+        legacy_after = next(c for c in customers if c.name.endswith("Inc"))
+        assert legacy_after.billing_email == "legacy@example.com"
+        assert legacy_after.billing_phone == "(555) 555-OLD"
+        # The registration is now linked to the FRESH customer, not
+        # the legacy one.
+        assert reg.customer_id != legacy.id
+
+    @pytest.mark.asyncio
+    async def test_attach_existing_refuses_to_relink_across_customers(self):
+        # If a registration is already linked to customer A and the
+        # operator asks to attach customer B, the strict resolver
+        # refuses (409 in the API layer) so neither customer's data
+        # is silently orphaned.
+        db = FakeAsyncSession()
+        # Pre-create the tenant so _resolve_tenant short-circuits and
+        # the assertion can target _resolve_customer cleanly.
+        tenant = Tenant(
+            tenant_id="integrity-property-management",
+            name="Integrity Property Management",
+        )
+        first = Customer(
+            tenant_id="integrity-property-management",
+            name="First Customer",
+            status="active",
+        )
+        second = Customer(
+            tenant_id="integrity-property-management",
+            name="Second Customer",
+            status="active",
+        )
+        db.seed_committed(tenant, first, second)
+        reg = _build_integrity_property_management(db)
+        reg.customer_id = first.id
+
+        with pytest.raises(conv.ConversionError) as exc_info:
+            await conv.convert_registration(
+                db, reg,
+                tenant_choice="attach_existing",
+                existing_tenant_id="integrity-property-management",
+                new_tenant_id=None,
+                new_tenant_name=None,
+                customer_choice="attach_existing",
+                existing_customer_id=second.id,
+                create_subscription=False,
+                dry_run=False,
+                actor_user_id=None,
+                actor_email="ops@true911.com",
+            )
+
+        err = exc_info.value
+        assert err.stage == "resolve_customer"
+        assert "already linked" in err.message
+        # No customers altered, no new sites or units.
+        # The transaction rolled back, so reg.customer_id reverts to
+        # its pre-call value (first.id was set in setup but never
+        # committed through the conversion).
+        assert db.count(Site) == 0
+
+    @pytest.mark.asyncio
+    async def test_attach_existing_matching_prior_stamp_is_idempotent(self):
+        # The legitimate retry path: same registration, same customer,
+        # operator explicitly opts into attach_existing with the
+        # known id.  Must succeed with was_created=False and no
+        # duplicate writes.
+        db = FakeAsyncSession()
+        existing = Customer(
+            tenant_id="integrity-property-management",
+            name="Integrity Property Management",
+            status="active",
+        )
+        db.seed_committed(existing)
+        # Pre-create the tenant so the convert path doesn't need to.
+        tenant = Tenant(
+            tenant_id="integrity-property-management",
+            name="Integrity Property Management",
+        )
+        db.seed_committed(tenant)
+        reg = _build_integrity_property_management(db)
+        reg.customer_id = existing.id
+
+        result = await conv.convert_registration(
+            db, reg,
+            tenant_choice="attach_existing",
+            existing_tenant_id="integrity-property-management",
+            new_tenant_id=None,
+            new_tenant_name=None,
+            customer_choice="attach_existing",
+            existing_customer_id=existing.id,
+            create_subscription=False,
+            dry_run=False,
+            actor_user_id=None,
+            actor_email="ops@true911.com",
+        )
+
+        assert result.customer.was_created is False
+        assert result.customer.id == existing.id
+        # Still exactly one customer in the system.
+        assert db.count(Customer) == 1
+
+    @pytest.mark.asyncio
+    async def test_attach_existing_requires_explicit_customer_id(self):
+        # Defensive guard: even if a caller bypasses the Pydantic
+        # request schema and hands us customer_choice="attach_existing"
+        # with existing_customer_id=None, the service must refuse.
+        db = FakeAsyncSession()
+        reg = _build_integrity_property_management(db)
+
+        with pytest.raises(conv.ConversionError) as exc_info:
+            await conv.convert_registration(
+                db, reg,
+                tenant_choice="create_new",
+                existing_tenant_id=None,
+                new_tenant_id="integrity-property-management",
+                new_tenant_name="Integrity Property Management",
+                customer_choice="attach_existing",
+                existing_customer_id=None,
+                create_subscription=False,
+                dry_run=False,
+                actor_user_id=None,
+                actor_email="ops@true911.com",
+            )
+
+        assert exc_info.value.stage == "resolve_customer"
+        assert "explicit existing_customer_id" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_dry_run_reflects_strict_create_new_failure(self):
+        # User-spec item 6: dry_run must reflect what a real run would
+        # do.  If a real run would refuse the create_new request
+        # because of a prior stamp, the dry_run must refuse with the
+        # same error — never preview a successful conversion that
+        # would actually fail on commit.
+        db = FakeAsyncSession()
+        reg = self._seed_with_existing_customer_stamp(
+            db, legacy_customer_name="Integrity Property Management, Inc",
+        )
+
+        with pytest.raises(conv.ConversionError) as exc_info:
+            await conv.convert_registration(
+                db, reg,
+                tenant_choice="create_new",
+                existing_tenant_id=None,
+                new_tenant_id="integrity-property-management",
+                new_tenant_name="Integrity Property Management",
+                customer_choice="create_new",
+                existing_customer_id=None,
+                create_subscription=False,
+                dry_run=True,  # ← dry_run still surfaces the same error
+                actor_user_id=None,
+                actor_email="ops@true911.com",
+            )
+
+        assert exc_info.value.stage == "resolve_customer"
+        assert "already linked" in exc_info.value.message
