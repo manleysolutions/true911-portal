@@ -316,33 +316,46 @@ async def _resolve_customer(
 ) -> tuple[Customer, bool]:
     """Return (customer, was_created).
 
-    Honors any pre-existing ``registration.customer_id`` from a
-    previous successful convert.
-    """
-    # Retry path — registration already carries a customer linkage.
-    if registration.customer_id:
-        c = await db.get(Customer, registration.customer_id)
-        if not c:
-            raise ConversionError(
-                stage="resolve_customer",
-                message=(
-                    f"registration is already linked to customer id="
-                    f"{registration.customer_id} which no longer exists"
-                ),
-                next_steps="Investigate why the customer was deleted before retrying.",
-            )
-        if c.tenant_id != tenant.tenant_id:
-            raise ConversionError(
-                stage="resolve_customer",
-                message=(
-                    f"linked customer belongs to tenant '{c.tenant_id}', "
-                    f"not '{tenant.tenant_id}'"
-                ),
-                next_steps="Check the registration's target_tenant_id stamp.",
-            )
-        return c, False
+    Strict mode — added after the production incident on
+    REG-EE9B668655CC where the prior retry-by-stamp path silently
+    returned a legacy customer ("Integrity Property Management, Inc"
+    with unrelated billing data) instead of honouring the operator's
+    ``customer_choice="create_new"`` selection.
 
+    Contract:
+
+      * ``customer_choice="create_new"`` ALWAYS creates a fresh
+        Customer.  If ``registration.customer_id`` is already set
+        from a previous successful convert, we refuse (409) and
+        surface the stamped customer's identity so the operator can
+        decide whether to switch to ``attach_existing`` with that id
+        or have an admin clear the stamp manually.
+
+      * ``customer_choice="attach_existing"`` requires an explicit
+        ``existing_customer_id``.  If a prior stamp exists pointing
+        at a different customer, we refuse (409) — re-linking would
+        orphan the prior customer silently.  Matching the stamp is
+        a no-op idempotent return.
+
+    There is NO fuzzy / partial / name-based matching anywhere in
+    this function.  The customer is identified strictly by id.
+    """
+    stamped_id = registration.customer_id  # may be None
+
+    # ── attach_existing ───────────────────────────────────────────
     if customer_choice == "attach_existing":
+        if not existing_customer_id:
+            # Pydantic enforces this on the request schema; defensive
+            # check in case some other caller constructs the kwargs
+            # directly.
+            raise ConversionError(
+                stage="resolve_customer",
+                message=(
+                    "customer_choice='attach_existing' requires an "
+                    "explicit existing_customer_id"
+                ),
+                next_steps="Provide existing_customer_id or use create_new.",
+            )
         try:
             c = await validate_customer_id_for_tenant(
                 db, tenant.tenant_id, existing_customer_id
@@ -362,9 +375,64 @@ async def _resolve_customer(
                     "a different tenant. Re-check tenant_choice."
                 ),
             )
+        # Prior stamp guard: if the registration was already linked to
+        # a DIFFERENT customer, refuse to silently relink.
+        if stamped_id is not None and stamped_id != c.id:
+            raise ConversionError(
+                stage="resolve_customer",
+                message=(
+                    f"this registration is already linked to customer id="
+                    f"{stamped_id}; attaching to id={c.id} would relink it"
+                ),
+                next_steps=(
+                    "Re-run convert with existing_customer_id matching "
+                    f"the prior linkage ({stamped_id}), or have an admin "
+                    "clear the prior stamp before re-converting "
+                    "(UPDATE registrations SET customer_id = NULL "
+                    f"WHERE registration_id = '{registration.registration_id}')."
+                ),
+                details={
+                    "current_customer_id": stamped_id,
+                    "requested_customer_id": c.id,
+                },
+            )
+        # Matching id (or no prior stamp) — explicit operator confirm.
         return c, False
 
-    # customer_choice == "create_new"
+    # ── create_new ────────────────────────────────────────────────
+    # Production-bug guard: when the registration is already linked
+    # to a customer, "create_new" used to silently return that
+    # customer.  We now refuse and surface the linkage so the
+    # operator can decide.
+    if stamped_id is not None:
+        existing = await db.get(Customer, stamped_id)
+        existing_name = existing.name if existing else None
+        existing_tenant = existing.tenant_id if existing else None
+        raise ConversionError(
+            stage="resolve_customer",
+            message=(
+                f"this registration is already linked to customer id="
+                f"{stamped_id}"
+                + (f" ('{existing_name}', tenant='{existing_tenant}')" if existing else "")
+                + "; create_new would silently leave the prior customer "
+                "attached and is no longer permitted"
+            ),
+            next_steps=(
+                "If the existing customer is correct, re-run with "
+                f"customer_choice='attach_existing' and "
+                f"existing_customer_id={stamped_id} to confirm.  "
+                "If the existing customer is wrong (e.g. legacy or "
+                "fuzzy-matched), have an admin clear the prior stamp "
+                "first with: UPDATE registrations SET customer_id = NULL "
+                f"WHERE registration_id = '{registration.registration_id}';"
+            ),
+            details={
+                "current_customer_id": stamped_id,
+                "current_customer_name": existing_name,
+                "current_customer_tenant_id": existing_tenant,
+            },
+        )
+
     name = (registration.customer_name or "").strip()
     if not name:
         raise ConversionError(
@@ -372,6 +440,10 @@ async def _resolve_customer(
             message="registration has no customer_name to create a Customer with",
             next_steps="Edit the registration to add a customer name first.",
         )
+    # Direct construction — no name-based pre-flight lookup, no fuzzy
+    # match.  Duplicates (two Customers with the same name in the same
+    # tenant) are permitted; the operator's explicit create_new choice
+    # is the source of truth.
     c = Customer(
         tenant_id=tenant.tenant_id,
         name=name,

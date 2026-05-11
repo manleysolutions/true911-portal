@@ -257,6 +257,145 @@ function CustomerSection({ reg, form, setForm }) {
           <p className="mt-1 text-[11px] text-gray-500">
             Enter the customer's numeric ID. The customer must belong to the resolved tenant.
           </p>
+          <ExistingCustomerPreview customerId={form.existing_customer_id} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/** Live preview of the customer the operator is about to attach to.
+ *
+ *  Triggered whenever ``customer_choice === "attach_existing"`` and
+ *  the operator types a numeric id.  Debounced ~350ms so we don't
+ *  hammer the API while they're still typing.
+ *
+ *  When the customer carries any billing/contact data, a yellow
+ *  warning fires — the production silent-attach bug surfaced exactly
+ *  this scenario (legacy customer with unrelated billing data was
+ *  silently reused).  Showing the data here forces the operator to
+ *  recognise it before clicking Convert.
+ */
+function ExistingCustomerPreview({ customerId }) {
+  const [state, setState] = useState({
+    status: "idle",  // "idle" | "loading" | "ok" | "missing" | "error"
+    customer: null,
+    error: null,
+  });
+
+  useEffect(() => {
+    const idNum = Number(customerId);
+    if (!customerId || !Number.isFinite(idNum) || idNum <= 0) {
+      setState({ status: "idle", customer: null, error: null });
+      return;
+    }
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      setState({ status: "loading", customer: null, error: null });
+      try {
+        const customer = await apiFetch(`/customers/${idNum}`);
+        if (cancelled) return;
+        setState({ status: "ok", customer, error: null });
+      } catch (err) {
+        if (cancelled) return;
+        if (err?.status === 404) {
+          setState({ status: "missing", customer: null, error: null });
+        } else {
+          setState({ status: "error", customer: null, error: err });
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [customerId]);
+
+  if (state.status === "idle") return null;
+
+  if (state.status === "loading") {
+    return (
+      <div className="mt-2 text-[11px] text-gray-500 flex items-center gap-1.5">
+        <Loader2 className="w-3 h-3 animate-spin" /> Looking up customer…
+      </div>
+    );
+  }
+
+  if (state.status === "missing") {
+    return (
+      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2">
+        <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        <div>
+          No customer with id <span className="font-mono">{customerId}</span>. The
+          convert request will fail validation.
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2">
+        <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        <div>
+          Couldn't preview customer{" "}
+          <span className="font-mono">{customerId}</span>:{" "}
+          {state.error?.message || "unknown error"}.
+        </div>
+      </div>
+    );
+  }
+
+  // status === "ok"
+  const c = state.customer;
+  const hasBillingData = !!(c.billing_email || c.billing_phone || c.billing_address);
+
+  return (
+    <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3 text-xs text-gray-800 space-y-1">
+      <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+        <User className="w-3.5 h-3.5 text-blue-700" /> {c.name}
+        <span className="text-[10px] uppercase tracking-wider text-gray-500">
+          id={c.id} · tenant={c.tenant_id}
+        </span>
+      </div>
+      <ul className="ml-1 space-y-0.5">
+        <li>
+          <span className="text-gray-500">Phone:</span>{" "}
+          {c.billing_phone || <em className="text-gray-400">none on file</em>}
+        </li>
+        <li>
+          <span className="text-gray-500">Billing email:</span>{" "}
+          {c.billing_email || <em className="text-gray-400">none on file</em>}
+        </li>
+        <li>
+          <span className="text-gray-500">Billing address:</span>{" "}
+          {c.billing_address || <em className="text-gray-400">none on file</em>}
+        </li>
+        {c.created_at && (
+          <li>
+            <span className="text-gray-500">Created:</span>{" "}
+            <span className="text-gray-700">{new Date(c.created_at).toLocaleString()}</span>
+          </li>
+        )}
+        {c.updated_at && c.updated_at !== c.created_at && (
+          <li>
+            <span className="text-gray-500">Updated:</span>{" "}
+            <span className="text-gray-700">{new Date(c.updated_at).toLocaleString()}</span>
+          </li>
+        )}
+      </ul>
+      {hasBillingData && (
+        <div className="mt-2 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-800">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <div>
+            <strong>This customer already has billing/contact data.</strong>{" "}
+            Confirm this is the same account before attaching. The convert
+            path won't overwrite these fields, but the registration's sites
+            and service units will be permanently linked to this customer.
+          </div>
         </div>
       )}
     </div>
