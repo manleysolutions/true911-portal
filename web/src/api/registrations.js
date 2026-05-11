@@ -137,4 +137,29 @@ export const RegistrationAdminAPI = {
       body: JSON.stringify({ reason }),
     });
   },
+
+  /** Materialize a registration into production rows.
+   *
+   *  Body fields (see RegistrationConvertRequest on the backend):
+   *    tenant_choice            "attach_existing" | "create_new"
+   *    existing_tenant_id       required if attach
+   *    new_tenant_id, _name     required if create
+   *    customer_choice          "attach_existing" | "create_new"
+   *    existing_customer_id     required if attach
+   *    create_subscription      bool
+   *    dry_run                  bool
+   *    confirm                  must be true on real runs
+   *
+   *  On per-stage failure the backend returns 422 with a structured
+   *  body { detail: { stage, message, next_steps, details } } —
+   *  apiFetch surfaces it on err.body so callers can render the
+   *  stage + next_steps to the reviewer.
+   *
+   *  Permission: CONVERT_REGISTRATIONS (server-enforced). */
+  convert(registrationId, body) {
+    return apiFetch(`/registrations/${registrationId}/convert`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
 };
