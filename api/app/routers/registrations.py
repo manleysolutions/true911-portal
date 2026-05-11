@@ -26,8 +26,15 @@ from app.dependencies import get_current_user, get_db, require_permission
 from app.models.registration import Registration
 from app.models.user import User
 from app.schemas.registration import (
+    ConvertedCustomerOut,
+    ConvertedServiceUnitOut,
+    ConvertedSiteOut,
+    ConvertedSubscriptionOut,
+    ConvertedTenantOut,
     RegistrationAdminUpdate,
     RegistrationCancelRequest,
+    RegistrationConvertRequest,
+    RegistrationConvertResponse,
     RegistrationCountByStatus,
     RegistrationDetailOut,
     RegistrationListItemOut,
@@ -37,6 +44,7 @@ from app.schemas.registration import (
     RegistrationStatusEventOut,
     RegistrationTransitionRequest,
 )
+from app.services import registration_conversion as reg_convert
 from app.services import registration_service as reg_svc
 
 router = APIRouter()
@@ -281,3 +289,120 @@ async def cancel_registration(
     except reg_svc.IllegalStatusTransitionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
     return await _build_detail(db, reg)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Conversion (Phase R4)
+# ─────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/{registration_id}/convert",
+    response_model=RegistrationConvertResponse,
+    dependencies=[Depends(require_permission("CONVERT_REGISTRATIONS"))],
+)
+async def convert_registration(
+    registration_id: str,
+    body: RegistrationConvertRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Materialise a registration into production rows.
+
+    Creates (per reviewer choice + idempotency stamps):
+      - Tenant      (only when tenant_choice == "create_new")
+      - Customer    (only when customer_choice == "create_new")
+      - Sites       (one per registration_location)
+      - ServiceUnits (one per registration_service_unit)
+      - Subscription (only when create_subscription=true AND plan present)
+
+    Does NOT create devices, SIMs, lines, or users.  Does NOT call any
+    external integration (T-Mobile, Field Nation, billing, E911).
+
+    The state machine is unchanged by convert — the reviewer's next
+    explicit /transition call advances the workflow.
+    """
+    reg = await _require_registration(db, registration_id)
+
+    try:
+        result = await reg_convert.convert_registration(
+            db,
+            reg,
+            tenant_choice=body.tenant_choice,
+            existing_tenant_id=body.existing_tenant_id,
+            new_tenant_id=body.new_tenant_id,
+            new_tenant_name=body.new_tenant_name,
+            customer_choice=body.customer_choice,
+            existing_customer_id=body.existing_customer_id,
+            create_subscription=body.create_subscription,
+            dry_run=body.dry_run,
+            actor_user_id=current_user.id,
+            actor_email=current_user.email,
+        )
+    except reg_convert.ConversionError as exc:
+        # Map each stage to the most appropriate HTTP status.  422 is
+        # the default — these are validation / business-rule failures
+        # the reviewer can correct and retry.
+        if exc.stage == "validate_prerequisites":
+            http_status = status.HTTP_409_CONFLICT
+        elif exc.stage == "resolve_tenant" and "already taken" in exc.message:
+            http_status = status.HTTP_409_CONFLICT
+        else:
+            http_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(
+            http_status,
+            {
+                "stage": exc.stage,
+                "message": exc.message,
+                "next_steps": exc.next_steps,
+                "details": exc.details,
+            },
+        )
+
+    # Reload the registration with children + timeline for the response.
+    detail = await _build_detail(db, result.registration)
+
+    return RegistrationConvertResponse(
+        registration=detail,
+        dry_run=result.dry_run,
+        tenant=ConvertedTenantOut(
+            tenant_id=result.tenant.tenant_id,
+            name=result.tenant.name,
+            was_created=result.tenant.was_created,
+        ),
+        customer=ConvertedCustomerOut(
+            id=result.customer.id,
+            name=result.customer.name,
+            tenant_id=result.customer.tenant_id,
+            was_created=result.customer.was_created,
+        ),
+        sites=[
+            ConvertedSiteOut(
+                id=s.id,
+                site_id=s.site_id,
+                location_label=s.location_label,
+                registration_location_id=s.registration_location_id,
+                was_created=s.was_created,
+            )
+            for s in result.sites
+        ],
+        service_units=[
+            ConvertedServiceUnitOut(
+                id=u.id,
+                unit_id=u.unit_id,
+                unit_label=u.unit_label,
+                site_id=u.site_id,
+                registration_service_unit_id=u.registration_service_unit_id,
+                was_created=u.was_created,
+            )
+            for u in result.service_units
+        ],
+        subscription=(
+            ConvertedSubscriptionOut(
+                id=result.subscription.id,
+                plan_name=result.subscription.plan_name,
+                status=result.subscription.status,
+                was_created=result.subscription.was_created,
+            )
+            if result.subscription else None
+        ),
+    )

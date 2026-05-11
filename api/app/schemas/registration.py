@@ -421,3 +421,133 @@ class RegistrationCountByStatus(BaseModel):
 
     total: int
     by_status: dict[str, int] = Field(default_factory=dict)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Conversion (Phase R4)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Convert is the single bridge between the staging schema (registrations
+# / registration_locations / registration_service_units) and the
+# production schema (tenants / customers / sites / service_units /
+# subscriptions).  The schemas below back the
+# POST /api/registrations/{id}/convert endpoint.
+#
+# The convert path explicitly does NOT touch devices, sims, lines,
+# users, or any external integration (T-Mobile, Field Nation, billing,
+# E911 carrier).  Those are out of scope for Phase R4.
+
+
+class RegistrationConvertRequest(BaseModel):
+    """Body for POST /api/registrations/{id}/convert.
+
+    The two `_choice` discriminators force the reviewer to be explicit
+    about whether each downstream row already exists or should be
+    created.  Conversion never auto-decides this — fuzzy matching
+    could merge into the wrong tenant or customer.
+    """
+
+    tenant_choice: str = Field(..., description="'attach_existing' or 'create_new'")
+    existing_tenant_id: Optional[str] = Field(None, max_length=100)
+    new_tenant_id: Optional[str] = Field(None, max_length=100)
+    new_tenant_name: Optional[str] = Field(None, max_length=255)
+
+    customer_choice: str = Field(..., description="'attach_existing' or 'create_new'")
+    existing_customer_id: Optional[int] = None
+
+    create_subscription: bool = False
+
+    dry_run: bool = False
+    # `confirm` must be true on a real run.  Guards against reviewers
+    # who hit Convert without realising they were on the production
+    # tab instead of the dry-run preview.
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def _validate_choices(self) -> "RegistrationConvertRequest":
+        if self.tenant_choice not in ("attach_existing", "create_new"):
+            raise ValueError(
+                "tenant_choice must be 'attach_existing' or 'create_new'"
+            )
+        if self.tenant_choice == "attach_existing" and not self.existing_tenant_id:
+            raise ValueError(
+                "tenant_choice='attach_existing' requires existing_tenant_id"
+            )
+        if self.tenant_choice == "create_new":
+            if not self.new_tenant_id or not self.new_tenant_name:
+                raise ValueError(
+                    "tenant_choice='create_new' requires both new_tenant_id and new_tenant_name"
+                )
+
+        if self.customer_choice not in ("attach_existing", "create_new"):
+            raise ValueError(
+                "customer_choice must be 'attach_existing' or 'create_new'"
+            )
+        if self.customer_choice == "attach_existing" and not self.existing_customer_id:
+            raise ValueError(
+                "customer_choice='attach_existing' requires existing_customer_id"
+            )
+
+        # Real (non-dry-run) calls must carry confirm=true.  Dry runs
+        # don't need it — they cannot mutate state.
+        if not self.dry_run and not self.confirm:
+            raise ValueError(
+                "confirm must be true to run a real conversion. "
+                "Set dry_run=true to preview without writing."
+            )
+        return self
+
+
+class ConvertedTenantOut(BaseModel):
+    tenant_id: str
+    name: str
+    was_created: bool
+
+
+class ConvertedCustomerOut(BaseModel):
+    id: Optional[int] = None  # null in dry_run
+    name: str
+    tenant_id: str
+    was_created: bool
+
+
+class ConvertedSiteOut(BaseModel):
+    id: Optional[int] = None  # null in dry_run
+    site_id: str
+    location_label: str
+    registration_location_id: int
+    was_created: bool
+
+
+class ConvertedServiceUnitOut(BaseModel):
+    id: Optional[int] = None  # null in dry_run
+    unit_id: str
+    unit_label: str
+    site_id: str
+    registration_service_unit_id: int
+    was_created: bool
+
+
+class ConvertedSubscriptionOut(BaseModel):
+    id: Optional[int] = None  # null in dry_run
+    plan_name: str
+    status: str
+    was_created: bool
+
+
+class RegistrationConvertResponse(BaseModel):
+    """Returned by POST /api/registrations/{id}/convert.
+
+    Carries the materialized rows so the frontend can immediately
+    render links to the new tenant/customer/sites without a second
+    round trip.  In dry_run mode, ids are null but the rest of the
+    payload reflects exactly what a real run would have created.
+    """
+
+    registration: RegistrationDetailOut
+    dry_run: bool
+    tenant: ConvertedTenantOut
+    customer: ConvertedCustomerOut
+    sites: list[ConvertedSiteOut] = Field(default_factory=list)
+    service_units: list[ConvertedServiceUnitOut] = Field(default_factory=list)
+    subscription: Optional[ConvertedSubscriptionOut] = None
