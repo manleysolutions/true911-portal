@@ -205,6 +205,62 @@ def require_permission(action: str):
     return _check
 
 
+def is_platform_user(user: User) -> bool:
+    """Whether the underlying authenticated user is part of the True911
+    platform/internal team.
+
+    Computed off the REAL (un-impersonated) tenant_id so a SuperAdmin
+    who is currently impersonating a customer tenant is still counted
+    as a platform user — the gating that prevents them from using
+    platform-only endpoints during impersonation lives in
+    :func:`require_platform_role` below, not here.
+    """
+    from app.config import settings  # local to avoid cycles at module import time
+    if user.role == "SuperAdmin":
+        return True
+    real_tenant = getattr(user, "_original_tenant_id", user.tenant_id)
+    return real_tenant in settings.internal_tenant_id_set
+
+
+def require_platform_role(action: str):
+    """Like :func:`require_permission`, but additionally rejects calls
+    that originate from a customer-tenant context.
+
+    A call is rejected when ANY of the following holds:
+      * the caller is currently impersonating another tenant
+        (``X-Act-As-Tenant`` was supplied), OR
+      * the caller's real tenant_id is not in
+        ``settings.internal_tenant_id_set`` AND they are not a real
+        SuperAdmin.
+
+    Use this for endpoints that are exclusively operator-facing — e.g.
+    the Registration review queue and the conversion workflow.  The
+    error message is deliberately the same shape as ``require_permission``
+    so the frontend can render either uniformly.
+    """
+
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        impersonating = bool(getattr(current_user, "_is_impersonating", False))
+        if impersonating:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"Permission '{action}' is unavailable while acting as another tenant.",
+            )
+        if not is_platform_user(current_user):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"Permission '{action}' is restricted to the internal/platform context.",
+            )
+        if not rbac_can(current_user.role, action):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"Permission '{action}' denied for role '{current_user.role}'",
+            )
+        return current_user
+
+    return _check
+
+
 # ── Phase 1 guardrail: warning-only audit on default-tenant creates ──
 # Detects the common "SuperAdmin forgot to View As" footgun where a new
 # record gets stamped with tenant_id="default" because the acting user's

@@ -38,6 +38,12 @@ class UserOut(BaseModel):
     is_active: bool = True
     updated_at: Optional[datetime] = None
     must_change_password: bool = False
+    # Computed by the auth router from the user's REAL tenant_id + role.
+    # True for SuperAdmin and for any user whose home tenant is listed
+    # in settings.INTERNAL_TENANT_IDS.  The frontend gates internal-only
+    # surfaces (Registration review queue, conversion workflow) on this
+    # flag combined with "not currently impersonating."
+    is_platform_user: bool = False
 
     model_config = {"from_attributes": True}
 

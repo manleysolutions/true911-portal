@@ -22,7 +22,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db, require_permission
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    require_platform_role,
+)
 from app.models.registration import Registration
 from app.models.user import User
 from app.schemas.registration import (
@@ -115,7 +119,7 @@ async def _build_detail(
 @router.get(
     "",
     response_model=list[RegistrationListItemOut],
-    dependencies=[Depends(require_permission("VIEW_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("VIEW_REGISTRATIONS"))],
 )
 async def list_registrations(
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -151,7 +155,7 @@ async def list_registrations(
 @router.get(
     "/count",
     response_model=RegistrationCountByStatus,
-    dependencies=[Depends(require_permission("VIEW_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("VIEW_REGISTRATIONS"))],
 )
 async def count_registrations(db: AsyncSession = Depends(get_db)):
     by_status = await reg_svc.count_registrations_by_status(db)
@@ -177,7 +181,7 @@ async def _require_registration(
 @router.get(
     "/{registration_id}",
     response_model=RegistrationDetailOut,
-    dependencies=[Depends(require_permission("VIEW_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("VIEW_REGISTRATIONS"))],
 )
 async def get_registration(
     registration_id: str,
@@ -190,7 +194,7 @@ async def get_registration(
 @router.get(
     "/{registration_id}/invite-status",
     response_model=RegistrationInviteStatusOut,
-    dependencies=[Depends(require_permission("VIEW_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("VIEW_REGISTRATIONS"))],
 )
 async def get_invite_status(
     registration_id: str,
@@ -226,7 +230,7 @@ async def get_invite_status(
 @router.patch(
     "/{registration_id}",
     response_model=RegistrationDetailOut,
-    dependencies=[Depends(require_permission("MANAGE_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("MANAGE_REGISTRATIONS"))],
 )
 async def update_registration(
     registration_id: str,
@@ -249,7 +253,7 @@ async def update_registration(
 @router.post(
     "/{registration_id}/transition",
     response_model=RegistrationDetailOut,
-    dependencies=[Depends(require_permission("MANAGE_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("MANAGE_REGISTRATIONS"))],
 )
 async def transition_registration(
     registration_id: str,
@@ -323,7 +327,7 @@ async def transition_registration(
 @router.post(
     "/{registration_id}/request-info",
     response_model=RegistrationDetailOut,
-    dependencies=[Depends(require_permission("MANAGE_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("MANAGE_REGISTRATIONS"))],
 )
 async def request_more_info(
     registration_id: str,
@@ -348,7 +352,7 @@ async def request_more_info(
 @router.post(
     "/{registration_id}/cancel",
     response_model=RegistrationDetailOut,
-    dependencies=[Depends(require_permission("MANAGE_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("MANAGE_REGISTRATIONS"))],
 )
 async def cancel_registration(
     registration_id: str,
@@ -377,7 +381,7 @@ async def cancel_registration(
 @router.post(
     "/{registration_id}/convert",
     response_model=RegistrationConvertResponse,
-    dependencies=[Depends(require_permission("CONVERT_REGISTRATIONS"))],
+    dependencies=[Depends(require_platform_role("CONVERT_REGISTRATIONS"))],
 )
 async def convert_registration(
     registration_id: str,
