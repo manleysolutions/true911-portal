@@ -40,6 +40,17 @@ function normalizeRole(role) {
 // frontend (here) and the backend (api/app/services/rbac.py) read
 // from the same file.
 
+// Permissions that ONLY apply in the internal/platform context.
+// The Registration review queue and the conversion workflow are
+// operator-facing — customer-tenant users (real or impersonated)
+// must not see or use them.  Mirrors the backend
+// require_platform_role gate in api/app/dependencies.py.
+const INTERNAL_ONLY_PERMISSIONS = new Set([
+  "VIEW_REGISTRATIONS",
+  "MANAGE_REGISTRATIONS",
+  "CONVERT_REGISTRATIONS",
+]);
+
 // Storage key for persisting impersonation across refreshes
 const IMPERSONATION_KEY = "t911_impersonation";
 
@@ -146,16 +157,32 @@ export function AuthProvider({ children }) {
 
   const isSuperAdmin = impersonation ? false : isRealSuperAdmin;
 
+  // True when the underlying authenticated user is part of the True911
+  // platform/internal team AND is not currently impersonating a customer
+  // tenant.  The flag is populated by the backend on every /auth
+  // response (is_platform_user); we combine it with impersonation here
+  // so internal-only surfaces hide automatically the moment a
+  // SuperAdmin starts a "View As".
+  const isInternalContext = !!realUser?.is_platform_user && !impersonation;
+
   const can = useCallback(
     (action) => {
       if (!user) return false;
+      // Internal-only permissions are gated by the internal-context
+      // flag — they short-circuit to false during impersonation OR
+      // when the real user isn't a platform user, regardless of the
+      // role mapping in permissions.json.  The backend
+      // require_platform_role enforces the same rule.
+      if (INTERNAL_ONLY_PERMISSIONS.has(action) && !isInternalContext) {
+        return false;
+      }
       // When NOT impersonating, SuperAdmin has implicit access to everything
       if (!impersonation && user.role === "SuperAdmin") return true;
       // When impersonating, use the impersonated role strictly
       const allowed = PERMISSIONS[action];
       return allowed ? allowed.includes(user.role) : false;
     },
-    [user, impersonation]
+    [user, impersonation, isInternalContext]
   );
 
   return (
@@ -170,6 +197,7 @@ export function AuthProvider({ children }) {
       can,
       isSuperAdmin,
       isRealSuperAdmin,
+      isInternalContext,
       impersonation,
       startImpersonation,
       stopImpersonation,

@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = False  # env flag, default off
     SEED_DEMO: str = "false"  # explicit "true" to seed demo data
 
+    # Comma-separated list of tenant_ids that count as the "internal"
+    # / platform context.  The Registration review queue, conversion
+    # workflow, and any other operator-only surface are gated by this
+    # — a user is considered to be in an internal context only if
+    # their REAL tenant_id (i.e. ignoring any active impersonation)
+    # is in this set, or they are a real SuperAdmin not currently
+    # impersonating.  Customer-tenant Admin/DataEntry users do NOT
+    # gain access by virtue of their role alone.
+    INTERNAL_TENANT_IDS: str = "default"
+
     # ── AI Support Assistant ─────────────────────────────────────
     ANTHROPIC_API_KEY: str = ""  # empty = rule-based fallback (no LLM calls)
 
@@ -151,6 +161,11 @@ class Settings(BaseSettings):
     def cors_is_wildcard(self) -> bool:
         """True when origins list is effectively a wildcard."""
         return self.cors_origin_list == ["*"]
+
+    @cached_property
+    def internal_tenant_id_set(self) -> set[str]:
+        """Parsed INTERNAL_TENANT_IDS, ready for membership checks."""
+        return {t.strip() for t in self.INTERNAL_TENANT_IDS.split(",") if t.strip()}
 
 
 settings = Settings()

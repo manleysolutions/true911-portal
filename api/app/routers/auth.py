@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, is_platform_user
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.schemas.auth import (
@@ -37,6 +37,20 @@ from app.services.auth import (
 logger = logging.getLogger("true911.auth")
 
 router = APIRouter()
+
+
+def _user_out(user: User) -> UserOut:
+    """Build the UserOut envelope and stamp ``is_platform_user``.
+
+    Used by every auth endpoint that hands a User back to the caller so
+    the frontend can render the internal-context gate without a second
+    round trip.  ``is_platform_user`` is based on the real un-impersonated
+    tenant_id; the frontend combines it with the active impersonation
+    state to decide whether internal-only surfaces are visible.
+    """
+    out = UserOut.model_validate(user)
+    out.is_platform_user = is_platform_user(user)
+    return out
 
 
 async def _ensure_tenant(db: AsyncSession, tenant_id: str) -> None:
@@ -89,7 +103,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=access,
         refresh_token=refresh,
-        user=UserOut.model_validate(user),
+        user=_user_out(user),
     )
 
 
@@ -142,14 +156,14 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=access,
         refresh_token=refresh,
-        user=UserOut.model_validate(user),
+        user=_user_out(user),
         must_change_password=user.must_change_password,
     )
 
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)):
-    return UserOut.model_validate(current_user)
+    return _user_out(current_user)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -172,7 +186,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=access,
         refresh_token=new_refresh,
-        user=UserOut.model_validate(user),
+        user=_user_out(user),
     )
 
 
@@ -222,7 +236,7 @@ async def accept_invite(
     return TokenResponse(
         access_token=access,
         refresh_token=refresh_tok,
-        user=UserOut.model_validate(user),
+        user=_user_out(user),
     )
 
 

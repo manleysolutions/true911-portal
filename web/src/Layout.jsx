@@ -47,7 +47,10 @@ const FEATURE_FLAGS = {
 const NOC_NAV = [
   // ── Primary ──
   { name: "Command Center",  page: "Command",         icon: ShieldCheck },
-  { name: "Registrations",   page: "Registrations",   icon: ClipboardList },
+  // ``permission`` items disappear from the nav when can() returns
+  // false — Registrations is internal-only, so this hides it during
+  // SuperAdmin impersonation of a customer tenant.
+  { name: "Registrations",   page: "Registrations",   icon: ClipboardList, permission: "VIEW_REGISTRATIONS" },
   { name: "Customers",       page: "Customers",       icon: Users },
   { name: "Sites",           page: "Sites",           icon: Building2 },
   { name: "Devices",         page: "Devices",         icon: Cpu },
@@ -123,7 +126,9 @@ const NOC_NAV = [
 const ADMIN_NAV = [
   { name: "Dashboard",     page: "AdminDashboard",  icon: LayoutDashboard },
   { name: "Support",       page: "Support",          icon: HelpCircle },
-  { name: "Registrations", page: "Registrations",   icon: ClipboardList },
+  // Internal-only: hidden during impersonation and for Admins whose
+  // home tenant is not in INTERNAL_TENANT_IDS.
+  { name: "Registrations", page: "Registrations",   icon: ClipboardList, permission: "VIEW_REGISTRATIONS" },
   { name: "Sites",         page: "Sites",           icon: Building2 },
   { name: "Devices",       page: "Devices",         icon: Cpu },
   { name: "Incidents",     page: "Incidents",       icon: AlertOctagon },
@@ -200,7 +205,9 @@ const USER_NAV = [
 
 // ── Data Entry / Import Operator portal ──────────────────────────
 const DATAENTRY_NAV = [
-  { name: "Registrations", page: "Registrations", icon: ClipboardList },
+  // Internal-only: hidden during impersonation and for DataEntry users
+  // whose home tenant is not in INTERNAL_TENANT_IDS.
+  { name: "Registrations", page: "Registrations", icon: ClipboardList, permission: "VIEW_REGISTRATIONS" },
   { name: "Customers",     page: "Customers",     icon: Users },
   { name: "Sites",         page: "Sites",         icon: Building2 },
   { name: "Devices",       page: "Devices",       icon: Cpu },
@@ -221,18 +228,24 @@ const DATAENTRY_NAV = [
 // NAV FILTERING UTILITIES
 // ═══════════════════════════════════════════════════════════════════
 
-function isItemVisible(item, level) {
+function isItemVisible(item, level, can) {
   if (item.featureFlag && !FEATURE_FLAGS[item.featureFlag]) return false;
   if (item.minRole && level < ROLE_LEVEL[item.minRole]) return false;
+  // ``permission`` is the internal-only escape hatch — items marked
+  // with a permission disappear from the nav when can() returns
+  // false.  This hides Registrations during SuperAdmin impersonation
+  // and from customer-tenant Admin/DataEntry users without changing
+  // the role-based grants in permissions.json.
+  if (item.permission && !can(item.permission)) return false;
   return true;
 }
 
-function filterNav(nav, level) {
+function filterNav(nav, level, can) {
   return nav
-    .filter(item => isItemVisible(item, level))
+    .filter(item => isItemVisible(item, level, can))
     .map(item => {
       if (item.group && item.children) {
-        const kids = item.children.filter(c => isItemVisible(c, level));
+        const kids = item.children.filter(c => isItemVisible(c, level, can));
         if (kids.length === 0) return null;
         return { ...item, children: kids };
       }
@@ -252,7 +265,7 @@ function getChildPages(item) {
 // ═══════════════════════════════════════════════════════════════════
 
 function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
-  const { user, logout, impersonation, stopImpersonation, isRealSuperAdmin } = useAuth();
+  const { user, logout, impersonation, stopImpersonation, isRealSuperAdmin, can } = useAuth();
 
   const userRole = user?.role || "User";
   const level = roleLevel(userRole);
@@ -263,7 +276,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
 
   const isDataEntry = userRole === "DataEntry";
   const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : isManager ? MANAGER_NAV : isDataEntry ? DATAENTRY_NAV : USER_NAV;
-  const visibleNav = useMemo(() => filterNav(navSource, level), [navSource, level]);
+  const visibleNav = useMemo(() => filterNav(navSource, level, can), [navSource, level, can]);
 
   // Track which groups are expanded — auto-expand the one containing the active page
   const [expanded, setExpanded] = useState(() => {
