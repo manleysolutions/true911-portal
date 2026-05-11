@@ -97,6 +97,8 @@ import Install from './pages/Install';
 import Support from './pages/Support';
 import SelfHealingConsole from './pages/SelfHealingConsole';
 import SupportConsole from './pages/SupportConsole';
+import Registrations from './pages/Registrations';
+import RegistrationDetail from './pages/RegistrationDetail';
 import __Layout from './Layout.jsx';
 
 
@@ -151,6 +153,8 @@ export const PAGES = {
     "Support": Support,
     "SelfHealingConsole": SelfHealingConsole,
     "SupportConsole": SupportConsole,
+    "Registrations": Registrations,
+    "RegistrationDetail": RegistrationDetail,
 }
 
 export const pagesConfig = {

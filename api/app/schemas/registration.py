@@ -309,3 +309,115 @@ class RegistrationCreateResponse(BaseModel):
 
     registration: RegistrationOut
     resume_token: str
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Internal review (Phase R3)
+# ─────────────────────────────────────────────────────────────────────
+#
+# These schemas back the /api/registrations surface and are NOT used
+# by the anonymous /api/public/registrations endpoints.  Internal
+# users see more (reviewer fields, conversion linkage) and can edit
+# fields the customer-facing PATCH does not expose.
+
+
+class RegistrationAdminUpdate(BaseModel):
+    """Fields an internal reviewer may edit on a registration.
+
+    Status itself is intentionally NOT in this schema — transitions go
+    through the /transition endpoint so the state machine enforces
+    legality and writes a registration_status_events row.
+    """
+
+    reviewer_notes: Optional[str] = Field(None, max_length=8000)
+    target_tenant_id: Optional[str] = Field(None, max_length=100)
+    selected_plan_code: Optional[str] = Field(None, max_length=100)
+    plan_quantity_estimate: Optional[conint(ge=0, le=10000)] = None
+    billing_method: Optional[str] = Field(None, max_length=50)
+    installer_notes: Optional[str] = Field(None, max_length=4000)
+
+
+class RegistrationTransitionRequest(BaseModel):
+    """Body for POST /api/registrations/{id}/transition."""
+
+    to_status: str = Field(..., min_length=1, max_length=40)
+    note: Optional[str] = Field(None, max_length=4000)
+
+
+class RegistrationRequestInfoRequest(BaseModel):
+    """Body for POST /api/registrations/{id}/request-info.
+
+    `message` is stored on the resulting status event so the reviewer
+    has a record of what they asked the customer to clarify.  R3 does
+    not email the customer — that hook lands in a later phase.
+    """
+
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+class RegistrationCancelRequest(BaseModel):
+    """Body for POST /api/registrations/{id}/cancel."""
+
+    reason: str = Field(..., min_length=1, max_length=4000)
+
+
+class RegistrationListItemOut(BaseModel):
+    """Slim row used by the internal list view.
+
+    Carries pre-computed counts so the list page doesn't issue N+1
+    queries from the frontend.  hardware/carrier summaries are pulled
+    from the registration's service units and joined into a single
+    human-readable string.
+    """
+
+    id: int
+    registration_id: str
+    tenant_id: str
+    status: str
+
+    submitter_email: str
+    submitter_name: Optional[str] = None
+    customer_name: Optional[str] = None
+
+    poc_name: Optional[str] = None
+    poc_phone: Optional[str] = None
+    poc_email: Optional[str] = None
+
+    locations_count: int = 0
+    service_units_count: int = 0
+    hardware_summary: Optional[str] = None
+    carrier_summary: Optional[str] = None
+
+    submitted_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RegistrationDetailOut(RegistrationOut):
+    """Full detail returned to the internal review surface.
+
+    Extends the customer-visible RegistrationOut with reviewer state
+    and the full status timeline.  resume_token is still never
+    exposed — only the expiry timestamp inherited from RegistrationOut.
+    """
+
+    reviewer_user_id: Optional[str] = None  # UUID rendered as string
+    reviewer_notes: Optional[str] = None
+    target_tenant_id: Optional[str] = None
+    customer_id: Optional[int] = None
+    status_events: list[RegistrationStatusEventOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class RegistrationCountByStatus(BaseModel):
+    """Returned by GET /api/registrations/count.
+
+    `total` is included for the sidebar badge; per-status counts let
+    the list page render filter tabs without extra round trips.
+    """
+
+    total: int
+    by_status: dict[str, int] = Field(default_factory=dict)

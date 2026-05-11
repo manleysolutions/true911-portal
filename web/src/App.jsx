@@ -59,6 +59,10 @@ const PAGE_PERMISSIONS = {
   SubscriberImport:    "SUBSCRIBER_IMPORT",
   ImportVerification:  "VIEW_IMPORT_VERIFICATION",
   ProvisioningQueue:   "VIEW_PROVISIONING_QUEUE",
+
+  // Phase R3 — internal registration review queue
+  Registrations:       "VIEW_REGISTRATIONS",
+  RegistrationDetail:  "VIEW_REGISTRATIONS",
 };
 
 function getLandingPage(role) {
