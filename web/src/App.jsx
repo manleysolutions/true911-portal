@@ -13,6 +13,9 @@ import LandingPage from './pages/public/LandingPage';
 import GetStarted from './pages/public/GetStarted';
 import Quote from './pages/public/Quote';
 import True911Platform from './pages/public/True911Platform';
+import Register from './pages/public/Register';
+import RegistrationView from './pages/public/RegistrationView';
+import RegistrationThanks from './pages/public/RegistrationThanks';
 import AuthGate from './pages/AuthGate';
 
 const { Pages, Layout } = pagesConfig;
@@ -147,6 +150,9 @@ function App() {
             <Route path="/get-started" element={<GetStarted />} />
             <Route path="/quote" element={<Quote />} />
             <Route path="/true911-platform" element={<True911Platform />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/register/:registrationId/thanks" element={<RegistrationThanks />} />
+            <Route path="/register/:registrationId" element={<RegistrationView />} />
 
             {/* Authenticated app routes (includes /AuthGate for backwards compat) */}
             <Route path="/*" element={<AuthenticatedApp />} />
