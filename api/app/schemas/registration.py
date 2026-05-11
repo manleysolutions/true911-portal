@@ -395,6 +395,45 @@ class RegistrationListItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RegistrationInviteOut(BaseModel):
+    """One-time invite issuance result attached to the transition
+    response when the activation hook just created or rotated an
+    invite.
+
+    The plaintext ``invite_token`` is included here because the
+    backend cannot recover it from storage on a subsequent request —
+    this is the operator's only chance to copy the invite URL.  The
+    GET /invite-status endpoint deliberately does NOT return the
+    token for the same reason; once the modal closes, the token is
+    gone for everyone except the customer who holds the URL.
+    """
+
+    user_id: str  # UUID rendered as string
+    email: str
+    invite_token: str
+    invite_url: str
+    invite_expires_at: datetime
+    was_rotated: bool
+
+
+class RegistrationInviteStatusOut(BaseModel):
+    """Read-only status payload returned by
+    GET /api/registrations/{id}/invite-status.
+
+    ``has_invite=False`` covers the case where the registration has
+    never reached ``ready_for_activation`` — there is no corresponding
+    user yet.  The plaintext token is never included; see
+    RegistrationInviteOut for why.
+    """
+
+    has_invite: bool
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    is_active: bool = False
+    has_pending_invite: bool = False
+    invite_expires_at: Optional[datetime] = None
+
+
 class RegistrationDetailOut(RegistrationOut):
     """Full detail returned to the internal review surface.
 
@@ -408,6 +447,10 @@ class RegistrationDetailOut(RegistrationOut):
     target_tenant_id: Optional[str] = None
     customer_id: Optional[int] = None
     status_events: list[RegistrationStatusEventOut] = Field(default_factory=list)
+    # Populated only on the transition response that just created or
+    # rotated an invite — subsequent GETs return invite=None because
+    # the plaintext token is not recoverable from storage.
+    invite: Optional[RegistrationInviteOut] = None
 
     model_config = {"from_attributes": True}
 

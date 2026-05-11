@@ -554,8 +554,36 @@ async def transition_status(
         )
     )
 
+    # Phase R5 — activation hooks.  When the new status fires a side
+    # effect (issue_invite on ready_for_activation, mark_customer_complete
+    # on active), run it BEFORE commit so the side-effect writes share
+    # the transition's single commit.  Any failure rolls back the whole
+    # transition, leaving the registration in its prior status.
+    activation_result = None
+    if to_status in (Status.READY_FOR_ACTIVATION, Status.ACTIVE):
+        # Lazy import: registration_activation imports Status from
+        # this module, so importing at top-level would be circular.
+        from app.services.registration_activation import run_activation_hook
+        try:
+            activation_result = await run_activation_hook(
+                db, registration, to_status,
+                actor_user_id=actor_user_id, actor_email=actor_email,
+            )
+        except Exception:
+            # Roll back so registration.status reverts in real
+            # SQLAlchemy.  Then re-raise the ActivationError (or
+            # whatever other exception) so the API layer can map it
+            # to a structured 4xx response.
+            await db.rollback()
+            raise
+
     await db.commit()
     await db.refresh(registration)
+    # Stash the activation outcome on the instance so the router can
+    # surface the freshly-issued invite (plaintext token, etc.) on
+    # the transition response.  Transient — never persisted, never
+    # re-derivable on a subsequent GET.
+    registration._activation_result = activation_result
     logger.info(
         "Registration %s status %s -> %s actor=%s",
         registration.registration_id, from_status, to_status,
