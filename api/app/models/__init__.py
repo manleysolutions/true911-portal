@@ -49,6 +49,10 @@ from app.models.port_state import PortState
 from app.models.import_batch import ImportBatch
 from app.models.import_row import ImportRow
 from app.models.support import SupportSession, SupportMessage, SupportDiagnostic, SupportEscalation, SupportRemediationAction, SupportAISummary
+from app.models.registration import Registration
+from app.models.registration_location import RegistrationLocation
+from app.models.registration_service_unit import RegistrationServiceUnit
+from app.models.registration_status_event import RegistrationStatusEvent
 
 __all__ = [
     "Tenant",
@@ -108,4 +112,8 @@ __all__ = [
     "SupportEscalation",
     "SupportRemediationAction",
     "SupportAISummary",
+    "Registration",
+    "RegistrationLocation",
+    "RegistrationServiceUnit",
+    "RegistrationStatusEvent",
 ]

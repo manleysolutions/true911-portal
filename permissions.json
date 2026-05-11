@@ -84,5 +84,8 @@
   "CREATE_SIMS": ["Admin", "DataEntry"],
   "EDIT_SIMS": ["Admin", "DataEntry"],
   "CREATE_LINES": ["Admin", "Manager", "DataEntry"],
-  "EDIT_LINES": ["Admin", "Manager", "DataEntry"]
+  "EDIT_LINES": ["Admin", "Manager", "DataEntry"],
+  "VIEW_REGISTRATIONS": ["Admin", "Manager", "DataEntry", "SuperAdmin"],
+  "MANAGE_REGISTRATIONS": ["Admin", "SuperAdmin"],
+  "CONVERT_REGISTRATIONS": ["Admin", "SuperAdmin"]
 }
