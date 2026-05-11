@@ -77,11 +77,18 @@ export async function apiFetch(path, options = {}) {
   } catch (networkErr) {
     // fetch() itself throws on network failures (DNS, CORS block, offline).
     // Wrap with actionable context instead of bare "Failed to fetch".
+    //
+    // A networkError=true flag is attached so callers can render a
+    // "no response from server" pane distinct from a real HTTP 4xx/5xx
+    // — the operator may want to retry rather than treat it as a
+    // permanent failure.  No request_id is available here because
+    // fetch never reached the server.
     const msg =
       "Network error — unable to reach the API server. " +
       "This may be a CORS restriction, a DNS issue, or the server may be down.";
     const err = new Error(msg);
     err.cause = networkErr;
+    err.networkError = true;
     throw err;
   }
 
@@ -111,6 +118,12 @@ export async function apiFetch(path, options = {}) {
     const err = new Error(extractDetailMessage(body, res));
     err.status = res.status;
     err.body = body;
+    // The X-Request-ID header is set by RequestVisibilityMiddleware on
+    // every successful response, and re-emitted by the global
+    // unhandled-exception handler on 500s.  The handler also embeds
+    // the id in the response body — fall back to that for the rare
+    // case where a proxy strips the header but preserves the body.
+    err.requestId = res.headers.get("X-Request-ID") || body?.request_id || null;
     throw err;
   }
 

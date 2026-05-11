@@ -335,6 +335,13 @@ class RegistrationAdminUpdate(BaseModel):
     plan_quantity_estimate: Optional[conint(ge=0, le=10000)] = None
     billing_method: Optional[str] = Field(None, max_length=50)
     installer_notes: Optional[str] = Field(None, max_length=4000)
+    # Operator-correctable identity fields.  The wizard's
+    # "Company / Property Name" label was ambiguous and non-technical
+    # submitters sometimes typed a building name here.  Surfacing
+    # these on the admin surface lets an operator fix the staging
+    # record before conversion materialises the wrong customer.
+    customer_name: Optional[str] = Field(None, max_length=255)
+    customer_legal_name: Optional[str] = Field(None, max_length=255)
 
 
 class RegistrationTransitionRequest(BaseModel):

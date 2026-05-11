@@ -176,11 +176,27 @@ function CustomerSection({ reg, form, setForm }) {
     }));
   };
 
+  // Detect the production bug from staging: customer_name matches one
+  // of the location labels.  In the Integrity case Cindy typed
+  // "Tiffany Gardens East" as the company name, then re-listed it
+  // as a location — so the wizard's customer_name became the same
+  // string as a location's location_label.  Warn the operator before
+  // they materialise the wrong account.
+  const collidesWithLocation = (reg.locations || []).some((l) => {
+    const name = (reg.customer_name || "").trim().toLowerCase();
+    const loc = (l.location_label || "").trim().toLowerCase();
+    return name && loc && name === loc;
+  });
+
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1.5">
         <User className="w-4 h-4 text-red-600" /> Customer
       </h3>
+      <p className="text-[11px] text-gray-500 mb-2">
+        The Customer is the management company or ownership group — the
+        top-level account. Individual buildings become Sites below.
+      </p>
       <ChoiceTabs
         value={form.customer_choice}
         onChange={handleChoice}
@@ -189,6 +205,21 @@ function CustomerSection({ reg, form, setForm }) {
           { value: "attach_existing", label: "Attach to existing customer" },
         ]}
       />
+
+      {collidesWithLocation && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mb-2 text-xs text-amber-800 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <div>
+            <strong>This customer name matches a location.</strong> "
+            {reg.customer_name}" appears as both the company name and a
+            building/property. Double-check the registration record before
+            converting — the customer should be the management company
+            (e.g. "Integrity Property Management"), not an individual
+            building. You can edit the customer name from the reviewer
+            panel without leaving this page.
+          </div>
+        </div>
+      )}
 
       {form.customer_choice === "create_new" ? (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-700 space-y-1">
@@ -383,19 +414,47 @@ function ResultPane({ result }) {
 
 function ErrorPane({ error }) {
   if (!error) return null;
+  const isNetworkError = !!error.networkError;
   const stage = error.body?.detail?.stage;
   const nextSteps = error.body?.detail?.next_steps;
+  const httpStatus = error.status;
+  const requestId = error.requestId;
+
   return (
     <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-2">
-      <div className="flex items-center gap-2 text-sm font-semibold text-red-800">
+      <div className="flex items-center gap-2 text-sm font-semibold text-red-800 flex-wrap">
         <AlertCircle className="w-4 h-4" />
-        Conversion blocked
-        {stage && <span className="text-[10px] uppercase tracking-wider text-red-600">[{stage}]</span>}
+        {isNetworkError ? "No response from server" : "Conversion blocked"}
+        {httpStatus && (
+          <span className="text-[10px] uppercase tracking-wider bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
+            HTTP {httpStatus}
+          </span>
+        )}
+        {stage && (
+          <span className="text-[10px] uppercase tracking-wider bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
+            stage: {stage}
+          </span>
+        )}
       </div>
       <p className="text-sm text-red-700">{error.message || "Unexpected error."}</p>
       {nextSteps && (
         <p className="text-xs text-red-700">
           <strong>Next steps:</strong> {nextSteps}
+        </p>
+      )}
+      {isNetworkError && (
+        <p className="text-xs text-red-700">
+          The server didn't return a response. This can mean the
+          request timed out (e.g. the convert took longer than the load
+          balancer's window), the API container restarted mid-request,
+          or the connection was dropped. Wait a moment and retry; if
+          the issue persists, check the server logs for the failing
+          request.
+        </p>
+      )}
+      {requestId && (
+        <p className="text-[11px] font-mono text-red-600 break-all">
+          Request ID: {requestId}
         </p>
       )}
     </div>

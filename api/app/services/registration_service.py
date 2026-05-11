@@ -651,6 +651,14 @@ _ADMIN_WRITABLE_FIELDS = frozenset({
     "plan_quantity_estimate",
     "billing_method",
     "installer_notes",
+    # Fixable customer-identity fields.  We let an operator correct
+    # the company name / legal name on the staging row when the
+    # wizard captured it wrong (e.g. a non-technical submitter typed
+    # a building name into the "company" field).  Submitter email is
+    # NOT in this set — it is the user's identity and rotating it
+    # would break the resume-link contract.
+    "customer_name",
+    "customer_legal_name",
 })
 
 
