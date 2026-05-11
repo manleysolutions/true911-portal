@@ -308,18 +308,19 @@ function CustomerStep({ draft, set }) {
       <p className="text-sm text-slate-400">Tell us who you are. We'll send all confirmations to the email below.</p>
 
       <Field
-        label="Company / Property Name"
+        label="Property Management / Company Name"
         value={draft.customer_name}
         onChange={set("customer_name")}
         placeholder="e.g. Integrity Property Management"
         required
+        help="This is your top-level account — the management company, ownership group, or organisation. Individual buildings go in the next step."
       />
 
       <Field
         label="Legal / Billing Name (optional)"
         value={draft.customer_legal_name}
         onChange={set("customer_legal_name")}
-        placeholder="If different from the property name"
+        placeholder="If different from the company name"
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -349,8 +350,10 @@ function CustomerStep({ draft, set }) {
       />
 
       <HelpBox>
-        Your email is how we'll send your install confirmation and
-        portal invitation later. Please double-check the spelling.
+        <strong className="text-white">Tip:</strong> Use the management
+        company or ownership group here (e.g. "Integrity Property
+        Management") — not the name of an individual building. You'll
+        list each property separately in the next step.
       </HelpBox>
     </div>
   );
@@ -437,8 +440,10 @@ function LocationsStep({ draft, setDraft }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-400">
-        Add each property or building where we'll be installing emergency phones.
-        If you have several buildings on one campus, add each one separately.
+        Add each <strong className="text-white">individual building or property</strong> where
+        we'll be installing emergency phones — separate from your company
+        name on the previous step. If you have several buildings on
+        one campus, add each one separately.
       </p>
 
       {draft.locations.length === 0 && (
@@ -469,11 +474,12 @@ function LocationsStep({ draft, setDraft }) {
             </button>
           </div>
           <Field
-            label="Location Name"
+            label="Building / Property Name"
             value={loc.location_label}
             onChange={(v) => updateLocation(idx, "location_label", v)}
             placeholder="e.g. Tiffany Gardens East"
             required
+            help="The specific building at this location — not your management company name."
           />
           <Field
             label="Street Address"

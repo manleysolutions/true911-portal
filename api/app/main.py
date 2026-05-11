@@ -118,12 +118,28 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
     Without this, unhandled exceptions bypass the middleware stack and the
     browser sees a missing Access-Control-Allow-Origin header — which it
     reports as a CORS error, hiding the real 500 in the Render logs.
+
+    Also surfaces the request_id from RequestVisibilityMiddleware on both
+    the response body and the X-Request-ID header so the frontend can
+    correlate a failed call against a server log line.  The middleware's
+    own X-Request-ID header write is skipped on the exception path
+    (call_next re-raises), so we re-emit it here.
     """
-    logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url.path, traceback.format_exc())
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Internal server error: {type(exc).__name__}: {exc}"},
+    request_id = getattr(request.state, "request_id", None)
+    logger.error(
+        "Unhandled exception on %s %s request_id=%s:\n%s",
+        request.method, request.url.path, request_id, traceback.format_exc(),
     )
+    response = JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Internal server error: {type(exc).__name__}: {exc}",
+            "request_id": request_id,
+        },
+    )
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+    return response
 
 
 app.include_router(auth.router,          prefix="/api/auth",      tags=["auth"])

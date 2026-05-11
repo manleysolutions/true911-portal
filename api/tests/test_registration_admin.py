@@ -140,6 +140,8 @@ class TestAdminUpdateService:
             plan_quantity_estimate=None,
             billing_method=None,
             installer_notes=None,
+            customer_name=None,
+            customer_legal_name=None,
             customer_id=None,
             submitter_email="cindy@example.com",
         )
@@ -155,6 +157,36 @@ class TestAdminUpdateService:
         assert reg.status == svc.Status.SUBMITTED  # unchanged
         assert reg.customer_id is None
         assert reg.submitter_email == "cindy@example.com"
+
+    @pytest.mark.asyncio
+    async def test_admin_can_correct_misentered_customer_name(self):
+        # This is the production bug from the staging Integrity test:
+        # the wizard's ambiguous "Company / Property Name" label led
+        # the submitter to type a building name into customer_name.
+        # The operator must be able to fix it via the existing admin
+        # update surface BEFORE conversion materialises the wrong
+        # account.  Lock this in so a future tightening of the
+        # allow-list doesn't accidentally re-block it.
+        db = _mock_db()
+        reg = SimpleNamespace(
+            status=svc.Status.INTERNAL_REVIEW,
+            reviewer_notes=None,
+            target_tenant_id=None,
+            selected_plan_code=None,
+            plan_quantity_estimate=None,
+            billing_method=None,
+            installer_notes=None,
+            customer_name="Tiffany Gardens East",  # wrong
+            customer_legal_name=None,
+            customer_id=None,
+            submitter_email="cindy@example.com",
+        )
+        await svc.admin_update_registration(db, reg, {
+            "customer_name": "Integrity Property Management",
+            "customer_legal_name": "Integrity Property Management LLC",
+        })
+        assert reg.customer_name == "Integrity Property Management"
+        assert reg.customer_legal_name == "Integrity Property Management LLC"
 
     @pytest.mark.asyncio
     async def test_no_commit_when_no_allow_listed_fields(self):

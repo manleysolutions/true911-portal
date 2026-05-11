@@ -761,6 +761,19 @@ async def convert_registration(
     On any failure: rolls back; raises ConversionError so the API
     layer can return a structured 4xx response.
     """
+    # Diagnostic breadcrumb at the start of every convert attempt.  The
+    # production "Network error" report from staging gave us nothing to
+    # correlate the failed call against; this log line (plus the
+    # request_id added by the unhandled-exception handler) is the hook
+    # that lets us answer "did the convert even start" from Render logs.
+    logger.info(
+        "Convert start: registration=%s status=%s tenant_choice=%s "
+        "customer_choice=%s create_subscription=%s dry_run=%s actor=%s",
+        registration.registration_id, registration.status,
+        tenant_choice, customer_choice, create_subscription, dry_run,
+        actor_email,
+    )
+
     if not is_convertable(registration):
         raise ConversionError(
             stage="validate_prerequisites",
