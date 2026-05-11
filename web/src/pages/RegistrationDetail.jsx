@@ -16,11 +16,12 @@ import { createPageUrl } from "@/utils";
 import {
   ArrowLeft, ClipboardList, Building2, User, MapPin, Phone, Calendar, CreditCard,
   AlertCircle, Clock, Loader2, Save, MessageSquare, X,
-  Hash, ShieldCheck,
+  Hash, ShieldCheck, Rocket, Package,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { RegistrationAdminAPI } from "@/api/registrations";
+import ConvertRegistrationModal from "@/components/ConvertRegistrationModal";
 import { toast } from "sonner";
 
 // ── Status / transition presentation ────────────────────────────────
@@ -169,15 +170,24 @@ function PromptModal({ title, label, placeholder, helper, confirmLabel = "Submit
 export default function RegistrationDetail() {
   const [params] = useSearchParams();
   const registrationId = params.get("id");
-  const { can } = useAuth();
+  const { can, isSuperAdmin } = useAuth();
   const canView = can("VIEW_REGISTRATIONS");
   const canManage = can("MANAGE_REGISTRATIONS");
+  const canConvert = can("CONVERT_REGISTRATIONS");
 
   const [reg, setReg] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showRequestInfo, setShowRequestInfo] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  const [showConvert, setShowConvert] = useState(false);
+  // The most recent convert result is held in component state so the
+  // Production Linkage card can show the freshly-created tenant /
+  // customer / sites without forcing the user to navigate elsewhere.
+  // It is intentionally not persisted across page reloads — on reload
+  // the card falls back to whatever the registration record already
+  // carries (target_tenant_id, customer_id).
+  const [lastConvertResult, setLastConvertResult] = useState(null);
 
   const reload = useCallback(async () => {
     if (!registrationId) return;
@@ -221,6 +231,16 @@ export default function RegistrationDetail() {
     const updated = await RegistrationAdminAPI.cancel(registrationId, reason);
     setReg(updated);
     toast.success("Registration cancelled");
+  };
+
+  // The modal handles the actual API call.  Our job here is to pick
+  // up the refreshed registration (it's part of the convert response)
+  // and remember the result so the Production Linkage card can render
+  // it without a separate fetch.
+  const handleConverted = (result) => {
+    if (result?.registration) setReg(result.registration);
+    setLastConvertResult(result);
+    toast.success("Registration converted to production rows");
   };
 
   if (!canView) {
@@ -352,9 +372,18 @@ export default function RegistrationDetail() {
                 >
                   Cancel Registration
                 </button>
+                {canConvert && (
+                  <button
+                    onClick={() => setShowConvert(true)}
+                    title="Materialise this registration into a tenant, customer, sites, and service units."
+                    className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-sm"
+                  >
+                    <Rocket className="w-3.5 h-3.5" /> Convert to Production
+                  </button>
+                )}
               </div>
               <p className="text-[11px] text-gray-400">
-                Conversion to a customer / sites / service units is a separate step (Phase R4) and not yet enabled.
+                Conversion creates the tenant, customer, sites, and service units only — no devices, SIMs, lines, users, or external automation.
               </p>
             </div>
           )}
@@ -363,6 +392,10 @@ export default function RegistrationDetail() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left two-thirds — record content */}
             <div className="lg:col-span-2 space-y-4">
+              {(reg.target_tenant_id || reg.customer_id || lastConvertResult) && (
+                <ProductionLinkageCard reg={reg} convertResult={lastConvertResult} />
+              )}
+
               <Card icon={Building2} title="Customer">
                 <DetailRow label="Company" value={reg.customer_name} />
                 <DetailRow label="Legal Name" value={reg.customer_legal_name} />
@@ -491,7 +524,93 @@ export default function RegistrationDetail() {
           onConfirm={handleCancel}
         />
       )}
+      {showConvert && (
+        <ConvertRegistrationModal
+          reg={reg}
+          isSuperAdmin={isSuperAdmin}
+          onClose={() => setShowConvert(false)}
+          onConverted={handleConverted}
+        />
+      )}
     </PageWrapper>
+  );
+}
+
+
+// ── Production Linkage card ─────────────────────────────────────────
+
+function ProductionLinkageCard({ reg, convertResult }) {
+  // When we have a fresh convert response in memory, show the rich
+  // version (per-site + subscription breakdown).  After a page
+  // reload, fall back to whatever the registration row carries.
+  const tenantId = convertResult?.tenant?.tenant_id || reg.target_tenant_id;
+  const customer = convertResult?.customer || (reg.customer_id ? { id: reg.customer_id, name: reg.customer_name } : null);
+  const sites = convertResult?.sites || [];
+  const subscription = convertResult?.subscription || null;
+
+  if (!tenantId && !customer) return null;
+
+  return (
+    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
+      <div className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+        <Rocket className="w-4 h-4 text-emerald-700" /> Production Linkage
+      </div>
+      <div className="space-y-2 text-sm">
+        {tenantId && (
+          <div className="flex items-start gap-2">
+            <Building2 className="w-3.5 h-3.5 text-emerald-700 mt-0.5" />
+            <div>
+              <span className="text-gray-700">Tenant </span>
+              <span className="font-mono text-gray-900">{tenantId}</span>
+            </div>
+          </div>
+        )}
+        {customer && (
+          <div className="flex items-start gap-2">
+            <User className="w-3.5 h-3.5 text-emerald-700 mt-0.5" />
+            <div>
+              <span className="text-gray-700">Customer </span>
+              <span className="text-gray-900">{customer.name}</span>
+              {customer.id && (
+                <span className="ml-1 text-[11px] text-gray-500">· id={customer.id}</span>
+              )}
+            </div>
+          </div>
+        )}
+        {sites.length > 0 && (
+          <div className="flex items-start gap-2">
+            <MapPin className="w-3.5 h-3.5 text-emerald-700 mt-0.5" />
+            <div className="flex-1">
+              <span className="text-gray-700">Sites </span>
+              <span className="font-semibold text-gray-900">{sites.length}</span>
+              <ul className="mt-1 ml-2 space-y-0.5 text-xs">
+                {sites.map((s) => (
+                  <li key={s.registration_location_id} className="text-gray-600">
+                    <span className="font-mono">{s.site_id}</span>
+                    <span className="text-gray-400"> — {s.location_label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+        {subscription && (
+          <div className="flex items-start gap-2">
+            <Package className="w-3.5 h-3.5 text-emerald-700 mt-0.5" />
+            <div>
+              <span className="text-gray-700">Subscription </span>
+              <span className="font-mono text-gray-900">{subscription.plan_name}</span>
+              <span className="ml-1 text-[11px] text-gray-500">· {subscription.status}</span>
+            </div>
+          </div>
+        )}
+      </div>
+      {!convertResult && (
+        <p className="mt-3 text-[11px] text-emerald-800 bg-emerald-100/60 rounded px-2 py-1.5">
+          This registration has been converted. Re-run the modal to view the full materialisation summary again.
+        </p>
+      )}
+    </div>
   );
 }
 
