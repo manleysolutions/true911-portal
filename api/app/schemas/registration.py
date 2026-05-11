@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, conint, model_validator
 
@@ -238,7 +239,12 @@ class RegistrationStatusEventOut(BaseModel):
     registration_id: int
     from_status: Optional[str] = None
     to_status: str
-    actor_user_id: Optional[str] = None  # rendered as string for transport
+    # Declared as UUID rather than str so model_validate(orm_row)
+    # accepts the SQLAlchemy ``UUID(as_uuid=True)`` value directly.
+    # Pydantic v2 serialises UUIDs to their canonical hex-with-dashes
+    # form in JSON output automatically — manual stringification is
+    # not required.
+    actor_user_id: Optional[UUID] = None
     actor_email: Optional[str] = None
     note: Optional[str] = None
     created_at: datetime
@@ -449,7 +455,9 @@ class RegistrationDetailOut(RegistrationOut):
     exposed — only the expiry timestamp inherited from RegistrationOut.
     """
 
-    reviewer_user_id: Optional[str] = None  # UUID rendered as string
+    # Same idiom as RegistrationStatusEventOut.actor_user_id —
+    # declared as UUID, serialised automatically.
+    reviewer_user_id: Optional[UUID] = None
     reviewer_notes: Optional[str] = None
     target_tenant_id: Optional[str] = None
     customer_id: Optional[int] = None

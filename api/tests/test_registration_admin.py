@@ -19,7 +19,9 @@ from pydantic import ValidationError
 from app.schemas.registration import (
     RegistrationAdminUpdate,
     RegistrationCancelRequest,
+    RegistrationDetailOut,
     RegistrationRequestInfoRequest,
+    RegistrationStatusEventOut,
     RegistrationTransitionRequest,
 )
 from app.services import registration_service as svc
@@ -296,3 +298,73 @@ class TestCancelRegistration:
             await svc.cancel_registration(
                 db, reg, reason="dup", actor_user_id=None, actor_email="ops@true911.com",
             )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Regression — RegistrationStatusEventOut accepts a UUID actor_user_id
+# ─────────────────────────────────────────────────────────────────────
+
+class TestStatusEventUuidSerialization:
+    """Regression for the production ValidationError where the schema
+    declared ``actor_user_id: Optional[str]`` but the ORM hands us a
+    ``UUID(as_uuid=True)`` value — Pydantic v2 in strict mode rejected
+    the coercion and GET /api/registrations/{id} returned 500.
+
+    The fix declares the field as ``Optional[UUID]`` and lets Pydantic
+    v2 serialise it to a string in JSON output natively.  These tests
+    pin the contract so it can't regress.
+    """
+
+    def _orm_event(self, actor_user_id):
+        # Mimic the SQLAlchemy ORM row that the router pipes into
+        # model_validate.  SimpleNamespace gives the same attribute-
+        # access surface model_validate(from_attributes=True) reads.
+        return SimpleNamespace(
+            id=42,
+            registration_id=7,
+            from_status="qa_review",
+            to_status="ready_for_activation",
+            actor_user_id=actor_user_id,
+            actor_email="ops@true911.com",
+            note="invite issued",
+            created_at=datetime.now(timezone.utc),
+        )
+
+    def test_model_validate_accepts_real_uuid(self):
+        actor = uuid.uuid4()
+        out = RegistrationStatusEventOut.model_validate(self._orm_event(actor))
+        # Internal representation stays a UUID — no premature stringify.
+        assert isinstance(out.actor_user_id, uuid.UUID)
+        assert out.actor_user_id == actor
+
+    def test_model_validate_accepts_none(self):
+        out = RegistrationStatusEventOut.model_validate(self._orm_event(None))
+        assert out.actor_user_id is None
+
+    def test_json_dump_serialises_uuid_to_canonical_string(self):
+        # The wire format is what the frontend consumes — confirm the
+        # canonical 8-4-4-4-12 hex-with-dashes form lands there.
+        actor = uuid.UUID("12345678-1234-5678-1234-567812345678")
+        out = RegistrationStatusEventOut.model_validate(self._orm_event(actor))
+        dumped = out.model_dump(mode="json")
+        assert dumped["actor_user_id"] == "12345678-1234-5678-1234-567812345678"
+
+    def test_detail_out_reviewer_user_id_round_trip(self):
+        # Same idiom applies to RegistrationDetailOut.reviewer_user_id —
+        # locking this in too because the same router builds it from the
+        # ORM via model_validate.  We construct a minimal payload that
+        # satisfies the parent RegistrationOut required fields.
+        reviewer = uuid.uuid4()
+        detail = RegistrationDetailOut.model_validate({
+            "id": 1,
+            "registration_id": "REG-X",
+            "tenant_id": "ops",
+            "status": "internal_review",
+            "submitter_email": "x@example.com",
+            "resume_token_expires_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "reviewer_user_id": reviewer,
+        })
+        assert isinstance(detail.reviewer_user_id, uuid.UUID)
+        assert detail.model_dump(mode="json")["reviewer_user_id"] == str(reviewer)

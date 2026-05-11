@@ -99,9 +99,11 @@ async def _build_detail(
 
     detail = RegistrationDetailOut.model_validate(registration)
     detail.locations = locations_out
-    detail.reviewer_user_id = (
-        str(registration.reviewer_user_id) if registration.reviewer_user_id else None
-    )
+    # reviewer_user_id is now Optional[UUID] on the schema; Pydantic
+    # serialises it to a hex-with-dashes string in JSON output, so the
+    # previous manual ``str(registration.reviewer_user_id)`` is no
+    # longer required.  model_validate above already populated it
+    # straight off the ORM attribute.
     detail.status_events = [RegistrationStatusEventOut.model_validate(e) for e in status_events]
     return detail
 
