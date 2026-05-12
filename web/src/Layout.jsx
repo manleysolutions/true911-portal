@@ -16,13 +16,14 @@ import { toast } from "sonner";
 import { config } from "@/config";
 
 // ── Role hierarchy ──────────────────────────────────────────────
-const ROLE_LEVEL = { User: 1, DataEntry: 1.5, Manager: 2, Admin: 3, SuperAdmin: 4 };
+const ROLE_LEVEL = { User: 1, DataEntry: 1.5, DataSteward: 1.7, Manager: 2, Admin: 3, SuperAdmin: 4 };
 function roleLevel(role) { return ROLE_LEVEL[role] || 0; }
 
 const ROLE_BADGE = {
   SuperAdmin: "bg-purple-500/20 text-purple-300 border-purple-500/30",
   Admin: "bg-red-500/20 text-red-300 border-red-500/30",
   Manager: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  DataSteward: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   DataEntry: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   User: "bg-gray-500/20 text-gray-400 border-gray-500/30",
 };
@@ -51,6 +52,7 @@ const NOC_NAV = [
   // false — Registrations is internal-only, so this hides it during
   // SuperAdmin impersonation of a customer tenant.
   { name: "Registrations",   page: "Registrations",   icon: ClipboardList, permission: "VIEW_REGISTRATIONS" },
+  { name: "Onboarding Review", page: "OnboardingReview", icon: ClipboardList, permission: "VIEW_ONBOARDING_REVIEW" },
   { name: "Customers",       page: "Customers",       icon: Users },
   { name: "Sites",           page: "Sites",           icon: Building2 },
   { name: "Devices",         page: "Devices",         icon: Cpu },
@@ -129,6 +131,7 @@ const ADMIN_NAV = [
   // Internal-only: hidden during impersonation and for Admins whose
   // home tenant is not in INTERNAL_TENANT_IDS.
   { name: "Registrations", page: "Registrations",   icon: ClipboardList, permission: "VIEW_REGISTRATIONS" },
+  { name: "Onboarding Review", page: "OnboardingReview", icon: ClipboardList, permission: "VIEW_ONBOARDING_REVIEW" },
   { name: "Sites",         page: "Sites",           icon: Building2 },
   { name: "Devices",       page: "Devices",         icon: Cpu },
   { name: "Incidents",     page: "Incidents",       icon: AlertOctagon },
@@ -224,6 +227,29 @@ const DATAENTRY_NAV = [
 ];
 
 
+// ── Data Steward portal ──────────────────────────────────────────
+// Superset of the DataEntry nav with the new triage queue surfaced
+// at the top.  Hidden ``permission`` filter ensures the queue still
+// disappears for users that lack VIEW_ONBOARDING_REVIEW.
+const DATASTEWARD_NAV = [
+  { name: "Onboarding Review", page: "OnboardingReview", icon: ClipboardList, permission: "VIEW_ONBOARDING_REVIEW" },
+  { name: "Registrations",     page: "Registrations",    icon: ClipboardList, permission: "VIEW_REGISTRATIONS" },
+  { name: "Customers",         page: "Customers",        icon: Users },
+  { name: "Sites",             page: "Sites",            icon: Building2 },
+  { name: "Devices",           page: "Devices",          icon: Cpu },
+
+  {
+    group: "deployment", label: "Deployment", icon: Rocket,
+    children: [
+      { name: "Site Import",               page: "SiteImport",         icon: Upload },
+      { name: "Lines & Devices Import",    page: "SubscriberImport",   icon: FileSpreadsheet },
+      { name: "Import Verification",       page: "ImportVerification", icon: CheckCircle },
+      { name: "Unassigned Devices & SIMs", page: "ProvisioningQueue",  icon: Package },
+    ],
+  },
+];
+
+
 // ═══════════════════════════════════════════════════════════════════
 // NAV FILTERING UTILITIES
 // ═══════════════════════════════════════════════════════════════════
@@ -275,7 +301,18 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
   const isNOC = isSuperAdmin;
 
   const isDataEntry = userRole === "DataEntry";
-  const navSource = isSuperAdmin ? NOC_NAV : isAdmin ? ADMIN_NAV : isManager ? MANAGER_NAV : isDataEntry ? DATAENTRY_NAV : USER_NAV;
+  const isDataSteward = userRole === "DataSteward";
+  const navSource = isSuperAdmin
+    ? NOC_NAV
+    : isAdmin
+    ? ADMIN_NAV
+    : isManager
+    ? MANAGER_NAV
+    : isDataSteward
+    ? DATASTEWARD_NAV
+    : isDataEntry
+    ? DATAENTRY_NAV
+    : USER_NAV;
   const visibleNav = useMemo(() => filterNav(navSource, level, can), [navSource, level, can]);
 
   // Track which groups are expanded — auto-expand the one containing the active page
@@ -317,7 +354,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
               True911<span className={isNOC ? "text-red-500" : "text-slate-500"}>+</span>
             </div>
             <div className="text-[9px] text-gray-500 tracking-[0.18em] uppercase mt-0.5">
-              {isSuperAdmin ? "NOC Operations" : isAdmin ? "Admin Portal" : isDataEntry ? "Import Portal" : "Customer Portal"}
+              {isSuperAdmin ? "NOC Operations" : isAdmin ? "Admin Portal" : isDataSteward ? "Steward Portal" : isDataEntry ? "Import Portal" : "Customer Portal"}
             </div>
           </div>
         </div>

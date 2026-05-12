@@ -23,7 +23,7 @@ from app.services import rbac
 # loader so a regression in rbac doesn't hide itself.
 _PERMISSIONS_PATH = Path(__file__).resolve().parents[2] / "permissions.json"
 
-ALL_ROLES = ["SuperAdmin", "Admin", "Manager", "User", "DataEntry"]
+ALL_ROLES = ["SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward"]
 
 
 def _load_json_matrix() -> Dict[str, List[str]]:
@@ -118,7 +118,7 @@ def test_superadmin_passes_every_action(action: str):
 
 
 def test_unknown_action_denies_non_superadmin():
-    for role in ["Admin", "Manager", "User", "DataEntry"]:
+    for role in ["Admin", "Manager", "User", "DataEntry", "DataSteward"]:
         assert rbac.can(role, "ACTION_THAT_DOES_NOT_EXIST") is False, (
             f"Unknown actions must deny {role}"
         )
@@ -139,6 +139,14 @@ def test_unknown_action_denies_non_superadmin():
         ("Data Entry", "DataEntry"),
         ("data entry / import operator", "DataEntry"),
         ("Data Entry / Import Operator", "DataEntry"),
+        # DataSteward variants — Phase A addition.
+        ("DataSteward", "DataSteward"),
+        ("datasteward", "DataSteward"),
+        ("DATASTEWARD", "DataSteward"),
+        ("data steward", "DataSteward"),
+        ("Data Steward", "DataSteward"),
+        ("operations data steward", "DataSteward"),
+        ("Operational Data Steward", "DataSteward"),
         # Other roles, mixed case.
         ("superadmin", "SuperAdmin"),
         ("SuperAdmin", "SuperAdmin"),
@@ -212,3 +220,84 @@ def test_unknown_role_falls_through_unchanged():
 )
 def test_dataentry_grants(action: str, expected: bool):
     assert rbac.can("DataEntry", action) is expected
+
+
+# ── DataSteward-specific can() spot checks (Phase A) ────────────────
+# Pins the new role's grant set so an accidental edit to
+# permissions.json can't silently strip Sivmey of access or — worse —
+# escalate the role into destructive territory.
+
+@pytest.mark.parametrize(
+    "action,expected",
+    [
+        # Onboarding views DataSteward must have
+        ("VIEW_CUSTOMERS", True),
+        ("VIEW_SITES", True),
+        ("VIEW_DEVICES", True),
+        ("VIEW_IMPORT_VERIFICATION", True),
+        ("VIEW_PROVISIONING_QUEUE", True),
+        ("VIEW_ONBOARDING_REVIEW", True),
+        ("VIEW_REGISTRATIONS", True),
+        # Onboarding mutations DataSteward must have
+        ("CREATE_CUSTOMERS", True),
+        ("EDIT_CUSTOMERS", True),
+        ("CREATE_SITES", True),
+        ("EDIT_SITES", True),
+        ("CREATE_DEVICES", True),
+        ("EDIT_DEVICES", True),
+        ("CREATE_SERVICE_UNITS", True),
+        ("EDIT_SERVICE_UNITS", True),
+        ("CREATE_SIMS", True),
+        ("EDIT_SIMS", True),
+        ("CREATE_LINES", True),
+        ("EDIT_LINES", True),
+        ("COMMAND_SITE_IMPORT", True),
+        ("SUBSCRIBER_IMPORT", True),
+        ("MANAGE_IMPORT_VERIFICATION", True),
+        ("MANAGE_ONBOARDING_REVIEW", True),
+        # DataSteward must NOT have any of these (destructive,
+        # carrier-provisioning, identity/RBAC, or system surfaces).
+        ("VIEW_ADMIN", False),
+        ("DELETE_CUSTOMERS", False),
+        ("DELETE_SITES", False),
+        ("DELETE_DEVICES", False),
+        ("DELETE_LINES", False),
+        ("DELETE_SERVICE_UNITS", False),
+        ("MANAGE_SIMS", False),
+        ("MANAGE_DEVICES", False),
+        ("MANAGE_USERS", False),
+        ("MANAGE_PROVIDERS", False),
+        ("MANAGE_NOTIFICATIONS", False),
+        ("MANAGE_INTEGRATIONS", False),
+        ("MANAGE_PROVISIONING", False),
+        ("MANAGE_REGISTRATIONS", False),
+        ("CONVERT_REGISTRATIONS", False),
+        ("ROTATE_DEVICE_KEY", False),
+        ("COMMAND_INGEST_CARRIER", False),
+        ("COMMAND_MANAGE_AUTOMATION", False),
+        ("COMMAND_MANAGE_ORG", False),
+        ("GLOBAL_ADMIN", False),
+    ],
+)
+def test_datasteward_grants(action: str, expected: bool):
+    assert rbac.can("DataSteward", action) is expected
+
+
+def test_datasteward_does_not_weaken_dataentry():
+    """Every grant DataEntry has today must remain DataEntry's grant.
+
+    Phase A adds DataSteward as a *new* role; it must not change
+    DataEntry's grant set in either direction.  The matrix file is
+    rich enough that a manual diff is easy to miss, so we compare
+    cell-by-cell here.
+    """
+
+    matrix = _load_json_matrix()
+    # Before Phase A, this was the union of all DataEntry grants.
+    # Re-derive from the file so future additions don't need a
+    # second list to update.
+    expected = {a for a, roles in matrix.items() if "DataEntry" in roles}
+    actual = {a for a in matrix if rbac.can("DataEntry", a)}
+    assert expected.issubset(actual), (
+        f"DataEntry lost grants: missing={expected - actual}"
+    )

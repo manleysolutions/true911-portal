@@ -63,6 +63,9 @@ const PAGE_PERMISSIONS = {
   // Phase R3 — internal registration review queue
   Registrations:       "VIEW_REGISTRATIONS",
   RegistrationDetail:  "VIEW_REGISTRATIONS",
+
+  // Phase A — Data Steward onboarding review queue
+  OnboardingReview:    "VIEW_ONBOARDING_REVIEW",
 };
 
 function getLandingPage(role) {
@@ -70,6 +73,7 @@ function getLandingPage(role) {
   if (r === "superadmin") return "/Command";
   if (r === "admin") return "/AdminDashboard";
   if (r === "manager") return "/ManagerDashboard";
+  if (r === "datasteward") return "/onboarding-review";
   if (r === "dataentry") return "/Customers";
   return "/UserDashboard";
 }
@@ -136,6 +140,13 @@ const AuthenticatedApp = () => {
         }
         return null;
       })}
+      {/* Kebab-case alias for the Data Steward queue. */}
+      {Pages.OnboardingReview && (
+        <Route
+          path="/onboarding-review"
+          element={<ProtectedPage pageName="OnboardingReview" Page={Pages.OnboardingReview} />}
+        />
+      )}
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

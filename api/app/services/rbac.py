@@ -66,6 +66,10 @@ ROLE_NORMALIZE = {
     "dataentry": "DataEntry",
     "data entry": "DataEntry",
     "data entry / import operator": "DataEntry",
+    "datasteward": "DataSteward",
+    "data steward": "DataSteward",
+    "operations data steward": "DataSteward",
+    "operational data steward": "DataSteward",
 }
 
 
