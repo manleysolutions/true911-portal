@@ -99,6 +99,7 @@ import SelfHealingConsole from './pages/SelfHealingConsole';
 import SupportConsole from './pages/SupportConsole';
 import Registrations from './pages/Registrations';
 import RegistrationDetail from './pages/RegistrationDetail';
+import OnboardingReview from './pages/OnboardingReview';
 import __Layout from './Layout.jsx';
 
 
@@ -155,6 +156,7 @@ export const PAGES = {
     "SupportConsole": SupportConsole,
     "Registrations": Registrations,
     "RegistrationDetail": RegistrationDetail,
+    "OnboardingReview": OnboardingReview,
 }
 
 export const pagesConfig = {

@@ -8,6 +8,7 @@ import SitePickerModal from "@/components/SitePickerModal";
 import DeviceFormModal from "@/components/DeviceFormModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { classifyDevice, deviceClassLabel } from "@/lib/deviceClassManifest";
 
 function timeSince(iso) {
   if (!iso) return "\u2014";
@@ -339,9 +340,20 @@ export default function Devices() {
             <tbody className="divide-y divide-gray-100">
               {filtered.map(d => {
                 const site = siteMap[d.site_id];
-                // Build identifier cell based on device type
+                // Build identifier cell based on device class manifest.
+                // Manual-verification classes (Napco / StarLink / SLELTE)
+                // intentionally never surface IMEI/ICCID even if those
+                // columns happen to be populated — they're noise for a
+                // non-cellular endpoint.
+                const manifest = classifyDevice(d);
                 let idLabel = null;
-                if (d.starlink_id) {
+                if (manifest.manualVerification) {
+                  if (d.starlink_id) {
+                    idLabel = <><span className="text-[10px] text-gray-400 uppercase">SL </span>{d.starlink_id}</>;
+                  } else if (d.serial_number) {
+                    idLabel = <><span className="text-[10px] text-gray-400 uppercase">SN </span>{d.serial_number}</>;
+                  }
+                } else if (d.starlink_id) {
                   idLabel = <><span className="text-[10px] text-gray-400 uppercase">SL </span>{d.starlink_id}</>;
                 } else if (d.imei) {
                   idLabel = <><span className="text-[10px] text-gray-400 uppercase">IMEI </span>{d.imei}</>;
@@ -350,6 +362,12 @@ export default function Devices() {
                 } else if (d.mac_address) {
                   idLabel = <><span className="text-[10px] text-gray-400 uppercase">MAC </span>{d.mac_address}</>;
                 }
+                const carrierLabel = manifest.manualVerification
+                  ? deviceClassLabel(d)
+                  : (d.carrier || "—");
+                const lastHbLabel = manifest.liveTelemetry
+                  ? (d.last_heartbeat ? timeSince(d.last_heartbeat) : "Awaiting")
+                  : "Manual";
 
                 return (
                   <tr
@@ -373,16 +391,22 @@ export default function Devices() {
                     <td className="px-4 py-2.5 text-gray-600 text-xs">{d.model || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{d.serial_number || "\u2014"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{idLabel || "\u2014"}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs">{d.carrier || "\u2014"}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">{carrierLabel}</td>
                     <td className="px-4 py-2.5">
-                      <HealthBadge health={d.health_status} signal={d.signal_dbm} networkStatus={d.network_status} source={d.telemetry_source} />
+                      {manifest.liveTelemetry ? (
+                        <HealthBadge health={d.health_status} signal={d.signal_dbm} networkStatus={d.network_status} source={d.telemetry_source} />
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border bg-slate-50 text-slate-600 border-slate-200">
+                          manual
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[d.status] || STATUS_BADGE.inactive}`}>
                         {d.status}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500">{d.last_heartbeat ? timeSince(d.last_heartbeat) : "Awaiting"}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500">{lastHbLabel}</td>
                     <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {can("EDIT_DEVICES") && (

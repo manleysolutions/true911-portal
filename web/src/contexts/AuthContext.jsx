@@ -29,6 +29,10 @@ const ROLE_MAP = {
   user: "User",
   dataentry: "DataEntry",
   "data entry": "DataEntry",
+  datasteward: "DataSteward",
+  "data steward": "DataSteward",
+  "operations data steward": "DataSteward",
+  "operational data steward": "DataSteward",
 };
 function normalizeRole(role) {
   if (!role) return "User";
