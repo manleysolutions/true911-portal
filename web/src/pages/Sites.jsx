@@ -344,7 +344,16 @@ export default function Sites() {
                     <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Endpoint Type</th>
                     <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Service Class</th>
                     <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Location</th>
-                    <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Health</th>
+                    {/* The backend-computed Health column (healthy / warning /
+                        critical / unknown) is shown to internal roles only.
+                        For customer roles it produced contradictions like
+                        "Monitoring Pending" status + "healthy" health on
+                        imported sites — confusing and trust-destroying.
+                        Phase 4 will introduce a customer-facing health view
+                        derived from the normalized status. */}
+                    {!showCustomerStatus && (
+                      <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Health</th>
+                    )}
                     <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Network</th>
                     <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Check-in</th>
                     <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Action</th>
@@ -378,24 +387,26 @@ export default function Sites() {
                         <td className="px-3 py-3.5">
                           <div className="text-xs text-gray-700">{site.e911_city}, {site.e911_state}</div>
                         </td>
-                        <td className="px-3 py-3.5">
-                          {(() => {
-                            const h = site.health_status || "unknown";
-                            const styles = {
-                              healthy:  "bg-emerald-50 text-emerald-700 border-emerald-200",
-                              warning:  "bg-amber-50 text-amber-700 border-amber-200",
-                              critical: "bg-red-50 text-red-700 border-red-200",
-                              unknown:  "bg-gray-50 text-gray-500 border-gray-200",
-                            };
-                            const dots = { healthy: "bg-emerald-500", warning: "bg-amber-500", critical: "bg-red-500", unknown: "bg-gray-400" };
-                            return (
-                              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full border ${styles[h] || styles.unknown}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${dots[h] || dots.unknown}`} />
-                                {h}
-                              </span>
-                            );
-                          })()}
-                        </td>
+                        {!showCustomerStatus && (
+                          <td className="px-3 py-3.5">
+                            {(() => {
+                              const h = site.health_status || "unknown";
+                              const styles = {
+                                healthy:  "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                warning:  "bg-amber-50 text-amber-700 border-amber-200",
+                                critical: "bg-red-50 text-red-700 border-red-200",
+                                unknown:  "bg-gray-50 text-gray-500 border-gray-200",
+                              };
+                              const dots = { healthy: "bg-emerald-500", warning: "bg-amber-500", critical: "bg-red-500", unknown: "bg-gray-400" };
+                              return (
+                                <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full border ${styles[h] || styles.unknown}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${dots[h] || dots.unknown}`} />
+                                  {h}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                        )}
                         <td className="px-3 py-3.5">
                           <div className="text-xs text-gray-700">{site.network_tech}</div>
                           <div className="text-[11px] text-gray-400">{site.carrier}</div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Site } from "@/api/entities";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import PageWrapper from "@/components/PageWrapper";
@@ -6,7 +6,9 @@ import SiteDrawer from "@/components/SiteDrawer";
 import { MapPin, Layers, RefreshCw, AlertTriangle, ChevronRight, X, Crosshair, Navigation, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { isCustomerRole, toCustomerStatus, CUSTOMER_STATUS } from "@/lib/attention";
 
+// Raw operational colors — used by internal/operations roles.
 const STATUS_COLORS = {
   Connected: "#10b981",
   "Not Connected": "#ef4444",
@@ -21,6 +23,24 @@ const LEGEND = [
   { status: "Unknown", color: "#9ca3af" },
 ];
 
+// Customer-facing palette — only Confirmed Offline is red.
+// Imported / no-telemetry sites use a calm slate so customers
+// don't see a sea of red on first login.
+const CUSTOMER_MARKER_COLORS = {
+  operational:         "#10b981", // emerald
+  monitoring_pending:  "#94a3b8", // slate-400
+  attention_needed:    "#f59e0b", // amber-500
+  confirmed_offline:   "#ef4444", // red-500
+  integration_pending: "#3b82f6", // blue-500
+};
+
+const CUSTOMER_LEGEND = [
+  { key: "operational",         label: "Operational",         color: CUSTOMER_MARKER_COLORS.operational },
+  { key: "monitoring_pending",  label: "Monitoring Pending",  color: CUSTOMER_MARKER_COLORS.monitoring_pending },
+  { key: "attention_needed",    label: "Attention Needed",    color: CUSTOMER_MARKER_COLORS.attention_needed },
+  { key: "confirmed_offline",   label: "Confirmed Offline",   color: CUSTOMER_MARKER_COLORS.confirmed_offline },
+];
+
 function FlyTo({ site }) {
   const map = useMap();
   useEffect(() => {
@@ -32,8 +52,12 @@ function FlyTo({ site }) {
 }
 
 export default function DeploymentMap() {
-  const { can } = useAuth();
+  const { user, can } = useAuth();
   const isAdmin = can("VIEW_ADMIN");
+  // Customer roles (User / Manager) see the calm presentation layer.
+  // Internal/operations roles continue to see the raw operational
+  // labels, colors, and filter chips so admin workflows are unchanged.
+  const customerView = isCustomerRole(user?.role);
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSite, setSelectedSite] = useState(null);
@@ -58,7 +82,17 @@ export default function DeploymentMap() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const filteredSites = filterStatus === "All" ? sites : sites.filter(s => s.status === filterStatus);
+  // Filter predicate adapts to the active view.  Customer filters
+  // use the customer-status bucket key (operational, monitoring_pending,
+  // attention_needed, confirmed_offline).  Internal filters use the
+  // raw `Connected | Not Connected | Attention Needed` strings.
+  const filteredSites = useMemo(() => {
+    if (filterStatus === "All") return sites;
+    if (customerView) {
+      return sites.filter(s => toCustomerStatus(s) === filterStatus);
+    }
+    return sites.filter(s => s.status === filterStatus);
+  }, [sites, filterStatus, customerView]);
   const mappableSites = filteredSites.filter(s => s.has_coords);
   const missingCoordsSites = sites.filter(s => !s.has_coords);
 
@@ -116,19 +150,33 @@ export default function DeploymentMap() {
             <span className="text-xs text-gray-400 font-mono">{mappableSites.length} on map</span>
           </div>
 
-          <div className="flex items-center gap-1.5 ml-4">
+          <div className="flex items-center gap-1.5 ml-4 flex-wrap">
             <Layers className="w-3.5 h-3.5 text-gray-400" />
-            {["All", "Connected", "Attention Needed", "Not Connected"].map(s => (
+            {(customerView
+              ? [
+                  { value: "All", label: "All" },
+                  { value: CUSTOMER_STATUS.OPERATIONAL,       label: "Operational" },
+                  { value: CUSTOMER_STATUS.MONITORING_PENDING, label: "Monitoring Pending" },
+                  { value: CUSTOMER_STATUS.ATTENTION_NEEDED,   label: "Attention Needed" },
+                  { value: CUSTOMER_STATUS.CONFIRMED_OFFLINE,  label: "Confirmed Offline" },
+                ]
+              : [
+                  { value: "All",               label: "All" },
+                  { value: "Connected",         label: "Connected" },
+                  { value: "Attention Needed",  label: "Attention Needed" },
+                  { value: "Not Connected",     label: "Not Connected" },
+                ]
+            ).map(({ value, label }) => (
               <button
-                key={s}
-                onClick={() => setFilterStatus(s)}
+                key={value}
+                onClick={() => setFilterStatus(value)}
                 className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
-                  filterStatus === s
+                  filterStatus === value
                     ? "bg-gray-900 text-white border-gray-900"
                     : "border-gray-200 text-gray-600 hover:border-gray-400"
                 }`}
               >
-                {s}
+                {label}
               </button>
             ))}
           </div>
@@ -191,13 +239,18 @@ export default function DeploymentMap() {
                 {selectedSite && <FlyTo site={selectedSite} />}
                 {mappableSites.map(site => {
                   const isSelected = selectedSite?.id === site.id;
+                  // Customer view: Confirmed Offline is the only red.
+                  // Internal view: existing raw-status colors.
+                  const fillColor = customerView
+                    ? (CUSTOMER_MARKER_COLORS[toCustomerStatus(site)] || "#9ca3af")
+                    : (STATUS_COLORS[site.status] || "#9ca3af");
                   return (
                     <CircleMarker
                       key={site.id}
                       center={[site.lat, site.lng]}
                       radius={isSelected ? 11 : 7}
                       pathOptions={{
-                        fillColor: STATUS_COLORS[site.status] || "#9ca3af",
+                        fillColor,
                         color: isSelected ? "#1f2937" : "#fff",
                         weight: isSelected ? 3 : 2,
                         fillOpacity: 0.9,
@@ -224,10 +277,10 @@ export default function DeploymentMap() {
               <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5 pointer-events-none" style={{ zIndex: 10 }}>
                 <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Legend</div>
                 <div className="space-y-1">
-                  {LEGEND.map(({ status, color }) => (
-                    <div key={status} className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
-                      <span className="text-[11px] text-gray-600">{status}</span>
+                  {(customerView ? CUSTOMER_LEGEND : LEGEND).map(item => (
+                    <div key={item.key ?? item.status} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                      <span className="text-[11px] text-gray-600">{item.label ?? item.status}</span>
                     </div>
                   ))}
                 </div>
@@ -238,18 +291,32 @@ export default function DeploymentMap() {
             {mappableSites.length > 0 && (
               <div className="absolute top-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5" style={{ zIndex: 10 }}>
                 <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Summary</div>
-                {LEGEND.map(({ status, color }) => {
-                  const count = sites.filter(s => s.status === status).length;
-                  return (
-                    <div key={status} className="flex items-center justify-between gap-4 py-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-                        <span className="text-[11px] text-gray-600">{status}</span>
-                      </div>
-                      <span className="text-[11px] font-bold text-gray-900 tabular-nums">{count}</span>
-                    </div>
-                  );
-                })}
+                {customerView
+                  ? CUSTOMER_LEGEND.map(({ key, label, color }) => {
+                      const count = sites.filter(s => toCustomerStatus(s) === key).length;
+                      return (
+                        <div key={key} className="flex items-center justify-between gap-4 py-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+                            <span className="text-[11px] text-gray-600">{label}</span>
+                          </div>
+                          <span className="text-[11px] font-bold text-gray-900 tabular-nums">{count}</span>
+                        </div>
+                      );
+                    })
+                  : LEGEND.map(({ status, color }) => {
+                      const count = sites.filter(s => s.status === status).length;
+                      return (
+                        <div key={status} className="flex items-center justify-between gap-4 py-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+                            <span className="text-[11px] text-gray-600">{status}</span>
+                          </div>
+                          <span className="text-[11px] font-bold text-gray-900 tabular-nums">{count}</span>
+                        </div>
+                      );
+                    })
+                }
               </div>
             )}
           </div>

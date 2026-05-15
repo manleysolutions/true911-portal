@@ -325,3 +325,34 @@ export function customerSitePresentation(site, role) {
     ...customerStatusColor(key),
   };
 }
+
+/**
+ * Aggregate a list of site summaries into the five customer buckets.
+ *
+ * The canonical `attention.summary` from /command/summary already
+ * gives a `connected | attention | offline | unknown` split, but it
+ * collapses never-reported sites and went-dark sites into a single
+ * `offline` bucket — which is exactly the alarming "32 sites offline"
+ * banner we want to avoid on customer surfaces.  This helper does the
+ * split client-side from `site_summaries` so the dashboard cards and
+ * banner can show honest, calm counts.
+ *
+ * Returns ``{ total, operational, monitoring_pending, attention_needed,
+ *             confirmed_offline, integration_pending }``.
+ */
+export function getCustomerCounts(siteSummaries = []) {
+  const counts = {
+    total: 0,
+    operational: 0,
+    monitoring_pending: 0,
+    attention_needed: 0,
+    confirmed_offline: 0,
+    integration_pending: 0,
+  };
+  for (const s of siteSummaries) {
+    counts.total += 1;
+    const key = toCustomerStatus(s);
+    if (key in counts) counts[key] += 1;
+  }
+  return counts;
+}
