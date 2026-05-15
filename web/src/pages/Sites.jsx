@@ -5,10 +5,12 @@ import { Site, ActionAudit, Customer } from "@/api/entities";
 import { Search, Filter, ChevronDown, Building2, RefreshCw, ArrowRight, X, Plus } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import StatusBadge from "@/components/ui/StatusBadge";
+import CustomerStatusBadge from "@/components/ui/CustomerStatusBadge";
 import KitTypeBadge from "@/components/ui/KitTypeBadge";
 import ServiceClassBadge from "@/components/ui/ServiceClassBadge";
 import SiteDrawer from "@/components/SiteDrawer";
 import { useAuth } from "@/contexts/AuthContext";
+import { isCustomerRole } from "@/lib/attention";
 
 function timeSince(iso) {
   if (!iso) return "—";
@@ -59,9 +61,13 @@ const EMPTY_FORM = {
 };
 
 export default function Sites() {
-  const { can } = useAuth();
+  const { user, can } = useAuth();
   const isAdmin = can("VIEW_ADMIN");
   const canCreateSite = can("CREATE_SITES");
+  // Customer-facing roles see the calm presentation layer; internal
+  // roles continue to see raw operational labels so admin
+  // troubleshooting is unchanged.
+  const showCustomerStatus = isCustomerRole(user?.role);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -293,7 +299,13 @@ export default function Sites() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Filter className="w-3.5 h-3.5 text-gray-400" />
-              <SelectFilter label="All Statuses" value={filterStatus} onChange={setFilterStatus} options={STATUS_OPTIONS} />
+              {/* Status filter is gated on internal roles because the raw
+                  Connected / Not Connected / Attention Needed / Unknown
+                  options leak operational terminology to customers.
+                  Phase 2 introduces a customer-facing status filter. */}
+              {!showCustomerStatus && (
+                <SelectFilter label="All Statuses" value={filterStatus} onChange={setFilterStatus} options={STATUS_OPTIONS} />
+              )}
               <SelectFilter label="All Kit Types" value={filterKit} onChange={setFilterKit} options={KIT_OPTIONS} />
               <SelectFilter label="All Carriers" value={filterCarrier} onChange={setFilterCarrier} options={CARRIER_OPTIONS} />
               <SelectFilter label="All States" value={filterState} onChange={setFilterState} options={STATES_OPTIONS} />
@@ -353,7 +365,9 @@ export default function Sites() {
                           <div className="text-xs text-gray-400 mt-0.5">{site.customer_name} · <span className="font-mono">{site.site_id}</span></div>
                         </td>
                         <td className="px-3 py-3.5">
-                          <StatusBadge status={site.status} />
+                          {showCustomerStatus
+                            ? <CustomerStatusBadge site={site} role={user.role} />
+                            : <StatusBadge status={site.status} />}
                         </td>
                         <td className="px-3 py-3.5">
                           <KitTypeBadge type={site.endpoint_type || site.kit_type} />

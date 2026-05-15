@@ -9,7 +9,14 @@ import {
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
-import { statusLabel, statusColor, toCanonical, getAttentionCounts, getAttentionFeed } from "@/lib/attention";
+import {
+  statusLabel,
+  statusColor,
+  toCanonical,
+  getAttentionCounts,
+  getAttentionFeed,
+  customerSitePresentation,
+} from "@/lib/attention";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -26,12 +33,21 @@ function timeSince(iso) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// Status labels and colors now come from @/lib/attention (centralized engine)
-function friendlyStatus(site) {
+// UserDashboard is a customer-facing surface (the role landing target
+// for `User`).  Prefer the customer-facing presentation so imported /
+// no-telemetry sites read as "Monitoring Pending" rather than the
+// alarming "Offline".  Fall back to the canonical layer if the
+// presentation helper returns null (defensive — non-customer roles
+// should never reach this page, but guard anyway).
+function friendlyStatus(site, role) {
+  const pres = customerSitePresentation(site, role);
+  if (pres) return pres.label;
   return statusLabel(toCanonical(site), "user");
 }
 
-function siteColor(site) {
+function siteColor(site, role) {
+  const pres = customerSitePresentation(site, role);
+  if (pres) return pres;
   return statusColor(toCanonical(site));
 }
 
@@ -256,7 +272,7 @@ function MapPreview({ siteSummaries = [] }) {
 // SITE LIST (simplified, read-only)
 // ═══════════════════════════════════════════════════════════════════
 
-function SiteList({ siteSummaries = [] }) {
+function SiteList({ siteSummaries = [], role }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -307,7 +323,7 @@ function SiteList({ siteSummaries = [] }) {
           <div className="px-5 py-8 text-center text-xs text-gray-400">No sites match your search.</div>
         )}
         {filtered.map(site => {
-          const sc = siteColor(site);
+          const sc = siteColor(site, role);
           return (
             <Link
               key={site.site_id}
@@ -318,7 +334,7 @@ function SiteList({ siteSummaries = [] }) {
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium text-gray-900 truncate">{site.site_name}</p>
                 <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-400">
-                  <span className={`font-medium ${sc.text}`}>{friendlyStatus(site)}</span>
+                  <span className={`font-medium ${sc.text}`}>{friendlyStatus(site, role)}</span>
                   <span>{site.total_devices || 0} device{(site.total_devices || 0) !== 1 ? "s" : ""}</span>
                   {site.last_checkin && <span>{timeSince(site.last_checkin)}</span>}
                 </div>
@@ -437,7 +453,7 @@ export default function UserDashboard() {
             {/* Left */}
             <div className="lg:col-span-7 space-y-5">
               <IssuesList siteSummaries={siteSummaries} incidents={incidents} />
-              <SiteList siteSummaries={siteSummaries} />
+              <SiteList siteSummaries={siteSummaries} role={user?.role} />
             </div>
             {/* Right */}
             <div className="lg:col-span-5">
