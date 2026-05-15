@@ -128,6 +128,7 @@ import re
 import sys
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -163,6 +164,66 @@ MERGED_STATUS = "merged"
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Snapshots — plain dataclasses pre-materialized from ORM rows.
+#
+# Every per-group transaction issues commit() or rollback().  In async
+# SQLAlchemy both can expire the session's ORM-tracked attributes;
+# accessing an attribute on an expired instance triggers an implicit
+# lazy-load, which from a non-greenlet context raises
+# ``sqlalchemy.exc.MissingGreenlet``.  We avoid the whole class of
+# bugs by snapshotting Site/Device rows to frozen dataclasses *before*
+# the first commit/rollback and operating on those everywhere after.
+# ─────────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class _SiteSnap:
+    pk: int
+    site_id: str
+    tenant_id: str
+    customer_id: Optional[int]
+    site_name: str
+    status: Optional[str]
+    e911_street: Optional[str]
+    e911_city: Optional[str]
+    e911_state: Optional[str]
+    e911_zip: Optional[str]
+    created_at: Optional[datetime]
+
+
+@dataclass(frozen=True)
+class _DeviceSnap:
+    pk: int
+    device_id: str
+    tenant_id: Optional[str]
+    site_id: Optional[str]
+
+
+def _snapshot_site(s: Site) -> _SiteSnap:
+    return _SiteSnap(
+        pk=s.id,
+        site_id=s.site_id,
+        tenant_id=s.tenant_id,
+        customer_id=s.customer_id,
+        site_name=s.site_name or "",
+        status=s.status,
+        e911_street=s.e911_street,
+        e911_city=s.e911_city,
+        e911_state=s.e911_state,
+        e911_zip=s.e911_zip,
+        created_at=s.created_at if isinstance(s.created_at, datetime) else None,
+    )
+
+
+def _snapshot_device(d: Device) -> _DeviceSnap:
+    return _DeviceSnap(
+        pk=d.id,
+        device_id=d.device_id,
+        tenant_id=d.tenant_id,
+        site_id=d.site_id,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Normalization (key used for grouping)
 # ─────────────────────────────────────────────────────────────────────
 
@@ -178,7 +239,7 @@ def norm_text(s: str | None) -> str:
     return _WS_RE.sub(" ", s).strip()
 
 
-def group_key(site: Site) -> tuple[str, str, str, str, str]:
+def group_key(site: _SiteSnap) -> tuple[str, str, str, str, str]:
     """The duplicate-detection key.
 
     Street is intentionally excluded — the importer's bug fabricates
@@ -212,11 +273,11 @@ def _env_dry_run_default_true() -> bool:
     return raw.strip().lower() not in {"false", "0", "no", "off"}
 
 
-def _sort_canonical(sites: list[Site]) -> list[Site]:
-    """Canonical first.  Tie-break: (created_at ASC, id ASC)."""
-    def k(s: Site) -> tuple[float, int]:
-        ts = s.created_at.timestamp() if isinstance(s.created_at, datetime) else float("inf")
-        return (ts, s.id)
+def _sort_canonical(sites: list[_SiteSnap]) -> list[_SiteSnap]:
+    """Canonical first.  Tie-break: (created_at ASC, pk ASC)."""
+    def k(s: _SiteSnap) -> tuple[float, int]:
+        ts = s.created_at.timestamp() if s.created_at is not None else float("inf")
+        return (ts, s.pk)
     return sorted(sites, key=k)
 
 
@@ -262,8 +323,12 @@ async def _load_candidate_sites(
     tenant: Optional[str],
     import_batch_id: Optional[str],
     apply_writes: bool,
-) -> list[Site]:
-    """Pull all sites for the customer that are still 'live' (not already merged)."""
+) -> list[_SiteSnap]:
+    """Pull all sites for the customer that are still 'live' (not already merged).
+
+    Returns plain ``_SiteSnap`` dataclasses, not ORM objects, so the
+    caller can safely traverse them across commit/rollback boundaries.
+    """
     q = (
         select(Site)
         .where(Site.customer_id == customer_id)
@@ -277,7 +342,7 @@ async def _load_candidate_sites(
     if apply_writes:
         q = q.with_for_update(skip_locked=True)
     r = await db.execute(q)
-    return list(r.scalars().all())
+    return [_snapshot_site(s) for s in r.scalars().all()]
 
 
 async def _count_lines_incidents(db: AsyncSession, site_id_strs: list[str]) -> dict[str, dict[str, int]]:
@@ -321,10 +386,16 @@ async def _process_group(
     apply_writes: bool,
     request_id: str,
     group_id: str,
-    members: list[Site],
+    members: list[_SiteSnap],
     moves_writer: csv.writer,
 ) -> tuple[int, int, int]:
-    """Return (devices_moved, devices_dryrun, sites_marked_merged)."""
+    """Return (devices_moved, devices_dryrun, sites_marked_merged).
+
+    Operates exclusively on plain ``_SiteSnap`` / ``_DeviceSnap``
+    dataclasses.  No ORM-tracked instance is read after this function
+    issues its first write — the outer caller's commit/rollback can
+    therefore expire the session safely.
+    """
     sorted_members = _sort_canonical(members)
     canonical = sorted_members[0]
     duplicates = sorted_members[1:]
@@ -337,15 +408,18 @@ async def _process_group(
     if not duplicate_site_ids:
         return (0, 0, 0)
 
+    # Load devices and immediately convert to plain snapshots so we
+    # never read attributes off an ORM Device after the session emits
+    # any UPDATE statements below.
     dev_r = await db.execute(
         select(Device).where(Device.site_id.in_(duplicate_site_ids))
     )
-    devices = list(dev_r.scalars().all())
+    device_snaps = [_snapshot_device(d) for d in dev_r.scalars().all()]
 
-    # Index devices by their current (duplicate) site_id.
-    devs_by_dup: dict[str, list[Device]] = defaultdict(list)
-    for d in devices:
-        devs_by_dup[d.site_id].append(d)
+    devs_by_dup: dict[str, list[_DeviceSnap]] = defaultdict(list)
+    for d in device_snaps:
+        if d.site_id is not None:
+            devs_by_dup[d.site_id].append(d)
 
     now_iso = lambda: datetime.now(timezone.utc).isoformat()  # noqa: E731
 
@@ -359,7 +433,7 @@ async def _process_group(
             if apply_writes:
                 upd = (
                     update(Device)
-                    .where(Device.id == d.id)
+                    .where(Device.id == d.pk)
                     .where(Device.site_id == dup.site_id)  # idempotency guard
                     .values(site_id=canonical.site_id)
                 )
@@ -368,11 +442,11 @@ async def _process_group(
                     # Something else moved it first; record + skip.
                     logger.warning(
                         "device move skipped (concurrent or stale)  device_pk=%s",
-                        d.id,
+                        d.pk,
                     )
                     moves_writer.writerow([
-                        "apply", group_id, d.id, d.device_id, d.tenant_id,
-                        dup.site_id, canonical.site_id, dup.id, canonical.id,
+                        "apply", group_id, d.pk, d.device_id, d.tenant_id,
+                        dup.site_id, canonical.site_id, dup.pk, canonical.pk,
                         "", "skipped_concurrent",
                     ])
                     continue
@@ -392,12 +466,12 @@ async def _process_group(
                     details=json.dumps({
                         "request_id": request_id,
                         "group_id": group_id,
-                        "device_pk": d.id,
+                        "device_pk": d.pk,
                         "device_id": d.device_id,
                         "old_site_id": dup.site_id,
                         "new_site_id": canonical.site_id,
-                        "old_site_pk": dup.id,
-                        "new_site_pk": canonical.id,
+                        "old_site_pk": dup.pk,
+                        "new_site_pk": canonical.pk,
                         "customer_id": dup.customer_id,
                         "rule": "remediate_duplicate_sites:canonical_by_created_at_then_pk",
                     }),
@@ -408,8 +482,8 @@ async def _process_group(
 
             moves_writer.writerow([
                 "apply" if apply_writes else "dry_run",
-                group_id, d.id, d.device_id, d.tenant_id,
-                dup.site_id, canonical.site_id, dup.id, canonical.id,
+                group_id, d.pk, d.device_id, d.tenant_id,
+                dup.site_id, canonical.site_id, dup.pk, canonical.pk,
                 audit_id, applied_at,
             ])
 
@@ -418,7 +492,7 @@ async def _process_group(
             old_status = dup.status
             upd = (
                 update(Site)
-                .where(Site.id == dup.id)
+                .where(Site.id == dup.pk)
                 .where(Site.status != MERGED_STATUS)
                 .values(status=MERGED_STATUS)
             )
@@ -438,11 +512,11 @@ async def _process_group(
                     details=json.dumps({
                         "request_id": request_id,
                         "group_id": group_id,
-                        "site_pk": dup.id,
+                        "site_pk": dup.pk,
                         "site_id": dup.site_id,
                         "old_status": old_status,
                         "new_status": MERGED_STATUS,
-                        "canonical_site_pk": canonical.id,
+                        "canonical_site_pk": canonical.pk,
                         "canonical_site_id": canonical.site_id,
                         "devices_moved_count": len(dup_devices),
                     }),
@@ -570,7 +644,7 @@ async def main() -> int:
             print(f"  loaded sites    : {len(sites)}")
 
             # ── 2. Group ──────────────────────────────────────────
-            grouped: dict[tuple, list[Site]] = defaultdict(list)
+            grouped: dict[tuple, list[_SiteSnap]] = defaultdict(list)
             for s in sites:
                 if not norm_text(s.site_name):
                     # Don't group sites with no name — too risky.
@@ -605,10 +679,25 @@ async def main() -> int:
                 canonical = sorted_members[0]
                 duplicates = sorted_members[1:]
 
+                # Pre-materialize every value we'll need after the
+                # per-group commit/rollback so nothing here ever has
+                # to lazy-load an ORM attribute later.
+                canonical_pk = canonical.pk
+                canonical_site_id_str = canonical.site_id
+                canonical_tenant = canonical.tenant_id
+                canonical_customer = canonical.customer_id
+                canonical_created_iso = (
+                    canonical.created_at.isoformat()
+                    if canonical.created_at is not None else ""
+                )
+                members_size = len(members)
+                dup_pks_joined = ";".join(str(d.pk) for d in duplicates)
+                dup_site_ids = [d.site_id for d in duplicates]
+                dup_site_ids_joined = ";".join(dup_site_ids)
+
                 # Count devices currently attached to the duplicates
                 # (this is just for the groups CSV — actual move logic
                 # re-queries inside _process_group).
-                dup_site_ids = [d.site_id for d in duplicates]
                 dev_r = await db.execute(
                     select(func.count())
                     .select_from(Device)
@@ -618,15 +707,15 @@ async def main() -> int:
 
                 g_w.writerow([
                     group_id,
-                    canonical.tenant_id,
-                    canonical.customer_id,
+                    canonical_tenant,
+                    canonical_customer,
                     key[1], key[2], key[3], key[4],
-                    len(members),
-                    canonical.id,
-                    canonical.site_id,
-                    canonical.created_at.isoformat() if isinstance(canonical.created_at, datetime) else "",
-                    ";".join(str(d.id) for d in duplicates),
-                    ";".join(d.site_id for d in duplicates),
+                    members_size,
+                    canonical_pk,
+                    canonical_site_id_str,
+                    canonical_created_iso,
+                    dup_pks_joined,
+                    dup_site_ids_joined,
                     dev_count,
                 ])
 
@@ -653,17 +742,18 @@ async def main() -> int:
                     logger.exception("group %s failed; continuing", group_id)
                     continue
 
-                # Collect impact for the summary
+                # Collect impact for the summary — uses ONLY the plain
+                # strings captured above; no ORM attribute access here.
                 group_impact_lines = sum(
-                    impact.get(d.site_id, {}).get("lines", 0) for d in duplicates
+                    impact.get(sid, {}).get("lines", 0) for sid in dup_site_ids
                 )
                 group_impact_incidents = sum(
-                    impact.get(d.site_id, {}).get("incidents", 0) for d in duplicates
+                    impact.get(sid, {}).get("incidents", 0) for sid in dup_site_ids
                 )
                 per_group_impact.append({
                     "group_id": group_id,
-                    "canonical_site_id": canonical.site_id,
-                    "size": len(members),
+                    "canonical_site_id": canonical_site_id_str,
+                    "size": members_size,
                     "device_count": dev_count,
                     "lines_left_attached_to_duplicates": group_impact_lines,
                     "incidents_left_attached_to_duplicates": group_impact_incidents,
