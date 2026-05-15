@@ -60,6 +60,15 @@ INTER_REQUEST_SLEEP = float(os.environ.get("INTER_REQUEST_SLEEP", "1.1"))
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
 RETRY_WAIT_SECONDS = float(os.environ.get("RETRY_WAIT_SECONDS", "5"))
 
+# Schema-feature detection so this script keeps working both before and
+# after any future migration that adds ``archived`` or a soft-delete
+# column to ``sites``.  ``status`` always exists.
+_SITE_COLS = set(Site.__table__.columns.keys())
+_HAS_ARCHIVED = "archived" in _SITE_COLS
+_HAS_DELETED_AT = "deleted_at" in _SITE_COLS
+_HAS_IS_DELETED = "is_deleted" in _SITE_COLS
+MERGED_STATUS = "merged"
+
 
 def _banner(text: str) -> None:
     print()
@@ -100,18 +109,54 @@ async def _geocode_with_retry(
     return None, total_attempts
 
 
-async def _candidates(db: AsyncSession) -> list[Site]:
-    """Return sites missing coords but with at least one address field."""
+async def _candidates(db: AsyncSession) -> tuple[list[Site], dict[str, int]]:
+    """Return ``(candidates, skip_counts)``.
+
+    Candidates are sites missing coords that still have at least one
+    address field AND are not in any "do not touch" state.  Sites that
+    matched on coords/address but were excluded by a soft-deprecation
+    state are counted in ``skip_counts`` so the operator can see why
+    a row was passed over without burning a Nominatim request on it.
+    """
     q = select(Site)
     if TENANT_SLUG:
         q = q.where(Site.tenant_id == TENANT_SLUG)
     result = await db.execute(q)
     sites = result.scalars().all()
-    return [
-        s for s in sites
-        if not has_valid_coords(s.lat, s.lng)
-        and any([s.e911_street, s.e911_city, s.e911_state, s.e911_zip])
-    ]
+
+    skip_counts = {"skipped_merged": 0, "skipped_archived": 0, "skipped_deleted": 0}
+    candidates: list[Site] = []
+
+    for s in sites:
+        # Existing eligibility filters — unchanged.
+        if has_valid_coords(s.lat, s.lng):
+            continue
+        if not any([s.e911_street, s.e911_city, s.e911_state, s.e911_zip]):
+            continue
+
+        # New exclusions — sites that have been soft-deprecated should
+        # never be geocoded, both because the result is wasted work and
+        # because 55+ merged synthetic rows from a bad import can drive
+        # Nominatim into 429 throttling.
+        if (s.status or "").strip().lower() == MERGED_STATUS:
+            print(f"  Skipping merged site {s.site_id}")
+            skip_counts["skipped_merged"] += 1
+            continue
+        if _HAS_ARCHIVED and bool(getattr(s, "archived", False)):
+            print(f"  Skipping archived site {s.site_id}")
+            skip_counts["skipped_archived"] += 1
+            continue
+        if (
+            (_HAS_DELETED_AT and getattr(s, "deleted_at", None) is not None)
+            or (_HAS_IS_DELETED and bool(getattr(s, "is_deleted", False)))
+        ):
+            print(f"  Skipping deleted site {s.site_id}")
+            skip_counts["skipped_deleted"] += 1
+            continue
+
+        candidates.append(s)
+
+    return candidates, skip_counts
 
 
 async def main() -> int:
@@ -125,8 +170,19 @@ async def main() -> int:
 
     async with AsyncSessionLocal() as db:
         _section("Scanning for sites missing coordinates")
-        candidates = await _candidates(db)
+        candidates, skip_counts = await _candidates(db)
         print(f"  {len(candidates)} site(s) match the backfill criteria")
+        print()
+        print("  Exclusions applied:")
+        print(f"    skipped_merged    : {skip_counts['skipped_merged']}")
+        print(
+            f"    skipped_archived  : {skip_counts['skipped_archived']}"
+            f"{' (column not present)' if not _HAS_ARCHIVED else ''}"
+        )
+        print(
+            f"    skipped_deleted   : {skip_counts['skipped_deleted']}"
+            f"{' (no soft-delete column present)' if not (_HAS_DELETED_AT or _HAS_IS_DELETED) else ''}"
+        )
 
         if LIMIT is not None and len(candidates) > LIMIT:
             print(f"  Capping at LIMIT={LIMIT}")
@@ -185,13 +241,16 @@ async def main() -> int:
             await db.commit()
 
         _section("Summary")
-        print(f"  candidates      : {len(candidates)}")
+        print(f"  candidates       : {len(candidates)}")
+        print(f"  skipped_merged   : {skip_counts['skipped_merged']}")
+        print(f"  skipped_archived : {skip_counts['skipped_archived']}")
+        print(f"  skipped_deleted  : {skip_counts['skipped_deleted']}")
         if DRY_RUN:
-            print(f"  would geocode   : {len(candidates) - len(failed)}")
-            print(f"  would fail      : {len(failed)}")
+            print(f"  would geocode    : {len(candidates) - len(failed)}")
+            print(f"  would fail       : {len(failed)}")
         else:
-            print(f"  geocoded        : {geocoded}")
-            print(f"  failed          : {len(failed)}")
+            print(f"  geocoded         : {geocoded}")
+            print(f"  failed           : {len(failed)}")
         if failed:
             print("  failed site_ids:")
             for sid in failed:
