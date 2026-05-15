@@ -3,6 +3,7 @@ import { Site } from "@/api/entities";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
+import CustomerSiteDetailDrawer from "@/components/CustomerSiteDetailDrawer";
 import { MapPin, Layers, RefreshCw, AlertTriangle, ChevronRight, X, Crosshair, Navigation, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -452,12 +453,22 @@ export default function DeploymentMap() {
         </div>
       </div>
 
-      {/* SiteDrawer renders at z-50 (fixed), safely above the map at z-0 */}
-      <SiteDrawer
-        site={selectedSite}
-        onClose={() => setSelectedSite(null)}
-        onSiteUpdated={fetchData}
-      />
+      {/* Drawer renders at z-50 (fixed), safely above the map at z-0.
+          Customer roles see the calm, inventory-model drawer; internal
+          roles continue to see the existing SiteDrawer with edit /
+          quick-action flows. */}
+      {customerView ? (
+        <CustomerSiteDetailDrawer
+          site={selectedSite}
+          onClose={() => setSelectedSite(null)}
+        />
+      ) : (
+        <SiteDrawer
+          site={selectedSite}
+          onClose={() => setSelectedSite(null)}
+          onSiteUpdated={fetchData}
+        />
+      )}
     </PageWrapper>
   );
 }

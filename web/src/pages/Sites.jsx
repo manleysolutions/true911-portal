@@ -9,6 +9,7 @@ import CustomerStatusBadge from "@/components/ui/CustomerStatusBadge";
 import KitTypeBadge from "@/components/ui/KitTypeBadge";
 import ServiceClassBadge from "@/components/ui/ServiceClassBadge";
 import SiteDrawer from "@/components/SiteDrawer";
+import CustomerSiteDetailDrawer from "@/components/CustomerSiteDetailDrawer";
 import { useAuth } from "@/contexts/AuthContext";
 import { isCustomerRole } from "@/lib/attention";
 
@@ -373,7 +374,16 @@ export default function Sites() {
                       <tr
                         key={site.id}
                         className="hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => navigate(`${createPageUrl("SiteDetail")}?id=${site.site_id}`)}
+                        onClick={() => {
+                          // Customer roles open the calm, inventory-model
+                          // drawer in place; internal roles continue to
+                          // navigate to the full SiteDetail page.
+                          if (showCustomerStatus) {
+                            setSelectedSite(site);
+                          } else {
+                            navigate(`${createPageUrl("SiteDetail")}?id=${site.site_id}`);
+                          }
+                        }}
                       >
                         <td className="px-5 py-3.5">
                           <div className="font-medium text-gray-900">{site.site_name}</div>
@@ -446,11 +456,25 @@ export default function Sites() {
         </div>
       </div>
 
-      <SiteDrawer
-        site={selectedSite}
-        onClose={() => setSelectedSite(null)}
-        onSiteUpdated={fetchData}
-      />
+      {/* Internal/admin drawer (legacy path — preserved for internal roles).
+          The Sites page row click navigates to SiteDetail for internal roles,
+          so this drawer is rarely opened, but the render is left intact for
+          compatibility with anything that sets selectedSite externally. */}
+      {!showCustomerStatus && (
+        <SiteDrawer
+          site={selectedSite}
+          onClose={() => setSelectedSite(null)}
+          onSiteUpdated={fetchData}
+        />
+      )}
+
+      {/* Customer-facing drawer — opened by row click for User / Manager. */}
+      {showCustomerStatus && (
+        <CustomerSiteDetailDrawer
+          site={selectedSite}
+          onClose={() => setSelectedSite(null)}
+        />
+      )}
 
       {/* Add Site Modal */}
       {showAddModal && (

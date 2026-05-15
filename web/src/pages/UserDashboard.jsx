@@ -7,6 +7,7 @@ import {
   CheckCircle2, Search, ChevronDown, ChevronUp,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
+import CustomerSiteDetailDrawer from "@/components/CustomerSiteDetailDrawer";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import {
@@ -536,7 +537,7 @@ function MapPreview({ siteSummaries = [], role }) {
 // SITE LIST (simplified, read-only)
 // ═══════════════════════════════════════════════════════════════════
 
-function SiteList({ siteSummaries = [], role }) {
+function SiteList({ siteSummaries = [], role, onSiteSelect }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -588,12 +589,11 @@ function SiteList({ siteSummaries = [], role }) {
         )}
         {filtered.map(site => {
           const sc = siteColor(site, role);
-          return (
-            <Link
-              key={site.site_id}
-              to={createPageUrl("SiteDetail") + `?site=${site.site_id}`}
-              className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors"
-            >
+          // When the parent passes onSiteSelect, customer rows open the
+          // drawer in place.  Otherwise (e.g. internal review of this
+          // page) we keep the historical navigation to /SiteDetail.
+          const commonInner = (
+            <>
               <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${sc.dot}`} />
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium text-gray-900 truncate">{site.site_name}</p>
@@ -604,6 +604,27 @@ function SiteList({ siteSummaries = [], role }) {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+            </>
+          );
+          if (onSiteSelect) {
+            return (
+              <button
+                key={site.site_id}
+                type="button"
+                onClick={() => onSiteSelect(site)}
+                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left"
+              >
+                {commonInner}
+              </button>
+            );
+          }
+          return (
+            <Link
+              key={site.site_id}
+              to={createPageUrl("SiteDetail") + `?site=${site.site_id}`}
+              className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors"
+            >
+              {commonInner}
             </Link>
           );
         })}
@@ -622,6 +643,7 @@ export default function UserDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [drawerSite, setDrawerSite] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -765,7 +787,11 @@ export default function UserDashboard() {
             {/* Left */}
             <div className="lg:col-span-7 space-y-5">
               <IssuesList siteSummaries={siteSummaries} incidents={incidents} role={user?.role} />
-              <SiteList siteSummaries={siteSummaries} role={user?.role} />
+              <SiteList
+                siteSummaries={siteSummaries}
+                role={user?.role}
+                onSiteSelect={customerView ? setDrawerSite : undefined}
+              />
             </div>
             {/* Right */}
             <div className="lg:col-span-5">
@@ -774,6 +800,17 @@ export default function UserDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Customer-facing site detail drawer — only renders for customer
+          roles; SiteList only passes onSiteSelect when customerView is
+          true, so non-customer reads of this page still get the legacy
+          Link-based navigation to /SiteDetail. */}
+      {customerView && drawerSite && (
+        <CustomerSiteDetailDrawer
+          site={drawerSite}
+          onClose={() => setDrawerSite(null)}
+        />
+      )}
     </PageWrapper>
   );
 }
