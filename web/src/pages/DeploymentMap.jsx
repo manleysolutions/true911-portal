@@ -23,22 +23,23 @@ const LEGEND = [
   { status: "Unknown", color: "#9ca3af" },
 ];
 
-// Customer-facing palette — only Confirmed Offline is red.
-// Imported / no-telemetry sites use a calm slate so customers
-// don't see a sea of red on first login.
+// Customer-facing palette — inventory + telemetry language, no red.
+// Inventory locations use calm slate.  Not-reporting locations use
+// amber, NOT red — telemetry absence is not a confirmed outage.  Real
+// outages surface separately through the incident feed.
 const CUSTOMER_MARKER_COLORS = {
-  operational:         "#10b981", // emerald
-  monitoring_pending:  "#94a3b8", // slate-400
+  reporting:           "#10b981", // emerald-500
+  inventory:           "#94a3b8", // slate-400
   attention_needed:    "#f59e0b", // amber-500
-  confirmed_offline:   "#ef4444", // red-500
+  not_reporting:       "#f59e0b", // amber-500 (NOT red)
   integration_pending: "#3b82f6", // blue-500
 };
 
 const CUSTOMER_LEGEND = [
-  { key: "operational",         label: "Operational",         color: CUSTOMER_MARKER_COLORS.operational },
-  { key: "monitoring_pending",  label: "Monitoring Pending",  color: CUSTOMER_MARKER_COLORS.monitoring_pending },
-  { key: "attention_needed",    label: "Attention Needed",    color: CUSTOMER_MARKER_COLORS.attention_needed },
-  { key: "confirmed_offline",   label: "Confirmed Offline",   color: CUSTOMER_MARKER_COLORS.confirmed_offline },
+  { key: "reporting",        label: "Reporting",        color: CUSTOMER_MARKER_COLORS.reporting },
+  { key: "inventory",        label: "Inventory Record", color: CUSTOMER_MARKER_COLORS.inventory },
+  { key: "attention_needed", label: "Attention Needed", color: CUSTOMER_MARKER_COLORS.attention_needed },
+  { key: "not_reporting",    label: "Not Reporting",    color: CUSTOMER_MARKER_COLORS.not_reporting },
 ];
 
 function FlyTo({ site }) {
@@ -155,10 +156,10 @@ export default function DeploymentMap() {
             {(customerView
               ? [
                   { value: "All", label: "All" },
-                  { value: CUSTOMER_STATUS.OPERATIONAL,       label: "Operational" },
-                  { value: CUSTOMER_STATUS.MONITORING_PENDING, label: "Monitoring Pending" },
-                  { value: CUSTOMER_STATUS.ATTENTION_NEEDED,   label: "Attention Needed" },
-                  { value: CUSTOMER_STATUS.CONFIRMED_OFFLINE,  label: "Confirmed Offline" },
+                  { value: CUSTOMER_STATUS.REPORTING,           label: "Reporting" },
+                  { value: CUSTOMER_STATUS.INVENTORY,           label: "Inventory Record" },
+                  { value: CUSTOMER_STATUS.ATTENTION_NEEDED,    label: "Attention Needed" },
+                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Not Reporting" },
                 ]
               : [
                   { value: "All",               label: "All" },
