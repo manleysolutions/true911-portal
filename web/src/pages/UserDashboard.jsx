@@ -16,6 +16,10 @@ import {
   getAttentionCounts,
   getAttentionFeed,
   customerSitePresentation,
+  getCustomerCounts,
+  toCustomerStatus,
+  isCustomerRole,
+  CUSTOMER_STATUS,
 } from "@/lib/attention";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -68,7 +72,159 @@ function StatusCard({ label, value, icon: Icon, color = "text-gray-400", bgColor
 
 
 // ═══════════════════════════════════════════════════════════════════
-// SYSTEM STATUS BANNER
+// CUSTOMER SYSTEM BANNER
+//
+// Replaces the alarming "N sites offline" banner with calm,
+// enterprise-grade language that distinguishes confirmed outages
+// (red) from imported / awaiting-telemetry sites (slate, not red).
+// Only rendered for customer roles; internal roles see the existing
+// SystemStatusBanner below, unchanged.
+// ═══════════════════════════════════════════════════════════════════
+
+function CustomerSystemBanner({ counts }) {
+  const {
+    total,
+    operational,
+    monitoring_pending: monitoringPending,
+    attention_needed: attentionNeeded,
+    confirmed_offline: confirmedOffline,
+  } = counts;
+
+  const monitoredFragment = (() => {
+    const parts = [];
+    if (operational > 0) parts.push(`${operational} actively monitored`);
+    if (monitoringPending > 0) {
+      parts.push(`${monitoringPending} awaiting activation`);
+    }
+    return parts.length ? parts.join(", ") + "." : "";
+  })();
+
+  if (confirmedOffline > 0) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <WifiOff className="w-5 h-5 text-red-500" />
+          </div>
+          <div>
+            <p className="text-[15px] font-semibold text-red-800">
+              {confirmedOffline} location{confirmedOffline > 1 ? "s" : ""} confirmed offline
+            </p>
+            <p className="text-[13px] text-red-600 mt-0.5">
+              {monitoredFragment || `Out of ${total} total location${total !== 1 ? "s" : ""}.`}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (attentionNeeded > 0) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+          </div>
+          <div>
+            <p className="text-[15px] font-semibold text-amber-800">
+              {attentionNeeded} location{attentionNeeded > 1 ? "s" : ""}
+              {" "}need{attentionNeeded === 1 ? "s" : ""} attention
+            </p>
+            <p className="text-[13px] text-amber-600 mt-0.5">
+              {monitoredFragment ||
+                `All other locations are working normally.`}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (monitoringPending > 0 && operational > 0) {
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+          </div>
+          <div>
+            <p className="text-[15px] font-semibold text-emerald-800">
+              {operational} location{operational > 1 ? "s are" : " is"} actively monitored by True911
+            </p>
+            <p className="text-[13px] text-emerald-700 mt-0.5">
+              {monitoringPending} additional location
+              {monitoringPending > 1 ? "s are" : " is"} awaiting monitoring activation.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (monitoringPending > 0) {
+    // No operational sites yet — every location is still pending.
+    // Calm slate, not red.
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <Clock className="w-5 h-5 text-slate-500" />
+          </div>
+          <div>
+            <p className="text-[15px] font-semibold text-slate-800">
+              {monitoringPending} location{monitoringPending > 1 ? "s" : ""}
+              {" "}awaiting monitoring activation
+            </p>
+            <p className="text-[13px] text-slate-600 mt-0.5">
+              Your locations will appear as Operational once they begin reporting to True911.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (operational > 0) {
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+          </div>
+          <div>
+            <p className="text-[15px] font-semibold text-emerald-800">
+              All {operational} location{operational > 1 ? "s are" : " is"} actively monitored
+            </p>
+            <p className="text-[13px] text-emerald-600 mt-0.5">
+              True911 is receiving live telemetry from every location.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+          <MapPin className="w-5 h-5 text-slate-400" />
+        </div>
+        <div>
+          <p className="text-[15px] font-semibold text-slate-700">No locations deployed yet</p>
+          <p className="text-[13px] text-slate-500 mt-0.5">
+            Your protected locations will appear here once onboarded.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SYSTEM STATUS BANNER  (legacy / internal fallback — unchanged)
 // ═══════════════════════════════════════════════════════════════════
 
 function SystemStatusBanner({ counts }) {
@@ -141,11 +297,13 @@ function SystemStatusBanner({ counts }) {
 // ISSUES LIST (simplified, no actions)
 // ═══════════════════════════════════════════════════════════════════
 
-function IssuesList({ siteSummaries = [], incidents = [] }) {
+function IssuesList({ siteSummaries = [], incidents = [], role }) {
+  const customerView = isCustomerRole(role);
+
   const items = useMemo(() => {
     const list = [];
 
-    // Active incidents
+    // Active incidents — always shown to anyone reading this surface.
     incidents.filter(i => !["resolved", "dismissed", "closed"].includes(i.status)).forEach(inc => {
       list.push({
         id: `inc-${inc.incident_id || inc.id}`,
@@ -157,30 +315,77 @@ function IssuesList({ siteSummaries = [], incidents = [] }) {
       });
     });
 
-    // Sites needing attention (not already covered)
-    const incSiteIds = new Set(incidents.filter(i => !["resolved", "dismissed", "closed"].includes(i.status)).map(i => i.site_id));
-    siteSummaries.filter(s => s.needs_attention && !incSiteIds.has(s.site_id)).forEach(s => {
-      const issues = [];
-      if (s.status === "Not Connected") issues.push("Site offline");
-      else if (s.stale_devices > 0) issues.push("Device not reporting");
-      else if (s.overdue_tasks > 0) issues.push("Maintenance overdue");
-      else issues.push("Needs attention");
-      list.push({
-        id: `site-${s.site_id}`,
-        severity: s.status === "Not Connected" ? "critical" : "warning",
-        title: issues[0],
-        site: s.site_name,
-        siteId: s.site_id,
-        time: s.last_checkin,
+    // Sites needing attention (not already covered by an incident).
+    //
+    // Customer view: skip Monitoring Pending sites — they belong to
+    // the calm pending bucket, not the "Issues Requiring Attention"
+    // list.  Only Confirmed Offline + Attention Needed surface here.
+    //
+    // Internal view: keep the existing behavior so admins still see
+    // every needs_attention row.
+    const incSiteIds = new Set(
+      incidents
+        .filter(i => !["resolved", "dismissed", "closed"].includes(i.status))
+        .map(i => i.site_id)
+    );
+
+    siteSummaries
+      .filter(s => s.needs_attention && !incSiteIds.has(s.site_id))
+      .forEach(s => {
+        let title;
+        let severity;
+
+        if (customerView) {
+          const key = toCustomerStatus(s);
+          if (key === CUSTOMER_STATUS.MONITORING_PENDING) {
+            // Calm-pending — never goes in the issues list.
+            return;
+          }
+          if (key === CUSTOMER_STATUS.CONFIRMED_OFFLINE) {
+            title = "Location offline";
+            severity = "critical";
+          } else if (s.stale_devices > 0) {
+            title = "A device has stopped reporting";
+            severity = "warning";
+          } else if (s.overdue_tasks > 0) {
+            title = "Maintenance scheduled";
+            severity = "warning";
+          } else {
+            title = "Attention needed";
+            severity = "warning";
+          }
+        } else {
+          if (s.status === "Not Connected") {
+            title = "Site offline";
+            severity = "critical";
+          } else if (s.stale_devices > 0) {
+            title = "Device not reporting";
+            severity = "warning";
+          } else if (s.overdue_tasks > 0) {
+            title = "Maintenance overdue";
+            severity = "warning";
+          } else {
+            title = "Needs attention";
+            severity = "warning";
+          }
+        }
+
+        list.push({
+          id: `site-${s.site_id}`,
+          severity,
+          title,
+          site: s.site_name,
+          siteId: s.site_id,
+          time: s.last_checkin,
+        });
       });
-    });
 
     list.sort((a, b) => {
       const so = { critical: 0, warning: 1 };
       return (so[a.severity] ?? 2) - (so[b.severity] ?? 2);
     });
     return list;
-  }, [siteSummaries, incidents]);
+  }, [siteSummaries, incidents, customerView]);
 
   if (items.length === 0) return null;
 
@@ -217,11 +422,22 @@ function IssuesList({ siteSummaries = [], incidents = [] }) {
 // MAP PREVIEW
 // ═══════════════════════════════════════════════════════════════════
 
-function MapPreview({ siteSummaries = [] }) {
+// Map marker color by customer-status key — confirmed_offline is the
+// only red on this surface; imported / no-telemetry sites are slate.
+const _MAP_DOT_COLOR = {
+  operational:         "bg-emerald-500",
+  monitoring_pending:  "bg-slate-400",
+  attention_needed:    "bg-amber-500",
+  confirmed_offline:   "bg-red-500",
+  integration_pending: "bg-blue-500",
+};
+
+function MapPreview({ siteSummaries = [], role }) {
+  const customerView = isCustomerRole(role);
   const total = siteSummaries.length;
-  const offline = siteSummaries.filter(s => s.status === "Not Connected" || s.critical_incidents > 0).length;
-  const attention = siteSummaries.filter(s => s.needs_attention && s.status !== "Not Connected" && !s.critical_incidents).length;
-  const working = total - offline - attention;
+
+  // Customer-bucketed counts for the legend row underneath the map.
+  const counts = useMemo(() => getCustomerCounts(siteSummaries), [siteSummaries]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -244,24 +460,52 @@ function MapPreview({ siteSummaries = [] }) {
             </svg>
           </div>
           {siteSummaries.slice(0, 25).map((site, i) => {
-            const isOffline = site.status === "Not Connected" || site.critical_incidents > 0;
-            const isWarn = site.needs_attention && !isOffline;
-            const color = isOffline ? "bg-red-500" : isWarn ? "bg-amber-500" : "bg-emerald-500";
+            // Customer view uses the disambiguated bucket so imported
+            // sites stop showing as alarming red.  Internal view keeps
+            // the existing simple Working/Attention/Offline split.
+            let dotClass;
+            let pulse;
+            if (customerView) {
+              const key = toCustomerStatus(site);
+              dotClass = _MAP_DOT_COLOR[key] || "bg-slate-400";
+              pulse = key === CUSTOMER_STATUS.CONFIRMED_OFFLINE;
+            } else {
+              const isOffline = site.status === "Not Connected" || site.critical_incidents > 0;
+              const isWarn = site.needs_attention && !isOffline;
+              dotClass = isOffline ? "bg-red-500" : isWarn ? "bg-amber-500" : "bg-emerald-500";
+              pulse = isOffline;
+            }
             const x = 6 + ((i * 37 + 13) % 88);
             const y = 8 + ((i * 53 + 7) % 84);
             return (
               <div key={site.site_id}
-                className={`absolute w-3 h-3 rounded-full ${color} border-2 border-white shadow-sm ${isOffline ? "animate-pulse" : ""}`}
+                className={`absolute w-3 h-3 rounded-full ${dotClass} border-2 border-white shadow-sm ${pulse ? "animate-pulse" : ""}`}
                 style={{ left: `${x}%`, top: `${y}%` }} title={site.site_name} />
             );
           })}
           {total === 0 && <div className="absolute inset-0 flex items-center justify-center"><p className="text-[11px] text-gray-400">No sites yet</p></div>}
         </div>
-        <div className="flex items-center gap-5 text-[11px]">
-          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{working} Working</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{attention} Attention</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500" /><span className="text-gray-600">{offline} Offline</span></div>
-        </div>
+        {customerView ? (
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px]">
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.operational} Operational</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.monitoring_pending} Monitoring Pending</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.attention_needed} Attention</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500" /><span className="text-gray-600">{counts.confirmed_offline} Confirmed Offline</span></div>
+          </div>
+        ) : (
+          (() => {
+            const offline = siteSummaries.filter(s => s.status === "Not Connected" || s.critical_incidents > 0).length;
+            const attention = siteSummaries.filter(s => s.needs_attention && s.status !== "Not Connected" && !s.critical_incidents).length;
+            const working = total - offline - attention;
+            return (
+              <div className="flex items-center gap-5 text-[11px]">
+                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{working} Working</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{attention} Attention</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500" /><span className="text-gray-600">{offline} Offline</span></div>
+              </div>
+            );
+          })()
+        )}
       </div>
     </div>
   );
@@ -377,6 +621,19 @@ export default function UserDashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  // Derived values that include hooks (useMemo) MUST be computed
+  // before any early return.  Rules of Hooks require every hook to
+  // be called on every render in the same order.  Each helper is
+  // null-safe so the "still loading" render path is fine.
+  const siteSummaries = data?.site_summaries || [];
+  const incidents = data?.incident_feed || [];
+  const counts = getAttentionCounts(data);
+  const customerView = isCustomerRole(user?.role);
+  const customerCounts = useMemo(
+    () => (customerView ? getCustomerCounts(siteSummaries) : null),
+    [customerView, siteSummaries],
+  );
+
   if (loading) {
     return (
       <PageWrapper>
@@ -389,10 +646,6 @@ export default function UserDashboard() {
       </PageWrapper>
     );
   }
-
-  const siteSummaries = data?.site_summaries || [];
-  const incidents = data?.incident_feed || [];
-  const counts = getAttentionCounts(data);
 
   const totalSites = counts.total;
   const connectedSites = counts.connected;
@@ -421,43 +674,82 @@ export default function UserDashboard() {
           </div>
 
           {/* System Status Banner */}
-          <SystemStatusBanner counts={counts} />
+          {customerView && customerCounts
+            ? <CustomerSystemBanner counts={customerCounts} />
+            : <SystemStatusBanner counts={counts} />
+          }
 
           {/* Status Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatusCard label="Total Sites" value={totalSites} icon={Building2} />
-            <StatusCard
-              label="Working" value={connectedSites}
-              icon={Wifi} color="text-emerald-500"
-              bgColor={connectedSites === totalSites && totalSites > 0 ? "bg-emerald-50/50" : "bg-white"}
-              borderColor={connectedSites === totalSites && totalSites > 0 ? "border-emerald-200" : undefined}
-            />
-            <StatusCard
-              label="Needs Attention" value={attentionSites}
-              icon={AlertTriangle}
-              color={attentionSites > 0 ? "text-amber-500" : "text-gray-300"}
-              bgColor={attentionSites > 0 ? "bg-amber-50/50" : "bg-white"}
-              borderColor={attentionSites > 0 ? "border-amber-200" : undefined}
-            />
-            <StatusCard
-              label="Offline" value={offlineSites}
-              icon={WifiOff}
-              color={offlineSites > 0 ? "text-red-500" : "text-gray-300"}
-              bgColor={offlineSites > 0 ? "bg-red-50/50" : "bg-white"}
-              borderColor={offlineSites > 0 ? "border-red-200" : undefined}
-            />
-          </div>
+          {customerView && customerCounts ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              <StatusCard
+                label="Protected Locations" value={customerCounts.total}
+                icon={Building2}
+              />
+              <StatusCard
+                label="Operational" value={customerCounts.operational}
+                icon={Wifi} color="text-emerald-500"
+                bgColor={customerCounts.operational === customerCounts.total && customerCounts.total > 0 ? "bg-emerald-50/50" : "bg-white"}
+                borderColor={customerCounts.operational === customerCounts.total && customerCounts.total > 0 ? "border-emerald-200" : undefined}
+              />
+              <StatusCard
+                label="Monitoring Pending" value={customerCounts.monitoring_pending}
+                icon={Clock}
+                color={customerCounts.monitoring_pending > 0 ? "text-slate-500" : "text-gray-300"}
+                bgColor={customerCounts.monitoring_pending > 0 ? "bg-slate-50" : "bg-white"}
+                borderColor={customerCounts.monitoring_pending > 0 ? "border-slate-200" : undefined}
+              />
+              <StatusCard
+                label="Attention Needed" value={customerCounts.attention_needed}
+                icon={AlertTriangle}
+                color={customerCounts.attention_needed > 0 ? "text-amber-500" : "text-gray-300"}
+                bgColor={customerCounts.attention_needed > 0 ? "bg-amber-50/50" : "bg-white"}
+                borderColor={customerCounts.attention_needed > 0 ? "border-amber-200" : undefined}
+              />
+              <StatusCard
+                label="Confirmed Offline" value={customerCounts.confirmed_offline}
+                icon={WifiOff}
+                color={customerCounts.confirmed_offline > 0 ? "text-red-500" : "text-gray-300"}
+                bgColor={customerCounts.confirmed_offline > 0 ? "bg-red-50/50" : "bg-white"}
+                borderColor={customerCounts.confirmed_offline > 0 ? "border-red-200" : undefined}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <StatusCard label="Total Sites" value={totalSites} icon={Building2} />
+              <StatusCard
+                label="Working" value={connectedSites}
+                icon={Wifi} color="text-emerald-500"
+                bgColor={connectedSites === totalSites && totalSites > 0 ? "bg-emerald-50/50" : "bg-white"}
+                borderColor={connectedSites === totalSites && totalSites > 0 ? "border-emerald-200" : undefined}
+              />
+              <StatusCard
+                label="Needs Attention" value={attentionSites}
+                icon={AlertTriangle}
+                color={attentionSites > 0 ? "text-amber-500" : "text-gray-300"}
+                bgColor={attentionSites > 0 ? "bg-amber-50/50" : "bg-white"}
+                borderColor={attentionSites > 0 ? "border-amber-200" : undefined}
+              />
+              <StatusCard
+                label="Offline" value={offlineSites}
+                icon={WifiOff}
+                color={offlineSites > 0 ? "text-red-500" : "text-gray-300"}
+                bgColor={offlineSites > 0 ? "bg-red-50/50" : "bg-white"}
+                borderColor={offlineSites > 0 ? "border-red-200" : undefined}
+              />
+            </div>
+          )}
 
           {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             {/* Left */}
             <div className="lg:col-span-7 space-y-5">
-              <IssuesList siteSummaries={siteSummaries} incidents={incidents} />
+              <IssuesList siteSummaries={siteSummaries} incidents={incidents} role={user?.role} />
               <SiteList siteSummaries={siteSummaries} role={user?.role} />
             </div>
             {/* Right */}
             <div className="lg:col-span-5">
-              <MapPreview siteSummaries={siteSummaries} />
+              <MapPreview siteSummaries={siteSummaries} role={user?.role} />
             </div>
           </div>
         </div>
