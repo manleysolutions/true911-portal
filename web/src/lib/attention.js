@@ -191,3 +191,137 @@ export function getAttentionSites(data) {
     friendly_summary: "",
   }));
 }
+
+// ── Customer-facing presentation layer ────────────────────────────
+//
+// Additive layer on top of the canonical engine.  Disambiguates the
+// alarming binary "connected | offline" story into five buckets a
+// commercial property manager, school IT director, or federal buyer
+// can read without alarm bells:
+//
+//   operational         — telemetry healthy
+//   monitoring_pending  — imported / provisioned but no telemetry yet
+//                         (never reported AND no critical incident)
+//   attention_needed    — known recoverable degradation
+//   confirmed_offline   — was reporting, now down OR critical incident
+//   integration_pending — explicit "awaiting carrier/API sync"
+//                         (reserved; not auto-derived in this layer —
+//                         a future backend signal will set this)
+//
+// Internal roles (Admin / Manager / SuperAdmin / DataSteward /
+// DataEntry) keep their existing labels and badges via the existing
+// `statusLabel()` / `statusColor()` exports above.  Nothing in this
+// block changes their UX.
+
+export const CUSTOMER_STATUS = {
+  OPERATIONAL:         "operational",
+  MONITORING_PENDING:  "monitoring_pending",
+  ATTENTION_NEEDED:    "attention_needed",
+  CONFIRMED_OFFLINE:   "confirmed_offline",
+  INTEGRATION_PENDING: "integration_pending",
+};
+
+const CUSTOMER_LABELS = {
+  operational:         "Operational",
+  monitoring_pending:  "Monitoring Pending",
+  attention_needed:    "Attention Needed",
+  confirmed_offline:   "Confirmed Offline",
+  integration_pending: "Integration Pending",
+};
+
+const CUSTOMER_COLORS = {
+  operational: {
+    dot: "bg-emerald-500", text: "text-emerald-700",
+    bg:  "bg-emerald-50",  border: "border-emerald-200",
+  },
+  monitoring_pending: {
+    // Calm slate — not alarming.  This is the "we have the site,
+    // we're waiting for the first heartbeat" state.
+    dot: "bg-slate-400", text: "text-slate-700",
+    bg:  "bg-slate-50",  border: "border-slate-200",
+  },
+  attention_needed: {
+    dot: "bg-amber-500", text: "text-amber-700",
+    bg:  "bg-amber-50",  border: "border-amber-200",
+  },
+  confirmed_offline: {
+    // The ONLY red state on customer surfaces.  Reserved for sites
+    // that were previously reporting and have stopped, or sites with
+    // a critical incident open.
+    dot: "bg-red-500", text: "text-red-700",
+    bg:  "bg-red-50",  border: "border-red-200",
+  },
+  integration_pending: {
+    dot: "bg-blue-500", text: "text-blue-700",
+    bg:  "bg-blue-50",  border: "border-blue-200",
+  },
+};
+
+// Roles that see the customer presentation layer.  Internal /
+// operations roles fall through to the existing raw labels so admin
+// troubleshooting workflows are not degraded.
+const CUSTOMER_ROLES = new Set(["User", "Manager"]);
+
+/** True when the given role should see the customer presentation. */
+export function isCustomerRole(role) {
+  if (!role) return false;
+  return CUSTOMER_ROLES.has(role);
+}
+
+/**
+ * Map a site to one of the five customer-facing buckets.
+ *
+ * Inputs accepted: anything with `canonical_status` OR a legacy
+ * `status` string, plus optional `last_checkin` and
+ * `critical_incidents` for the offline-disambiguation rule.
+ *
+ * Disambiguation: the canonical engine groups never-reported sites
+ * AND went-dark sites into `offline`.  For customer surfaces we
+ * split those: a site that has never checked in AND has no critical
+ * incident is treated as monitoring_pending, not confirmed_offline.
+ */
+export function toCustomerStatus(site) {
+  const canonical = toCanonical(site);
+
+  if (canonical === CANONICAL.CONNECTED) {
+    return CUSTOMER_STATUS.OPERATIONAL;
+  }
+  if (canonical === CANONICAL.ATTENTION) {
+    return CUSTOMER_STATUS.ATTENTION_NEEDED;
+  }
+  if (canonical === CANONICAL.OFFLINE) {
+    const everCheckedIn = !!site?.last_checkin;
+    const hasCriticalIncident = (site?.critical_incidents ?? 0) > 0;
+    if (!everCheckedIn && !hasCriticalIncident) {
+      return CUSTOMER_STATUS.MONITORING_PENDING;
+    }
+    return CUSTOMER_STATUS.CONFIRMED_OFFLINE;
+  }
+  // unknown / null — friendly default rather than alarming
+  return CUSTOMER_STATUS.MONITORING_PENDING;
+}
+
+/** Display label for a customer-status key. */
+export function customerStatusLabel(key) {
+  return CUSTOMER_LABELS[key] || CUSTOMER_LABELS.monitoring_pending;
+}
+
+/** Tailwind color tokens for a customer-status key. */
+export function customerStatusColor(key) {
+  return CUSTOMER_COLORS[key] || CUSTOMER_COLORS.monitoring_pending;
+}
+
+/**
+ * One-shot helper for badge components.  Returns `null` for internal
+ * roles so callers can fall back to the raw StatusBadge — admin
+ * workflows are intentionally untouched by this layer.
+ */
+export function customerSitePresentation(site, role) {
+  if (!isCustomerRole(role)) return null;
+  const key = toCustomerStatus(site);
+  return {
+    key,
+    label: customerStatusLabel(key),
+    ...customerStatusColor(key),
+  };
+}
