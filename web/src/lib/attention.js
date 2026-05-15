@@ -194,49 +194,67 @@ export function getAttentionSites(data) {
 
 // ── Customer-facing presentation layer ────────────────────────────
 //
-// Additive layer on top of the canonical engine.  Disambiguates the
-// alarming binary "connected | offline" story into five buckets a
-// commercial property manager, school IT director, or federal buyer
-// can read without alarm bells:
+// The True911 customer portal is positioned as a deployment, device,
+// and location management platform — NOT a NOC/alarm monitoring
+// console.  Customer surfaces therefore use inventory + telemetry
+// language, never monitoring language, so we never imply active
+// monitoring where live carrier/API telemetry doesn't yet exist.
 //
-//   operational         — telemetry healthy
-//   monitoring_pending  — imported / provisioned but no telemetry yet
-//                         (never reported AND no critical incident)
-//   attention_needed    — known recoverable degradation
-//   confirmed_offline   — was reporting, now down OR critical incident
-//   integration_pending — explicit "awaiting carrier/API sync"
+// Five customer-facing buckets:
+//
+//   reporting           — the device IS sending live telemetry
+//   inventory           — the location is registered (and possibly
+//                         deployed in the field), but no telemetry
+//                         has been received yet.  Neither good nor
+//                         bad — just an inventory record.  Reporting
+//                         begins once carrier / API integration is in
+//                         place and the device emits its first packet.
+//   attention_needed    — a specific recoverable signal that needs
+//                         the customer's attention (overdue task,
+//                         maintenance window, etc.)
+//   not_reporting       — telemetry was previously received and has
+//                         stopped, OR a critical incident is open.
+//                         Amber, not red: absence of telemetry alone
+//                         is NOT a confirmed outage — the device may
+//                         still be operational on site.
+//   integration_pending — explicit "awaiting carrier/API integration"
 //                         (reserved; not auto-derived in this layer —
-//                         a future backend signal will set this)
+//                         a future backend signal will set this when
+//                         we know an integration is queued)
 //
-// Internal roles (Admin / Manager / SuperAdmin / DataSteward /
-// DataEntry) keep their existing labels and badges via the existing
-// `statusLabel()` / `statusColor()` exports above.  Nothing in this
-// block changes their UX.
+// Red is deliberately NOT used by any of these buckets.  Real
+// outages surface through incidents — which have their own rendering
+// in the incident feed and incident drawer.
+//
+// Internal roles (Admin / SuperAdmin / DataSteward / DataEntry) keep
+// their existing labels and badges via the existing `statusLabel()` /
+// `statusColor()` exports above.  Nothing in this block changes
+// their UX.
 
 export const CUSTOMER_STATUS = {
-  OPERATIONAL:         "operational",
-  MONITORING_PENDING:  "monitoring_pending",
+  REPORTING:           "reporting",
+  INVENTORY:           "inventory",
   ATTENTION_NEEDED:    "attention_needed",
-  CONFIRMED_OFFLINE:   "confirmed_offline",
+  NOT_REPORTING:       "not_reporting",
   INTEGRATION_PENDING: "integration_pending",
 };
 
 const CUSTOMER_LABELS = {
-  operational:         "Operational",
-  monitoring_pending:  "Monitoring Pending",
+  reporting:           "Reporting",
+  inventory:           "Inventory Record",
   attention_needed:    "Attention Needed",
-  confirmed_offline:   "Confirmed Offline",
-  integration_pending: "Integration Pending",
+  not_reporting:       "Not Reporting",
+  integration_pending: "API / Carrier Integration Pending",
 };
 
 const CUSTOMER_COLORS = {
-  operational: {
+  reporting: {
     dot: "bg-emerald-500", text: "text-emerald-700",
     bg:  "bg-emerald-50",  border: "border-emerald-200",
   },
-  monitoring_pending: {
-    // Calm slate — not alarming.  This is the "we have the site,
-    // we're waiting for the first heartbeat" state.
+  inventory: {
+    // Calm slate — explicitly NOT alarming.  An inventory record is
+    // a neutral fact about the deployment, not a problem.
     dot: "bg-slate-400", text: "text-slate-700",
     bg:  "bg-slate-50",  border: "border-slate-200",
   },
@@ -244,12 +262,12 @@ const CUSTOMER_COLORS = {
     dot: "bg-amber-500", text: "text-amber-700",
     bg:  "bg-amber-50",  border: "border-amber-200",
   },
-  confirmed_offline: {
-    // The ONLY red state on customer surfaces.  Reserved for sites
-    // that were previously reporting and have stopped, or sites with
-    // a critical incident open.
-    dot: "bg-red-500", text: "text-red-700",
-    bg:  "bg-red-50",  border: "border-red-200",
+  not_reporting: {
+    // Amber, NOT red.  Absence of telemetry is informative, not
+    // alarming — the device may still be operational in the field.
+    // Genuine outages surface separately through the incident feed.
+    dot: "bg-amber-500", text: "text-amber-700",
+    bg:  "bg-amber-50",  border: "border-amber-200",
   },
   integration_pending: {
     dot: "bg-blue-500", text: "text-blue-700",
@@ -273,18 +291,21 @@ export function isCustomerRole(role) {
  *
  * Inputs accepted: anything with `canonical_status` OR a legacy
  * `status` string, plus optional `last_checkin` and
- * `critical_incidents` for the offline-disambiguation rule.
+ * `critical_incidents` for the inventory-vs-not-reporting split.
  *
  * Disambiguation: the canonical engine groups never-reported sites
  * AND went-dark sites into `offline`.  For customer surfaces we
  * split those: a site that has never checked in AND has no critical
- * incident is treated as monitoring_pending, not confirmed_offline.
+ * incident is treated as `inventory` (a registered location with
+ * no telemetry yet), NOT `not_reporting`.  Absence of telemetry on a
+ * brand-new location is not a problem — it just means the device
+ * hasn't started reporting yet.
  */
 export function toCustomerStatus(site) {
   const canonical = toCanonical(site);
 
   if (canonical === CANONICAL.CONNECTED) {
-    return CUSTOMER_STATUS.OPERATIONAL;
+    return CUSTOMER_STATUS.REPORTING;
   }
   if (canonical === CANONICAL.ATTENTION) {
     return CUSTOMER_STATUS.ATTENTION_NEEDED;
@@ -293,22 +314,22 @@ export function toCustomerStatus(site) {
     const everCheckedIn = !!site?.last_checkin;
     const hasCriticalIncident = (site?.critical_incidents ?? 0) > 0;
     if (!everCheckedIn && !hasCriticalIncident) {
-      return CUSTOMER_STATUS.MONITORING_PENDING;
+      return CUSTOMER_STATUS.INVENTORY;
     }
-    return CUSTOMER_STATUS.CONFIRMED_OFFLINE;
+    return CUSTOMER_STATUS.NOT_REPORTING;
   }
-  // unknown / null — friendly default rather than alarming
-  return CUSTOMER_STATUS.MONITORING_PENDING;
+  // unknown / null — inventory is the neutral default, never alarming
+  return CUSTOMER_STATUS.INVENTORY;
 }
 
 /** Display label for a customer-status key. */
 export function customerStatusLabel(key) {
-  return CUSTOMER_LABELS[key] || CUSTOMER_LABELS.monitoring_pending;
+  return CUSTOMER_LABELS[key] || CUSTOMER_LABELS.inventory;
 }
 
 /** Tailwind color tokens for a customer-status key. */
 export function customerStatusColor(key) {
-  return CUSTOMER_COLORS[key] || CUSTOMER_COLORS.monitoring_pending;
+  return CUSTOMER_COLORS[key] || CUSTOMER_COLORS.inventory;
 }
 
 /**
@@ -329,24 +350,22 @@ export function customerSitePresentation(site, role) {
 /**
  * Aggregate a list of site summaries into the five customer buckets.
  *
- * The canonical `attention.summary` from /command/summary already
- * gives a `connected | attention | offline | unknown` split, but it
- * collapses never-reported sites and went-dark sites into a single
- * `offline` bucket — which is exactly the alarming "32 sites offline"
- * banner we want to avoid on customer surfaces.  This helper does the
- * split client-side from `site_summaries` so the dashboard cards and
- * banner can show honest, calm counts.
+ * The canonical `attention.summary` from /command/summary collapses
+ * never-reported sites and went-dark sites into one `offline` bucket.
+ * Customer surfaces need them separated — a registered location that
+ * has never reported is inventory (neutral), not an outage.  This
+ * helper does the split client-side from `site_summaries`.
  *
- * Returns ``{ total, operational, monitoring_pending, attention_needed,
- *             confirmed_offline, integration_pending }``.
+ * Returns ``{ total, reporting, inventory, attention_needed,
+ *             not_reporting, integration_pending }``.
  */
 export function getCustomerCounts(siteSummaries = []) {
   const counts = {
     total: 0,
-    operational: 0,
-    monitoring_pending: 0,
+    reporting: 0,
+    inventory: 0,
     attention_needed: 0,
-    confirmed_offline: 0,
+    not_reporting: 0,
     integration_pending: 0,
   };
   for (const s of siteSummaries) {

@@ -38,11 +38,10 @@ function timeSince(iso) {
 }
 
 // UserDashboard is a customer-facing surface (the role landing target
-// for `User`).  Prefer the customer-facing presentation so imported /
-// no-telemetry sites read as "Monitoring Pending" rather than the
-// alarming "Offline".  Fall back to the canonical layer if the
-// presentation helper returns null (defensive — non-customer roles
-// should never reach this page, but guard anyway).
+// for `User`).  The portal is positioned as a deployment / inventory
+// management platform, NOT a NOC — so we use the customer-facing
+// presentation layer (inventory / reporting language).  Internal
+// roles never reach this page, but the role guard is kept defensively.
 function friendlyStatus(site, role) {
   const pres = customerSitePresentation(site, role);
   if (pres) return pres.label;
@@ -74,44 +73,59 @@ function StatusCard({ label, value, icon: Icon, color = "text-gray-400", bgColor
 // ═══════════════════════════════════════════════════════════════════
 // CUSTOMER SYSTEM BANNER
 //
-// Replaces the alarming "N sites offline" banner with calm,
-// enterprise-grade language that distinguishes confirmed outages
-// (red) from imported / awaiting-telemetry sites (slate, not red).
-// Only rendered for customer roles; internal roles see the existing
-// SystemStatusBanner below, unchanged.
+// Uses inventory + telemetry language, never monitoring language.
+// Five buckets feed this banner:
+//   reporting           — device IS sending live telemetry
+//   inventory           — registered location, no telemetry yet
+//                         (neutral; reporting begins after the
+//                          carrier/API integration is established)
+//   attention_needed    — specific actionable signal
+//   not_reporting       — was reporting, has stopped, OR open
+//                         critical incident.  Amber, NOT red:
+//                         telemetry absence ≠ confirmed outage.
+//   integration_pending — explicit "awaiting carrier/API integration"
+//
+// Internal roles see the existing SystemStatusBanner below, unchanged.
 // ═══════════════════════════════════════════════════════════════════
 
 function CustomerSystemBanner({ counts }) {
   const {
     total,
-    operational,
-    monitoring_pending: monitoringPending,
+    reporting,
+    inventory,
     attention_needed: attentionNeeded,
-    confirmed_offline: confirmedOffline,
+    not_reporting: notReporting,
   } = counts;
 
-  const monitoredFragment = (() => {
+  const inventoryFragment = (() => {
     const parts = [];
-    if (operational > 0) parts.push(`${operational} actively monitored`);
-    if (monitoringPending > 0) {
-      parts.push(`${monitoringPending} awaiting activation`);
+    if (reporting > 0) {
+      parts.push(`${reporting} reporting`);
     }
-    return parts.length ? parts.join(", ") + "." : "";
+    if (inventory > 0) {
+      parts.push(`${inventory} registered, awaiting integration`);
+    }
+    return parts.length ? parts.join(" · ") + "." : "";
   })();
 
-  if (confirmedOffline > 0) {
+  if (notReporting > 0) {
+    // Amber, NOT red.  Absence of telemetry alone is not an outage —
+    // the device may still be operational in the field.  Real outages
+    // surface separately through the incident feed.
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <WifiOff className="w-5 h-5 text-red-500" />
+          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <WifiOff className="w-5 h-5 text-amber-500" />
           </div>
           <div>
-            <p className="text-[15px] font-semibold text-red-800">
-              {confirmedOffline} location{confirmedOffline > 1 ? "s" : ""} confirmed offline
+            <p className="text-[15px] font-semibold text-amber-800">
+              {notReporting} location{notReporting > 1 ? "s" : ""}
+              {" "}not currently reporting
             </p>
-            <p className="text-[13px] text-red-600 mt-0.5">
-              {monitoredFragment || `Out of ${total} total location${total !== 1 ? "s" : ""}.`}
+            <p className="text-[13px] text-amber-700 mt-0.5">
+              {inventoryFragment || `Out of ${total} total location${total !== 1 ? "s" : ""}.`}
+              {" "}A device may still be operational on site even when telemetry is absent.
             </p>
           </div>
         </div>
@@ -132,8 +146,7 @@ function CustomerSystemBanner({ counts }) {
               {" "}need{attentionNeeded === 1 ? "s" : ""} attention
             </p>
             <p className="text-[13px] text-amber-600 mt-0.5">
-              {monitoredFragment ||
-                `All other locations are working normally.`}
+              {inventoryFragment || "All other locations are in their expected state."}
             </p>
           </div>
         </div>
@@ -141,7 +154,7 @@ function CustomerSystemBanner({ counts }) {
     );
   }
 
-  if (monitoringPending > 0 && operational > 0) {
+  if (inventory > 0 && reporting > 0) {
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
         <div className="flex items-center gap-3">
@@ -150,11 +163,10 @@ function CustomerSystemBanner({ counts }) {
           </div>
           <div>
             <p className="text-[15px] font-semibold text-emerald-800">
-              {operational} location{operational > 1 ? "s are" : " is"} actively monitored by True911
+              {reporting} location{reporting > 1 ? "s are" : " is"} reporting telemetry
             </p>
             <p className="text-[13px] text-emerald-700 mt-0.5">
-              {monitoringPending} additional location
-              {monitoringPending > 1 ? "s are" : " is"} awaiting monitoring activation.
+              {inventory} additional location{inventory > 1 ? "s are" : " is"} registered, awaiting carrier or API integration before reporting begins.
             </p>
           </div>
         </div>
@@ -162,9 +174,9 @@ function CustomerSystemBanner({ counts }) {
     );
   }
 
-  if (monitoringPending > 0) {
-    // No operational sites yet — every location is still pending.
-    // Calm slate, not red.
+  if (inventory > 0) {
+    // No reporting devices yet — every location is still an inventory
+    // record.  Neutral slate.  Not an alarm.
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
         <div className="flex items-center gap-3">
@@ -173,11 +185,11 @@ function CustomerSystemBanner({ counts }) {
           </div>
           <div>
             <p className="text-[15px] font-semibold text-slate-800">
-              {monitoringPending} location{monitoringPending > 1 ? "s" : ""}
-              {" "}awaiting monitoring activation
+              {inventory} location{inventory > 1 ? "s" : ""}
+              {" "}registered
             </p>
             <p className="text-[13px] text-slate-600 mt-0.5">
-              Your locations will appear as Operational once they begin reporting to True911.
+              Reporting will begin once carrier or API integration is established for each device.
             </p>
           </div>
         </div>
@@ -185,7 +197,7 @@ function CustomerSystemBanner({ counts }) {
     );
   }
 
-  if (operational > 0) {
+  if (reporting > 0) {
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
         <div className="flex items-center gap-3">
@@ -194,10 +206,10 @@ function CustomerSystemBanner({ counts }) {
           </div>
           <div>
             <p className="text-[15px] font-semibold text-emerald-800">
-              All {operational} location{operational > 1 ? "s are" : " is"} actively monitored
+              All {reporting} location{reporting > 1 ? "s are" : " is"} reporting telemetry
             </p>
             <p className="text-[13px] text-emerald-600 mt-0.5">
-              True911 is receiving live telemetry from every location.
+              True911 is receiving live telemetry from every device.
             </p>
           </div>
         </div>
@@ -212,9 +224,9 @@ function CustomerSystemBanner({ counts }) {
           <MapPin className="w-5 h-5 text-slate-400" />
         </div>
         <div>
-          <p className="text-[15px] font-semibold text-slate-700">No locations deployed yet</p>
+          <p className="text-[15px] font-semibold text-slate-700">No locations registered yet</p>
           <p className="text-[13px] text-slate-500 mt-0.5">
-            Your protected locations will appear here once onboarded.
+            Your registered locations and devices will appear here once added.
           </p>
         </div>
       </div>
@@ -317,9 +329,11 @@ function IssuesList({ siteSummaries = [], incidents = [], role }) {
 
     // Sites needing attention (not already covered by an incident).
     //
-    // Customer view: skip Monitoring Pending sites — they belong to
-    // the calm pending bucket, not the "Issues Requiring Attention"
-    // list.  Only Confirmed Offline + Attention Needed surface here.
+    // Customer view: skip Inventory sites — a registered location
+    // that hasn't reported yet is neither good nor bad, it's just an
+    // inventory record.  Only Not Reporting + Attention Needed
+    // surface here, and Not Reporting is "warning" (not "critical")
+    // because telemetry absence alone is not a confirmed outage.
     //
     // Internal view: keep the existing behavior so admins still see
     // every needs_attention row.
@@ -337,13 +351,13 @@ function IssuesList({ siteSummaries = [], incidents = [], role }) {
 
         if (customerView) {
           const key = toCustomerStatus(s);
-          if (key === CUSTOMER_STATUS.MONITORING_PENDING) {
-            // Calm-pending — never goes in the issues list.
+          if (key === CUSTOMER_STATUS.INVENTORY) {
+            // Inventory record — never goes in the issues list.
             return;
           }
-          if (key === CUSTOMER_STATUS.CONFIRMED_OFFLINE) {
-            title = "Location offline";
-            severity = "critical";
+          if (key === CUSTOMER_STATUS.NOT_REPORTING) {
+            title = "Device stopped reporting telemetry";
+            severity = "warning";
           } else if (s.stale_devices > 0) {
             title = "A device has stopped reporting";
             severity = "warning";
@@ -422,13 +436,15 @@ function IssuesList({ siteSummaries = [], incidents = [], role }) {
 // MAP PREVIEW
 // ═══════════════════════════════════════════════════════════════════
 
-// Map marker color by customer-status key — confirmed_offline is the
-// only red on this surface; imported / no-telemetry sites are slate.
+// Map marker color by customer-status key — no red on this surface.
+// Inventory sites are slate (neutral), not-reporting sites are amber
+// (informative, not alarming).  Real outages surface separately
+// through the incident feed, not as a baked-in marker color.
 const _MAP_DOT_COLOR = {
-  operational:         "bg-emerald-500",
-  monitoring_pending:  "bg-slate-400",
+  reporting:           "bg-emerald-500",
+  inventory:           "bg-slate-400",
   attention_needed:    "bg-amber-500",
-  confirmed_offline:   "bg-red-500",
+  not_reporting:       "bg-amber-500",
   integration_pending: "bg-blue-500",
 };
 
@@ -468,7 +484,11 @@ function MapPreview({ siteSummaries = [], role }) {
             if (customerView) {
               const key = toCustomerStatus(site);
               dotClass = _MAP_DOT_COLOR[key] || "bg-slate-400";
-              pulse = key === CUSTOMER_STATUS.CONFIRMED_OFFLINE;
+              // No pulse animation on customer surfaces — pulsing
+              // implies an alarming live signal and conflicts with
+              // the inventory model.  Real outages animate via the
+              // incident feed instead.
+              pulse = false;
             } else {
               const isOffline = site.status === "Not Connected" || site.critical_incidents > 0;
               const isWarn = site.needs_attention && !isOffline;
@@ -487,10 +507,10 @@ function MapPreview({ siteSummaries = [], role }) {
         </div>
         {customerView ? (
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px]">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.operational} Operational</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.monitoring_pending} Monitoring Pending</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.reporting} Reporting</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.inventory} Inventory</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.attention_needed} Attention</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500" /><span className="text-gray-600">{counts.confirmed_offline} Confirmed Offline</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Not Reporting</span></div>
           </div>
         ) : (
           (() => {
@@ -683,21 +703,21 @@ export default function UserDashboard() {
           {customerView && customerCounts ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <StatusCard
-                label="Protected Locations" value={customerCounts.total}
+                label="Registered Locations" value={customerCounts.total}
                 icon={Building2}
               />
               <StatusCard
-                label="Operational" value={customerCounts.operational}
+                label="Reporting" value={customerCounts.reporting}
                 icon={Wifi} color="text-emerald-500"
-                bgColor={customerCounts.operational === customerCounts.total && customerCounts.total > 0 ? "bg-emerald-50/50" : "bg-white"}
-                borderColor={customerCounts.operational === customerCounts.total && customerCounts.total > 0 ? "border-emerald-200" : undefined}
+                bgColor={customerCounts.reporting === customerCounts.total && customerCounts.total > 0 ? "bg-emerald-50/50" : "bg-white"}
+                borderColor={customerCounts.reporting === customerCounts.total && customerCounts.total > 0 ? "border-emerald-200" : undefined}
               />
               <StatusCard
-                label="Monitoring Pending" value={customerCounts.monitoring_pending}
+                label="Inventory Record" value={customerCounts.inventory}
                 icon={Clock}
-                color={customerCounts.monitoring_pending > 0 ? "text-slate-500" : "text-gray-300"}
-                bgColor={customerCounts.monitoring_pending > 0 ? "bg-slate-50" : "bg-white"}
-                borderColor={customerCounts.monitoring_pending > 0 ? "border-slate-200" : undefined}
+                color={customerCounts.inventory > 0 ? "text-slate-500" : "text-gray-300"}
+                bgColor={customerCounts.inventory > 0 ? "bg-slate-50" : "bg-white"}
+                borderColor={customerCounts.inventory > 0 ? "border-slate-200" : undefined}
               />
               <StatusCard
                 label="Attention Needed" value={customerCounts.attention_needed}
@@ -707,11 +727,11 @@ export default function UserDashboard() {
                 borderColor={customerCounts.attention_needed > 0 ? "border-amber-200" : undefined}
               />
               <StatusCard
-                label="Confirmed Offline" value={customerCounts.confirmed_offline}
+                label="Not Reporting" value={customerCounts.not_reporting}
                 icon={WifiOff}
-                color={customerCounts.confirmed_offline > 0 ? "text-red-500" : "text-gray-300"}
-                bgColor={customerCounts.confirmed_offline > 0 ? "bg-red-50/50" : "bg-white"}
-                borderColor={customerCounts.confirmed_offline > 0 ? "border-red-200" : undefined}
+                color={customerCounts.not_reporting > 0 ? "text-amber-500" : "text-gray-300"}
+                bgColor={customerCounts.not_reporting > 0 ? "bg-amber-50/50" : "bg-white"}
+                borderColor={customerCounts.not_reporting > 0 ? "border-amber-200" : undefined}
               />
             </div>
           ) : (
