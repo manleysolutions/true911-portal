@@ -60,12 +60,17 @@ function siteColor(site, role) {
 // STATUS CARD (large, simple)
 // ═══════════════════════════════════════════════════════════════════
 
-function StatusCard({ label, value, icon: Icon, color = "text-gray-400", bgColor = "bg-white", borderColor }) {
+// Status cards read as operational instruments — icon + label on top,
+// large number below, left-aligned.  More enterprise dashboard than
+// marketing summary tile.
+function StatusCard({ label, value, icon: Icon, color = "text-slate-400", bgColor = "bg-white", borderColor }) {
   return (
-    <div className={`${bgColor} rounded-xl border ${borderColor || "border-gray-200"} p-5 text-center`}>
-      <Icon className={`w-5 h-5 ${color} mx-auto mb-2`} />
-      <p className="text-3xl font-bold text-gray-900 tabular-nums">{value ?? "—"}</p>
-      <p className="text-xs text-gray-500 mt-1 font-medium">{label}</p>
+    <div className={`${bgColor} rounded-xl border ${borderColor || "border-slate-200"} px-4 py-3.5`}>
+      <div className="flex items-center gap-2 mb-2.5">
+        <Icon className={`w-3.5 h-3.5 ${color}`} />
+        <p className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]">{label}</p>
+      </div>
+      <p className="text-[26px] font-semibold text-slate-900 tabular-nums leading-none">{value ?? "—"}</p>
     </div>
   );
 }
@@ -390,26 +395,29 @@ function IssuesList({ siteSummaries = [], incidents = [], role }) {
   if (items.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900">Issues Requiring Attention</h2>
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+        <h2 className="text-[13px] font-semibold text-slate-900">Issues Requiring Attention</h2>
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-400">
+          {items.length}
+        </span>
       </div>
-      <div className="divide-y divide-gray-50 max-h-[360px] overflow-y-auto">
+      <div className="divide-y divide-slate-100 max-h-[360px] overflow-y-auto">
         {items.slice(0, 8).map(item => (
           <Link
             key={item.id}
             to={createPageUrl("SiteDetail") + `?site=${item.siteId}`}
-            className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors"
           >
-            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
               item.severity === "critical" ? "bg-red-500" : "bg-amber-500"
             }`} />
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] text-gray-900 font-medium">{item.title}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">{item.site}</p>
+              <p className="text-[13px] text-slate-900 font-medium leading-tight">{item.title}</p>
+              <p className="text-[11.5px] text-slate-500 mt-0.5 truncate">{item.site}</p>
             </div>
-            {item.time && <span className="text-[11px] text-gray-400 flex-shrink-0">{timeSince(item.time)}</span>}
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+            {item.time && <span className="text-[11px] text-slate-400 flex-shrink-0 tabular-nums">{timeSince(item.time)}</span>}
+            <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" />
           </Link>
         ))}
       </div>
@@ -442,17 +450,20 @@ function MapPreview({ siteSummaries = [], role }) {
   const counts = useMemo(() => getCustomerCounts(siteSummaries), [siteSummaries]);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900">Site Locations</h2>
-        <Link to={createPageUrl("DeploymentMap")} className="text-[11px] text-red-600 hover:text-red-700 font-medium flex items-center gap-0.5">
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+        <h2 className="text-[13px] font-semibold text-slate-900">Site Locations</h2>
+        <Link
+          to={createPageUrl("DeploymentMap")}
+          className="text-[11px] text-slate-600 hover:text-slate-900 font-medium flex items-center gap-0.5"
+        >
           Full Map <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
       <div className="p-5">
-        <div className="relative h-40 bg-gray-50 rounded-lg overflow-hidden mb-4 border border-gray-100">
+        <div className="relative h-40 bg-slate-50 rounded-lg overflow-hidden mb-4 border border-slate-100">
           <div className="absolute inset-0 opacity-10">
-            <svg width="100%" height="100%" className="text-gray-300">
+            <svg width="100%" height="100%" className="text-slate-300">
               {[...Array(8)].map((_, i) => (
                 <line key={`h${i}`} x1="0" y1={`${(i+1)*12.5}%`} x2="100%" y2={`${(i+1)*12.5}%`} stroke="currentColor" strokeWidth="0.5" />
               ))}
@@ -489,14 +500,14 @@ function MapPreview({ siteSummaries = [], role }) {
                 style={{ left: `${x}%`, top: `${y}%` }} title={site.site_name} />
             );
           })}
-          {total === 0 && <div className="absolute inset-0 flex items-center justify-center"><p className="text-[11px] text-gray-400">No sites yet</p></div>}
+          {total === 0 && <div className="absolute inset-0 flex items-center justify-center"><p className="text-[11px] text-slate-400">No sites yet</p></div>}
         </div>
         {customerView ? (
-          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px]">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-slate-600">{counts.reporting} Connected</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-slate-600">{counts.inventory} Registered</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-slate-600">{counts.attention_needed} Attention</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-slate-600">{counts.not_reporting} Connection Unavailable</span></div>
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-[11px]">
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-slate-600 tabular-nums">{counts.reporting} Connected</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-slate-400" /><span className="text-slate-600 tabular-nums">{counts.inventory} Registered</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-slate-600 tabular-nums">{counts.attention_needed} Attention</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-slate-600 tabular-nums">{counts.not_reporting} Connection Unavailable</span></div>
           </div>
         ) : (
           (() => {
@@ -547,20 +558,22 @@ function SiteList({ siteSummaries = [], role, onSiteSelect }) {
   }, [siteSummaries, search, statusFilter]);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100">
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Your Sites</h2>
-          <span className="text-[11px] text-gray-400">{filtered.length} site{filtered.length !== 1 ? "s" : ""}</span>
+          <h2 className="text-[13px] font-semibold text-slate-900">Your Sites</h2>
+          <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-400 tabular-nums">
+            {filtered.length} {filtered.length === 1 ? "site" : "sites"}
+          </span>
         </div>
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input type="text" placeholder="Search sites..." value={search} onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" />
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400" />
           </div>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20">
+            className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400">
             <option value="all">All</option>
             <option value="working">Working</option>
             <option value="attention">Needs Attention</option>
@@ -568,9 +581,9 @@ function SiteList({ siteSummaries = [], role, onSiteSelect }) {
           </select>
         </div>
       </div>
-      <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+      <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
         {filtered.length === 0 && (
-          <div className="px-5 py-8 text-center text-xs text-gray-400">No sites match your search.</div>
+          <div className="px-5 py-10 text-center text-xs text-slate-400">No sites match your search.</div>
         )}
         {filtered.map(site => {
           const sc = siteColor(site, role);
@@ -579,16 +592,16 @@ function SiteList({ siteSummaries = [], role, onSiteSelect }) {
           // page) we keep the historical navigation to /SiteDetail.
           const commonInner = (
             <>
-              <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${sc.dot}`} />
+              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sc.dot}`} />
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-medium text-gray-900 truncate">{site.site_name}</p>
-                <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-400">
+                <p className="text-[13px] font-medium text-slate-900 truncate leading-tight">{site.site_name}</p>
+                <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
                   <span className={`font-medium ${sc.text}`}>{friendlyStatus(site, role)}</span>
-                  <span>{site.total_devices || 0} device{(site.total_devices || 0) !== 1 ? "s" : ""}</span>
-                  {site.last_checkin && <span>{timeSince(site.last_checkin)}</span>}
+                  <span className="tabular-nums">{site.total_devices || 0} {(site.total_devices || 0) === 1 ? "device" : "devices"}</span>
+                  {site.last_checkin && <span className="tabular-nums">{timeSince(site.last_checkin)}</span>}
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+              <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" />
             </>
           );
           if (onSiteSelect) {
@@ -597,7 +610,7 @@ function SiteList({ siteSummaries = [], role, onSiteSelect }) {
                 key={site.site_id}
                 type="button"
                 onClick={() => onSiteSelect(site)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
               >
                 {commonInner}
               </button>
@@ -607,7 +620,7 @@ function SiteList({ siteSummaries = [], role, onSiteSelect }) {
             <Link
               key={site.site_id}
               to={createPageUrl("SiteDetail") + `?site=${site.site_id}`}
-              className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors"
             >
               {commonInner}
             </Link>
@@ -664,10 +677,10 @@ export default function UserDashboard() {
   if (loading) {
     return (
       <PageWrapper>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs text-gray-400">Loading...</p>
+            <div className="w-8 h-8 border-2 border-slate-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-xs text-slate-400">Loading...</p>
           </div>
         </div>
       </PageWrapper>
@@ -681,21 +694,25 @@ export default function UserDashboard() {
 
   return (
     <PageWrapper>
-      <div className="min-h-screen bg-gray-50">
-        <div className="p-5 lg:p-6 max-w-[1200px] mx-auto space-y-5">
+      <div className="min-h-screen bg-slate-50">
+        <div className="px-5 lg:px-8 py-6 lg:py-8 max-w-[1200px] mx-auto space-y-6">
 
-          {/* Header */}
+          {/* Header — calm slate treatment matches the customer sidebar */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-sm">
+              <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shadow-sm ring-1 ring-slate-700/40">
                 <Shield className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-gray-900">System Status</h1>
-                <p className="text-[11px] text-gray-400">Welcome, {user?.name}</p>
+                <h1 className="text-[17px] font-semibold text-slate-900 leading-tight">System Status</h1>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">Welcome, {user?.name}</p>
               </div>
             </div>
-            <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-400 transition-colors">
+            <button
+              onClick={fetchData}
+              className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+              aria-label="Refresh"
+            >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
