@@ -493,10 +493,10 @@ function MapPreview({ siteSummaries = [], role }) {
         </div>
         {customerView ? (
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px]">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.reporting} Connected</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.inventory} Registered</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.attention_needed} Attention</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Connection Unavailable</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-slate-600">{counts.reporting} Connected</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-slate-600">{counts.inventory} Registered</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-slate-600">{counts.attention_needed} Attention</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-slate-600">{counts.not_reporting} Connection Unavailable</span></div>
           </div>
         ) : (
           (() => {
