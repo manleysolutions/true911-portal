@@ -210,8 +210,8 @@ export default function Support() {
   if (error && !sessionId) {
     return (
       <div className="max-w-lg mx-auto mt-16 text-center px-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-8">
-          <p className="text-sm text-gray-600 mb-4">{error}</p>
+        <div className="bg-white rounded-xl border border-slate-200 p-8">
+          <p className="text-sm text-slate-600 mb-4">{error}</p>
           <button
             onClick={() => { setError(null); createSession(); }}
             className="text-sm font-medium text-red-600 hover:text-red-700"

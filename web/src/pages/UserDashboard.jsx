@@ -98,21 +98,35 @@ function CustomerSystemBanner({ counts }) {
     not_reporting: notReporting,
   } = counts;
 
-  const inventoryFragment = (() => {
-    const parts = [];
-    if (reporting > 0) {
-      parts.push(`${reporting} connected`);
-    }
-    if (inventory > 0) {
-      parts.push(`${inventory} registered, awaiting integration`);
-    }
-    return parts.length ? parts.join(" · ") + "." : "";
-  })();
+  // Phase C reframe: every state leads with the asset count
+  // ("{total} registered location(s)") instead of the problem count.
+  // Signals (attention / connection-unavailable) live in the body
+  // copy, not the headline.  Confidence without alarm.
+  const headline = `${total} registered location${total === 1 ? "" : "s"}`;
+  const PROGRESSIVE_NOTE =
+    "Telemetry integrations are enabled progressively across supported device types.";
+
+  if (total === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <MapPin className="w-5 h-5 text-slate-400" />
+          </div>
+          <div>
+            <p className="text-[15px] font-semibold text-slate-700">No locations registered yet</p>
+            <p className="text-[13px] text-slate-500 mt-0.5">
+              Your registered locations and devices will appear here once added.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (notReporting > 0) {
-    // Amber, NOT red.  Absence of telemetry alone is not an outage —
-    // the device may still be operational in the field.  Real outages
-    // surface separately through the incident feed.
+    // Amber, NOT red.  Headline stays neutral; the connection-
+    // unavailable count is a secondary fact in the body.
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
         <div className="flex items-center gap-3">
@@ -120,13 +134,10 @@ function CustomerSystemBanner({ counts }) {
             <WifiOff className="w-5 h-5 text-amber-500" />
           </div>
           <div>
-            <p className="text-[15px] font-semibold text-amber-800">
-              {notReporting} location{notReporting > 1 ? "s" : ""}
-              {" "}with telemetry unavailable
-            </p>
+            <p className="text-[15px] font-semibold text-amber-800">{headline}</p>
             <p className="text-[13px] text-amber-700 mt-0.5">
-              {inventoryFragment || `Out of ${total} total location${total !== 1 ? "s" : ""}.`}
-              {" "}A device may still be operational on site even when telemetry is absent.
+              Connection information unavailable for {notReporting} location
+              {notReporting === 1 ? "" : "s"}. {PROGRESSIVE_NOTE} A device may still be operational on site even when connection information is unavailable.
             </p>
           </div>
         </div>
@@ -142,12 +153,10 @@ function CustomerSystemBanner({ counts }) {
             <AlertTriangle className="w-5 h-5 text-amber-500" />
           </div>
           <div>
-            <p className="text-[15px] font-semibold text-amber-800">
-              {attentionNeeded} location{attentionNeeded > 1 ? "s" : ""}
-              {" "}need{attentionNeeded === 1 ? "s" : ""} attention
-            </p>
-            <p className="text-[13px] text-amber-600 mt-0.5">
-              {inventoryFragment || "All other locations are in their expected state."}
+            <p className="text-[15px] font-semibold text-amber-800">{headline}</p>
+            <p className="text-[13px] text-amber-700 mt-0.5">
+              {attentionNeeded} location{attentionNeeded === 1 ? "" : "s"} need
+              {attentionNeeded === 1 ? "s" : ""} attention. {PROGRESSIVE_NOTE}
             </p>
           </div>
         </div>
@@ -163,11 +172,9 @@ function CustomerSystemBanner({ counts }) {
             <CheckCircle2 className="w-5 h-5 text-emerald-500" />
           </div>
           <div>
-            <p className="text-[15px] font-semibold text-emerald-800">
-              {reporting} location{reporting > 1 ? "s are" : " is"} connected
-            </p>
+            <p className="text-[15px] font-semibold text-emerald-800">{headline}</p>
             <p className="text-[13px] text-emerald-700 mt-0.5">
-              {inventory} additional location{inventory > 1 ? "s are" : " is"} registered, awaiting carrier or API integration before telemetry begins.
+              {reporting} connected · {inventory} awaiting carrier or API integration. {PROGRESSIVE_NOTE}
             </p>
           </div>
         </div>
@@ -176,8 +183,8 @@ function CustomerSystemBanner({ counts }) {
   }
 
   if (inventory > 0) {
-    // No reporting devices yet — every location is still an inventory
-    // record.  Neutral slate.  Not an alarm.
+    // No connected devices yet — every location is still inventory.
+    // Neutral slate.  Not an alarm.
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
         <div className="flex items-center gap-3">
@@ -185,12 +192,9 @@ function CustomerSystemBanner({ counts }) {
             <Clock className="w-5 h-5 text-slate-500" />
           </div>
           <div>
-            <p className="text-[15px] font-semibold text-slate-800">
-              {inventory} location{inventory > 1 ? "s" : ""}
-              {" "}registered
-            </p>
+            <p className="text-[15px] font-semibold text-slate-800">{headline}</p>
             <p className="text-[13px] text-slate-600 mt-0.5">
-              Reporting will begin once carrier or API integration is established for each device.
+              {PROGRESSIVE_NOTE}
             </p>
           </div>
         </div>
@@ -198,36 +202,17 @@ function CustomerSystemBanner({ counts }) {
     );
   }
 
-  if (reporting > 0) {
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-          </div>
-          <div>
-            <p className="text-[15px] font-semibold text-emerald-800">
-              All {reporting} location{reporting > 1 ? "s are" : " is"} connected
-            </p>
-            <p className="text-[13px] text-emerald-600 mt-0.5">
-              True911 is receiving live telemetry from every device.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // reporting > 0 only
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-          <MapPin className="w-5 h-5 text-slate-400" />
+        <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
         </div>
         <div>
-          <p className="text-[15px] font-semibold text-slate-700">No locations registered yet</p>
-          <p className="text-[13px] text-slate-500 mt-0.5">
-            Your registered locations and devices will appear here once added.
+          <p className="text-[15px] font-semibold text-emerald-800">{headline}</p>
+          <p className="text-[13px] text-emerald-700 mt-0.5">
+            All locations are connected. True911 is receiving live telemetry from every device.
           </p>
         </div>
       </div>
@@ -357,7 +342,7 @@ function IssuesList({ siteSummaries = [], incidents = [], role }) {
             return;
           }
           if (key === CUSTOMER_STATUS.NOT_REPORTING) {
-            title = "Device stopped reporting telemetry";
+            title = "Connection information unavailable";
             severity = "warning";
           } else if (s.stale_devices > 0) {
             title = "A device has stopped reporting";
@@ -508,10 +493,10 @@ function MapPreview({ siteSummaries = [], role }) {
         </div>
         {customerView ? (
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px]">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.reporting} Connected</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.inventory} Registered</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.attention_needed} Attention</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Telemetry Unavailable</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-slate-600">{counts.reporting} Connected</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-slate-600">{counts.inventory} Registered</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-slate-600">{counts.attention_needed} Attention</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-slate-600">{counts.not_reporting} Connection Unavailable</span></div>
           </div>
         ) : (
           (() => {
@@ -749,7 +734,7 @@ export default function UserDashboard() {
                 borderColor={customerCounts.attention_needed > 0 ? "border-amber-200" : undefined}
               />
               <StatusCard
-                label="Telemetry Unavailable" value={customerCounts.not_reporting}
+                label="Connection Unavailable" value={customerCounts.not_reporting}
                 icon={WifiOff}
                 color={customerCounts.not_reporting > 0 ? "text-amber-500" : "text-gray-300"}
                 bgColor={customerCounts.not_reporting > 0 ? "bg-amber-50/50" : "bg-white"}
