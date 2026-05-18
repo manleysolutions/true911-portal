@@ -116,12 +116,20 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          <Section title="Location Summary" icon={Building2}>
+          <Section title="Asset Overview" icon={Building2}>
             <Field label="Site name" value={site.site_name} />
             <Field label="Site ID" value={site.site_id} monospace />
             <Field label="Customer" value={site.customer_name} />
-            <Field label="Service class" value={site.service_class} />
-            <Field label="Endpoint type" value={site.endpoint_type || site.kit_type} />
+            <Field
+              label="Service class"
+              value={site.service_class}
+              fallback="Registered"
+            />
+            <Field
+              label="Endpoint type"
+              value={site.endpoint_type || site.kit_type}
+              fallback="Standard"
+            />
           </Section>
 
           <Section title="E911 Information" icon={MapPin}>
@@ -129,10 +137,10 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             <Field label="City" value={site.e911_city} />
             <Field label="State" value={site.e911_state} />
             <Field label="ZIP" value={site.e911_zip} />
-            <Field label="Address notes" value={site.address_notes} />
+            <Field label="Address notes" value={site.address_notes} collapsible />
           </Section>
 
-          <Section title="Installed Equipment" icon={Cpu}>
+          <Section title="Device Information" icon={Cpu}>
             {loadingDevices ? (
               <LoadingRow label="Loading device details" />
             ) : (
@@ -144,15 +152,23 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
                 <Field
                   label="Vendor"
                   value={primaryDevice?.manufacturer}
-                  fallback={PENDING_INTEGRATION}
+                  collapsible
                 />
                 <Field
                   label="Carrier"
                   value={primaryDevice?.carrier || site.carrier}
                   fallback={PENDING_INTEGRATION}
                 />
-                <Field label="Voice provider" value={site.voice_provider} fallback={PENDING_INTEGRATION} />
-                <Field label="Kit type" value={site.kit_type} />
+                <Field
+                  label="Voice provider"
+                  value={site.voice_provider}
+                  collapsible
+                />
+                <Field
+                  label="Kit type"
+                  value={site.kit_type}
+                  collapsible
+                />
                 <Field
                   label="ICCID"
                   value={maskIdentifier(primaryDevice?.iccid)}
@@ -181,7 +197,7 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             )}
           </Section>
 
-          <Section title="Connectivity & Activity" icon={Activity}>
+          <Section title="Activity" icon={Activity}>
             <Field
               label="Connectivity source"
               value={site.network_tech}
@@ -190,12 +206,12 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             <Field
               label="Last inventory sync"
               value={formatTimestamp(site.last_portal_sync)}
-              fallback={NOT_CONFIGURED}
+              collapsible
             />
             <Field
               label="Last carrier update"
               value={formatTimestamp(primaryDevice?.vola_last_sync)}
-              fallback={NO_TELEMETRY}
+              collapsible
             />
             <Field
               label="Last device telemetry"
@@ -209,15 +225,15 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
           </Section>
 
           <Section title="Contacts" icon={Phone}>
-            <Field label="Site contact" value={site.poc_name} />
-            <Field label="Phone" value={site.poc_phone} />
-            <Field label="Email" value={site.poc_email} />
-            <Field label="Property manager" value={site.property_manager} />
-            <Field label="Elevator vendor" value={site.elevator_vendor} />
+            <Field label="Site contact" value={site.poc_name} collapsible />
+            <Field label="Phone" value={site.poc_phone} collapsible />
+            <Field label="Email" value={site.poc_email} collapsible />
+            <Field label="Property manager" value={site.property_manager} collapsible />
+            <Field label="Elevator vendor" value={site.elevator_vendor} collapsible />
             <Field label="True911 support" value="support@true911.com" />
           </Section>
 
-          <Section title="Support & Notes" icon={FileText}>
+          <Section title="Support" icon={FileText}>
             <Field
               label="Open support tickets"
               value={loadingIncidents ? "—" : String(openIncidents.length)}
@@ -225,9 +241,10 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             <Field
               label="Last service visit"
               value={formatTimestamp(site.last_service_visit)}
+              collapsible
             />
-            <Field label="Deployment notes" value={site.notes} />
-            <Field label="Install notes" value={site.install_notes} />
+            <Field label="Deployment notes" value={site.notes} collapsible />
+            <Field label="Install notes" value={site.install_notes} collapsible />
           </Section>
         </div>
 
@@ -250,27 +267,35 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
 
 function Section({ title, icon: Icon, children }) {
   return (
-    <section className="px-5 sm:px-6 py-5">
-      <div className="flex items-center gap-2 mb-3">
+    <section className="px-5 sm:px-6 py-6">
+      <div className="flex items-center gap-2 mb-3.5">
         <Icon className="w-4 h-4 text-slate-400" />
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-600">
           {title}
         </h3>
       </div>
-      <dl className="space-y-2">{children}</dl>
+      <dl className="space-y-2.5">{children}</dl>
     </section>
   );
 }
 
 /**
- * Single label/value row.  If value is empty, render the fallback
- * in a calm slate italic instead of leaving the cell blank.
+ * Single label/value row.
+ *
+ * Default behavior (Phase A) was to always render the row with a
+ * calm placeholder when empty.  Phase B introduces a `collapsible`
+ * prop: when true AND the value is empty, the row is omitted
+ * entirely.  This lets us keep placeholders on fields that carry
+ * meaning even when blank (ICCID "Pending integration", E911
+ * address, etc.) while hiding low-signal optional fields so the
+ * drawer stops looking sparse.
  */
-function Field({ label, value, fallback = NOT_CONFIGURED, monospace = false }) {
+function Field({ label, value, fallback = NOT_CONFIGURED, monospace = false, collapsible = false }) {
   const isEmpty =
     value === null ||
     value === undefined ||
     (typeof value === "string" && value.trim() === "");
+  if (isEmpty && collapsible) return null;
   const rendered = isEmpty ? fallback : value;
   const placeholderClass = isEmpty ? "text-slate-400 italic" : "text-slate-900";
   const fontClass = monospace ? "font-mono text-[12.5px]" : "text-sm";
