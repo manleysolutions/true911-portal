@@ -214,7 +214,7 @@ export default function Support() {
           <p className="text-sm text-slate-600 mb-4">{error}</p>
           <button
             onClick={() => { setError(null); createSession(); }}
-            className="text-sm font-medium text-red-600 hover:text-red-700"
+            className="text-sm font-medium text-slate-700 hover:text-slate-900 underline-offset-4 hover:underline"
           >
             Try Again
           </button>

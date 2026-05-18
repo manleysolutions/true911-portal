@@ -1,4 +1,4 @@
-import { Shield, CheckCircle, AlertCircle, XCircle, Clock, RefreshCw } from "lucide-react";
+import { CheckCircle, AlertCircle, XCircle, Clock } from "lucide-react";
 
 const STATUS_MAP = {
   operational: {
@@ -59,10 +59,13 @@ export default function CustomerSupportHeader({ overallStatus, lastChecked, site
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${s.dot} animate-pulse`} />
+              {/* Static dot — no pulse.  Pulse implies live monitoring
+                  and conflicts with the calm inventory model the rest
+                  of the customer portal uses. */}
+              <div className={`w-2 h-2 rounded-full ${s.dot}`} />
               <span className={`text-sm font-semibold ${s.color}`}>{s.label}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               {siteName || "Your service"} &middot; {overallStatus === "operational"
                 ? "Everything looks good"
                 : overallStatus === "attention"
@@ -74,7 +77,7 @@ export default function CustomerSupportHeader({ overallStatus, lastChecked, site
 
         {/* Last checked */}
         {timeLabel && (
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 tabular-nums">
             <Clock className="w-3 h-3" />
             <span>Last checked {timeLabel}</span>
           </div>

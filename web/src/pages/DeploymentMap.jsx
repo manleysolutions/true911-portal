@@ -145,22 +145,28 @@ export default function DeploymentMap() {
     <PageWrapper>
       <div className="h-screen flex flex-col">
         {/* Top bar */}
-        <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex items-center gap-3 flex-shrink-0 flex-wrap">
+        <div className={`bg-white px-4 sm:px-6 py-3 flex items-center gap-3 flex-shrink-0 flex-wrap ${
+          customerView ? "border-b border-slate-200" : "border-b border-gray-200"
+        }`}>
           <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-red-600" />
-            <h1 className="font-semibold text-gray-900">Deployment Map</h1>
-            <span className="text-xs text-gray-400 font-mono">{mappableSites.length} on map</span>
+            <MapPin className={`w-4 h-4 ${customerView ? "text-slate-700" : "text-red-600"}`} />
+            <h1 className={`font-semibold ${customerView ? "text-slate-900" : "text-gray-900"}`}>
+              Deployment Map
+            </h1>
+            <span className={`text-[11px] font-mono tabular-nums ${customerView ? "text-slate-400" : "text-gray-400"}`}>
+              {mappableSites.length} on map
+            </span>
           </div>
 
-          <div className={`flex items-center ${customerView ? "gap-2" : "gap-1.5"} ml-4 flex-wrap`}>
-            <Layers className="w-3.5 h-3.5 text-gray-400" />
+          <div className={`flex items-center ${customerView ? "gap-1.5" : "gap-1.5"} ml-4 flex-wrap`}>
+            <Layers className={`w-3.5 h-3.5 ${customerView ? "text-slate-400" : "text-gray-400"}`} />
             {(customerView
               ? [
                   { value: "All", label: "All" },
                   { value: CUSTOMER_STATUS.REPORTING,           label: "Connected" },
                   { value: CUSTOMER_STATUS.INVENTORY,           label: "Registered" },
                   { value: CUSTOMER_STATUS.ATTENTION_NEEDED,    label: "Attention Needed" },
-                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Connection Information Unavailable" },
+                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Connection Unavailable" },
                 ]
               : [
                   { value: "All",               label: "All" },
@@ -170,19 +176,20 @@ export default function DeploymentMap() {
                 ]
             ).map(({ value, label }) => {
               const isActive = filterStatus === value;
-              // Customer view uses a calmer slate palette; internal
-              // view keeps the existing gray-900 high-contrast chip.
+              // Customer chips: subdued slate fill with a thin border;
+              // internal chips keep the existing gray-900 high-contrast
+              // treatment for fast operator scanning.
               const activeClass = customerView
-                ? "bg-slate-700 text-white border-slate-700"
+                ? "bg-slate-800 text-white border-slate-800"
                 : "bg-gray-900 text-white border-gray-900";
               const inactiveClass = customerView
-                ? "border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800"
+                ? "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50"
                 : "border-gray-200 text-gray-600 hover:border-gray-400";
               return (
                 <button
                   key={value}
                   onClick={() => setFilterStatus(value)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                  className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
                     isActive ? activeClass : inactiveClass
                   }`}
                 >
@@ -196,7 +203,7 @@ export default function DeploymentMap() {
             {missingCoordsSites.length > 0 && (
               <button
                 onClick={() => setShowMissingCoords(!showMissingCoords)}
-                className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                className={`flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1 rounded-full border transition-all ${
                   showMissingCoords
                     ? "bg-amber-600 text-white border-amber-600"
                     : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -206,7 +213,15 @@ export default function DeploymentMap() {
                 {missingCoordsSites.length} missing coords
               </button>
             )}
-            <button onClick={fetchData} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
+            <button
+              onClick={fetchData}
+              className={`p-1.5 rounded-lg border transition-colors ${
+                customerView
+                  ? "border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-700"
+                  : "border-gray-200 hover:bg-gray-50 text-gray-500"
+              }`}
+              aria-label="Refresh"
+            >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -217,18 +232,18 @@ export default function DeploymentMap() {
           {/* Map wrapper — z-0 keeps Leaflet internals contained below the SiteDrawer */}
           <div className="flex-1 relative" style={{ zIndex: 0, isolation: "isolate" }}>
             {loading ? (
-              <div className="flex items-center justify-center h-full bg-gray-50">
+              <div className={`flex items-center justify-center h-full ${customerView ? "bg-slate-50" : "bg-gray-50"}`}>
                 <div className="text-center">
-                  <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <span className="text-sm text-gray-500">Loading sites...</span>
+                  <div className={`w-8 h-8 border-2 ${customerView ? "border-slate-400" : "border-red-600"} border-t-transparent rounded-full animate-spin mx-auto mb-3`} />
+                  <span className={`text-sm ${customerView ? "text-slate-500" : "text-gray-500"}`}>Loading sites...</span>
                 </div>
               </div>
             ) : mappableSites.length === 0 ? (
-              <div className="flex items-center justify-center h-full bg-gray-50">
+              <div className={`flex items-center justify-center h-full ${customerView ? "bg-slate-50" : "bg-gray-50"}`}>
                 <div className="text-center max-w-xs">
-                  <MapPin className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                  <h3 className="text-sm font-semibold text-gray-700 mb-1">No sites on the map</h3>
-                  <p className="text-xs text-gray-500 leading-relaxed">
+                  <MapPin className={`w-10 h-10 mx-auto mb-3 ${customerView ? "text-slate-300" : "text-gray-300"}`} />
+                  <h3 className={`text-sm font-semibold mb-1 ${customerView ? "text-slate-700" : "text-gray-700"}`}>No sites on the map</h3>
+                  <p className={`text-xs leading-relaxed ${customerView ? "text-slate-500" : "text-gray-500"}`}>
                     {missingCoordsSites.length > 0
                       ? `${missingCoordsSites.length} site${missingCoordsSites.length > 1 ? "s" : ""} missing coordinates. Click "Missing Coords" above to fix them.`
                       : "No sites have been created yet."}
@@ -292,31 +307,45 @@ export default function DeploymentMap() {
             {mappableSites.length > 0 && (
               <div
                 className={`absolute bottom-4 left-4 bg-white/95 backdrop-blur-md ${
-                  customerView ? "rounded-xl border border-slate-200 shadow-md px-4 py-3" : "rounded-lg border border-gray-200 shadow-md px-3 py-2.5"
+                  customerView
+                    ? "rounded-xl border border-slate-200 shadow-sm px-4 py-3"
+                    : "rounded-lg border border-gray-200 shadow-md px-3 py-2.5"
                 } pointer-events-none`}
                 style={{ zIndex: 10 }}
               >
-                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Legend</div>
-                <div className="space-y-1">
+                <div className={`text-[9px] font-semibold uppercase tracking-[0.14em] mb-2 ${
+                  customerView ? "text-slate-500" : "text-gray-400 font-bold"
+                }`}>Legend</div>
+                <div className="space-y-1.5">
                   {(customerView ? CUSTOMER_LEGEND : LEGEND).map(item => (
                     <div key={item.key ?? item.status} className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                      <span className="text-[11px] text-gray-600">{item.label ?? item.status}</span>
+                      <span className={`text-[11px] ${customerView ? "text-slate-700" : "text-gray-600"}`}>
+                        {item.label ?? item.status}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Network Summary — top left */}
+            {/* Summary — top left.  Heading reframes for customer view
+                to read as an inventory-level summary rather than a
+                NOC-style "network" snapshot. */}
             {mappableSites.length > 0 && (
               <div
                 className={`absolute top-4 left-4 bg-white/95 backdrop-blur-md ${
-                  customerView ? "rounded-xl border border-slate-200 shadow-md px-4 py-3" : "rounded-lg border border-gray-200 shadow-md px-3 py-2.5"
+                  customerView
+                    ? "rounded-xl border border-slate-200 shadow-sm px-4 py-3 min-w-[200px]"
+                    : "rounded-lg border border-gray-200 shadow-md px-3 py-2.5"
                 }`}
                 style={{ zIndex: 10 }}
               >
-                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Summary</div>
+                <div className={`text-[9px] font-semibold uppercase tracking-[0.14em] mb-2 ${
+                  customerView ? "text-slate-500" : "text-gray-400 font-bold"
+                }`}>
+                  {customerView ? "Locations" : "Summary"}
+                </div>
                 {customerView
                   ? CUSTOMER_LEGEND.map(({ key, label, color }) => {
                       const count = sites.filter(s => toCustomerStatus(s) === key).length;
@@ -324,9 +353,9 @@ export default function DeploymentMap() {
                         <div key={key} className="flex items-center justify-between gap-4 py-0.5">
                           <div className="flex items-center gap-1.5">
                             <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-                            <span className="text-[11px] text-gray-600">{label}</span>
+                            <span className="text-[11px] text-slate-700">{label}</span>
                           </div>
-                          <span className="text-[11px] font-bold text-gray-900 tabular-nums">{count}</span>
+                          <span className="text-[11.5px] font-semibold text-slate-900 tabular-nums">{count}</span>
                         </div>
                       );
                     })

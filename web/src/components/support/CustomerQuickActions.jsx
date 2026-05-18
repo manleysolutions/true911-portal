@@ -20,12 +20,12 @@ export default function CustomerQuickActions({ onSendMessage, onRunTest, onReque
   };
 
   return (
-    <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-gray-100 bg-gray-50/50">
+    <div className="flex flex-wrap gap-1.5 px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
       {ACTIONS.map((a) => (
         <button
           key={a.id}
           onClick={() => handleClick(a)}
-          className="flex items-center gap-1.5 text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded-full px-3 py-1.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+          className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1.5 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 transition-colors"
         >
           <a.icon className="w-3 h-3" />
           {a.label}

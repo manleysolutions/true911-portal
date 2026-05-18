@@ -29,14 +29,14 @@ export default function CustomerStatusCard({ status }) {
   const Icon = s.icon;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
       <div className="flex items-start gap-3">
         <div className={`w-9 h-9 ${s.iconBg} rounded-lg flex items-center justify-center flex-shrink-0`}>
           <Icon className={`w-5 h-5 ${s.color}`} />
         </div>
         <div>
           <h3 className={`text-sm font-semibold ${s.color}`}>{s.title}</h3>
-          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{s.desc}</p>
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed">{s.desc}</p>
         </div>
       </div>
     </div>
