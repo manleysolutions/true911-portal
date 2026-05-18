@@ -92,22 +92,27 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
         aria-label={`Details for ${site.site_name || site.site_id}`}
         className="fixed top-0 right-0 h-full w-full sm:max-w-md md:max-w-lg bg-white shadow-2xl z-50 flex flex-col"
       >
-        {/* Header — sticky so the close button is always reachable */}
-        <header className="sticky top-0 bg-white border-b border-slate-200 px-5 sm:px-6 py-4 flex items-start justify-between gap-3 z-10">
+        {/* Header — subtle slate wash so the body reads as a distinct
+            record below.  Eyebrow + name + identifier + status badge
+            establish a clear compliance-grade hierarchy. */}
+        <header className="sticky top-0 bg-slate-50 border-b border-slate-200 px-5 sm:px-6 pt-5 pb-4 flex items-start justify-between gap-3 z-10">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900 truncate">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Asset Record
+            </p>
+            <h2 className="text-[19px] font-semibold text-slate-900 leading-tight mt-1 truncate">
               {site.site_name || "Unnamed location"}
             </h2>
-            <p className="text-xs text-slate-500 font-mono mt-0.5 truncate">
+            <p className="text-[11.5px] text-slate-500 font-mono mt-1 truncate">
               {site.site_id}
             </p>
-            <div className="mt-2">
+            <div className="mt-3">
               <CustomerStatusBadge site={site} role={user.role} />
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            className="p-1.5 rounded-lg hover:bg-slate-200/70 text-slate-500 hover:text-slate-700 transition-colors flex-shrink-0"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -132,7 +137,16 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             />
           </Section>
 
-          <Section title="E911 Information" icon={MapPin}>
+          {/* E911 — load-bearing compliance field set.  The left accent
+              bar + tinted background signal to the reader that this is
+              the registered emergency-response record, not just
+              another address. */}
+          <Section
+            title="E911 Information"
+            icon={MapPin}
+            accent="compliance"
+            eyebrow="Compliance"
+          >
             <Field label="Street" value={site.e911_street} />
             <Field label="City" value={site.e911_city} />
             <Field label="State" value={site.e911_state} />
@@ -249,9 +263,10 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
         </div>
 
         {/* Footer — calm contextual reminder */}
-        <footer className="border-t border-slate-200 bg-slate-50 px-5 sm:px-6 py-3">
+        <footer className="border-t border-slate-200 bg-slate-50 px-5 sm:px-6 py-3.5">
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            Inventory snapshot · Telemetry shown only when received from devices ·
+            <span className="font-semibold text-slate-600">Inventory snapshot.</span>{" "}
+            Telemetry appears only when received from devices.
             True911 does not perform active monitoring unless an explicit integration is in place.
           </p>
         </footer>
@@ -265,14 +280,41 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
 // Layout primitives
 // ──────────────────────────────────────────────────────────────────
 
-function Section({ title, icon: Icon, children }) {
+/**
+ * Section block.
+ *
+ * `accent="compliance"` paints the section with a subtle slate
+ * background and a left accent bar — used to make load-bearing
+ * compliance sections (E911) visually weightier without resorting
+ * to colored fills that would feel alarming on a customer surface.
+ *
+ * `eyebrow` adds a tiny uppercase tag next to the title (e.g.
+ * "Compliance") so the section's role is read at a glance.
+ */
+function Section({ title, icon: Icon, children, accent, eyebrow }) {
+  const isCompliance = accent === "compliance";
   return (
-    <section className="px-5 sm:px-6 py-6">
+    <section
+      className={`relative px-5 sm:px-6 py-6 ${
+        isCompliance ? "bg-slate-50/70" : ""
+      }`}
+    >
+      {isCompliance && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-6 bottom-6 w-[2px] rounded-r bg-slate-400"
+        />
+      )}
       <div className="flex items-center gap-2 mb-3.5">
         <Icon className="w-4 h-4 text-slate-400" />
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700">
           {title}
         </h3>
+        {eyebrow && (
+          <span className="ml-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1.5 py-0.5 rounded-md bg-white border border-slate-200">
+            {eyebrow}
+          </span>
+        )}
       </div>
       <dl className="space-y-2.5">{children}</dl>
     </section>
