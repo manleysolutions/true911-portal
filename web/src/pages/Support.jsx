@@ -301,8 +301,8 @@ function HelpCenter() {
           title="Contact Support"
           body="Reach our customer success team for account, billing, and general portal questions."
           rows={[
-            { icon: PhoneCall, label: "(888) 911-TRUE" },
-            { icon: Mail, label: "support@true911.com" },
+            { icon: PhoneCall, label: "(877) 262-6539 option 2" },
+            { icon: Mail, label: "support@manleysolutions.com" },
             { icon: Clock, label: "24/7 — replies within one business day" },
           ]}
         />
@@ -313,7 +313,7 @@ function HelpCenter() {
           tone="warning"
           rows={[
             { icon: ShieldAlert, label: "Dial 911 for any life-safety emergency" },
-            { icon: PhoneCall, label: "(888) 911-TRUE — platform on-call" },
+            { icon: PhoneCall, label: "(877) 262-6539 option 2 — platform on-call" },
           ]}
         />
         <HelpCard
@@ -321,16 +321,16 @@ function HelpCenter() {
           title="Device Information Requests"
           body="Need specifications, deployment history, or carrier details for a device? Submit a request and our team will respond with the records on file."
           rows={[
-            { icon: Mail, label: "devices@true911.com" },
+            { icon: Mail, label: "support@manleysolutions.com" },
             { icon: Clock, label: "Most requests answered within 1–2 business days" },
           ]}
         />
         <HelpCard
           icon={MapPin}
           title="E911 Update Requests"
-          body="Updates to registered E911 addresses are processed by True911 operations to keep your compliance records accurate."
+          body="Updates to registered E911 addresses are processed by our operations team to keep your compliance records accurate."
           rows={[
-            { icon: Mail, label: "e911@true911.com" },
+            { icon: Mail, label: "support@manleysolutions.com" },
             { icon: Clock, label: "Address changes typically reflected within 1–3 business days" },
           ]}
         />

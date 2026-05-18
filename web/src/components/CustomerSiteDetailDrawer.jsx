@@ -230,7 +230,7 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             <Field label="Email" value={site.poc_email} collapsible />
             <Field label="Property manager" value={site.property_manager} collapsible />
             <Field label="Elevator vendor" value={site.elevator_vendor} collapsible />
-            <Field label="True911 support" value="support@true911.com" />
+            <Field label="True911 support" value="support@manleysolutions.com" />
           </Section>
 
           <Section title="Support" icon={FileText}>
