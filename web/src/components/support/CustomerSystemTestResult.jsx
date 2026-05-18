@@ -69,8 +69,8 @@ export default function CustomerSystemTestResult({
   if (!visible) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <h3 className="text-sm font-semibold text-gray-800 mb-3">System Test</h3>
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <h3 className="text-sm font-semibold text-slate-800 mb-3">System Test</h3>
 
       {/* Running state */}
       {running && (
@@ -80,11 +80,11 @@ export default function CustomerSystemTestResult({
               {i < currentStep ? (
                 <CheckCircle className="w-4 h-4 text-emerald-500" />
               ) : i === currentStep ? (
-                <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+                <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
               ) : (
-                <div className="w-4 h-4 rounded-full border border-gray-200" />
+                <div className="w-4 h-4 rounded-full border border-slate-200" />
               )}
-              <span className={`text-xs ${i <= currentStep ? "text-gray-700" : "text-gray-400"}`}>
+              <span className={`text-xs ${i <= currentStep ? "text-slate-700" : "text-slate-400"}`}>
                 {step.label}
               </span>
             </div>
@@ -118,7 +118,7 @@ function ResultDisplay({ status }) {
       <Icon className={`w-5 h-5 ${r.color} flex-shrink-0 mt-0.5`} />
       <div>
         <p className={`text-sm font-medium ${r.color}`}>{r.title}</p>
-        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{r.desc}</p>
+        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{r.desc}</p>
       </div>
     </div>
   );
@@ -126,8 +126,8 @@ function ResultDisplay({ status }) {
 
 function SmallButton({ icon: Icon, label, onClick, variant = "default" }) {
   const styles = variant === "dark"
-    ? "bg-gray-800 hover:bg-gray-900 text-white"
-    : "bg-white hover:bg-gray-50 text-gray-700 border border-gray-200";
+    ? "bg-slate-800 hover:bg-slate-900 text-white"
+    : "bg-white hover:bg-slate-50 text-slate-700 border border-slate-200";
 
   return (
     <button
