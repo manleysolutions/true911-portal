@@ -239,12 +239,16 @@ export const CUSTOMER_STATUS = {
   INTEGRATION_PENDING: "integration_pending",
 };
 
+// Customer-facing labels.  These were updated in Phase B to softer,
+// more enterprise-grade wording.  The JS constant keys (REPORTING /
+// INVENTORY / NOT_REPORTING / …) are kept stable so consumers don't
+// need to update — only the visible strings shift.
 const CUSTOMER_LABELS = {
-  reporting:           "Reporting",
-  inventory:           "Inventory Record",
+  reporting:           "Connected",
+  inventory:           "Registered",
   attention_needed:    "Attention Needed",
-  not_reporting:       "Not Reporting",
-  integration_pending: "API / Carrier Integration Pending",
+  not_reporting:       "Telemetry Unavailable",
+  integration_pending: "Awaiting Carrier Integration",
 };
 
 const CUSTOMER_COLORS = {

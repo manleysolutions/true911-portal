@@ -37,10 +37,10 @@ const CUSTOMER_MARKER_COLORS = {
 };
 
 const CUSTOMER_LEGEND = [
-  { key: "reporting",        label: "Reporting",        color: CUSTOMER_MARKER_COLORS.reporting },
-  { key: "inventory",        label: "Inventory Record", color: CUSTOMER_MARKER_COLORS.inventory },
-  { key: "attention_needed", label: "Attention Needed", color: CUSTOMER_MARKER_COLORS.attention_needed },
-  { key: "not_reporting",    label: "Not Reporting",    color: CUSTOMER_MARKER_COLORS.not_reporting },
+  { key: "reporting",        label: "Connected",            color: CUSTOMER_MARKER_COLORS.reporting },
+  { key: "inventory",        label: "Registered",           color: CUSTOMER_MARKER_COLORS.inventory },
+  { key: "attention_needed", label: "Attention Needed",     color: CUSTOMER_MARKER_COLORS.attention_needed },
+  { key: "not_reporting",    label: "Telemetry Unavailable", color: CUSTOMER_MARKER_COLORS.not_reporting },
 ];
 
 function FlyTo({ site }) {
@@ -157,10 +157,10 @@ export default function DeploymentMap() {
             {(customerView
               ? [
                   { value: "All", label: "All" },
-                  { value: CUSTOMER_STATUS.REPORTING,           label: "Reporting" },
-                  { value: CUSTOMER_STATUS.INVENTORY,           label: "Inventory Record" },
+                  { value: CUSTOMER_STATUS.REPORTING,           label: "Connected" },
+                  { value: CUSTOMER_STATUS.INVENTORY,           label: "Registered" },
                   { value: CUSTOMER_STATUS.ATTENTION_NEEDED,    label: "Attention Needed" },
-                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Not Reporting" },
+                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Telemetry Unavailable" },
                 ]
               : [
                   { value: "All",               label: "All" },
