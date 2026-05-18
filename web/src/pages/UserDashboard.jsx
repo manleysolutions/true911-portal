@@ -101,7 +101,7 @@ function CustomerSystemBanner({ counts }) {
   const inventoryFragment = (() => {
     const parts = [];
     if (reporting > 0) {
-      parts.push(`${reporting} reporting`);
+      parts.push(`${reporting} connected`);
     }
     if (inventory > 0) {
       parts.push(`${inventory} registered, awaiting integration`);
@@ -122,7 +122,7 @@ function CustomerSystemBanner({ counts }) {
           <div>
             <p className="text-[15px] font-semibold text-amber-800">
               {notReporting} location{notReporting > 1 ? "s" : ""}
-              {" "}not currently reporting
+              {" "}with telemetry unavailable
             </p>
             <p className="text-[13px] text-amber-700 mt-0.5">
               {inventoryFragment || `Out of ${total} total location${total !== 1 ? "s" : ""}.`}
@@ -164,10 +164,10 @@ function CustomerSystemBanner({ counts }) {
           </div>
           <div>
             <p className="text-[15px] font-semibold text-emerald-800">
-              {reporting} location{reporting > 1 ? "s are" : " is"} reporting telemetry
+              {reporting} location{reporting > 1 ? "s are" : " is"} connected
             </p>
             <p className="text-[13px] text-emerald-700 mt-0.5">
-              {inventory} additional location{inventory > 1 ? "s are" : " is"} registered, awaiting carrier or API integration before reporting begins.
+              {inventory} additional location{inventory > 1 ? "s are" : " is"} registered, awaiting carrier or API integration before telemetry begins.
             </p>
           </div>
         </div>
@@ -207,7 +207,7 @@ function CustomerSystemBanner({ counts }) {
           </div>
           <div>
             <p className="text-[15px] font-semibold text-emerald-800">
-              All {reporting} location{reporting > 1 ? "s are" : " is"} reporting telemetry
+              All {reporting} location{reporting > 1 ? "s are" : " is"} connected
             </p>
             <p className="text-[13px] text-emerald-600 mt-0.5">
               True911 is receiving live telemetry from every device.
@@ -508,10 +508,10 @@ function MapPreview({ siteSummaries = [], role }) {
         </div>
         {customerView ? (
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px]">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.reporting} Reporting</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.inventory} Inventory</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.reporting} Connected</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.inventory} Registered</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.attention_needed} Attention</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Not Reporting</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Telemetry Unavailable</span></div>
           </div>
         ) : (
           (() => {
@@ -729,13 +729,13 @@ export default function UserDashboard() {
                 icon={Building2}
               />
               <StatusCard
-                label="Reporting" value={customerCounts.reporting}
+                label="Connected" value={customerCounts.reporting}
                 icon={Wifi} color="text-emerald-500"
                 bgColor={customerCounts.reporting === customerCounts.total && customerCounts.total > 0 ? "bg-emerald-50/50" : "bg-white"}
                 borderColor={customerCounts.reporting === customerCounts.total && customerCounts.total > 0 ? "border-emerald-200" : undefined}
               />
               <StatusCard
-                label="Inventory Record" value={customerCounts.inventory}
+                label="Registered" value={customerCounts.inventory}
                 icon={Clock}
                 color={customerCounts.inventory > 0 ? "text-slate-500" : "text-gray-300"}
                 bgColor={customerCounts.inventory > 0 ? "bg-slate-50" : "bg-white"}
@@ -749,7 +749,7 @@ export default function UserDashboard() {
                 borderColor={customerCounts.attention_needed > 0 ? "border-amber-200" : undefined}
               />
               <StatusCard
-                label="Not Reporting" value={customerCounts.not_reporting}
+                label="Telemetry Unavailable" value={customerCounts.not_reporting}
                 icon={WifiOff}
                 color={customerCounts.not_reporting > 0 ? "text-amber-500" : "text-gray-300"}
                 bgColor={customerCounts.not_reporting > 0 ? "bg-amber-50/50" : "bg-white"}

@@ -361,9 +361,17 @@ export default function Sites() {
                     {!showCustomerStatus && (
                       <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Health</th>
                     )}
-                    <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Network</th>
-                    <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Check-in</th>
-                    <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Action</th>
+                    {/* Network, Last Check-in, and Last Action are operations
+                        columns — they're sparse / mostly empty for non-integrated
+                        deployments and add noise on the customer view.  Internal
+                        roles still see every column unchanged. */}
+                    {!showCustomerStatus && (
+                      <>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Network</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Check-in</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Action</th>
+                      </>
+                    )}
                     <th className="px-3" />
                   </tr>
                 </thead>
@@ -385,22 +393,42 @@ export default function Sites() {
                           }
                         }}
                       >
-                        <td className="px-5 py-3.5">
+                        <td className={showCustomerStatus ? "px-5 py-4" : "px-5 py-3.5"}>
                           <div className="font-medium text-gray-900">{site.site_name}</div>
                           <div className="text-xs text-gray-400 mt-0.5">{site.customer_name} · <span className="font-mono">{site.site_id}</span></div>
                         </td>
-                        <td className="px-3 py-3.5">
+                        <td className={showCustomerStatus ? "px-3 py-4" : "px-3 py-3.5"}>
                           {showCustomerStatus
                             ? <CustomerStatusBadge site={site} role={user.role} />
                             : <StatusBadge status={site.status} />}
                         </td>
-                        <td className="px-3 py-3.5">
-                          <KitTypeBadge type={site.endpoint_type || site.kit_type} />
+                        <td className={showCustomerStatus ? "px-3 py-4" : "px-3 py-3.5"}>
+                          {/* Customer view: never show a blank badge — a
+                              site with no endpoint type still gets a
+                              calm "Standard" placeholder so the column
+                              never reads as missing data. */}
+                          {showCustomerStatus
+                            ? (
+                                (site.endpoint_type || site.kit_type)
+                                  ? <KitTypeBadge type={site.endpoint_type || site.kit_type} />
+                                  : <span className="text-xs text-slate-500 px-2 py-0.5">Standard</span>
+                              )
+                            : <KitTypeBadge type={site.endpoint_type || site.kit_type} />}
                         </td>
-                        <td className="px-3 py-3.5">
-                          <ServiceClassBadge serviceClass={site.service_class} />
+                        <td className={showCustomerStatus ? "px-3 py-4" : "px-3 py-3.5"}>
+                          {/* Customer view: empty service class falls back
+                              to "Registered" — the location is in the
+                              system but no service class has been
+                              assigned yet. */}
+                          {showCustomerStatus
+                            ? (
+                                site.service_class
+                                  ? <ServiceClassBadge serviceClass={site.service_class} />
+                                  : <span className="text-xs text-slate-500 px-2 py-0.5">Registered</span>
+                              )
+                            : <ServiceClassBadge serviceClass={site.service_class} />}
                         </td>
-                        <td className="px-3 py-3.5">
+                        <td className={showCustomerStatus ? "px-3 py-4" : "px-3 py-3.5"}>
                           <div className="text-xs text-gray-700">{site.e911_city}, {site.e911_state}</div>
                         </td>
                         {!showCustomerStatus && (
@@ -423,20 +451,24 @@ export default function Sites() {
                             })()}
                           </td>
                         )}
-                        <td className="px-3 py-3.5">
-                          <div className="text-xs text-gray-700">{site.network_tech}</div>
-                          <div className="text-[11px] text-gray-400">{site.carrier}</div>
-                        </td>
-                        <td className="px-3 py-3.5 text-xs text-gray-600">{timeSince(site.last_checkin)}</td>
-                        <td className="px-3 py-3.5">
-                          {lastAudit ? (
-                            <div>
-                              <div className="text-xs text-gray-700 font-medium">{lastAudit.action_type}</div>
-                              <div className="text-[11px] text-gray-400">{lastAudit.user_email?.split('@')[0]}</div>
-                            </div>
-                          ) : <span className="text-xs text-gray-300">—</span>}
-                        </td>
-                        <td className="px-3 py-3.5">
+                        {!showCustomerStatus && (
+                          <>
+                            <td className="px-3 py-3.5">
+                              <div className="text-xs text-gray-700">{site.network_tech}</div>
+                              <div className="text-[11px] text-gray-400">{site.carrier}</div>
+                            </td>
+                            <td className="px-3 py-3.5 text-xs text-gray-600">{timeSince(site.last_checkin)}</td>
+                            <td className="px-3 py-3.5">
+                              {lastAudit ? (
+                                <div>
+                                  <div className="text-xs text-gray-700 font-medium">{lastAudit.action_type}</div>
+                                  <div className="text-[11px] text-gray-400">{lastAudit.user_email?.split('@')[0]}</div>
+                                </div>
+                              ) : <span className="text-xs text-gray-300">—</span>}
+                            </td>
+                          </>
+                        )}
+                        <td className={showCustomerStatus ? "px-3 py-4" : "px-3 py-3.5"}>
                           <ArrowRight className="w-3.5 h-3.5 text-gray-300" />
                         </td>
                       </tr>
@@ -444,7 +476,7 @@ export default function Sites() {
                   })}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="px-5 py-12 text-center text-sm text-gray-400">
+                      <td colSpan={showCustomerStatus ? 6 : 9} className="px-5 py-12 text-center text-sm text-gray-400">
                         No sites match the current filters.
                       </td>
                     </tr>

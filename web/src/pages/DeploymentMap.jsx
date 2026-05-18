@@ -37,10 +37,10 @@ const CUSTOMER_MARKER_COLORS = {
 };
 
 const CUSTOMER_LEGEND = [
-  { key: "reporting",        label: "Reporting",        color: CUSTOMER_MARKER_COLORS.reporting },
-  { key: "inventory",        label: "Inventory Record", color: CUSTOMER_MARKER_COLORS.inventory },
-  { key: "attention_needed", label: "Attention Needed", color: CUSTOMER_MARKER_COLORS.attention_needed },
-  { key: "not_reporting",    label: "Not Reporting",    color: CUSTOMER_MARKER_COLORS.not_reporting },
+  { key: "reporting",        label: "Connected",            color: CUSTOMER_MARKER_COLORS.reporting },
+  { key: "inventory",        label: "Registered",           color: CUSTOMER_MARKER_COLORS.inventory },
+  { key: "attention_needed", label: "Attention Needed",     color: CUSTOMER_MARKER_COLORS.attention_needed },
+  { key: "not_reporting",    label: "Telemetry Unavailable", color: CUSTOMER_MARKER_COLORS.not_reporting },
 ];
 
 function FlyTo({ site }) {
@@ -152,15 +152,15 @@ export default function DeploymentMap() {
             <span className="text-xs text-gray-400 font-mono">{mappableSites.length} on map</span>
           </div>
 
-          <div className="flex items-center gap-1.5 ml-4 flex-wrap">
+          <div className={`flex items-center ${customerView ? "gap-2" : "gap-1.5"} ml-4 flex-wrap`}>
             <Layers className="w-3.5 h-3.5 text-gray-400" />
             {(customerView
               ? [
                   { value: "All", label: "All" },
-                  { value: CUSTOMER_STATUS.REPORTING,           label: "Reporting" },
-                  { value: CUSTOMER_STATUS.INVENTORY,           label: "Inventory Record" },
+                  { value: CUSTOMER_STATUS.REPORTING,           label: "Connected" },
+                  { value: CUSTOMER_STATUS.INVENTORY,           label: "Registered" },
                   { value: CUSTOMER_STATUS.ATTENTION_NEEDED,    label: "Attention Needed" },
-                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Not Reporting" },
+                  { value: CUSTOMER_STATUS.NOT_REPORTING,       label: "Telemetry Unavailable" },
                 ]
               : [
                   { value: "All",               label: "All" },
@@ -168,19 +168,28 @@ export default function DeploymentMap() {
                   { value: "Attention Needed",  label: "Attention Needed" },
                   { value: "Not Connected",     label: "Not Connected" },
                 ]
-            ).map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => setFilterStatus(value)}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
-                  filterStatus === value
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "border-gray-200 text-gray-600 hover:border-gray-400"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+            ).map(({ value, label }) => {
+              const isActive = filterStatus === value;
+              // Customer view uses a calmer slate palette; internal
+              // view keeps the existing gray-900 high-contrast chip.
+              const activeClass = customerView
+                ? "bg-slate-700 text-white border-slate-700"
+                : "bg-gray-900 text-white border-gray-900";
+              const inactiveClass = customerView
+                ? "border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800"
+                : "border-gray-200 text-gray-600 hover:border-gray-400";
+              return (
+                <button
+                  key={value}
+                  onClick={() => setFilterStatus(value)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                    isActive ? activeClass : inactiveClass
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
@@ -246,11 +255,16 @@ export default function DeploymentMap() {
                   const fillColor = customerView
                     ? (CUSTOMER_MARKER_COLORS[toCustomerStatus(site)] || "#9ca3af")
                     : (STATUS_COLORS[site.status] || "#9ca3af");
+                  // Customer markers a touch larger so they read as
+                  // first-class deployment assets rather than dots
+                  // on a status board.  Internal sizing unchanged.
+                  const baseRadius = customerView ? 8 : 7;
+                  const selectedRadius = customerView ? 12 : 11;
                   return (
                     <CircleMarker
                       key={site.id}
                       center={[site.lat, site.lng]}
-                      radius={isSelected ? 11 : 7}
+                      radius={isSelected ? selectedRadius : baseRadius}
                       pathOptions={{
                         fillColor,
                         color: isSelected ? "#1f2937" : "#fff",
@@ -276,7 +290,12 @@ export default function DeploymentMap() {
 
             {/* Legend — bottom left */}
             {mappableSites.length > 0 && (
-              <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5 pointer-events-none" style={{ zIndex: 10 }}>
+              <div
+                className={`absolute bottom-4 left-4 bg-white/95 backdrop-blur-md ${
+                  customerView ? "rounded-xl border border-slate-200 shadow-md px-4 py-3" : "rounded-lg border border-gray-200 shadow-md px-3 py-2.5"
+                } pointer-events-none`}
+                style={{ zIndex: 10 }}
+              >
                 <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Legend</div>
                 <div className="space-y-1">
                   {(customerView ? CUSTOMER_LEGEND : LEGEND).map(item => (
@@ -291,7 +310,12 @@ export default function DeploymentMap() {
 
             {/* Network Summary — top left */}
             {mappableSites.length > 0 && (
-              <div className="absolute top-4 left-4 bg-white/95 backdrop-blur rounded-lg border border-gray-200 shadow-md px-3 py-2.5" style={{ zIndex: 10 }}>
+              <div
+                className={`absolute top-4 left-4 bg-white/95 backdrop-blur-md ${
+                  customerView ? "rounded-xl border border-slate-200 shadow-md px-4 py-3" : "rounded-lg border border-gray-200 shadow-md px-3 py-2.5"
+                }`}
+                style={{ zIndex: 10 }}
+              >
                 <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Summary</div>
                 {customerView
                   ? CUSTOMER_LEGEND.map(({ key, label, color }) => {
