@@ -291,7 +291,7 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
  * `eyebrow` adds a tiny uppercase tag next to the title (e.g.
  * "Compliance") so the section's role is read at a glance.
  */
-function Section({ title, icon: Icon, children, accent, eyebrow }) {
+function Section({ title, icon: Icon, children, accent = null, eyebrow = null }) {
   const isCompliance = accent === "compliance";
   return (
     <section
