@@ -15,6 +15,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
+import {
+  PhoneCall,
+  ShieldAlert,
+  Cpu,
+  MapPin,
+  Mail,
+  Clock,
+} from "lucide-react";
 
 import CustomerSupportHeader, { deriveOverallStatus } from "@/components/support/CustomerSupportHeader";
 import CustomerSupportChat from "@/components/support/CustomerSupportChat";
@@ -260,6 +268,103 @@ export default function Support() {
           />
         </div>
       </div>
+
+      {/* ── Help Center ─────────────────────────────────────────────
+          Static, read-only enterprise help cards.  Identical for
+          every authenticated user; no role gating and no backend
+          calls.  Each card surfaces an existing way to reach the
+          True911 team — none of them introduces a new workflow. */}
+      <HelpCenter />
+    </div>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────────────
+// Help Center — static enterprise support cards
+// ──────────────────────────────────────────────────────────────────
+
+function HelpCenter() {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Help Center</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Reach the True911 team for support, emergency assistance, and deployment changes.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <HelpCard
+          icon={PhoneCall}
+          title="Contact Support"
+          body="Reach our customer success team for account, billing, and general portal questions."
+          rows={[
+            { icon: PhoneCall, label: "(888) 911-TRUE" },
+            { icon: Mail, label: "support@true911.com" },
+            { icon: Clock, label: "24/7 — replies within one business day" },
+          ]}
+        />
+        <HelpCard
+          icon={ShieldAlert}
+          title="Emergency Assistance"
+          body="For a life-threatening emergency at a site, dial 911 directly. For portal or platform emergencies, contact our on-call line."
+          tone="warning"
+          rows={[
+            { icon: ShieldAlert, label: "Dial 911 for any life-safety emergency" },
+            { icon: PhoneCall, label: "(888) 911-TRUE — platform on-call" },
+          ]}
+        />
+        <HelpCard
+          icon={Cpu}
+          title="Device Information Requests"
+          body="Need specifications, deployment history, or carrier details for a device? Submit a request and our team will respond with the records on file."
+          rows={[
+            { icon: Mail, label: "devices@true911.com" },
+            { icon: Clock, label: "Most requests answered within 1–2 business days" },
+          ]}
+        />
+        <HelpCard
+          icon={MapPin}
+          title="E911 Update Requests"
+          body="Updates to registered E911 addresses are processed by True911 operations to keep your compliance records accurate."
+          rows={[
+            { icon: Mail, label: "e911@true911.com" },
+            { icon: Clock, label: "Address changes typically reflected within 1–3 business days" },
+          ]}
+        />
+      </div>
+    </section>
+  );
+}
+
+function HelpCard({ icon: Icon, title, body, rows = [], tone = "neutral" }) {
+  const accent =
+    tone === "warning"
+      ? "bg-amber-50 text-amber-600 border-amber-200"
+      : "bg-slate-50 text-slate-600 border-slate-200";
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col gap-3">
+      <div className="flex items-start gap-3">
+        <div className={`w-9 h-9 rounded-lg border ${accent} flex items-center justify-center flex-shrink-0`}>
+          <Icon className="w-4 h-4" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+          <p className="text-[13px] text-slate-600 mt-1 leading-relaxed">{body}</p>
+        </div>
+      </div>
+      {rows.length > 0 && (
+        <div className="pl-12 space-y-1.5">
+          {rows.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 text-[13px] text-slate-700">
+              <r.icon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              <span>{r.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
