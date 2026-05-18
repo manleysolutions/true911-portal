@@ -340,26 +340,35 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
   };
 
   const accentColor = isNOC ? "red" : "slate";
+  const portalLabel = isSuperAdmin
+    ? "NOC Operations"
+    : isAdmin
+    ? "Admin Portal"
+    : isDataSteward
+    ? "Steward Portal"
+    : isDataEntry
+    ? "Import Portal"
+    : "Customer Portal";
 
   return (
-    <aside className="flex flex-col h-full bg-gray-950 text-gray-300 w-[248px]">
+    <aside className="flex flex-col h-full bg-slate-950 text-slate-300 w-[252px] border-r border-slate-900/80">
       {/* ── Branding ── */}
-      <div className="px-5 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isNOC ? "bg-red-600" : "bg-slate-700"}`}>
-            <Shield className="w-4 h-4 text-white" />
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shadow-sm ring-1 ring-inset ${isNOC ? "bg-red-600 ring-red-500/40" : "bg-slate-800 ring-slate-700/60"}`}>
+            <Shield className="w-[18px] h-[18px] text-white" />
           </div>
-          <div>
-            <div className="text-[15px] font-bold text-white leading-none tracking-tight">
-              True911<span className={isNOC ? "text-red-500" : "text-slate-500"}>+</span>
+          <div className="min-w-0">
+            <div className="text-[15px] font-semibold text-white leading-none tracking-tight">
+              True911<span className={isNOC ? "text-red-500" : "text-slate-400"}>+</span>
             </div>
-            <div className="text-[9px] text-gray-500 tracking-[0.18em] uppercase mt-0.5">
-              {isSuperAdmin ? "NOC Operations" : isAdmin ? "Admin Portal" : isDataSteward ? "Steward Portal" : isDataEntry ? "Import Portal" : "Customer Portal"}
+            <div className="text-[9px] text-slate-500 tracking-[0.18em] uppercase mt-1 font-medium">
+              {portalLabel}
             </div>
           </div>
         </div>
         {onClose && (
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-800 text-gray-500 lg:hidden">
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-800/80 text-slate-500 lg:hidden">
             <X className="w-4 h-4" />
           </button>
         )}
@@ -367,14 +376,14 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
 
       {/* ── User card ── */}
       {user && (
-        <div className="mx-3 mb-3 px-3 py-2.5 rounded-lg bg-gray-900/70 border border-gray-800/60">
+        <div className="mx-3 mb-4 px-3 py-2.5 rounded-lg bg-slate-900/60 border border-slate-800/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center text-xs font-semibold text-gray-400">
+            <div className="w-7 h-7 rounded-full bg-slate-800 ring-1 ring-slate-700/60 flex items-center justify-center text-[11px] font-semibold text-slate-300">
               {user.name?.charAt(0)?.toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-gray-200 truncate">{user.name}</div>
-              <div className="text-[10px] text-gray-500 truncate">{user.email}</div>
+              <div className="text-[12.5px] font-medium text-slate-100 truncate leading-tight">{user.name}</div>
+              <div className="text-[10.5px] text-slate-500 truncate mt-0.5">{user.email}</div>
             </div>
             <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ROLE_BADGE[userRole] || ROLE_BADGE.User}`}>
               {userRole}
@@ -384,8 +393,8 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
       )}
 
       {/* ── Navigation ── */}
-      <nav className="flex-1 px-3 pb-3 overflow-y-auto space-y-0.5 scrollbar-thin">
-        {visibleNav.map((item, idx) => {
+      <nav className="flex-1 px-3 pb-3 overflow-y-auto space-y-px scrollbar-thin">
+        {visibleNav.map((item) => {
           // ── Top-level link ──
           if (!item.group) {
             return (
@@ -404,16 +413,16 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
           const hasActiveChild = item.children.some(c => c.page === currentPageName);
 
           return (
-            <div key={item.group} className="mt-1.5">
+            <div key={item.group} className="pt-3">
               <button
                 onClick={() => toggleGroup(item.group)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[10.5px] font-semibold uppercase tracking-[0.12em] transition-colors ${
                   hasActiveChild
-                    ? "text-gray-200 bg-gray-800/50"
-                    : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/30"
+                    ? "text-slate-200"
+                    : "text-slate-500 hover:text-slate-300"
                 }`}
               >
-                <item.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <item.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
                 <span className="flex-1 text-left">{item.label}</span>
                 <ChevronRight
                   className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
@@ -426,7 +435,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
                   isOpen ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
                 }`}
               >
-                <div className="ml-3 pl-3 border-l border-gray-800/60 mt-0.5 space-y-0.5">
+                <div className="ml-[14px] pl-3 border-l border-slate-800/70 mt-1 space-y-px">
                   {item.children.map(child => (
                     <NavLink
                       key={child.page}
@@ -445,9 +454,9 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
       </nav>
 
       {/* ── Footer ── */}
-      <div className="px-3 py-3 border-t border-gray-800/60">
+      <div className="px-3 pt-3 pb-4 border-t border-slate-900">
         {user && (
-          <div className="space-y-0.5">
+          <div className="space-y-px">
             {isRealSuperAdmin && !impersonation && (
               <FooterButton onClick={onViewAs} icon={UserCog} label="View As..." color="purple" />
             )}
@@ -461,12 +470,14 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
             <FooterButton onClick={logout} icon={LogOut} label="Sign Out" />
           </div>
         )}
-        <div className="mt-3 flex items-center gap-1.5 justify-center">
-          <span className="text-[9px] text-blue-400 font-bold tracking-wide">Made in USA</span>
-          <span className="text-gray-700 text-[9px]">·</span>
-          <span className="text-[9px] text-gray-600">NDAA-TAA</span>
+        <div className="mt-4 px-3 flex items-center justify-between text-[9px] text-slate-600">
+          <div className="flex items-center gap-1.5">
+            <span className="text-blue-400 font-semibold tracking-wide">Made in USA</span>
+            <span className="text-slate-700">·</span>
+            <span>NDAA-TAA</span>
+          </div>
+          <span className="text-slate-700">© 2026</span>
         </div>
-        <div className="text-[9px] text-gray-600 text-center mt-0.5">© 2026 Manley Solutions</div>
       </div>
     </aside>
   );
@@ -474,36 +485,41 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
 
 
 // ── NavLink (reusable for top-level and nested items) ───────────
+//
+// Active state uses a 2px left accent bar — a stronger enterprise
+// convention than the trailing dot we used in Phase B.  The bar
+// anchors the eye to the rail and reads as carrier-grade tooling.
 
 function NavLink({ item, active, accent, onClick, nested = false }) {
   const Icon = item.icon;
-  const activeClasses = accent === "red"
-    ? "bg-red-600/15 text-red-400 font-semibold"
-    : "bg-slate-700/40 text-slate-200 font-semibold";
+  const accentBar = accent === "red" ? "bg-red-500" : "bg-slate-300";
+  const activeBg = accent === "red"
+    ? "bg-red-600/10 text-red-300"
+    : "bg-slate-800/70 text-slate-100";
+  const activeIcon = accent === "red" ? "text-red-400" : "text-slate-200";
 
   return (
     <Link
       to={createPageUrl(item.page)}
       onClick={onClick}
-      className={`group flex items-center gap-2.5 rounded-lg transition-all duration-150 ${
-        nested ? "px-2.5 py-1.5 text-[12.5px]" : "px-3 py-2 text-[13px]"
+      className={`group relative flex items-center gap-2.5 rounded-md transition-colors duration-150 ${
+        nested ? "px-2.5 py-1.5 text-[12.5px]" : "px-3 py-[7px] text-[13px]"
       } ${
         active
-          ? activeClasses
-          : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-200"
+          ? `${activeBg} font-medium`
+          : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
       }`}
     >
+      {active && (
+        <span
+          aria-hidden="true"
+          className={`absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full ${accentBar}`}
+        />
+      )}
       <Icon className={`flex-shrink-0 ${nested ? "w-3.5 h-3.5" : "w-4 h-4"} ${
-        active
-          ? accent === "red" ? "text-red-400" : "text-slate-300"
-          : "text-gray-500 group-hover:text-gray-400"
+        active ? activeIcon : "text-slate-500 group-hover:text-slate-300"
       }`} />
       <span className="truncate">{item.name}</span>
-      {active && (
-        <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-          accent === "red" ? "bg-red-500" : "bg-slate-400"
-        }`} />
-      )}
     </Link>
   );
 }
@@ -516,12 +532,12 @@ function FooterButton({ onClick, icon: Icon, label, color }) {
     purple: "text-purple-400 hover:text-purple-300 hover:bg-purple-500/10",
     red: "text-red-400 hover:text-red-300 hover:bg-red-500/10",
   };
-  const baseStyle = colorStyles[color] || "text-gray-500 hover:text-gray-300 hover:bg-gray-800/50";
+  const baseStyle = colorStyles[color] || "text-slate-500 hover:text-slate-200 hover:bg-slate-800/50";
 
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg transition-colors ${baseStyle}`}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-[12px] rounded-md transition-colors ${baseStyle}`}
     >
       <Icon className="w-3.5 h-3.5" /> {label}
     </button>
@@ -746,9 +762,9 @@ function AppLayout({ children, currentPageName }) {
   const isNOC = roleLevel(user.role) >= ROLE_LEVEL.Admin;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-slate-50 flex">
       {/* Desktop sidebar */}
-      <div className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-[248px] z-30">
+      <div className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-[252px] z-30">
         <Sidebar
           currentPageName={currentPageName}
           onChangePassword={() => setShowChangePwd(true)}
@@ -760,7 +776,7 @@ function AppLayout({ children, currentPageName }) {
       {mobileOpen && (
         <>
           <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />
-          <div className="fixed inset-y-0 left-0 w-[248px] z-40 flex flex-col lg:hidden shadow-2xl">
+          <div className="fixed inset-y-0 left-0 w-[252px] z-40 flex flex-col lg:hidden shadow-2xl">
             <Sidebar
               currentPageName={currentPageName}
               onClose={() => setMobileOpen(false)}
@@ -774,17 +790,17 @@ function AppLayout({ children, currentPageName }) {
       {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
       {showViewAs && <ViewAsModal onClose={() => setShowViewAs(false)} />}
 
-      <div className="flex-1 lg:ml-[248px] flex flex-col min-h-screen">
+      <div className="flex-1 lg:ml-[252px] flex flex-col min-h-screen">
         {/* Mobile header */}
-        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
-          <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg hover:bg-gray-100">
-            <Menu className="w-5 h-5 text-gray-700" />
+        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-20">
+          <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg hover:bg-slate-100">
+            <Menu className="w-5 h-5 text-slate-700" />
           </button>
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded flex items-center justify-center ${isNOC ? "bg-red-600" : "bg-slate-800"}`}>
+            <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isNOC ? "bg-red-600" : "bg-slate-800"}`}>
               <Shield className="w-3 h-3 text-white" />
             </div>
-            <span className="font-bold text-gray-900">True911<span className={isNOC ? "text-red-600" : "text-slate-600"}>+</span></span>
+            <span className="font-semibold text-slate-900">True911<span className={isNOC ? "text-red-600" : "text-slate-500"}>+</span></span>
           </div>
           <div className="w-9" />
         </div>
