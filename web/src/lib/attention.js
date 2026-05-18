@@ -247,7 +247,7 @@ const CUSTOMER_LABELS = {
   reporting:           "Connected",
   inventory:           "Registered",
   attention_needed:    "Attention Needed",
-  not_reporting:       "Telemetry Unavailable",
+  not_reporting:       "Connection Information Unavailable",
   integration_pending: "Awaiting Carrier Integration",
 };
 

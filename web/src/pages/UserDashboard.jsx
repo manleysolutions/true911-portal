@@ -122,11 +122,11 @@ function CustomerSystemBanner({ counts }) {
           <div>
             <p className="text-[15px] font-semibold text-amber-800">
               {notReporting} location{notReporting > 1 ? "s" : ""}
-              {" "}with telemetry unavailable
+              {" "}with connection information unavailable
             </p>
             <p className="text-[13px] text-amber-700 mt-0.5">
               {inventoryFragment || `Out of ${total} total location${total !== 1 ? "s" : ""}.`}
-              {" "}A device may still be operational on site even when telemetry is absent.
+              {" "}A device may still be operational on site even when connection information is unavailable.
             </p>
           </div>
         </div>
@@ -357,7 +357,7 @@ function IssuesList({ siteSummaries = [], incidents = [], role }) {
             return;
           }
           if (key === CUSTOMER_STATUS.NOT_REPORTING) {
-            title = "Device stopped reporting telemetry";
+            title = "Connection information unavailable";
             severity = "warning";
           } else if (s.stale_devices > 0) {
             title = "A device has stopped reporting";
@@ -511,7 +511,7 @@ function MapPreview({ siteSummaries = [], role }) {
             <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-gray-600">{counts.reporting} Connected</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400" /><span className="text-gray-600">{counts.inventory} Registered</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.attention_needed} Attention</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Telemetry Unavailable</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-gray-600">{counts.not_reporting} Connection Unavailable</span></div>
           </div>
         ) : (
           (() => {
@@ -749,7 +749,7 @@ export default function UserDashboard() {
                 borderColor={customerCounts.attention_needed > 0 ? "border-amber-200" : undefined}
               />
               <StatusCard
-                label="Telemetry Unavailable" value={customerCounts.not_reporting}
+                label="Connection Unavailable" value={customerCounts.not_reporting}
                 icon={WifiOff}
                 color={customerCounts.not_reporting > 0 ? "text-amber-500" : "text-gray-300"}
                 bgColor={customerCounts.not_reporting > 0 ? "bg-amber-50/50" : "bg-white"}

@@ -220,7 +220,7 @@ export default function CustomerSiteDetailDrawer({ site, onClose }) {
             />
             <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
               Telemetry timestamps appear only when a device has reported to True911.
-              A device may still be operational on site even when telemetry is absent.
+              A device may still be operational on site even when connection information is unavailable.
             </p>
           </Section>
 
