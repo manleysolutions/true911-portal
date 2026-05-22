@@ -61,6 +61,8 @@ _DATAENTRY_ALLOWED_FIELDS = frozenset({
     "carrier",            # cellular carrier
     "hardware_model_id",  # catalog model linkage
     "starlink_id",        # StarLink / Napco panel ID
+    "wan_ip",             # public / static WAN IP
+    "lan_ip",             # local LAN IP
 })
 
 # For create, device_id is additionally required.

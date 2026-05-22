@@ -34,6 +34,7 @@ _DATAENTRY_ALLOWED_FIELDS = frozenset({
     "sim_iccid",
     "carrier",
     "line_type",
+    "port_index",
     "notes",
 })
 

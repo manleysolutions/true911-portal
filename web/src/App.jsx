@@ -60,6 +60,14 @@ const PAGE_PERMISSIONS = {
   ImportVerification:  "VIEW_IMPORT_VERIFICATION",
   ProvisioningQueue:   "VIEW_PROVISIONING_QUEUE",
 
+  // Voice / call operational pages — internal staff only.
+  // These permissions intentionally exclude the customer "User" role
+  // so a customer cannot reach the internal Lines / Recordings consoles
+  // by typing the URL.  Customer-facing line / call-history surfaces
+  // are delivered separately (see deployment plan Phase 4).
+  Lines:               "VIEW_LINES",
+  Recordings:          "VIEW_RECORDINGS",
+
   // Phase R3 — internal registration review queue
   Registrations:       "VIEW_REGISTRATIONS",
   RegistrationDetail:  "VIEW_REGISTRATIONS",

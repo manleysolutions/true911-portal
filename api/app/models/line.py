@@ -15,6 +15,7 @@ class Line(Base):
     tenant_id: Mapped[str] = mapped_column(String(100), index=True)
     site_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     device_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    port_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # FXS port on the ATA (e.g. 1 or 2)
     provider: Mapped[str] = mapped_column(String(50))  # telnyx, tmobile, bandwidth, other
     did: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # phone number / DID
     sip_uri: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

@@ -30,6 +30,7 @@ function LineFormModal({ onClose, onSaved, sites, editLine }) {
     protocol: editLine?.protocol || "SIP",
     site_id: editLine?.site_id || "",
     device_id: editLine?.device_id || "",
+    port_index: editLine?.port_index ?? "",
     status: editLine?.status || "provisioning",
     e911_status: editLine?.e911_status || "none",
     e911_street: editLine?.e911_street || "",
@@ -56,6 +57,7 @@ function LineFormModal({ onClose, onSaved, sites, editLine }) {
           protocol: form.protocol,
           site_id: form.site_id || undefined,
           device_id: form.device_id || undefined,
+          port_index: form.port_index === "" ? undefined : Number(form.port_index),
           status: form.status,
           e911_status: form.e911_status,
           e911_street: form.e911_street || undefined,
@@ -73,6 +75,7 @@ function LineFormModal({ onClose, onSaved, sites, editLine }) {
           sip_uri: form.sip_uri || undefined,
           site_id: form.site_id || undefined,
           device_id: form.device_id || undefined,
+          port_index: form.port_index === "" ? undefined : Number(form.port_index),
           e911_street: form.e911_street || undefined,
           e911_city: form.e911_city || undefined,
           e911_state: form.e911_state || undefined,
@@ -172,6 +175,22 @@ function LineFormModal({ onClose, onSaved, sites, editLine }) {
               </div>
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">ATA Device ID</label>
+              <input value={form.device_id} onChange={set("device_id")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono"
+                placeholder="Device ID of the ATA" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">FXS Port</label>
+              <input type="number" min="0" value={form.port_index} onChange={set("port_index")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="e.g. 1" />
+              <p className="mt-1 text-[11px] text-gray-400">Analog port on the ATA (e.g. 1 or 2 on a 2-port ATA).</p>
+            </div>
+          </div>
 
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">SIP URI</label>
