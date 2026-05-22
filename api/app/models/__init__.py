@@ -9,6 +9,7 @@ from app.models.e911_change_log import E911ChangeLog
 from app.models.device import Device
 from app.models.line import Line
 from app.models.recording import Recording
+from app.models.call_record import CallRecord
 from app.models.event import Event
 from app.models.provider import Provider
 from app.models.hardware_model import HardwareModel
@@ -67,6 +68,7 @@ __all__ = [
     "Device",
     "Line",
     "Recording",
+    "CallRecord",
     "Event",
     "Provider",
     "HardwareModel",
