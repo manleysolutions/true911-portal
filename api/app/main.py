@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
 from .middleware import RequestVisibilityMiddleware
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls
 
 # Configure app-level logging so INFO emits to Render's stdout stream.
 # Uvicorn manages its own access/error loggers; this sets the level on
@@ -153,6 +153,7 @@ app.include_router(actions.router,       prefix="/api")
 app.include_router(devices.router,      prefix="/api/devices",    tags=["devices"])
 app.include_router(lines.router,        prefix="/api/lines",      tags=["lines"])
 app.include_router(recordings.router,   prefix="/api/recordings", tags=["recordings"])
+app.include_router(calls.router,        prefix="/api/calls",      tags=["calls"])
 app.include_router(events.router,       prefix="/api/events",     tags=["events"])
 app.include_router(providers.router,   prefix="/api/providers",  tags=["providers"])
 app.include_router(heartbeat.router,  prefix="/api/heartbeat",  tags=["heartbeat"])
