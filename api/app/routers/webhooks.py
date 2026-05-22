@@ -4,16 +4,23 @@ All webhook endpoints return 202 immediately. The actual payload processing
 happens asynchronously via the job queue.
 """
 
+import logging
 import uuid
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
 from app.dependencies import get_db
 from app.models.integration_payload import IntegrationPayload
 from app.schemas.webhook import WebhookAck
 from app.services import job_service
+from app.services.telnyx_service import (
+    TelnyxSignatureError,
+    ingest_call_event,
+    verify_webhook_signature,
+)
+
+logger = logging.getLogger("true911.webhooks")
 
 router = APIRouter()
 
@@ -64,8 +71,34 @@ async def _ingest_webhook(
 
 @router.post("/telnyx", response_model=WebhookAck, status_code=202)
 async def telnyx_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    # TODO: verify Telnyx webhook signature
-    return await _ingest_webhook("telnyx", request, db)
+    """Telnyx webhook ingress.
+
+    Verifies the Telnyx Ed25519 signature when ``TELNYX_PUBLIC_KEY`` is
+    configured (config-gated — with no key set this behaves exactly as
+    before Phase 3), archives the raw payload, and best-effort ingests
+    ``call.hangup`` events into the ``call_records`` (CDR) table.
+    """
+    raw = await request.body()
+
+    try:
+        verify_webhook_signature(
+            request.headers.get("telnyx-signature-ed25519"),
+            request.headers.get("telnyx-timestamp"),
+            raw,
+        )
+    except TelnyxSignatureError as exc:
+        logger.warning("Rejected Telnyx webhook: %s", exc)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Telnyx signature")
+
+    ack = await _ingest_webhook("telnyx", request, db)
+
+    # Best-effort CDR ingestion — never fail the webhook (Telnyx retries).
+    try:
+        await ingest_call_event(db, raw)
+    except Exception:
+        logger.exception("Telnyx call-event ingestion failed (raw payload archived)")
+
+    return ack
 
 
 @router.post("/vola", response_model=WebhookAck, status_code=202)
