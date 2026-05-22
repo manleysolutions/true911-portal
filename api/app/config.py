@@ -119,6 +119,16 @@ class Settings(BaseSettings):
     VERIZON_THINGSPACE_USERNAME: str = ""
     VERIZON_THINGSPACE_PASSWORD: str = ""
 
+    # ── Telnyx (SIP trunking — webhooks, CDR ingestion) ────────────────
+    # Ed25519 public key from the Telnyx portal.  When set, inbound
+    # Telnyx webhook signatures are verified; when empty, verification
+    # is skipped (pre-Phase-3 behavior).
+    TELNYX_PUBLIC_KEY: str = ""
+    # Outbound Telnyx API key — reserved for later use (DID / E911 / SIM
+    # operations, live line registration status).  Not used by the
+    # webhook / CDR ingestion path.
+    TELNYX_API_KEY: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
