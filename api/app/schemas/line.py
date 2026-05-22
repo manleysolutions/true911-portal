@@ -10,6 +10,7 @@ class LineOut(BaseModel):
     tenant_id: str
     site_id: Optional[str] = None
     device_id: Optional[str] = None
+    port_index: Optional[int] = None
     provider: str
     did: Optional[str] = None
     sip_uri: Optional[str] = None
@@ -31,6 +32,7 @@ class LineCreate(BaseModel):
     line_id: str
     site_id: Optional[str] = None
     device_id: Optional[str] = None
+    port_index: Optional[int] = None
     provider: str = "telnyx"
     did: Optional[str] = None
     sip_uri: Optional[str] = None
@@ -47,6 +49,7 @@ class LineCreate(BaseModel):
 class LineUpdate(BaseModel):
     site_id: Optional[str] = None
     device_id: Optional[str] = None
+    port_index: Optional[int] = None
     provider: Optional[str] = None
     did: Optional[str] = None
     sip_uri: Optional[str] = None

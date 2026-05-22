@@ -332,6 +332,8 @@ export default function DeviceFormModal({
     site_id: editDevice?.site_id || defaultSiteId || "",
     serial_number: editDevice?.serial_number || "",
     mac_address: editDevice?.mac_address || "",
+    wan_ip: editDevice?.wan_ip || "",
+    lan_ip: editDevice?.lan_ip || "",
     starlink_id: editDevice?.starlink_id || "",
     hardware_model_id: editDevice?.hardware_model_id || "",
     device_type: editDevice?.device_type || "",
@@ -433,6 +435,8 @@ export default function DeviceFormModal({
         identifier_type: idType || undefined,
         serial_number: form.serial_number || undefined,
         mac_address: form.mac_address || undefined,
+        wan_ip: form.wan_ip || undefined,
+        lan_ip: form.lan_ip || undefined,
         notes: form.notes || undefined,
         ...(isCellular ? {
           imei: form.imei || undefined,
@@ -696,6 +700,33 @@ export default function DeviceFormModal({
                 />
               </div>
             )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                WAN / Static IP <span className="text-gray-400 normal-case">(optional)</span>
+              </label>
+              <input
+                value={form.wan_ip}
+                onChange={set("wan_ip")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono"
+                placeholder="e.g. 162.190.64.189"
+                maxLength={45}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                LAN / Local IP <span className="text-gray-400 normal-case">(optional)</span>
+              </label>
+              <input
+                value={form.lan_ip}
+                onChange={set("lan_ip")}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono"
+                placeholder="e.g. 192.168.1.43"
+                maxLength={45}
+              />
+            </div>
           </div>
 
           <div>

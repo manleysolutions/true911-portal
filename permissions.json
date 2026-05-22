@@ -85,6 +85,8 @@
   "EDIT_SIMS": ["Admin", "DataEntry", "DataSteward"],
   "CREATE_LINES": ["Admin", "Manager", "DataEntry", "DataSteward"],
   "EDIT_LINES": ["Admin", "Manager", "DataEntry", "DataSteward"],
+  "VIEW_LINES": ["Admin", "Manager", "DataEntry", "DataSteward"],
+  "VIEW_RECORDINGS": ["Admin", "Manager", "DataEntry", "DataSteward"],
   "VIEW_REGISTRATIONS": ["Admin", "Manager", "DataEntry", "DataSteward", "SuperAdmin"],
   "MANAGE_REGISTRATIONS": ["Admin", "SuperAdmin"],
   "CONVERT_REGISTRATIONS": ["Admin", "SuperAdmin"],

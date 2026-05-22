@@ -15,6 +15,8 @@ class DeviceOut(BaseModel):
     model: Optional[str] = None
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
+    wan_ip: Optional[str] = None
+    lan_ip: Optional[str] = None
     imei: Optional[str] = None
     iccid: Optional[str] = None
     msisdn: Optional[str] = None
@@ -56,6 +58,8 @@ class DeviceCreate(BaseModel):
     model: Optional[str] = None
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
+    wan_ip: Optional[str] = None
+    lan_ip: Optional[str] = None
     imei: Optional[str] = None
     iccid: Optional[str] = None
     msisdn: Optional[str] = None
@@ -81,6 +85,8 @@ class DeviceUpdate(BaseModel):
     model: Optional[str] = None
     serial_number: Optional[str] = None
     mac_address: Optional[str] = None
+    wan_ip: Optional[str] = None
+    lan_ip: Optional[str] = None
     imei: Optional[str] = None
     iccid: Optional[str] = None
     msisdn: Optional[str] = None

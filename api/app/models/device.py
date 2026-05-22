@@ -58,3 +58,6 @@ class Device(Base):
     reconciliation_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, server_default="imported_unverified")
     import_batch_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     source_row_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Network addressing (migration 043) — Red Tag Line / managed POTS deployments
+    wan_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # public / static WAN IP (cellular modem / router)
+    lan_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # local LAN IP (e.g. on-site Cisco ATA)
