@@ -91,5 +91,6 @@
   "MANAGE_REGISTRATIONS": ["Admin", "SuperAdmin"],
   "CONVERT_REGISTRATIONS": ["Admin", "SuperAdmin"],
   "VIEW_ONBOARDING_REVIEW": ["Admin", "Manager", "DataSteward"],
-  "MANAGE_ONBOARDING_REVIEW": ["Admin", "DataSteward"]
+  "MANAGE_ONBOARDING_REVIEW": ["Admin", "DataSteward"],
+  "VIEW_AI_SUMMARY": ["Admin", "SuperAdmin"]
 }
