@@ -43,6 +43,29 @@ services:
         value: "false"
       - key: PUBLIC_URL
         value: "https://www.true911.com"
+      # ── Phase 1a LLLM soak — internal-only, deterministic-only ──
+      # ANTHROPIC_API_KEY is set in the dashboard (secret pattern,
+      # already in place for the support assistant) and is NOT
+      # referenced from this file.  Phase 1a runs in deterministic-
+      # fallback mode (LLLM_ALLOW_EXTERNAL=false), so even with a
+      # valid API key NO call to Anthropic is made.  Flipping
+      # LLLM_ALLOW_EXTERNAL to "true" requires a separate PR and
+      # explicit governance approval — see docs/AI_OPERATIONAL_SAFETY.md
+      # §3 and docs/LLLM_PHASE1_ROLLOUT.md §4.
+      - key: FEATURE_LLLM
+        value: "true"
+      - key: LLLM_PROVIDER
+        value: "anthropic"
+      - key: LLLM_ALLOW_EXTERNAL
+        value: "false"
+      - key: LLLM_DAILY_TOKEN_CAP_PER_TENANT
+        value: "100000"
+      - key: LLLM_PROVIDER_TIMEOUT_SECONDS
+        value: "5.0"
+      - key: LLLM_CACHE_TTL_SECONDS
+        value: "300"
+      - key: LLLM_DEFAULT_MODEL
+        value: "claude-sonnet-4-20250514"
       # SMTP — set these in Render dashboard for email delivery
       # - key: SMTP_HOST
       #   value: smtp.sendgrid.net
@@ -94,3 +117,10 @@ services:
         value: https://true911-api.onrender.com/api
       - key: VITE_APP_MODE
         value: production
+      # Phase 1a LLLM soak — surfaces the AI Health nav entry (NOC nav
+      # only) and the Command Center additive card.  Backend
+      # internal-only gate (_require_internal_context) is what
+      # actually enforces who can use it — this flag just controls
+      # whether the UI tries to render the surface.
+      - key: VITE_FEATURE_LLLM
+        value: "true"
