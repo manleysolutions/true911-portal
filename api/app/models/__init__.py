@@ -55,6 +55,8 @@ from app.models.registration_location import RegistrationLocation
 from app.models.registration_service_unit import RegistrationServiceUnit
 from app.models.registration_status_event import RegistrationStatusEvent
 from app.models.onboarding_review import OnboardingReview
+from app.models.llm_audit import LLMAuditLog
+from app.models.llm_cache import LLMSummaryCache
 
 __all__ = [
     "Tenant",
@@ -120,4 +122,6 @@ __all__ = [
     "RegistrationServiceUnit",
     "RegistrationStatusEvent",
     "OnboardingReview",
+    "LLMAuditLog",
+    "LLMSummaryCache",
 ]

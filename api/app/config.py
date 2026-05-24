@@ -39,6 +39,30 @@ class Settings(BaseSettings):
     # ── AI Support Assistant ─────────────────────────────────────
     ANTHROPIC_API_KEY: str = ""  # empty = rule-based fallback (no LLM calls)
 
+    # ── LLLM (Phase 1: read-only AI Health Summary) ───────────────
+    # Master switch.  When "false" (default) every /api/llm route
+    # returns 404, the UI surface is hidden, and no provider call is
+    # ever made — the platform behaves exactly as it did before Phase 1.
+    FEATURE_LLLM: str = "false"
+    # Provider implementation to use.  "" (default) and "anthropic"
+    # both resolve to AnthropicProvider; future values will map to
+    # ollama, llamacpp, vllm, azure_openai_gov, bedrock_govcloud, etc.
+    LLLM_PROVIDER: str = ""
+    # Hard external-egress switch.  Even when FEATURE_LLLM is on, this
+    # must additionally be "true" for the orchestrator to call any
+    # network provider.  Off → deterministic-fallback only.
+    LLLM_ALLOW_EXTERNAL: str = "false"
+    # Daily token budget per effective tenant.  0 = unlimited (NOT
+    # recommended in prod).  Default 100,000 is conservative for Phase 1;
+    # raise after a week of telemetry review.
+    LLLM_DAILY_TOKEN_CAP_PER_TENANT: int = 100000
+    # Hard per-call timeout for the provider.  Audit requires 3–5 s.
+    LLLM_PROVIDER_TIMEOUT_SECONDS: float = 5.0
+    # Cache TTL for summary results, keyed on (tenant, scope, fingerprint).
+    LLLM_CACHE_TTL_SECONDS: int = 300
+    # Default model identifier when the provider supports a choice.
+    LLLM_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
+
     # ── Zoho Desk (support ticket escalation) ─────────────────────
     ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
     ZOHO_DESK_ORG_ID: str = ""

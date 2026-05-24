@@ -18,6 +18,10 @@ export const config = {
   /** Feature flag: enable carrier write operations (activate/suspend/resume SIMs via carrier API).
    *  Default OFF — these actions only update local DB status until carrier APIs are wired. */
   featureCarrierWriteOps: import.meta.env.VITE_FEATURE_CARRIER_WRITE_OPS === "true",
+  /** Feature flag: LLLM Phase 1 "AI Health Summary".  Default OFF — when
+   *  off the AI nav item is hidden and the Command Center card is not
+   *  rendered, so the portal behaves exactly as before Phase 1. */
+  featureLllm: import.meta.env.VITE_FEATURE_LLLM === "true",
 };
 
 export const isDemo = config.appMode === "demo";
