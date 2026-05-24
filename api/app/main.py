@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
 from .middleware import RequestVisibilityMiddleware
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls, llm
 
 # Configure app-level logging so INFO emits to Render's stdout stream.
 # Uvicorn manages its own access/error loggers; this sets the level on
@@ -190,6 +190,11 @@ app.include_router(tmobile_callback.router,   prefix="/tmobile/wholesale",    ta
 app.include_router(health.router,             prefix="/api",                  tags=["health"])
 app.include_router(registrations.router,      prefix="/api/registrations",    tags=["registrations"])
 app.include_router(onboarding_review.router,  prefix="/api/onboarding-reviews", tags=["onboarding-review"])
+# Phase 1 LLLM — internal-only AI Health Summary.  Routes self-gate
+# on FEATURE_LLLM and return 404 when the flag is off, so registering
+# the router unconditionally here is a no-op deploy when the env var
+# is unset (the default).
+app.include_router(llm.router,                prefix="/api/llm",              tags=["llm"])
 
 
 @app.get("/api/config/features")
@@ -198,6 +203,9 @@ async def feature_flags():
     return {
         "samantha": settings.FEATURE_SAMANTHA.lower() == "true",
         "line_intelligence": settings.FEATURE_LINE_INTELLIGENCE.lower() == "true",
+        # Phase 1 LLLM master switch.  When false, /api/llm routes 404
+        # and the UI hides the AI nav item + Command card.  Default off.
+        "lllm": settings.FEATURE_LLLM.lower() == "true",
     }
 
 
