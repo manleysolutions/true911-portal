@@ -41,12 +41,27 @@ MIN_CONFIDENCE = 0.50
 # Regexes for PII redaction.  Kept conservative — we'd rather over-redact
 # in customer_safe_summary than leak.  internal_summary is allowed to
 # retain device identifiers because the audience is the operator.
+#
+# Order matters: ICCID runs FIRST (most specific, 19-20 digits starting
+# with '89') so phone/MSISDN regexes don't carve off a 10-digit prefix.
+# Phone regexes require either a '+' prefix OR formatting separators so
+# they don't fire on the 10-digit head of a raw ICCID/MSISDN run.
 _PII_PATTERNS = (
-    # E.164-ish phone numbers (+15555551234 or 555-555-1234)
-    (re.compile(r"\+?\d{1,3}[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}"), "[REDACTED-PHONE]"),
-    # 19-digit ICCID
+    # 19-20 digit ICCID — must run before phone/MSISDN.
     (re.compile(r"\b89\d{17,18}\b"), "[REDACTED-ICCID]"),
-    # MSISDN-style 10-15 digit run (after phone redaction to avoid overlap)
+    # International phone (must have + prefix).
+    (
+        re.compile(r"\+\d{1,3}[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}"),
+        "[REDACTED-PHONE]",
+    ),
+    # Domestic phone (must have separators between all three parts).
+    (
+        re.compile(r"(?:\(\d{3}\)|\d{3})[\s\-.]\d{3}[\s\-.]\d{4}"),
+        "[REDACTED-PHONE]",
+    ),
+    # MSISDN-style 10-15 digit run — catches anything else (raw cellular
+    # numbers without separators).  Runs after phone so formatted phones
+    # are already gone.
     (re.compile(r"\b\d{10,15}\b"), "[REDACTED-MSISDN]"),
     # IPv4
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[REDACTED-IP]"),
