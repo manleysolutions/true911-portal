@@ -30,6 +30,12 @@ const ROLE_BADGE = {
 
 const FEATURE_FLAGS = {
   samantha: config.featureSamantha,
+  // Phase 1 LLLM — gates the Samantha nav entry.  Default-off env var
+  // (VITE_FEATURE_LLLM) means the nav entry is hidden unless explicitly
+  // enabled.  Backend additionally enforces VIEW_AI_SUMMARY +
+  // INTERNAL_TENANT_IDS so a misconfigured frontend can't surface
+  // anything operational.
+  lllm: config.featureLllm,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -48,6 +54,8 @@ const FEATURE_FLAGS = {
 const NOC_NAV = [
   // ── Primary ──
   { name: "Command Center",  page: "Command",         icon: ShieldCheck },
+  // ── AI ── (Phase 1 LLLM — internal-only, default-off via featureLllm)
+  { name: "AI Health",       page: "Samantha",        icon: Sparkles,    featureFlag: "lllm" },
   // ``permission`` items disappear from the nav when can() returns
   // false — Registrations is internal-only, so this hides it during
   // SuperAdmin impersonation of a customer tenant.

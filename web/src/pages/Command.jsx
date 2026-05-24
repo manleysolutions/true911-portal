@@ -15,6 +15,10 @@ import { toast } from "sonner";
 import NotificationCenter from "@/components/command/NotificationCenter";
 import ReportExport from "@/components/command/ReportExport";
 import EscalationBadge from "@/components/command/EscalationBadge";
+// Phase 1 LLLM — additive card.  Self-hides when config.featureLllm
+// is false, so the existing deterministic IntelligenceBanner remains
+// the sole operational summary surface in default deploys.
+import AIHealthSummary from "@/components/AIHealthSummary";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -951,8 +955,13 @@ export default function Command() {
             </div>
           </div>
 
-          {/* AI Intelligence Banner */}
+          {/* AI Intelligence Banner — deterministic, always rendered. */}
           <IntelligenceBanner data={data} />
+
+          {/* AI Health Summary — additive card.  Self-hides when
+              config.featureLllm is false; never replaces the banner
+              above.  Internal-only enforcement lives on the backend. */}
+          <AIHealthSummary scope="fleet" theme="dark" />
 
           {/* Executive Metrics */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
