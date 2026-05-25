@@ -66,6 +66,23 @@ services:
         value: "300"
       - key: LLLM_DEFAULT_MODEL
         value: "claude-sonnet-4-20250514"
+      # ── Phase 1 Health Normalizer soak — AI Health Summary only ──
+      # Routes the AI Health Summary's data preparation through the
+      # new app/services/health/ package (fuses heartbeat + carrier
+      # telemetry + Telnyx CDR + VOLA sync timestamps into one
+      # canonical state per device).  No other surface reads this
+      # flag — guarded by test_only_llm_context_reads_the_flag and
+      # test_command_map_sites_devices_attention_do_not_import_health_package.
+      #
+      # Stays compatible with the LLLM_ALLOW_EXTERNAL=false
+      # deterministic-only soak above: the normalizer changes
+      # WHAT IS COUNTED in the deterministic summary, not whether
+      # Anthropic is called.  Anthropic egress remains disabled.
+      #
+      # See docs/HEALTH_NORMALIZER_MVP.md for the algorithm spec,
+      # MVP gaps, rollout plan (N1-N6), and rollback recipe.
+      - key: FEATURE_HEALTH_NORMALIZER
+        value: "true"
       # SMTP — set these in Render dashboard for email delivery
       # - key: SMTP_HOST
       #   value: smtp.sendgrid.net
