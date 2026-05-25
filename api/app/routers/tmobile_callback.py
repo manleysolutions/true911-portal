@@ -20,12 +20,114 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.dependencies import get_db
+from app.models.integration_payload import IntegrationPayload
+from app.services import job_service
 
 logger = logging.getLogger("true911.tmobile_callback")
 router = APIRouter()
+
+
+# ── Archive helper (flag-gated) ──────────────────────────────────
+# When FEATURE_TMOBILE_CALLBACK_INGEST is on, every event-specific
+# POST handler additionally archives the payload to IntegrationPayload
+# and enqueues a webhook.tmobile job.  The worker's handle_webhook
+# (sim_service.py) then delegates to tmobile_callback_processor for
+# the SIM match + Device.last_network_event promotion that feeds the
+# Health Normalizer.
+#
+# When the flag is off this helper is never called and behavior is
+# byte-identical to the pre-MVP code (log + 200 ack only).
+
+
+def _ingest_enabled() -> bool:
+    """Flag check, strip+lower for env-var whitespace tolerance."""
+    return settings.FEATURE_TMOBILE_CALLBACK_INGEST.strip().lower() == "true"
+
+
+async def _archive_tmobile_callback(
+    request: Request,
+    event_type: str,
+    db: AsyncSession,
+) -> str | None:
+    """Persist the callback body to IntegrationPayload + enqueue a job.
+
+    Returns the payload_id on success, ``None`` on any failure (the
+    caller still returns HTTP 200 so the PIT validator never sees a
+    failure — we'd rather lose one archived payload than have T-Mobile
+    retry-storm us).
+
+    The event_type is injected as a synthetic
+    ``x-true911-tmobile-event-type`` header in the stored payload
+    record so the worker can recover URL-path event type without
+    re-parsing the URL.
+    """
+    raw = await request.body()
+    body_text = raw.decode("utf-8", errors="replace") if raw else ""
+    body_json: Any = None
+    if body_text:
+        try:
+            body_json = json.loads(body_text)
+        except (json.JSONDecodeError, ValueError):
+            body_json = None
+
+    captured_headers = dict(request.headers)
+    # Carry the event type forward without mutating the original headers.
+    captured_headers["x-true911-tmobile-event-type"] = event_type
+
+    payload_id = f"wh-{uuid.uuid4().hex[:12]}"
+    ip = IntegrationPayload(
+        payload_id=payload_id,
+        source="tmobile",
+        direction="inbound",
+        headers=captured_headers,
+        body=body_json if isinstance(body_json, dict) else None,
+        raw_body=body_text if not isinstance(body_json, dict) else None,
+        processed=False,
+    )
+    db.add(ip)
+    await db.flush()
+
+    job = await job_service.create_and_enqueue(
+        db,
+        job_type="webhook.tmobile",
+        queue="default",
+        payload={"payload_id": payload_id, "source": "tmobile",
+                 "event_type": event_type},
+    )
+    await db.commit()
+    logger.info(
+        "T-Mobile callback archived | payload_id=%s | event=%s | job_id=%s",
+        payload_id, event_type, job.id,
+    )
+    return payload_id
+
+
+async def _maybe_archive(
+    request: Request, event_type: str, db: AsyncSession
+) -> None:
+    """Wrapper that gates the archive call on the feature flag and
+    swallows all failures.  PIT-validator HTTP 200 contract is the
+    operational priority — losing one archived payload is recoverable;
+    T-Mobile retry-storming a healthy endpoint is not.
+    """
+    if not _ingest_enabled():
+        return
+    try:
+        await _archive_tmobile_callback(request, event_type, db)
+    except Exception:
+        # Deliberately broad — see docstring above.
+        logger.exception(
+            "T-Mobile callback archive failed (event=%s) — returning 200 anyway",
+            event_type,
+        )
 
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -146,8 +248,11 @@ async def cb_provisioning_get(request: Request):
 
 
 @router.post("/callback/provisioning")
-async def cb_provisioning_post(request: Request):
+async def cb_provisioning_post(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     await _log_callback(request, "provisioning", include_body=True)
+    await _maybe_archive(request, "provisioning", db)
     return _ack("provisioning")
 
 
@@ -158,8 +263,11 @@ async def cb_usage_get(request: Request):
 
 
 @router.post("/callback/usage")
-async def cb_usage_post(request: Request):
+async def cb_usage_post(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     await _log_callback(request, "usage", include_body=True)
+    await _maybe_archive(request, "usage", db)
     return _ack("usage")
 
 
@@ -170,8 +278,11 @@ async def cb_device_change_get(request: Request):
 
 
 @router.post("/callback/device-change")
-async def cb_device_change_post(request: Request):
+async def cb_device_change_post(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     await _log_callback(request, "device_change", include_body=True)
+    await _maybe_archive(request, "device_change", db)
     return _ack("device_change")
 
 
@@ -182,8 +293,11 @@ async def cb_subscriber_status_get(request: Request):
 
 
 @router.post("/callback/subscriber-status")
-async def cb_subscriber_status_post(request: Request):
+async def cb_subscriber_status_post(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     await _log_callback(request, "subscriber_status", include_body=True)
+    await _maybe_archive(request, "subscriber_status", db)
     return _ack("subscriber_status")
 
 
@@ -194,8 +308,11 @@ async def cb_static_ip_get(request: Request):
 
 
 @router.post("/callback/static-ip")
-async def cb_static_ip_post(request: Request):
+async def cb_static_ip_post(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     await _log_callback(request, "static_ip", include_body=True)
+    await _maybe_archive(request, "static_ip", db)
     return _ack("static_ip")
 
 
@@ -206,6 +323,9 @@ async def cb_cim_get(request: Request):
 
 
 @router.post("/callback/cim")
-async def cb_cim_post(request: Request):
+async def cb_cim_post(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     await _log_callback(request, "cim", include_body=True)
+    await _maybe_archive(request, "cim", db)
     return _ack("cim")
