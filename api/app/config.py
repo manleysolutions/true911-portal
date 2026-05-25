@@ -63,6 +63,25 @@ class Settings(BaseSettings):
     # Default model identifier when the provider supports a choice.
     LLLM_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
 
+    # ── T-Mobile Callback Ingest (MVP — AI Health Summary only) ──
+    # When "false" (default) the T-Mobile PIT callback endpoints in
+    # api/app/routers/tmobile_callback.py keep their current
+    # logging-only behavior (200 ack, no DB write).  When "true" they
+    # additionally archive the raw payload to IntegrationPayload and
+    # enqueue a webhook.tmobile job that promotes the payload to
+    # Device.last_network_event (the same field Verizon writes),
+    # which the Health Normalizer reads as last_carrier_event_at.
+    #
+    # No other surface (Command Center, Map, Sites, Devices,
+    # attention engine, customer portal) reads this flag.  No
+    # outbound TAAP call.  No signature verification yet — see
+    # docs/TMOBILE_CALLBACK_INGEST_MVP.md "Known gaps".
+    FEATURE_TMOBILE_CALLBACK_INGEST: str = "false"
+    # Reject promotion (but still archive) if the payload's event
+    # timestamp is older than this many seconds.  Defends against
+    # replayed callbacks marking long-offline devices as fresh.
+    TMOBILE_CALLBACK_MAX_AGE_SECONDS: int = 600
+
     # ── Health Normalization Layer (MVP — AI Health Summary only) ──
     # When "false" (default) the AI Health Summary uses its existing
     # heartbeat-only derivation in app/services/llm/context.py.  When
