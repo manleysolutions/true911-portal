@@ -96,7 +96,7 @@ class LLLMContext:
         the orchestrator, prompt template, and validator are
         unaffected by which path ran.
         """
-        if settings.FEATURE_HEALTH_NORMALIZER.lower() == "true":
+        if settings.FEATURE_HEALTH_NORMALIZER.strip().lower() == "true":
             return await self._load_fleet_normalized()
         return await self._load_fleet_legacy()
 
@@ -111,7 +111,7 @@ class LLLMContext:
         Branches on ``settings.FEATURE_HEALTH_NORMALIZER`` — same
         contract as :meth:`load_fleet`.
         """
-        if settings.FEATURE_HEALTH_NORMALIZER.lower() == "true":
+        if settings.FEATURE_HEALTH_NORMALIZER.strip().lower() == "true":
             return await self._load_site_normalized(site_id)
         return await self._load_site_legacy(site_id)
 
