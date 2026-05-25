@@ -146,13 +146,53 @@ async def handle_poll_usage(db: AsyncSession, job: Job) -> dict[str, Any]:
 
 
 async def handle_webhook(db: AsyncSession, job: Job) -> dict[str, Any]:
-    """Process a persisted webhook payload."""
+    """Process a persisted webhook payload.
+
+    Default behavior: mark the payload processed and return.
+
+    T-Mobile callback ingest MVP:
+      When the job's source is ``"tmobile"`` AND
+      ``FEATURE_TMOBILE_CALLBACK_INGEST`` is exactly ``"true"`` (after
+      strip+lower), the work is delegated to
+      :func:`app.services.tmobile_callback_processor.process_payload`,
+      which extracts the event, matches a ``Sim``, refuses ambiguous
+      matches, and (on a single safe match with a linked ``Device``)
+      promotes the payload to ``Device.last_network_event`` via the
+      existing carrier_adapter path.  That field feeds the Health
+      Normalizer as ``last_carrier_event_at``.
+
+      When the flag is off or the source is not ``"tmobile"`` the
+      legacy "mark processed" stub runs unchanged.
+    """
     payload = job.payload or {}
     payload_id = payload.get("payload_id")
     source = payload.get("source")
     logger.info("Processing webhook %s from %s", payload_id, source)
 
-    # Mark the payload as processed
+    # T-Mobile callback ingest — flag-gated delegation.  Imported
+    # lazily so a `FEATURE_TMOBILE_CALLBACK_INGEST` env-var typo or
+    # an off-flag deploy never touches the new module at import time.
+    if source == "tmobile":
+        from app.config import settings
+        if settings.FEATURE_TMOBILE_CALLBACK_INGEST.strip().lower() == "true":
+            from app.services.tmobile_callback_processor import process_payload
+            result = await process_payload(db, payload_id)
+            logger.info(
+                "T-Mobile callback %s processor result: %s%s",
+                payload_id,
+                result.status,
+                f" ({result.reason})" if result.reason else "",
+            )
+            return {
+                "payload_id": payload_id,
+                "processed": True,
+                "tmobile_status": result.status,
+                "tmobile_reason": result.reason,
+                "tmobile_matched_sim_iccid": result.matched_sim_iccid,
+                "tmobile_matched_device_id": result.matched_device_id,
+            }
+
+    # Default path (unchanged): mark the payload as processed.
     from app.models.integration_payload import IntegrationPayload
     result = await db.execute(
         select(IntegrationPayload).where(IntegrationPayload.payload_id == payload_id)
