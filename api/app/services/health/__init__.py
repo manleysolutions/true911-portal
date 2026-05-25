@@ -13,15 +13,23 @@ __init__ is structured so partial commits remain importable — each
 commit re-exports only what exists.
 """
 
-# Commit 1: scaffolding only.  states.py + thresholds.py are landed;
-# signals.py / normalizer.py / signals_loader.py arrive in commits
-# 2-3 and will be added to __all__ then.
+from app.services.health.normalizer import (
+    compute_device_state,
+    compute_site_state,
+)
+from app.services.health.signals import HealthSignals
 from app.services.health.states import (
     CanonicalDeviceState,
     CanonicalSiteState,
 )
 
+# Commit 2: HealthSignals + compute_*_state landed; load_signals_for_tenant
+# arrives in commit 3 and will be added then.
+
 __all__ = [
     "CanonicalDeviceState",
     "CanonicalSiteState",
+    "HealthSignals",
+    "compute_device_state",
+    "compute_site_state",
 ]
