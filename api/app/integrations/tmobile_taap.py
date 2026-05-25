@@ -21,7 +21,6 @@ import base64
 import hashlib
 import logging
 import os
-import re
 import time
 import uuid
 from pathlib import Path
@@ -163,7 +162,17 @@ def generate_pop_token(
     digest_input_str = "\n".join(value for _, value in ehts_headers)
     digest_input = digest_input_str.encode("utf-8")
     if os.environ.get("TMOBILE_TAAP_DEBUG", "").lower() in ("1", "true", "yes"):
-        print("[TAAP-DEBUG] edts digest_input (NEW):", repr(digest_input_str))
+        # digest_input_str contains the Basic-auth Authorization header
+        # value when Authorization is one of the signed headers — that
+        # value is Base64-reversible to consumer_key:consumer_secret.
+        # Print only the SHA-256 + length + header names for signature
+        # debugging; never the raw value itself.
+        _digest_sha256 = hashlib.sha256(digest_input).hexdigest()
+        print(
+            f"[TAAP-DEBUG] edts digest_input: len={len(digest_input)} "
+            f"sha256={_digest_sha256[:16]}... "
+            f"signed_headers={[name for name, _ in ehts_headers]}"
+        )
     edts = (
         base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest())
         .rstrip(b"=")
@@ -301,14 +310,13 @@ class TMobileTAAPClient:
         # rejects base64url substitutions (-/_) and missing padding.
         basic_b64 = base64.b64encode(basic_creds).decode("ascii")
         auth_header = "Basic " + basic_b64
-        print("AUTH HEADER EXACT:", repr(auth_header))
-        b64_valid = bool(re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", basic_b64))
-        try:
-            roundtrip_ok = base64.b64decode(basic_b64) == basic_creds
-        except Exception:
-            roundtrip_ok = False
-        print("AUTH BASIC B64 VALID:", b64_valid)
-        print("AUTH BASIC ROUNDTRIP OK:", roundtrip_ok)
+        # SECURITY: do NOT print or log auth_header — it is Base64-
+        # reversible to consumer_key:consumer_secret.  The unconditional
+        # diagnostic prints that previously lived here were removed in PR
+        # security(tmobile): remove unsafe credential logging.  If you
+        # need to verify Basic-auth encoding locally, exercise this module
+        # in a REPL with throwaway credentials — never re-add prints here.
+        # See tests/test_tmobile_taap_no_secret_logging.py for the guard.
 
         # Single source of truth: auth_header is the exact string used in
         # BOTH the wire Authorization header and the PoP edts/ehts input.
@@ -351,9 +359,22 @@ class TMobileTAAPClient:
             print(f"[TAAP-DEBUG] X-Authorization format: "
                   + ("(raw JWT, no prefix)" if not headers["X-Authorization"].startswith("PoP ")
                      else "'PoP ' (with space) — UNEXPECTED, T-Mobile expects raw JWT"))
-            print(f"[TAAP-DEBUG] X-Authorization (first 80): {headers['X-Authorization'][:80]}...")
+            # X-Authorization is the signed PoP JWT; even the first 80
+            # chars expose the base64-encoded `iss` claim (= consumer_key).
+            # Print structure only.
+            print(
+                f"[TAAP-DEBUG] X-Authorization: <signed JWT, "
+                f"segments={headers['X-Authorization'].count('.') + 1}, "
+                f"total_len={len(headers['X-Authorization'])}>"
+            )
             print(f"[TAAP-DEBUG] PoP header: {pop_hdr}")
-            print(f"[TAAP-DEBUG] PoP claims: {pop_clm}")
+            # pop_clm.iss is the consumer_key — redact before printing.
+            _safe_pop_clm = (
+                {**pop_clm, "iss": "<redacted>"}
+                if isinstance(pop_clm, dict) and pop_clm.get("iss")
+                else pop_clm
+            )
+            print(f"[TAAP-DEBUG] PoP claims: {_safe_pop_clm}")
 
         client = await self._client()
         logger.info("T-Mobile TAAP: requesting access token from %s", self.token_url)
