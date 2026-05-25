@@ -18,13 +18,14 @@ from app.services.health.normalizer import (
     compute_site_state,
 )
 from app.services.health.signals import HealthSignals
+from app.services.health.signals_loader import (
+    load_signals_for_site,
+    load_signals_for_tenant,
+)
 from app.services.health.states import (
     CanonicalDeviceState,
     CanonicalSiteState,
 )
-
-# Commit 2: HealthSignals + compute_*_state landed; load_signals_for_tenant
-# arrives in commit 3 and will be added then.
 
 __all__ = [
     "CanonicalDeviceState",
@@ -32,4 +33,6 @@ __all__ = [
     "HealthSignals",
     "compute_device_state",
     "compute_site_state",
+    "load_signals_for_site",
+    "load_signals_for_tenant",
 ]
