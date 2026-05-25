@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     # Default model identifier when the provider supports a choice.
     LLLM_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
 
+    # ── Health Normalization Layer (MVP — AI Health Summary only) ──
+    # When "false" (default) the AI Health Summary uses its existing
+    # heartbeat-only derivation in app/services/llm/context.py.  When
+    # "true" the orchestrator routes through app/services/health/ —
+    # a single canonical state per device fusing heartbeat, carrier
+    # telemetry, Telnyx CDR liveness, and VOLA sync timestamps.
+    #
+    # No other surface (Command Center, Map, Sites, Devices, Attention
+    # engine) reads this flag.  Phase N1+ migrations are tracked in
+    # docs/HEALTH_NORMALIZER_MVP.md "Rollout plan".
+    FEATURE_HEALTH_NORMALIZER: str = "false"
+
     # ── Zoho Desk (support ticket escalation) ─────────────────────
     ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
     ZOHO_DESK_ORG_ID: str = ""
