@@ -136,6 +136,90 @@ else:
 
 ---
 
+## Operator note: env var must be set on the WORKER service, not just the API
+
+`FEATURE_TMOBILE_CALLBACK_INGEST` is **not** listed in `render.yaml`. When the operator flips it on, they must set it on **both** Render services:
+
+- `true911-api` — controls whether the callback router archives + enqueues
+- `true911-worker` — controls whether `sim_service.handle_webhook` invokes the processor (and therefore whether `Device.last_network_event` ever updates)
+
+If the var is set on the API only (e.g. via Render dashboard on that service alone, or via Blueprint sync without listing it for the worker), the symptom is:
+
+- Callback returns 200 ✅
+- `IntegrationPayload(source='tmobile')` row created with `processed=true` ✅
+- `Job(job_type='webhook.tmobile')` reaches `status='completed'` ✅
+- **`Device.last_network_event` stays NULL** ❌
+- **`command_telemetry` has no new rows** ❌
+- **`jobs.result` contains `tmobile_status: "skipped:flag_off"`** (this is the immediate diagnostic)
+
+The result-shape diagnostic was added in the worker-observability PR (see §"Worker observability" below). For older jobs that pre-date that PR, the legacy result shape was just `{"processed": True, "payload_id": "..."}` with no marker — those rows can't be retroactively distinguished from a successful legacy webhook handling.
+
+### Fix
+
+Two equivalent paths:
+
+**(a) Dashboard:** add `FEATURE_TMOBILE_CALLBACK_INGEST=true` directly on the `true911-worker` service env. Restart the worker. New callbacks will promote correctly.
+
+**(b) render.yaml + Blueprint sync:** add to both service blocks:
+
+```yaml
+  - type: web
+    name: true911-api
+    envVars:
+      ...
+      - key: FEATURE_TMOBILE_CALLBACK_INGEST
+        value: "true"
+
+  - type: worker
+    name: true911-worker
+    envVars:
+      ...
+      - key: FEATURE_TMOBILE_CALLBACK_INGEST
+        value: "true"
+```
+
+Then trigger Blueprint sync (same gotcha as PR #55/#57). The `value: "true"` here is the production-state intent — Blueprint sync sets it explicitly on both services.
+
+---
+
+## Worker observability (added 2026-05-26)
+
+The `webhook.tmobile` worker handler (`sim_service.handle_webhook`) now always returns a structured `jobs.result` so the legacy-stub-vs-processor-vs-skip distinction is visible from `SELECT result FROM jobs WHERE job_type='webhook.tmobile' ORDER BY id DESC LIMIT 5;` without re-running anything.
+
+| Worker code path | `jobs.result` shape |
+|---|---|
+| Flag ON, processor promoted via Sim | `{processed, payload_id, source="tmobile", tmobile_status="promoted", tmobile_reason=null, tmobile_matched_sim_iccid="<iccid>", tmobile_matched_device_id="<id>"}` |
+| Flag ON, processor promoted via Device fallback | `{processed, payload_id, source="tmobile", tmobile_status="promoted:device_fallback", tmobile_reason=null, tmobile_matched_sim_iccid=null, tmobile_matched_device_id="<id>"}` |
+| Flag ON, processor skipped (any reason) | `{processed, payload_id, source="tmobile", tmobile_status="skipped:<reason>", tmobile_reason="<details>", ...}` |
+| Flag OFF (worker missing env var) | `{processed, payload_id, source="tmobile", tmobile_status="skipped:flag_off"}` — **diagnostic for the missing-worker-env-var case** |
+| Non-T-Mobile job | `{processed, payload_id, source="<other>"}` — no `tmobile_*` fields |
+
+The flag-off branch also emits a WARNING log line in the worker process:
+
+```
+T-Mobile webhook wh-XXXXXXXXXX arrived but the worker's
+FEATURE_TMOBILE_CALLBACK_INGEST is not 'true' — using legacy stub
+(no promotion).  Set the env var on the WORKER service (not just
+the API) to enable promotion. See docs/TMOBILE_CALLBACK_INGEST_MVP.md
+operator note.
+```
+
+### How to diagnose a callback that's not promoting
+
+```sql
+SELECT id, job_type, status, result, completed_at
+FROM jobs
+WHERE job_type = 'webhook.tmobile'
+ORDER BY id DESC LIMIT 10;
+```
+
+- `result->>'tmobile_status'` is `'skipped:flag_off'` → worker env var missing (see Operator note above)
+- `result->>'tmobile_status'` is `'skipped:no_match'` → neither Sim nor Device matched the callback identifiers (cross-check `signal.iccid` / `signal.msisdn` against `sims` and `devices`)
+- `result->>'tmobile_status'` is `'skipped:ambiguous_device_match'` → multiple devices share that MSISDN/ICCID; `result->>'tmobile_reason'` lists `matched_on=` and `candidates=`
+- `result->>'tmobile_status'` is `'promoted'` or `'promoted:device_fallback'` → worker did its job; if `last_network_event` still looks wrong, check `device_id` in the result vs the device you expected
+
+---
+
 ## Production finding 2026-05-26: device-fallback match
 
 After flipping `FEATURE_TMOBILE_CALLBACK_INGEST=true` in production, end-to-end testing confirmed:

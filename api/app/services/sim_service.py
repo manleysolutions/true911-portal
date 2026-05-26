@@ -145,24 +145,45 @@ async def handle_poll_usage(db: AsyncSession, job: Job) -> dict[str, Any]:
     return {"status": "skipped", "reason": "provider credentials not configured"}
 
 
+async def _mark_payload_processed(db: AsyncSession, payload_id: str) -> None:
+    """Legacy-stub side effect: mark the archived payload processed.
+
+    Extracted so the T-Mobile flag-off branch and the non-T-Mobile
+    branch can share the same write without duplicating the SELECT.
+    """
+    from app.models.integration_payload import IntegrationPayload
+    result = await db.execute(
+        select(IntegrationPayload).where(IntegrationPayload.payload_id == payload_id)
+    )
+    ip = result.scalar_one_or_none()
+    if ip:
+        ip.processed = True
+        await db.flush()
+
+
 async def handle_webhook(db: AsyncSession, job: Job) -> dict[str, Any]:
     """Process a persisted webhook payload.
 
-    Default behavior: mark the payload processed and return.
+    Result shape (always populated, useful for ``jobs.result``-based
+    debugging from Postgres without re-running the worker):
 
-    T-Mobile callback ingest MVP:
-      When the job's source is ``"tmobile"`` AND
-      ``FEATURE_TMOBILE_CALLBACK_INGEST`` is exactly ``"true"`` (after
-      strip+lower), the work is delegated to
-      :func:`app.services.tmobile_callback_processor.process_payload`,
-      which extracts the event, matches a ``Sim``, refuses ambiguous
-      matches, and (on a single safe match with a linked ``Device``)
-      promotes the payload to ``Device.last_network_event`` via the
-      existing carrier_adapter path.  That field feeds the Health
-      Normalizer as ``last_carrier_event_at``.
+      Every return value includes ``payload_id``, ``processed`` (True),
+      and ``source`` (the job's payload source, may be ``None``).
 
-      When the flag is off or the source is not ``"tmobile"`` the
-      legacy "mark processed" stub runs unchanged.
+      For T-Mobile jobs (``source == "tmobile"``):
+        * Flag on → adds the full ``tmobile_*`` set from
+          :func:`process_payload` (``tmobile_status``, ``tmobile_reason``,
+          ``tmobile_matched_sim_iccid``, ``tmobile_matched_device_id``).
+        * Flag off → adds ``tmobile_status="skipped:flag_off"`` so
+          operators inspecting ``jobs.result`` can immediately see that
+          the worker process did not have ``FEATURE_TMOBILE_CALLBACK_INGEST=true``
+          (a common failure mode when the env var was set on the API
+          service via the Render dashboard but not propagated to the
+          worker service — Blueprint sync only applies vars listed in
+          ``render.yaml`` per service).
+
+    For all sources the legacy "mark IntegrationPayload processed"
+    side effect still runs — no change to the audit trail.
     """
     payload = job.payload or {}
     payload_id = payload.get("payload_id")
@@ -186,20 +207,37 @@ async def handle_webhook(db: AsyncSession, job: Job) -> dict[str, Any]:
             return {
                 "payload_id": payload_id,
                 "processed": True,
+                "source": "tmobile",
                 "tmobile_status": result.status,
                 "tmobile_reason": result.reason,
                 "tmobile_matched_sim_iccid": result.matched_sim_iccid,
                 "tmobile_matched_device_id": result.matched_device_id,
             }
+        # Flag off on this worker — the most common cause is that
+        # FEATURE_TMOBILE_CALLBACK_INGEST was set via Render dashboard
+        # on the API service only, leaving the worker service env
+        # unchanged (Blueprint sync only propagates vars listed in
+        # render.yaml per service).  Log loudly so the symptom is
+        # visible in worker logs, AND tag the result so it appears
+        # in jobs.result without needing log access.
+        logger.warning(
+            "T-Mobile webhook %s arrived but the worker's "
+            "FEATURE_TMOBILE_CALLBACK_INGEST is not 'true' — using "
+            "legacy stub (no promotion).  Set the env var on the "
+            "WORKER service (not just the API) to enable promotion. "
+            "See docs/TMOBILE_CALLBACK_INGEST_MVP.md operator note.",
+            payload_id,
+        )
+        await _mark_payload_processed(db, payload_id)
+        return {
+            "payload_id": payload_id,
+            "processed": True,
+            "source": "tmobile",
+            "tmobile_status": "skipped:flag_off",
+        }
 
-    # Default path (unchanged): mark the payload as processed.
-    from app.models.integration_payload import IntegrationPayload
-    result = await db.execute(
-        select(IntegrationPayload).where(IntegrationPayload.payload_id == payload_id)
-    )
-    ip = result.scalar_one_or_none()
-    if ip:
-        ip.processed = True
-        await db.flush()
-
-    return {"payload_id": payload_id, "processed": True}
+    # Non-T-Mobile sources — unchanged behavior, source surfaced
+    # in the result so operators can tell at a glance whether the
+    # job carried the expected source.
+    await _mark_payload_processed(db, payload_id)
+    return {"payload_id": payload_id, "processed": True, "source": source}
