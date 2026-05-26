@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
-from .middleware import RequestVisibilityMiddleware
+from .middleware import RequestVisibilityMiddleware, TmobileCallbackAuditMiddleware
 from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls, llm
 
 # Configure app-level logging so INFO emits to Render's stdout stream.
@@ -109,6 +109,13 @@ else:
 # (including CORS preflight and 5xx fallbacks) gets an X-Request-ID, and
 # we log a single per-request line for traceability without leaking secrets.
 app.add_middleware(RequestVisibilityMiddleware)
+
+# Passive IP-audit for the T-Mobile PIT callback URLs.  Off by default
+# (FEATURE_TMOBILE_CALLBACK_IP_AUDIT=false); even when on, only logs —
+# never alters the response.  Enforcement is the Cloudflare WAF rule
+# in front of pit-api.manleysolutions.com.  Safe to register
+# unconditionally because the off-path is a single string prefix check.
+app.add_middleware(TmobileCallbackAuditMiddleware)
 
 
 @app.exception_handler(Exception)
