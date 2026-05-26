@@ -58,7 +58,19 @@ async def create_and_enqueue(
 
 
 def _enqueue_rq(job: Job) -> None:
-    """Best-effort RQ enqueue. Fails silently if redis is not available."""
+    """Best-effort RQ enqueue. Fails silently if redis is not available.
+
+    The dotted path passed to ``q.enqueue`` is the top-level
+    ``worker:dispatch`` form — NOT ``app.worker.dispatch`` — because
+    ``api/worker.py`` lives at the Render service rootDir, and the
+    worker service starts with ``python worker.py`` from cwd=api/.
+    RQ resolves the path at pop-time, so a wrong string causes the
+    worker to ``ModuleNotFoundError`` on every pop, leaving the DB
+    Job row stuck at ``status='queued', attempt=0, started_at=NULL``
+    forever (``mark_running`` runs inside ``dispatch`` and never gets
+    called).  See ``test_worker_dispatch_import_path.py`` for the
+    regression guard.
+    """
     try:
         from redis import Redis
         from rq import Queue as RqQueue
@@ -71,7 +83,7 @@ def _enqueue_rq(job: Job) -> None:
         conn = Redis.from_url(redis_url)
         q = RqQueue(job.queue, connection=conn)
         q.enqueue(
-            "app.worker.dispatch",
+            "worker.dispatch",
             job.id,
             job_timeout="5m",
         )
@@ -127,7 +139,7 @@ async def mark_failed(db: AsyncSession, job_id: int, error: str) -> None:
                 q = RqQueue(job.queue, connection=conn)
                 q.enqueue_in(
                     __import__("datetime").timedelta(seconds=delay),
-                    "app.worker.dispatch",
+                    "worker.dispatch",
                     job.id,
                     job_timeout="5m",
                 )
