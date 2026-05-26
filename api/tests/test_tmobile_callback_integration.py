@@ -251,9 +251,13 @@ class TestFlagOnArchivesPayload:
 
 class TestWorkerHandlerDelegation:
     @pytest.mark.asyncio
-    async def test_flag_off_uses_legacy_stub(self):
+    async def test_flag_off_uses_legacy_stub_with_visible_flag_off_marker(self):
         """source='tmobile' with flag off → process_payload NOT called,
-        legacy 'mark processed' path runs."""
+        legacy 'mark processed' path runs, AND the result carries
+        ``tmobile_status='skipped:flag_off'`` so operators inspecting
+        jobs.result can immediately diagnose the missing-worker-env-var
+        symptom (Blueprint sync only propagates vars listed in
+        render.yaml per service)."""
         from app.services.sim_service import handle_webhook
 
         db = MagicMock()
@@ -276,10 +280,18 @@ class TestWorkerHandlerDelegation:
         ):
             result = await handle_webhook(db, job)
 
-        assert "tmobile_status" not in result
-        assert result == {"payload_id": "wh-xyz", "processed": True}
+        # Processor is still not called — the kill-switch contract holds.
         process_mock.assert_not_called()
-        assert ip.processed is True  # legacy path still marks it
+        # Legacy IntegrationPayload mark still happens.
+        assert ip.processed is True
+        # New observability fields are present and visible from a
+        # `SELECT result FROM jobs` query.
+        assert result == {
+            "payload_id": "wh-xyz",
+            "processed": True,
+            "source": "tmobile",
+            "tmobile_status": "skipped:flag_off",
+        }
 
     @pytest.mark.asyncio
     async def test_flag_on_delegates_to_processor(self):
