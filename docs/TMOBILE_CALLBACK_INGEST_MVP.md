@@ -136,6 +136,53 @@ else:
 
 ---
 
+## Production finding 2026-05-26: device-fallback match
+
+After flipping `FEATURE_TMOBILE_CALLBACK_INGEST=true` in production, end-to-end testing confirmed:
+
+- The callback returned 200.
+- `IntegrationPayload(source='tmobile')` was created correctly.
+- The `webhook.tmobile` job was created, picked up by the worker (after PR #61), and completed.
+- **But `Device.last_network_event` did not update** for any production callback.
+
+Root cause: the processor matched ICCID/MSISDN only against the `sims` table. In production, the `sims` table contained no rows for the affected lines. Many cellular devices were imported with the cellular identifiers stored **directly on the `Device` row** (`devices.iccid`, `devices.msisdn`), leaving the `sims` table empty for those devices. Every callback was correctly archived but archived-only — `skipped:no_match`.
+
+### Fix
+
+After `match_sim` returns `kind='none'`, the processor now invokes `match_device_fallback(db, signal)`:
+
+- Tries `Device.iccid` first (more specific). Count-first; refuse if >1.
+- Then tries `Device.msisdn` with a small set of equivalent forms via `_msisdn_variants(value)` so a callback's `8563081391` matches a stored `+18563081391` and vice-versa.
+- Tenant is read from the matched `Device.tenant_id` — never guessed from the callback body.
+- On exactly one match: promotes via the same `carrier_adapter.ingest_carrier_telemetry` path the SIM-side uses. Status returned is `promoted:device_fallback` (distinct from the SIM-path `promoted` so logs can distinguish).
+- Ambiguous (>1 device matches): `skipped:ambiguous_device_match` — refuses to guess.
+- Zero matches anywhere: `skipped:no_match` (existing behavior preserved).
+
+The SIM-match path is unchanged and still wins first when populated. Existing tenant isolation contracts hold:
+
+- ICCID match: `Device.iccid` is not globally UNIQUE on the schema, but ambiguous matches are refused, so a single match is unambiguous.
+- MSISDN match: same — ambiguity is refused.
+- No cross-tenant write is possible without a duplicate identifier across tenants (which is itself a data-integrity issue and would be caught as ambiguous).
+
+### MSISDN normalisation
+
+`_msisdn_variants("8563081391")` returns the set `{"8563081391", "18563081391", "+18563081391"}`. The same set is returned for `"18563081391"` and `"+18563081391"`. Non-US numbers degrade safely to `(raw, digits-only)` with no false US-prefix injection. The raw input is always preserved so a literal stored form (e.g. `"(856) 308-1391"` or an extension) still matches.
+
+### Status names introduced
+
+| Status | Meaning |
+|---|---|
+| `promoted:device_fallback` | Device matched directly (no Sim row), `last_network_event` updated. |
+| `skipped:ambiguous_device_match` | ICCID/MSISDN matched >1 Device row. Reason carries `matched_on=` + `candidates=`. |
+
+`skipped:no_match` now means "no Sim AND no Device match" (was: no Sim match).
+
+### Container statics still hold
+
+The two surface-containment tests at the bottom of `test_tmobile_callback_integration.py` continue to pass — no new imports of E911 / provisioning / customer / call-routing / line_service modules in the processor; no new consumer of `FEATURE_TMOBILE_CALLBACK_INGEST` outside the allowlist. New tests live in `test_tmobile_callback_device_fallback.py` (22 tests) plus one modified existing test in `test_tmobile_callback_processor.py`.
+
+---
+
 ## Known gaps (deliberate, documented in code + tests)
 
 1. **Inbound signature verification not implemented.** T-Mobile has not published their callback signing spec. Current callback endpoints accept any payload. **Mitigations to apply at the operator/network layer:**
