@@ -22,12 +22,23 @@ What this module does:
          ``settings.TMOBILE_CALLBACK_MAX_AGE_SECONDS`` (replay guard),
        * the MSISDN-only match returns more than one ``Sim`` row
          (ambiguous — we will not guess),
-       * the matched ``Sim`` has no linked ``Device``.
+       * the matched ``Sim`` has no linked ``Device``,
+       * the Device-fallback match returns more than one ``Device``
+         (ambiguous — we will not guess).
   5. On a single safe match with a linked device, reuses
      :func:`app.services.carrier_adapter.ingest_carrier_telemetry`
      to write ``device.last_network_event = now`` (the field the
      Health Normalizer reads as ``last_carrier_event_at``) plus a
      ``CommandTelemetry`` row — the same path Verizon already uses.
+  6. Device fallback (production finding 2026-05-26):
+     when ``match_sim`` returns no match, attempts a direct lookup
+     against ``Device.iccid`` / ``Device.msisdn`` with normalized
+     MSISDN variants.  Many production cellular devices were
+     imported with the cellular identifiers stored directly on the
+     Device row, leaving the Sim table empty for those — without
+     this fallback every callback for those devices was archived
+     only.  Tenant scoping is implicit (the matched Device's own
+     ``tenant_id`` is used); ambiguous matches are refused.
 
 What this module deliberately does NOT do:
 
@@ -108,14 +119,16 @@ class ExtractedSignal:
 class ProcessResult:
     """Outcome of one payload processing.  ``status`` is one of:
 
-      ``promoted``               — Device.last_network_event updated
-      ``skipped:no_identifier``  — body had no ICCID and no MSISDN
-      ``skipped:no_match``       — identifier didn't match any Sim
-      ``skipped:ambiguous_match``— MSISDN matched multiple Sim rows
-      ``skipped:no_device``      — Sim matched but no linked Device
-      ``skipped:replay``         — event_timestamp older than cap
-      ``error:malformed``        — body could not be parsed
-      ``error:not_found``        — payload_id did not resolve
+      ``promoted``                       — Device.last_network_event updated via Sim
+      ``promoted:device_fallback``       — same write but matched directly on Device
+      ``skipped:no_identifier``          — body had no ICCID and no MSISDN
+      ``skipped:no_match``               — identifier didn't match any Sim or Device
+      ``skipped:ambiguous_match``        — MSISDN matched multiple Sim rows
+      ``skipped:ambiguous_device_match`` — ICCID/MSISDN matched multiple Device rows
+      ``skipped:no_device``              — Sim matched but no linked Device
+      ``skipped:replay``                 — event_timestamp older than cap
+      ``error:malformed``                — body could not be parsed
+      ``error:not_found``                — payload_id did not resolve
     """
 
     status: str
@@ -277,6 +290,127 @@ async def find_linked_device(db: AsyncSession, sim: Sim) -> Optional[Device]:
     return (await db.execute(q)).scalar_one_or_none()
 
 
+# ─── Device fallback (production finding 2026-05-26) ───────────────
+
+
+@dataclass(frozen=True)
+class DeviceMatchResult:
+    kind: str  # "one" | "none" | "ambiguous"
+    device: Optional[Device] = None
+    candidate_count: int = 0
+    matched_on: Optional[str] = None  # "iccid" | "msisdn"
+
+
+def _msisdn_variants(value: Optional[str]) -> tuple[str, ...]:
+    """Build a small set of equivalent MSISDN forms for matching.
+
+    T-Mobile's PIT callbacks may report the same line as
+    ``8563081391`` / ``18563081391`` / ``+18563081391`` /
+    ``(856) 308-1391`` depending on the event type.  Stored
+    ``Device.msisdn`` values were imported from operator
+    spreadsheets and CRM exports that use any of these forms too.
+
+    For a 10-digit US-local input we derive (10-digit, 11-digit with
+    leading 1, E.164) so a single ``IN`` query covers the common
+    cases without changing the schema or how operators store data.
+
+    Always includes the original ``raw`` and the digits-only form so
+    a literal stored value still matches even if the variant logic
+    doesn't recognise it (e.g. an extension).  Non-US / non-numeric
+    inputs degrade safely to just (raw, digits) — no false positives
+    against the empty / 1-2 char prefix.
+    """
+    if not value:
+        return ()
+    raw = value.strip()
+    if not raw:
+        return ()
+    digits = "".join(c for c in raw if c.isdigit())
+    variants: set[str] = {raw}
+    if digits:
+        variants.add(digits)
+    if len(digits) == 10:
+        variants.add("1" + digits)
+        variants.add("+1" + digits)
+    elif len(digits) == 11 and digits.startswith("1"):
+        variants.add(digits[1:])
+        variants.add("+" + digits)
+    elif raw.startswith("+") and digits:
+        variants.add("+" + digits)
+    return tuple(sorted(variants))
+
+
+async def match_device_fallback(
+    db: AsyncSession, signal: ExtractedSignal
+) -> DeviceMatchResult:
+    """Look up a Device directly by ICCID/MSISDN when the Sim table
+    has no match for the callback identifiers.
+
+    Required because many imported cellular devices store the
+    cellular identifiers directly on the ``Device`` row, leaving the
+    ``Sim`` table empty for those.  Without this fallback every
+    callback for those devices was archived only (the production
+    finding that motivated this code).
+
+    Safety contract — identical in spirit to ``match_sim``:
+
+      * ICCID is tried first (more specific).  Stored as
+        ``Device.iccid`` (no UNIQUE constraint), so we count first
+        and refuse if >1.
+      * MSISDN fallback uses ``_msisdn_variants`` to build a small
+        IN-list against ``Device.msisdn``.  Same count-first +
+        refuse-ambiguous pattern.
+      * Tenant is read from the matched ``Device.tenant_id`` —
+        never guessed from the callback body.
+
+    Never raises.  Returns ``kind='none'`` when no identifier matches
+    (caller will then archive-only).
+    """
+    # ICCID first — most specific.
+    if signal.iccid:
+        count_q = select(func.count(Device.id)).where(
+            Device.iccid == signal.iccid
+        )
+        count = int((await db.execute(count_q)).scalar() or 0)
+        if count == 1:
+            load_q = select(Device).where(Device.iccid == signal.iccid)
+            device = (await db.execute(load_q)).scalar_one_or_none()
+            if device is not None:
+                return DeviceMatchResult(
+                    kind="one", device=device,
+                    candidate_count=1, matched_on="iccid",
+                )
+        elif count > 1:
+            return DeviceMatchResult(
+                kind="ambiguous", candidate_count=count, matched_on="iccid",
+            )
+        # count == 0 → fall through to MSISDN.
+
+    # MSISDN — build variant set, query IN, count first.
+    if signal.msisdn:
+        variants = _msisdn_variants(signal.msisdn)
+        if variants:
+            count_q = select(func.count(Device.id)).where(
+                Device.msisdn.in_(variants)
+            )
+            count = int((await db.execute(count_q)).scalar() or 0)
+            if count == 1:
+                load_q = select(Device).where(Device.msisdn.in_(variants))
+                device = (await db.execute(load_q)).scalar_one_or_none()
+                if device is not None:
+                    return DeviceMatchResult(
+                        kind="one", device=device,
+                        candidate_count=1, matched_on="msisdn",
+                    )
+            elif count > 1:
+                return DeviceMatchResult(
+                    kind="ambiguous", candidate_count=count,
+                    matched_on="msisdn",
+                )
+
+    return DeviceMatchResult(kind="none", candidate_count=0)
+
+
 # ─── Orchestrator ──────────────────────────────────────────────────
 
 
@@ -333,9 +467,58 @@ async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
 
     match = await match_sim(db, signal)
     if match.kind == "none":
+        # Production finding 2026-05-26: many imported cellular devices
+        # store ICCID/MSISDN directly on the Device row, leaving the
+        # Sim table empty for those.  Fall back to a direct Device
+        # lookup with the same safety contract: refuse ambiguous,
+        # archive-only on zero matches.
+        device_match = await match_device_fallback(db, signal)
+        if device_match.kind == "one":
+            device = device_match.device
+            assert device is not None  # mypy aid
+            telemetry = CarrierTelemetry(
+                device_id=device.device_id,
+                carrier="t-mobile",
+                signal_dbm=None,
+                network_status=signal.network_status,
+                roaming=None,
+                data_usage_mb=None,
+                network_tech=None,
+            )
+            await ingest_carrier_telemetry(db, device.tenant_id, telemetry)
+            await db.commit()
+            logger.info(
+                "T-Mobile callback %s: promoted via device fallback "
+                "(device=%s tenant=%s matched_on=%s event_type=%s "
+                "network_status=%s)",
+                payload_id, device.device_id, device.tenant_id,
+                device_match.matched_on, signal.event_type,
+                signal.network_status or "<none>",
+            )
+            return ProcessResult(
+                status="promoted:device_fallback",
+                matched_device_id=device.device_id,
+            )
+        if device_match.kind == "ambiguous":
+            logger.warning(
+                "T-Mobile callback %s: AMBIGUOUS device fallback on %s "
+                "(%d candidates) — refusing to guess, archive only "
+                "(event_type=%s)",
+                payload_id, device_match.matched_on or "<unknown>",
+                device_match.candidate_count, signal.event_type,
+            )
+            await db.commit()
+            return ProcessResult(
+                status="skipped:ambiguous_device_match",
+                reason=(
+                    f"matched_on={device_match.matched_on} "
+                    f"candidates={device_match.candidate_count}"
+                ),
+            )
+        # device_match.kind == "none" → genuinely unknown; archive only.
         logger.info(
-            "T-Mobile callback %s: no Sim matches iccid=%s msisdn=%s — "
-            "archive only (event_type=%s)",
+            "T-Mobile callback %s: no Sim or Device matches iccid=%s "
+            "msisdn=%s — archive only (event_type=%s)",
             payload_id,
             _redact_identifier(signal.iccid),
             _redact_identifier(signal.msisdn),

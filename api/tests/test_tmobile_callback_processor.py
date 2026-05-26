@@ -332,15 +332,25 @@ class TestProcessPayload:
         assert payload.processed is True
 
     @pytest.mark.asyncio
-    async def test_no_sim_match_archives_only(self):
+    async def test_no_sim_match_and_no_device_match_archives_only(self):
+        """When BOTH the Sim lookup AND the Device fallback return
+        nothing, the payload is archived only (no promotion).  The
+        Device fallback was added 2026-05-26 — see
+        ``test_tmobile_callback_device_fallback.py`` for the
+        promotion paths it enables."""
         payload = _payload(body={
             "iccid": "89014103211118510720",
             "event_time": _NOW.isoformat(),
         })
         load_hit = MagicMock(); load_hit.scalar_one_or_none.return_value = payload
-        iccid_miss = MagicMock(); iccid_miss.scalar_one_or_none.return_value = None
+        iccid_sim_miss = MagicMock(); iccid_sim_miss.scalar_one_or_none.return_value = None
+        # Device-fallback path: ICCID count query returns 0 (no MSISDN
+        # in this payload so MSISDN sub-query is skipped entirely).
+        iccid_device_count = MagicMock(); iccid_device_count.scalar.return_value = 0
         db = MagicMock()
-        db.execute = AsyncMock(side_effect=[load_hit, iccid_miss])
+        db.execute = AsyncMock(side_effect=[
+            load_hit, iccid_sim_miss, iccid_device_count,
+        ])
         db.commit = AsyncMock()
 
         with patch(
