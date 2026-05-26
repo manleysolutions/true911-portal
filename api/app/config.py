@@ -82,6 +82,33 @@ class Settings(BaseSettings):
     # replayed callbacks marking long-offline devices as fresh.
     TMOBILE_CALLBACK_MAX_AGE_SECONDS: int = 600
 
+    # ── T-Mobile Callback IP Audit (passive, log-only) ────────────
+    # Defense-in-depth for the T-Mobile PIT callback URLs.  When
+    # "true", a middleware checks the Cloudflare-provided
+    # CF-Connecting-IP header on requests to /tmobile/wholesale/callback/*
+    # and emits a single warning log line if the source IP is outside
+    # TMOBILE_CALLBACK_SOURCE_IPS.  Never alters the response code
+    # (HTTP 200 contract is preserved) — this catches Cloudflare WAF
+    # misconfiguration and direct *.onrender.com origin probes that
+    # bypass the Cloudflare edge rule.  Silent when CF-Connecting-IP
+    # is missing (local dev / direct origin hit with no spoof) and
+    # silent when the IP is in the allowlist.  Enforcement lives at
+    # Cloudflare; this is observability only.  See
+    # docs/TMOBILE_CALLBACK_IP_AUDIT.md (or the rollout doc) for the
+    # Cloudflare rule that performs the actual blocking.
+    FEATURE_TMOBILE_CALLBACK_IP_AUDIT: str = "false"
+    # Comma-separated list of allowed source IPs / ranges / CIDRs for
+    # T-Mobile PIT callbacks.  Each entry may be:
+    #   * single IPv4:  206.29.176.74
+    #   * range:        206.29.176.74-206.29.176.79
+    #   * CIDR:         206.29.176.64/27
+    # Defaults to the two T-Mobile-confirmed PIT source ranges.
+    # Operator override (e.g. to add a test laptop IP during a PIT
+    # synthetic) is done via Render env var, not a code change.
+    TMOBILE_CALLBACK_SOURCE_IPS: str = (
+        "206.29.176.74-206.29.176.79,208.54.104.32-208.54.104.37"
+    )
+
     # ── Health Normalization Layer (MVP — AI Health Summary only) ──
     # When "false" (default) the AI Health Summary uses its existing
     # heartbeat-only derivation in app/services/llm/context.py.  When
