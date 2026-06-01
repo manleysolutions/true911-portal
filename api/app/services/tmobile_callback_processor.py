@@ -70,6 +70,7 @@ from app.models.device import Device
 from app.models.integration_payload import IntegrationPayload
 from app.models.sim import Sim
 from app.services.carrier_adapter import CarrierTelemetry, ingest_carrier_telemetry
+from app.services import tmobile_activation as activation
 
 logger = logging.getLogger("true911.tmobile.callback_processor")
 
@@ -107,6 +108,13 @@ _ACCOUNT_ID_KEYS = (
     "subscriberAccountId",
     "subscriber_account_id",
 )
+# Activation outcome status on an activation/provisioning callback.
+_ACTIVATION_STATUS_KEYS = (
+    "activationStatus",
+    "activation_status",
+    "provisioningStatus",
+    "provisioning_status",
+)
 
 
 # ─── Public types ──────────────────────────────────────────────────
@@ -125,6 +133,7 @@ class ExtractedSignal:
     event_timestamp: datetime  # always populated (falls back to received_at)
     event_type: str  # "provisioning" | "usage" | "device_change" | ... | "unknown"
     account_id: Optional[str] = None  # present on activation/provisioning callbacks
+    activation_status: Optional[str] = None  # vendor activation/provisioning status string
 
 
 @dataclass(frozen=True)
@@ -233,6 +242,7 @@ def extract_signal(
         event_timestamp=_parse_event_timestamp(body, created_at),
         event_type=event_type,
         account_id=_first_present(body, _ACCOUNT_ID_KEYS),
+        activation_status=_first_present(body, _ACTIVATION_STATUS_KEYS),
     )
 
 
@@ -578,19 +588,33 @@ async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
     assert sim is not None  # mypy aid
 
     # Activation-first flow: when an activation/provisioning callback carries a
-    # generated account ID, capture it (plus the assigned MSISDN) onto the
-    # matched Sim so SubscriberInquiry can be enabled later.  Additive only —
-    # does not affect matching, promotion, or any existing callback behavior.
-    if signal.account_id:
-        sim.meta = merge_activation_identifiers(sim.meta, signal.account_id, signal.msisdn)
+    # generated account ID and/or an activation status, capture the identifiers
+    # (account ID + assigned MSISDN) and advance the activation lifecycle record
+    # on the matched Sim.  Additive only — does not affect matching, promotion,
+    # or any existing callback behavior.
+    if signal.account_id or signal.activation_status:
+        meta = merge_activation_identifiers(sim.meta, signal.account_id, signal.msisdn)
+        prior = meta.get(activation.META_KEY)
+        record = activation.resolve_from_callback(
+            prior,
+            account_id=signal.account_id,
+            msisdn=signal.msisdn,
+            activation_status=signal.activation_status,
+            at=signal.event_timestamp.isoformat(),
+        )
+        meta[activation.META_KEY] = record
+        sim.meta = meta
         logger.info(
-            "T-Mobile callback %s: captured activation account ID onto Sim "
-            "(iccid=%s tenant=%s account_id=%s assigned_msisdn=%s event_type=%s)",
+            "T-Mobile callback %s: activation update on Sim "
+            "(iccid=%s tenant=%s state=%s account_id=%s assigned_msisdn=%s "
+            "status=%s event_type=%s)",
             payload_id,
             _redact_identifier(sim.iccid),
             sim.tenant_id,
+            record.get("state"),
             _redact_identifier(signal.account_id),
             _redact_identifier(signal.msisdn),
+            signal.activation_status or "<none>",
             signal.event_type,
         )
 

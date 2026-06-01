@@ -108,6 +108,7 @@ class DeviceHealth:
 
     # ── Supporting signals (read from DB, no live vendor call) ──────
     last_check_in: Optional[datetime] = None      # most recent liveness across channels
+    last_heartbeat: Optional[datetime] = None     # device's own last report (e.g. Vola lastUpdateTime)
     last_call_activity: Optional[datetime] = None
     last_callback_received: Optional[datetime] = None   # Device.last_network_event
     last_sync_time: Optional[datetime] = None           # Device.vola_last_sync
@@ -145,6 +146,7 @@ class DeviceHealth:
             "reason_codes": [r.value for r in self.reason_codes],
             "recommended_action": self.recommended_action,
             "last_check_in": _iso(self.last_check_in),
+            "last_heartbeat": _iso(self.last_heartbeat),
             "last_call_activity": _iso(self.last_call_activity),
             "last_callback_received": _iso(self.last_callback_received),
             "last_sync_time": _iso(self.last_sync_time),
@@ -161,21 +163,28 @@ class DeviceHealth:
     def to_customer_view(self) -> dict[str, Any]:
         """The simple-language shape for the customer portal.
 
-        Property / Elevator-Fire-Line / Device / Carrier / Voice Path /
-        Status / Last Check-In / Last Call / Recommended Action.
+        Property / Unit / Device / Device Type / Carrier / Voice Path /
+        Status / Last Check-In / Last Heartbeat / Firmware / Recommended Action.
+        No raw vendor payloads are included.
         """
         _VOICE_LABEL = {
             "volte": "VoLTE", "sip": "SIP", "analog": "Analog",
             "sip_over_lte": "SIP over LTE", "unknown": "—",
         }
+        # "Last Heartbeat" = the device's own last report; fall back to the most
+        # recent check-in we observed if the vendor didn't give a parseable one.
+        heartbeat = self.last_heartbeat or self.last_check_in
         return {
             "property": self.site_name,
             "unit": self.service_unit_name,           # Elevator / Fire Alarm / Line
             "device": self.device_name or self.model,
+            "device_type": self.model or self.device_type or "—",
             "carrier": (self.carrier or "—"),
             "voice_path": _VOICE_LABEL.get(self.voice_type, self.voice_type or "—"),
             "status": self.status.value,
             "last_check_in": _iso(self.last_check_in),
+            "last_heartbeat": _iso(heartbeat),
             "last_call": _iso(self.last_call_activity),
+            "firmware": self.firmware or "—",
             "recommended_action": self.recommended_action,
         }
