@@ -22,6 +22,11 @@ export const config = {
    *  off the AI nav item is hidden and the Command Center card is not
    *  rendered, so the portal behaves exactly as before Phase 1. */
   featureLllm: import.meta.env.VITE_FEATURE_LLLM === "true",
+  /** Feature flag: hardware-agnostic Device/Property Health page.  Default
+   *  OFF — when off the "Property Health" nav item is hidden and the page
+   *  shows a friendly "not enabled" state (the backend also returns 404).
+   *  Mirrors the backend FEATURE_DEVICE_HEALTH gate. */
+  featureDeviceHealth: import.meta.env.VITE_FEATURE_DEVICE_HEALTH === "true",
 };
 
 export const isDemo = config.appMode === "demo";
