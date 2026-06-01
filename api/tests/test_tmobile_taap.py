@@ -90,8 +90,9 @@ def test_load_private_key_missing_raises():
 # generate_pop_token now takes a single keyword-only ``ehts_headers``
 # list of (header_name, header_value) tuples.  The token claims are:
 #   iss / iat / exp / jti — standard
-#   ehts                  — comma-separated list of header NAMES
-#   edts                  — base64url(sha256(values joined by '\n'))
+#   ehts                  — ";"-separated list of signed keys (header NAMES
+#                           plus the "uri" / "http-method" tokens)
+#   edts                  — base64url(sha256(values concatenated, NO separator))
 # There is no claims["at"] — that was the older DPoP shape.
 
 import base64
@@ -100,8 +101,9 @@ import hashlib
 
 def _expected_edts(headers: list[tuple[str, str]]) -> str:
     """Reproduce the production digest exactly so the test pins the
-    canonicalization rule: header values only, joined by '\n'."""
-    digest_input = "\n".join(value for _, value in headers).encode("utf-8")
+    canonicalization rule: ehts values only, concatenated with NO
+    separator (T-Mobile pop-token-builder convention)."""
+    digest_input = "".join(value for _, value in headers).encode("utf-8")
     return (
         base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest())
         .rstrip(b"=")
@@ -132,7 +134,7 @@ def test_pop_token_structure():
     assert "exp" in claims
     assert claims["exp"] - claims["iat"] == 120  # 2 minute expiry
     assert "jti" in claims
-    assert claims["ehts"] == "Authorization,Content-Type"
+    assert claims["ehts"] == "Authorization;Content-Type"
     assert claims["edts"] == _expected_edts(headers)
     # The new shape never includes a claims["at"] block (that was DPoP).
     assert "at" not in claims
@@ -180,9 +182,9 @@ def test_pop_token_requires_ehts_headers():
 
 
 def test_pop_token_edts_canonicalization_is_values_only():
-    """Pin the canonicalization rule: edts hashes only the header
-    values joined by '\\n', NOT 'name=value' pairs and NOT including
-    the request body.  Apigee PopTokenBuilder convention."""
+    """Pin the canonicalization rule: edts hashes only the ehts values
+    concatenated with NO separator, NOT 'name=value' pairs and NOT
+    including the request body.  T-Mobile PopTokenBuilder convention."""
     from app.integrations.tmobile_taap import generate_pop_token
 
     headers = [("X-One", "alpha"), ("X-Two", "beta")]
