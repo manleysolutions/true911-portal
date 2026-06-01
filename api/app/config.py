@@ -121,6 +121,16 @@ class Settings(BaseSettings):
     # docs/HEALTH_NORMALIZER_MVP.md "Rollout plan".
     FEATURE_HEALTH_NORMALIZER: str = "false"
 
+    # ── Hardware-agnostic Device Health layer ──────────────────────
+    # When "true", exposes the read-only device-health APIs under
+    # /api/device-health (global, property, service-unit, adapter status)
+    # and lets the generic sync command persist vendor-enriched status.
+    # When "false" (default) the routes return 404 and nothing changes.
+    # Vendor logic lives only in app/services/device_health/adapters/* —
+    # the core is hardware-agnostic.  Belle Terre / Integrity is the first
+    # pilot dataset, not special-cased in code.
+    FEATURE_DEVICE_HEALTH: str = "false"
+
     # ── Zoho Desk (support ticket escalation) ─────────────────────
     ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
     ZOHO_DESK_ORG_ID: str = ""

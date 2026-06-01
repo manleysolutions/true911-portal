@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
 from .middleware import RequestVisibilityMiddleware, TmobileCallbackAuditMiddleware
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls, llm
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls, llm, device_health
 
 # Configure app-level logging so INFO emits to Render's stdout stream.
 # Uvicorn manages its own access/error loggers; this sets the level on
@@ -202,6 +202,7 @@ app.include_router(onboarding_review.router,  prefix="/api/onboarding-reviews", 
 # the router unconditionally here is a no-op deploy when the env var
 # is unset (the default).
 app.include_router(llm.router,                prefix="/api/llm",              tags=["llm"])
+app.include_router(device_health.router,      prefix="/api/device-health",    tags=["device-health"])
 
 
 @app.get("/api/config/features")

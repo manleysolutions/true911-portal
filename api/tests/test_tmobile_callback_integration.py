@@ -366,6 +366,10 @@ class TestSurfaceContainment:
           * app/routers/tmobile_callback.py          (gates archive)
           * app/services/sim_service.py              (gates delegation)
           * app/services/tmobile_callback_processor.py  (docstring)
+          * app/verify_integrity.py                  (read-only readiness
+                                                      report — reports the
+                                                      flag value, does NOT
+                                                      gate behavior on it)
         """
         api_root = pathlib.Path(__file__).resolve().parents[1] / "app"
         allowlist = {
@@ -373,6 +377,7 @@ class TestSurfaceContainment:
             pathlib.Path("routers/tmobile_callback.py"),
             pathlib.Path("services/sim_service.py"),
             pathlib.Path("services/tmobile_callback_processor.py"),
+            pathlib.Path("verify_integrity.py"),
         }
         offending = []
         for p in api_root.rglob("*.py"):
