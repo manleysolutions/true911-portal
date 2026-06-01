@@ -180,6 +180,12 @@ class Settings(BaseSettings):
     TMOBILE_ACCOUNT_ID: str = ""  # wholesale account ID
     TMOBILE_PRIVATE_KEY_PATH: str = ""  # path to RSA private key PEM file
     TMOBILE_PRIVATE_KEY_PEM: str = ""   # alternative: PEM content directly (for Render/Docker)
+    # Activation-first flow (T-Mobile generates the account ID on activation):
+    # activation passes marketZIP + ICCID + productId and a call-back-location
+    # header; the account ID returns asynchronously via the callback.
+    TMOBILE_PRODUCT_ID: str = ""        # T-Mobile-assigned product ID (PIT placeholder until provided)
+    TMOBILE_MARKET_ZIP: str = ""        # PIT test market ZIP, e.g. 30338 or 30346
+    TMOBILE_CALLBACK_LOCATION: str = "" # call-back-location header URL for async activation completion
 
     # ── Verizon ThingSpace ─────────────────────────────────────────────
     VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session
