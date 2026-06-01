@@ -55,6 +55,10 @@ const PAGE_PERMISSIONS = {
   Sites:               "VIEW_SITES",
   SiteDetail:          "VIEW_SITES",
   Devices:             "VIEW_DEVICES",
+  // Hardware-agnostic customer-facing health page (also feature-gated
+  // client-side via config.featureDeviceHealth; backend gates with
+  // FEATURE_DEVICE_HEALTH). VIEW_SITES so customer Users can reach it.
+  PropertyHealth:      "VIEW_SITES",
   SiteImport:          "COMMAND_SITE_IMPORT",
   SubscriberImport:    "SUBSCRIBER_IMPORT",
   ImportVerification:  "VIEW_IMPORT_VERIFICATION",

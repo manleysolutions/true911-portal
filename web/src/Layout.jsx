@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Shield, LayoutDashboard, Map, Building2, FileText, Settings, Menu, X, LogOut,
   AlertOctagon, Bell, Cpu, Phone, Disc3, Activity, MapPin, Sparkles, Rocket, Plug,
-  ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Bot, Upload, Users,
+  ArrowDownUp, ShieldCheck, FileSpreadsheet, Globe, Radio, Upload, Users,
   KeyRound, Eye, EyeOff, AlertTriangle, CheckCircle, Loader2, HelpCircle,
-  UserCog, XCircle, Zap, ChevronRight, Gauge, Package, Wrench, MonitorCog,
-  Layers, SlidersHorizontal, ClipboardList,
+  UserCog, XCircle, Zap, ChevronRight, Package, Wrench, MonitorCog,
+  Layers, ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -36,6 +36,9 @@ const FEATURE_FLAGS = {
   // INTERNAL_TENANT_IDS so a misconfigured frontend can't surface
   // anything operational.
   lllm: config.featureLllm,
+  // Hardware-agnostic Property Health page.  Default-off via
+  // VITE_FEATURE_DEVICE_HEALTH; backend mirrors with FEATURE_DEVICE_HEALTH.
+  deviceHealth: config.featureDeviceHealth,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -135,6 +138,7 @@ const NOC_NAV = [
 
 const ADMIN_NAV = [
   { name: "Dashboard",     page: "AdminDashboard",  icon: LayoutDashboard },
+  { name: "Property Health", page: "PropertyHealth", icon: Activity, featureFlag: "deviceHealth" },
   { name: "Support",       page: "Support",          icon: HelpCircle },
   // Internal-only: hidden during impersonation and for Admins whose
   // home tenant is not in INTERNAL_TENANT_IDS.
@@ -187,6 +191,7 @@ const ADMIN_NAV = [
 
 const MANAGER_NAV = [
   { name: "Dashboard",   page: "ManagerDashboard", icon: LayoutDashboard },
+  { name: "Property Health", page: "PropertyHealth", icon: Activity, featureFlag: "deviceHealth" },
   { name: "Support",     page: "Support",           icon: HelpCircle },
   { name: "My Sites",    page: "Sites",            icon: Building2 },
   { name: "My Devices",  page: "Devices",          icon: Cpu },
@@ -208,6 +213,7 @@ const MANAGER_NAV = [
 
 const USER_NAV = [
   { name: "Status",   page: "UserDashboard",  icon: ShieldCheck },
+  { name: "Property Health", page: "PropertyHealth", icon: Activity, featureFlag: "deviceHealth" },
   { name: "Support",  page: "Support",         icon: HelpCircle },
   { name: "Sites",    page: "Sites",           icon: Building2 },
   { name: "Map",      page: "DeploymentMap",   icon: Map },
