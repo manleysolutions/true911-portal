@@ -25,6 +25,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from jose import jwt as jose_jwt
@@ -136,16 +137,19 @@ def generate_pop_token(
     Claims:
       iss  — consumer key
       iat / exp / jti — standard
-      ehts — comma-separated list of HTTP header names being signed
-      edts — base64url(SHA-256("name1=value1&name2=value2&...")) over the
-             ehts header pairs in order, names verbatim from the ehts
-             list (case preserved, matching the Apigee PopTokenBuilder
-             reference impl). The request body is NEVER included.
+      ehts — the signed keys joined by a SEMICOLON (";").  Each key is a
+             header name (e.g. "Content-Type", "Authorization") or a special
+             token ("uri", "http-method").
+      edts — base64url(SHA-256( value1 + value2 + ... )) over the ehts entry
+             VALUES concatenated in order with NO separator, per the T-Mobile
+             pop-token-builder reference (e.g. "application/json" +
+             "/oauth2/v2/tokens" + "POST" -> "application/json/oauth2/v2/tokensPOST").
+             The request body is NOT hashed here.
 
     Args:
-        ehts_headers: ordered list of (header_name, header_value) tuples.
-            Names appear in the `ehts` claim; the canonical
-            "name=value"-joined string is hashed into `edts`.
+        ehts_headers: ordered list of (ehts_key, value) tuples.  Keys appear
+            in the `ehts` claim (";"-joined); the values are concatenated with
+            NO separator and SHA-256-hashed into `edts`.
 
     Returns:
         Signed JWT string for the X-Authorization header.
@@ -153,13 +157,11 @@ def generate_pop_token(
     private_key_pem = _load_private_key()
     now = int(time.time())
 
-    ehts = ",".join(name for name, _ in ehts_headers)
-    # T-Mobile TAAP PopTokenBuilder: edts = SHA-256 of the ehts header
-    # values concatenated in ehts order. The request body is NOT hashed.
-    # EXPERIMENT: Apigee-style canonicalization — values only, newline
-    # separated, no header names, no '&'. Header values are used verbatim
-    # (Authorization keeps its single space after "Basic").
-    digest_input_str = "\n".join(value for _, value in ehts_headers)
+    ehts = ";".join(name for name, _ in ehts_headers)
+    # edts = base64url(SHA-256(concatenation of the ehts VALUES in order, with
+    # NO separator)).  Matches T-Mobile's PopTokenBuilder; the request body is
+    # not included for the flows we sign.
+    digest_input_str = "".join(value for _, value in ehts_headers)
     digest_input = digest_input_str.encode("utf-8")
     if os.environ.get("TMOBILE_TAAP_DEBUG", "").lower() in ("1", "true", "yes"):
         # digest_input_str contains the Basic-auth Authorization header
@@ -318,17 +320,21 @@ class TMobileTAAPClient:
         # in a REPL with throwaway credentials — never re-add prints here.
         # See tests/test_tmobile_taap_no_secret_logging.py for the guard.
 
-        # Single source of truth: auth_header is the exact string used in
-        # BOTH the wire Authorization header and the PoP edts/ehts input.
+        # auth_header is the Basic credential sent on the wire.  Per the
+        # T-Mobile reference, the TOKEN request's PoP signs exactly
+        # "Content-Type;uri;http-method" (Authorization is NOT part of the
+        # PoP signature for this call) — it still travels as a wire header.
         headers = {
             "Authorization": auth_header,
             "Content-Type": token_content_type,
             "Accept": "application/json",
         }
+        token_uri_path = urlsplit(self.token_url).path
         pop = generate_pop_token(
             ehts_headers=[
                 ("Content-Type", token_content_type),
-                ("Authorization", auth_header),
+                ("uri", token_uri_path),
+                ("http-method", "POST"),
             ],
         )
         # T-Mobile's TAAP validator parses the entire X-Authorization value
@@ -436,8 +442,14 @@ class TMobileTAAPClient:
 
         req_content_type = "application/json"
         authorization_value = f"Bearer {access_token}"
+        # Resource calls sign "Authorization;uri;http-method" (uri = URL path,
+        # http-method = the verb). Body is not signed here.
         pop = generate_pop_token(
-            ehts_headers=[("Authorization", authorization_value)],
+            ehts_headers=[
+                ("Authorization", authorization_value),
+                ("uri", urlsplit(url).path),
+                ("http-method", method.upper()),
+            ],
         )
 
         headers: dict[str, str] = {
