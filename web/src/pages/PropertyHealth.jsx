@@ -20,7 +20,7 @@
 import { useEffect, useState } from "react";
 import {
   Activity, Building2, RefreshCw, CheckCircle2, AlertTriangle,
-  WifiOff, HelpCircle, Clock, Phone, Cpu, Radio, Wrench,
+  WifiOff, HelpCircle, Clock, Cpu, Radio, Wrench,
 } from "lucide-react";
 
 import { config } from "@/config";
@@ -96,11 +96,13 @@ function PropertyCard({ data }) {
                 <tr className="text-[10.5px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
                   <th className="text-left font-semibold px-5 py-2.5">Service Unit</th>
                   <th className="text-left font-semibold px-3 py-2.5">Device</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Device Type</th>
                   <th className="text-left font-semibold px-3 py-2.5">Carrier</th>
                   <th className="text-left font-semibold px-3 py-2.5">Voice Path</th>
                   <th className="text-left font-semibold px-3 py-2.5">Status</th>
                   <th className="text-left font-semibold px-3 py-2.5">Last Check-In</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Last Call</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Last Heartbeat</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Firmware</th>
                   <th className="text-left font-semibold px-5 py-2.5">Recommended Action</th>
                 </tr>
               </thead>
@@ -113,6 +115,7 @@ function PropertyCard({ data }) {
                     <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5"><Cpu className="w-3.5 h-3.5 text-slate-400" />{u.device || "—"}</span>
                     </td>
+                    <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{u.device_type || "—"}</td>
                     <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5"><Radio className="w-3.5 h-3.5 text-slate-400" />{carrierLabel(u.carrier)}</span>
                     </td>
@@ -122,8 +125,9 @@ function PropertyCard({ data }) {
                       <span className="inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-slate-300" />{timeAgo(u.last_check_in)}</span>
                     </td>
                     <td className="px-3 py-3 text-slate-500 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-300" />{timeAgo(u.last_call)}</span>
+                      <span className="inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-slate-300" />{timeAgo(u.last_heartbeat)}</span>
                     </td>
+                    <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{u.firmware || "—"}</td>
                     <td className="px-5 py-3 text-slate-500 max-w-[280px]">{u.recommended_action}</td>
                   </tr>
                 ))}
@@ -139,10 +143,11 @@ function PropertyCard({ data }) {
                   <span className="font-medium text-slate-800">{u.unit || "—"}</span>
                   <StatusPill status={u.status} />
                 </div>
-                <div className="text-[12px] text-slate-500">{u.device} · {carrierLabel(u.carrier)} · {u.voice_path}</div>
+                <div className="text-[12px] text-slate-500">{u.device} · {u.device_type} · {carrierLabel(u.carrier)} · {u.voice_path}</div>
                 <div className="text-[12px] text-slate-500 flex flex-wrap gap-x-4">
-                  <span><Clock className="inline w-3 h-3 mr-1 text-slate-300" />{timeAgo(u.last_check_in)}</span>
-                  <span><Phone className="inline w-3 h-3 mr-1 text-slate-300" />{timeAgo(u.last_call)}</span>
+                  <span><Clock className="inline w-3 h-3 mr-1 text-slate-300" />Check-in {timeAgo(u.last_check_in)}</span>
+                  <span><Clock className="inline w-3 h-3 mr-1 text-slate-300" />Heartbeat {timeAgo(u.last_heartbeat)}</span>
+                  {u.firmware && u.firmware !== "—" && <span>fw {u.firmware}</span>}
                 </div>
                 <div className="text-[12px] text-slate-500">{u.recommended_action}</div>
               </div>

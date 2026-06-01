@@ -51,17 +51,29 @@ def compute_device_updates(vendor_statuses, *, now):
 
     Returns ``{"device": {...}, "sim": {...}}``.  No I/O — unit-testable.
     """
+    from app.services.device_health.status import NormalizedStatus
+
     device: dict = {}
     sim: dict = {}
     for vs in vendor_statuses:
         if not vs.available:
             continue
         if vs.vendor == "vola":
-            device["vola_last_sync"] = now
+            # Always record that we synced; only refresh the liveness channel
+            # (vola_last_sync) when the device is actually ONLINE, so an OFFLINE
+            # device is not kept "fresh" and correctly ages to Offline.
+            if vs.normalized_status == NormalizedStatus.ONLINE:
+                device["vola_last_sync"] = now
+                device["network_status"] = "online"
+            elif vs.normalized_status == NormalizedStatus.OFFLINE:
+                device["network_status"] = "offline"
             if vs.firmware:
                 device["firmware_version"] = vs.firmware
             if vs.static_ip:
                 device["wan_ip"] = vs.static_ip
+            # Surface the vendor's last heartbeat onto the Device when parsed.
+            if vs.last_seen is not None:
+                device["last_heartbeat"] = vs.last_seen
         elif vs.vendor == "tmobile":
             device["last_network_event"] = now
             if vs.sim_status:

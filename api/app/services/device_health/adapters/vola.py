@@ -20,6 +20,29 @@ from app.services.device_health.status import NormalizedStatus
 
 logger = logging.getLogger("true911.device_health.vola")
 
+# Vola's device-list "lastUpdateTime" is a vendor-formatted string (e.g.
+# "Jun 01 2026 09:00" or ISO-8601).  Best-effort parse to a UTC datetime;
+# return None when it can't be trusted rather than inventing a value.
+_VOLA_TS_FORMATS = ("%b %d %Y %H:%M", "%b %d %Y %H:%M:%S", "%Y-%m-%d %H:%M:%S")
+
+
+def _parse_vola_timestamp(raw):
+    from datetime import datetime, timezone
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    try:
+        ts = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+    for fmt in _VOLA_TS_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
 
 class VolaCloudAdapter(StatusProbeAdapter):
     vendor = "vola"
@@ -98,8 +121,19 @@ class VolaCloudAdapter(StatusProbeAdapter):
         vs.firmware = (match.get("softwareVersion") or match.get("firmwareVersion")
                        or match.get("version"))
         vs.static_ip = match.get("ip") or match.get("lanIp")
+        # Vola reports a signal/RSSI on some models; capture if present.
+        for key in ("rssi", "signal", "signalStrength", "signal_dbm"):
+            if match.get(key) not in (None, ""):
+                try:
+                    vs.signal_strength = float(match[key])
+                except (TypeError, ValueError):
+                    pass
+                break
+        # Last heartbeat: Vola's lastUpdateTime is a vendor-formatted string;
+        # keep the raw string in raw_payload and best-effort parse to a UTC
+        # datetime for last_seen.  Never fabricate a value we can't parse.
+        vs.last_seen = _parse_vola_timestamp(
+            match.get("lastUpdateTime") or match.get("last_update"))
         vs.raw_payload = match
         vs.reason_codes = [ReasonCode.OK] if online else [ReasonCode.DEVICE_OFFLINE]
-        # last heartbeat is a vendor-formatted string; keep it raw in payload —
-        # we do not invent a parsed datetime we cannot trust.
         return vs

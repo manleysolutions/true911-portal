@@ -185,6 +185,7 @@ async def build_device_health(
             reason_codes=scored.reasons,
             recommended_action=recommend(scored.reasons),
             last_check_in=signals.last_observed_at(),
+            last_heartbeat=d.last_heartbeat,
             last_call_activity=last_call.get(d.device_id),
             last_callback_received=getattr(d, "last_network_event", None),
             last_sync_time=getattr(d, "vola_last_sync", None),
