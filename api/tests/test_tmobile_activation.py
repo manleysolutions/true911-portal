@@ -143,6 +143,32 @@ class TestActivateSubscriber:
             await client.activate_subscriber(iccid="89012", market_zip="", product_id="PID-1")
         await client.close()
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_requires_callback_location(self, tmobile_env, monkeypatch):
+        # The account ID comes back ONLY via the callback — activation must
+        # refuse to send without one rather than strand the generated ID.
+        monkeypatch.setattr("app.config.settings.TMOBILE_CALLBACK_LOCATION", "")
+        client = taap.TMobileTAAPClient()
+        with pytest.raises(ValueError, match="call-back-location"):
+            await client.activate_subscriber(
+                iccid="8901240204219433645", market_zip="30346",
+                product_id="PID-1", callback_location="")
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_callback_location_on_wire(self, tmobile_env):
+        _mock_token_and_activate()
+        client = taap.TMobileTAAPClient()
+        await client.activate_subscriber(
+            iccid="8901240204219433645", market_zip="30346",
+            product_id="PID-1", callback_location="  https://cb.example/hook  ")
+        await client.close()
+        req = _activate_request()
+        # Required header is present and stripped of stray whitespace.
+        assert req.headers["call-back-location"] == "https://cb.example/hook"
+
 
 # ── env-driven resource paths ────────────────────────────────────────
 class TestEnvDrivenPaths:
@@ -227,6 +253,26 @@ class TestActivationPreview:
         client = taap.TMobileTAAPClient()
         with pytest.raises(ValueError, match="ICCID"):
             client.build_activation_preview(iccid="")
+
+    def test_preview_surfaces_missing_callback(self, tmobile_env, monkeypatch):
+        # Dry-run must SHOW the gap, not raise — it's how operators detect a
+        # missing callback before going live.
+        monkeypatch.setattr("app.config.settings.TMOBILE_CALLBACK_LOCATION", "")
+        client = taap.TMobileTAAPClient()
+        preview = client.build_activation_preview(
+            iccid="8901260963132697538", product_id="wps-00011586")
+        assert preview["callback_location_configured"] is False
+        assert "call-back-location" in preview["headers"]
+        assert "NOT SET" in preview["headers"]["call-back-location"]
+        assert any("call-back-location is NOT configured" in n for n in preview["notes"])
+
+    def test_preview_shows_configured_callback(self, tmobile_env):
+        client = taap.TMobileTAAPClient()  # fixture sets TMOBILE_CALLBACK_LOCATION
+        preview = client.build_activation_preview(
+            iccid="8901260963132697538", product_id="wps-00011586")
+        assert preview["callback_location_configured"] is True
+        assert preview["headers"]["call-back-location"].endswith("/tmobile/wholesale/callback")
+        assert not any("NOT configured" in n for n in preview["notes"])
 
     def test_preview_makes_no_http_calls(self, tmobile_env):
         # respx is NOT active here; if the preview opened a socket this would
