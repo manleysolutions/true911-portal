@@ -186,6 +186,14 @@ class Settings(BaseSettings):
     TMOBILE_PRODUCT_ID: str = ""        # T-Mobile-assigned product ID (PIT placeholder until provided)
     TMOBILE_MARKET_ZIP: str = ""        # PIT test market ZIP, e.g. 30338 or 30346
     TMOBILE_CALLBACK_LOCATION: str = "" # call-back-location header URL for async activation completion
+    # Resource paths are env-driven so a T-Mobile gateway routing change does not
+    # require a code edit. The PIT onboarding gateway URL list uses
+    # /wholesale/v1/subscriber (NOT the older /wholesale/subscriber/v2).
+    TMOBILE_SUBSCRIBER_BASE_PATH: str = "/wholesale/v1/subscriber"
+    # Activation route is kept independently overridable so T-Mobile can hand us
+    # a route that is NOT derivable from the subscriber base. Blank => the client
+    # derives "{TMOBILE_SUBSCRIBER_BASE_PATH}/activate".
+    TMOBILE_ACTIVATION_PATH: str = ""
 
     # ── Verizon ThingSpace ─────────────────────────────────────────────
     VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session

@@ -33,7 +33,9 @@ from app.services.tmobile_callback_processor import (
 
 TOKEN_URL = "https://pit-oauth.t-mobile.com/oauth2/v2/tokens"
 BASE_URL = "https://pit-apis.t-mobile.com"
-ACTIVATE_URL = f"{BASE_URL}/wholesale/subscriber/v2/activate"
+# Default subscriber base path is the PIT gateway's /wholesale/v1/subscriber.
+ACTIVATE_PATH = "/wholesale/v1/subscriber/activate"
+ACTIVATE_URL = f"{BASE_URL}{ACTIVATE_PATH}"
 
 
 @pytest.fixture
@@ -69,9 +71,9 @@ def _mock_token_and_activate():
         200, json={"status": "accepted"}))
 
 
-def _activate_request():
+def _activate_request(path: str = ACTIVATE_PATH):
     for call in respx.calls:
-        if call.request.url.path == "/wholesale/subscriber/v2/activate":
+        if call.request.url.path == path:
             return call.request
     raise AssertionError("activation request was not sent")
 
@@ -140,6 +142,99 @@ class TestActivateSubscriber:
         with pytest.raises(ValueError, match="marketZIP"):
             await client.activate_subscriber(iccid="89012", market_zip="", product_id="PID-1")
         await client.close()
+
+
+# ── env-driven resource paths ────────────────────────────────────────
+class TestEnvDrivenPaths:
+    def test_default_subscriber_base_is_v1(self, tmobile_env):
+        client = taap.TMobileTAAPClient()
+        # PIT gateway URL list uses /wholesale/v1/subscriber (not subscriber/v2).
+        assert client.subscriber_base_path == "/wholesale/v1/subscriber"
+        assert client.activation_endpoint() == "/wholesale/v1/subscriber/activate"
+        assert client._subscriber_path("inquiry") == "/wholesale/v1/subscriber/inquiry"
+
+    def test_activation_path_env_override(self, tmobile_env, monkeypatch):
+        monkeypatch.setattr("app.config.settings.TMOBILE_ACTIVATION_PATH",
+                            "/wholesale/v1/activation/submit")
+        client = taap.TMobileTAAPClient()
+        # Explicit activation override wins; subscriber base is unaffected.
+        assert client.activation_endpoint() == "/wholesale/v1/activation/submit"
+        assert client._subscriber_path("inquiry") == "/wholesale/v1/subscriber/inquiry"
+
+    def test_subscriber_base_env_override_changes_derived_activate(self, tmobile_env, monkeypatch):
+        monkeypatch.setattr("app.config.settings.TMOBILE_SUBSCRIBER_BASE_PATH",
+                            "/wholesale/subscriber/v2")
+        client = taap.TMobileTAAPClient()
+        # No explicit activation override -> derived from the (overridden) base.
+        assert client.activation_endpoint() == "/wholesale/subscriber/v2/activate"
+
+    def test_trailing_slash_is_normalized(self, tmobile_env, monkeypatch):
+        monkeypatch.setattr("app.config.settings.TMOBILE_SUBSCRIBER_BASE_PATH",
+                            "/wholesale/v1/subscriber/")
+        client = taap.TMobileTAAPClient()
+        assert client._subscriber_path("activate") == "/wholesale/v1/subscriber/activate"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_activation_uses_override_path_on_wire(self, tmobile_env, monkeypatch):
+        monkeypatch.setattr("app.config.settings.TMOBILE_ACTIVATION_PATH",
+                            "/wholesale/v1/activation/submit")
+        respx.post(TOKEN_URL).mock(return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}))
+        respx.post(f"{BASE_URL}/wholesale/v1/activation/submit").mock(
+            return_value=httpx.Response(200, json={"status": "accepted"}))
+        client = taap.TMobileTAAPClient()
+        await client.activate_subscriber(iccid="8901240204219433645",
+                                         market_zip="30346", product_id="PID-1")
+        await client.close()
+        req = _activate_request("/wholesale/v1/activation/submit")
+        assert json.loads(req.content)["ICCID"] == "8901240204219433645"
+
+
+# ── dry-run preview (no network, redacted secrets) ───────────────────
+class TestActivationPreview:
+    def test_preview_payload_and_safe_headers(self, tmobile_env):
+        client = taap.TMobileTAAPClient()
+        preview = client.build_activation_preview(
+            iccid="8901260963132697538", market_zip="30346",
+            product_id="wps-00011586",
+            callback_location="https://cb.example/hook")
+
+        assert preview["method"] == "POST"
+        assert preview["would_send"] is False
+        assert preview["path"] == "/wholesale/v1/subscriber/activate"
+        assert preview["url"].endswith("/wholesale/v1/subscriber/activate")
+        assert preview["payload"] == {
+            "marketZIP": "30346", "ICCID": "8901260963132697538",
+            "productId": "wps-00011586",
+        }
+        # Secret-bearing headers must be redacted placeholders, never real values.
+        assert "redacted" in preview["headers"]["Authorization"].lower()
+        assert "redacted" in preview["headers"]["X-Authorization"].lower()
+        assert "Bearer " not in preview["headers"]["Authorization"]
+        # Non-sensitive headers are real.
+        assert preview["headers"]["X-Sender-Id"] == "128"
+        assert preview["headers"]["X-Partner-Id"] == "128"
+        assert preview["headers"]["call-back-location"] == "https://cb.example/hook"
+
+    def test_preview_falls_back_to_env(self, tmobile_env):
+        client = taap.TMobileTAAPClient()
+        preview = client.build_activation_preview(iccid="8901260963132697538")
+        assert preview["payload"]["marketZIP"] == "30338"   # TMOBILE_MARKET_ZIP
+        assert preview["payload"]["productId"] == "PID-ENV"  # TMOBILE_PRODUCT_ID
+
+    def test_preview_validates_inputs(self, tmobile_env):
+        client = taap.TMobileTAAPClient()
+        with pytest.raises(ValueError, match="ICCID"):
+            client.build_activation_preview(iccid="")
+
+    def test_preview_makes_no_http_calls(self, tmobile_env):
+        # respx is NOT active here; if the preview opened a socket this would
+        # hit the network. It must stay purely local.
+        client = taap.TMobileTAAPClient()
+        preview = client.build_activation_preview(
+            iccid="8901260963132697538", product_id="wps-00011586")
+        assert preview["would_send"] is False
 
 
 # ── subscriber_inquiry gated on account ID ───────────────────────────

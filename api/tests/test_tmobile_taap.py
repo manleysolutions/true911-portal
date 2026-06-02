@@ -305,7 +305,7 @@ async def test_subscriber_inquiry():
     )
 
     # Mock subscriber inquiry
-    respx.post("https://pit-apis.t-mobile.com/wholesale/subscriber/v2/inquiry").mock(
+    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/inquiry").mock(
         return_value=httpx.Response(200, json={
             "msisdn": "12125551234",
             "status": "active",
@@ -345,7 +345,7 @@ async def test_api_error_handling():
     respx.post("https://pit-oauth.t-mobile.com/oauth2/v2/tokens").mock(
         return_value=httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
     )
-    respx.post("https://pit-apis.t-mobile.com/wholesale/subscriber/v2/inquiry").mock(
+    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/inquiry").mock(
         return_value=httpx.Response(404, json={"error": "subscriber not found"})
     )
 

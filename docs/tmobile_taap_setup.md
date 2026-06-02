@@ -67,6 +67,26 @@ TMOBILE_BASE_URL=https://pit-apis.t-mobile.com
 TMOBILE_TOKEN_URL=https://pit-oauth.t-mobile.com/oauth2/v2/tokens
 ```
 
+### Env-driven resource paths
+
+The API resource paths are configurable so a T-Mobile gateway routing change
+never requires a code edit. The PIT onboarding **gateway URL list uses
+`/wholesale/v1/subscriber`** — NOT the older `/wholesale/subscriber/v2`.
+
+```bash
+# Default subscriber base path (all subscriber ops hang off this):
+TMOBILE_SUBSCRIBER_BASE_PATH=/wholesale/v1/subscriber
+
+# Activation route. Leave blank to derive {SUBSCRIBER_BASE_PATH}/activate.
+# Set explicitly if T-Mobile assigns a route not derivable from the base.
+TMOBILE_ACTIVATION_PATH=
+```
+
+| Variable | Default | Resolves to |
+|---|---|---|
+| `TMOBILE_SUBSCRIBER_BASE_PATH` | `/wholesale/v1/subscriber` | base for inquiry/activate/changesim/suspend/restore/deactivate |
+| `TMOBILE_ACTIVATION_PATH` | *(blank)* | `{base}/activate`, or the literal override when set |
+
 ## 3. Test Locally
 
 ### Dry run (no T-Mobile credentials needed)
@@ -94,6 +114,39 @@ python ../scripts/test_tmobile_taap.py
 cd api
 python ../scripts/test_tmobile_taap.py --msisdn 12125551234
 ```
+
+### Dry-run activation (prints payload + headers, sends NOTHING)
+
+Before any live activation, review the exact request with the dry-run command.
+It builds the request `activate_subscriber` would POST and prints it — **no
+OAuth token is fetched, no PoP is signed, no socket is opened**. The two
+credential-bearing headers (`Authorization`, `X-Authorization`) are shown as
+redacted placeholders, so output is safe to paste into a ticket. It needs no
+credentials or RSA key, and there is **no flag that makes it send**.
+
+```powershell
+cd api
+# Uses the PIT onboarding defaults below:
+python ../scripts/tmobile_activation_dryrun.py
+
+# Or override any field:
+python ../scripts/tmobile_activation_dryrun.py `
+  --iccid 8901260963132697538 --market-zip 30346 --product-id wps-00011586
+```
+
+PIT onboarding test values (from the onboarding attachments):
+
+| Field | Value | Source |
+|---|---|---|
+| `marketZIP` | `30346` | onboarding packet |
+| `ICCID` | `8901260963132697538` | one of the 50 PIT ICCIDs (`infatrac - 50 ICCIDs.txt`) |
+| `productId` | `wps-00011586` | **PLACEHOLDER** — price-plan code, confirm with T-Mobile |
+
+> ⚠️ **Product ID must still be confirmed by T-Mobile.** See
+> [§ Product ID must be confirmed by T-Mobile](#product-id-must-be-confirmed-by-t-mobile).
+
+The live activation path (`scripts/test_tmobile_taap.py --activate`) is **never
+run automatically** — it requires explicit flags and valid credentials.
 
 ## 4. How TAAP/PoP Works
 
@@ -143,16 +196,47 @@ PIT is the test environment. All development and integration testing happens the
 
 Once authenticated, these methods are available on `TMobileTAAPClient`:
 
-| Method | API Path | Description |
+Subscriber-family paths are built from `TMOBILE_SUBSCRIBER_BASE_PATH`
+(default `/wholesale/v1/subscriber`); the table shows the resolved default.
+
+| Method | API Path (default) | Description |
 |---|---|---|
-| `subscriber_inquiry(msisdn)` | `/wholesale/subscriber/v2/inquiry` | Query subscriber details |
+| `subscriber_inquiry(msisdn)` | `/wholesale/v1/subscriber/inquiry` | Query subscriber details |
 | `query_network(msisdn)` | `/wholesale/network/v1/query` | Network/device status |
 | `query_usage(msisdn, start, end)` | `/wholesale/usage/v1/query` | Data/voice usage |
-| `change_sim(msisdn, iccid)` | `/wholesale/subscriber/v2/changesim` | SIM swap |
-| `activate_subscriber(msisdn, iccid)` | `/wholesale/subscriber/v2/activate` | Activate new line |
-| `suspend_subscriber(msisdn)` | `/wholesale/subscriber/v2/suspend` | Suspend line |
-| `restore_subscriber(msisdn)` | `/wholesale/subscriber/v2/restore` | Restore suspended line |
-| `deactivate_subscriber(msisdn)` | `/wholesale/subscriber/v2/deactivate` | Cancel line |
+| `change_sim(msisdn, iccid)` | `/wholesale/v1/subscriber/changesim` | SIM swap |
+| `activate_subscriber(iccid, ...)` | `/wholesale/v1/subscriber/activate` † | Activate new line |
+| `suspend_subscriber(msisdn)` | `/wholesale/v1/subscriber/suspend` | Suspend line |
+| `restore_subscriber(msisdn)` | `/wholesale/v1/subscriber/restore` | Restore suspended line |
+| `deactivate_subscriber(msisdn)` | `/wholesale/v1/subscriber/deactivate` | Cancel line |
+
+† or the literal `TMOBILE_ACTIVATION_PATH` when set.
+
+## Product ID must be confirmed by T-Mobile
+
+The activation request requires a `productId`. The onboarding packet lists a
+catalog candidate:
+
+- **Product/Plan Name:** Infatrac Internet Access Plan
+- **Price Plan:** `wps - 00011586`
+- **Optional static IP / APN SLO:** ISP1 / `iot.tmowholesale.static`
+
+We use `wps-00011586` as a **placeholder** (`TMOBILE_PRODUCT_ID` /
+`--product-id`). **This is the price-plan code, not a confirmed activation
+`productId`.** Before running a live activation:
+
+1. Ask your T-Mobile Wholesale account manager to confirm the exact `productId`
+   string the **activation** API expects for the Infatrac Internet Access Plan
+   (it may differ from the price-plan code, and formatting — `wps-00011586` vs
+   `wps - 00011586` vs `00011586` — matters).
+2. Confirm whether the static IP / APN SLO (`ISP1` / `iot.tmowholesale.static`)
+   is selected via `productId`, a separate field, or account configuration.
+3. Set the confirmed value in `TMOBILE_PRODUCT_ID` and re-run the dry-run to
+   review the payload before sending.
+
+Until T-Mobile confirms, treat any activation built with the placeholder as
+**unvalidated** — the dry-run output flags this with a `productId is
+UNCONFIRMED` note.
 
 ## 7. Checklist Before First PIT Test
 
@@ -164,7 +248,9 @@ Once authenticated, these methods are available on `TMobileTAAPClient`:
 - [ ] Sender ID received
 - [ ] Account ID received
 - [ ] PIT environment access confirmed by T-Mobile
-- [ ] Environment variables set in `.env`
+- [ ] Environment variables set in `.env` (incl. `TMOBILE_SUBSCRIBER_BASE_PATH`)
 - [ ] `python scripts/test_tmobile_taap.py --dry-run` passes
+- [ ] `python scripts/tmobile_activation_dryrun.py` payload + paths reviewed
+- [ ] **`productId` confirmed by T-Mobile** (placeholder `wps-00011586` replaced)
 - [ ] `python scripts/test_tmobile_taap.py` returns access token
 - [ ] First `--msisdn` call returns subscriber data
