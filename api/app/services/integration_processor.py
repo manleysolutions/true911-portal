@@ -18,16 +18,23 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.customer import Customer
 from app.models.external_customer_map import ExternalCustomerMap
 from app.models.external_subscription_map import ExternalSubscriptionMap
 from app.models.integration_event import IntegrationEvent
 from app.models.job import Job
 from app.models.subscription import Subscription
+from app.services import zoho_subscription_ingest
+from app.services.zoho_routing import is_zoho_subscription_event
 
 logger = logging.getLogger("true911.integration_processor")
 
 _CANONICAL_TYPES = {"customer_upsert", "subscription_upsert", "line_count_update"}
+
+
+def _flag_on(value: str) -> bool:
+    return str(value).strip().lower() == "true"
 
 
 async def process_integration_event(db: AsyncSession, job: Job) -> dict[str, Any]:
@@ -52,6 +59,24 @@ async def process_integration_event(db: AsyncSession, job: Job) -> dict[str, Any
     try:
         event_payload = event.payload_json or {}
         event_type = event.event_type
+
+        # ── Zoho lifecycle subscription ingest (additive, flag-gated) ──────
+        # Only for Zoho events and only when FEATURE_ZOHO_SUBSCRIPTION_INGEST is
+        # on.  When off, this whole block is skipped and behavior is identical to
+        # before (a Subscription_Mgmt event falls through to needs_mapping).
+        # When on, every Zoho event is observed (matched or not) for contract
+        # discovery; matched subscription events are staged.  Nothing here writes
+        # to sites/devices/lines.
+        if event.source == "zoho" and _flag_on(settings.FEATURE_ZOHO_SUBSCRIPTION_INGEST):
+            matched = is_zoho_subscription_event(event_payload, settings)
+            await zoho_subscription_ingest.record_observation(db, event, matched=matched)
+            if matched:
+                result_data = await zoho_subscription_ingest.ingest_subscription_event(db, event)
+                event.status = result_data.pop("event_status", "processed")
+                event.processed_at = datetime.now(timezone.utc)
+                await db.flush()
+                return result_data
+            # Not a subscription event — fall through to canonical handling.
 
         if event_type not in _CANONICAL_TYPES:
             event.status = "needs_mapping"

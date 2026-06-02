@@ -26,6 +26,9 @@ from app.models.customer import Customer
 from app.models.subscription import Subscription
 from app.models.external_customer_map import ExternalCustomerMap
 from app.models.external_subscription_map import ExternalSubscriptionMap
+from app.models.external_record_map import ExternalRecordMap
+from app.models.zoho_subscription_record import ZohoSubscriptionRecord
+from app.models.zoho_payload_observation import ZohoPayloadObservation
 from app.models.reconciliation_snapshot import ReconciliationSnapshot
 from app.models.notification import CommandNotification
 from app.models.escalation_rule import EscalationRule
@@ -88,6 +91,9 @@ __all__ = [
     "Subscription",
     "ExternalCustomerMap",
     "ExternalSubscriptionMap",
+    "ExternalRecordMap",
+    "ZohoSubscriptionRecord",
+    "ZohoPayloadObservation",
     "ReconciliationSnapshot",
     "CommandNotification",
     "EscalationRule",
