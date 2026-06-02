@@ -169,6 +169,35 @@ class Settings(BaseSettings):
     ZOHO_CRM_ORG_ID: str = ""  # optional — for multi-org Zoho setups
     ZOHO_CRM_DEFAULT_TENANT: str = "default"  # tenant_id for accounts without explicit mapping
 
+    # ── Zoho Subscription Lifecycle Ingest (staging, default OFF) ───────
+    # Makes Zoho CRM the System of Record for LIFECYCLE status (Active /
+    # Suspended / Deactivated / Pending Install) — a SEPARATE axis from
+    # operational status (Online / Offline / Attention), which stays owned by
+    # True911 telemetry / the Health Normalizer.  These flags NEVER cause a
+    # write to sites.status / devices.status / lines.status; all Zoho data
+    # lands in additive staging tables (zoho_subscription_records,
+    # external_record_map, zoho_payload_observations) read by the read-only
+    # review surface.  Promotion to an additive lifecycle_status is a separate,
+    # later, explicitly-gated phase.  See the Zoho lifecycle plan doc.
+    #
+    # When "false" (default) a Zoho Subscription_Mgmt webhook behaves exactly as
+    # today (archived as an IntegrationEvent, marked needs_mapping, no staging).
+    # When "true" the worker additionally upserts the staging record and records
+    # a sanitized payload observation.  The webhook auth path is untouched.
+    FEATURE_ZOHO_SUBSCRIPTION_INGEST: str = "false"
+    # When "true" the ingest populates zoho_subscription_records.lifecycle_state
+    # from the status normalizer (Zoho "De-activated" -> deactivated/inactive,
+    # never "healthy active monitoring").  When "false" the raw status is still
+    # stored but lifecycle_state stays NULL.
+    FEATURE_ZOHO_STATUS_NORMALIZER: str = "false"
+    # Routing is intentionally configurable because the Zoho webhook field
+    # mapping is NOT finalized — a Subscription_Mgmt event is matched when the
+    # payload's `module` is in ZOHO_SUBSCRIPTION_MODULES OR its `event_type` is
+    # in ZOHO_SUBSCRIPTION_EVENT_TYPES (both comma-separated, case-insensitive).
+    # Adjust via env (Render) as Zoho workflows evolve — no code change/deploy.
+    ZOHO_SUBSCRIPTION_MODULES: str = "Subscription_Mgmt"
+    ZOHO_SUBSCRIPTION_EVENT_TYPES: str = ""
+
     # ── T-Mobile Wholesale (TAAP / PoP) ────────────────────────────────
     TMOBILE_ENV: str = "pit"  # pit | prod
     TMOBILE_BASE_URL: str = ""  # https://pit-apis.t-mobile.com or https://apis.t-mobile.com
