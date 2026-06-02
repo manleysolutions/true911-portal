@@ -44,6 +44,12 @@ PIT_TOKEN_URL = "https://wholesaleapi-test.t-mobile.com/oauth2/v1/tokens"
 PROD_BASE_URL = "https://apis.t-mobile.com"
 PROD_TOKEN_URL = "https://oauth.t-mobile.com/oauth2/v2/tokens"
 
+# Default subscriber resource base path. The PIT onboarding gateway URL list
+# uses /wholesale/v1/subscriber (NOT the older /wholesale/subscriber/v2).
+# Overridable via TMOBILE_SUBSCRIBER_BASE_PATH so a gateway routing change
+# never needs a code edit.
+DEFAULT_SUBSCRIBER_BASE_PATH = "/wholesale/v1/subscriber"
+
 # PoP token lifetime (T-Mobile expects short-lived — 2 minutes)
 POP_TOKEN_EXPIRY_SECONDS = 120
 
@@ -213,7 +219,7 @@ class TMobileTAAPClient:
 
         client = TMobileTAAPClient()
         subs = await client.post_json(
-            "/wholesale/subscriber/v2/inquiry",
+            client._subscriber_path("inquiry"),  # /wholesale/v1/subscriber/inquiry
             {"msisdn": "12125551234"},
         )
     """
@@ -227,6 +233,8 @@ class TMobileTAAPClient:
         partner_id: str | None = None,
         sender_id: str | None = None,
         account_id: str | None = None,
+        subscriber_base_path: str | None = None,
+        activation_path: str | None = None,
     ):
         env = settings.TMOBILE_ENV.lower()
         self.base_url = (base_url or settings.TMOBILE_BASE_URL or
@@ -239,6 +247,19 @@ class TMobileTAAPClient:
         self.sender_id = sender_id or settings.TMOBILE_SENDER_ID
         self.account_id = account_id or settings.TMOBILE_ACCOUNT_ID
 
+        # Env-driven resource paths (no leading/trailing slash issues — joined
+        # by the helpers below). Subscriber base defaults to the PIT gateway's
+        # /wholesale/v1/subscriber; activation is kept independently overridable.
+        self.subscriber_base_path = (
+            subscriber_base_path or settings.TMOBILE_SUBSCRIBER_BASE_PATH
+            or DEFAULT_SUBSCRIBER_BASE_PATH
+        ).strip().rstrip("/")
+        self.activation_path = (
+            activation_path
+            if activation_path is not None
+            else settings.TMOBILE_ACTIVATION_PATH
+        ).strip()
+
         # Access token cache
         self._access_token: str | None = None
         self._token_expires_at: float = 0.0
@@ -250,6 +271,22 @@ class TMobileTAAPClient:
     def is_configured(self) -> bool:
         """Return True if minimum required credentials are present."""
         return bool(self.consumer_key and self.consumer_secret)
+
+    # ── Resource path resolution (env-driven) ───────────────────────────
+
+    def _subscriber_path(self, op: str) -> str:
+        """Join the env-driven subscriber base path with an operation name."""
+        return f"{self.subscriber_base_path}/{op.lstrip('/')}"
+
+    def activation_endpoint(self) -> str:
+        """Resolve the activation route.
+
+        Uses the explicit ``TMOBILE_ACTIVATION_PATH`` override when set, else
+        derives ``{subscriber_base_path}/activate``.  Kept env-driven because
+        T-Mobile may assign an activation route that is not derivable from the
+        subscriber base.
+        """
+        return self.activation_path or self._subscriber_path("activate")
 
     async def _client(self) -> httpx.AsyncClient:
         if self._http is None or self._http.is_closed:
@@ -523,7 +560,7 @@ class TMobileTAAPClient:
                 "callback; set TMOBILE_ACCOUNT_ID once it is known."
             )
         return await self.post_json(
-            "/wholesale/subscriber/v2/inquiry",
+            self._subscriber_path("inquiry"),
             {"msisdn": msisdn, "accountId": self.account_id},
         )
 
@@ -544,7 +581,7 @@ class TMobileTAAPClient:
     async def change_sim(self, msisdn: str, new_iccid: str) -> dict[str, Any]:
         """Initiate a SIM swap for a subscriber."""
         return await self.post_json(
-            "/wholesale/subscriber/v2/changesim",
+            self._subscriber_path("changesim"),
             {"msisdn": msisdn, "iccid": new_iccid, "accountId": self.account_id},
         )
 
@@ -570,9 +607,34 @@ class TMobileTAAPClient:
         sender headers (X-Partner-Id / X-Sender-Id) are applied by ``_request``
         from TMOBILE_PARTNER_ID / TMOBILE_SENDER_ID (set both to 128 for Infatrac).
         """
+        payload = self._build_activation_payload(
+            iccid, market_zip=market_zip, product_id=product_id, **extra
+        )
+        callback_location = callback_location or settings.TMOBILE_CALLBACK_LOCATION
+        extra_headers = (
+            {"call-back-location": callback_location} if callback_location else None
+        )
+        return await self.post_json(
+            self.activation_endpoint(),
+            payload,
+            extra_headers=extra_headers,
+        )
+
+    def _build_activation_payload(
+        self,
+        iccid: str,
+        *,
+        market_zip: str | None = None,
+        product_id: str | None = None,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """Build + validate the activation request body (env fallback applied).
+
+        Shared by ``activate_subscriber`` (live) and
+        ``build_activation_preview`` (dry run) so both produce identical bytes.
+        """
         market_zip = market_zip or settings.TMOBILE_MARKET_ZIP
         product_id = product_id or settings.TMOBILE_PRODUCT_ID
-        callback_location = callback_location or settings.TMOBILE_CALLBACK_LOCATION
 
         if not iccid:
             raise ValueError("activate_subscriber requires an ICCID")
@@ -593,33 +655,84 @@ class TMobileTAAPClient:
             "productId": product_id,
         }
         payload.update(extra)
+        return payload
 
-        extra_headers = (
-            {"call-back-location": callback_location} if callback_location else None
+    def build_activation_preview(
+        self,
+        iccid: str,
+        *,
+        market_zip: str | None = None,
+        product_id: str | None = None,
+        callback_location: str | None = None,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """Build the EXACT activation request as a printable descriptor — WITHOUT
+        sending it or contacting T-Mobile (no network, no OAuth, no signing).
+
+        The two credential-bearing headers added by ``_request`` at send time
+        (``Authorization: Bearer <token>`` and ``X-Authorization: <PoP JWT>``)
+        are shown as redacted placeholders so the output is safe to print/share.
+        Every other header and the full payload are the real values that would
+        go on the wire.  Use this for the dry-run activation command.
+        """
+        payload = self._build_activation_payload(
+            iccid, market_zip=market_zip, product_id=product_id, **extra
         )
-        return await self.post_json(
-            "/wholesale/subscriber/v2/activate",
-            payload,
-            extra_headers=extra_headers,
-        )
+        callback_location = callback_location or settings.TMOBILE_CALLBACK_LOCATION
+        path = self.activation_endpoint()
+        url = f"{self.base_url}/{path.lstrip('/')}"
+
+        # Mirror the non-sensitive headers _request() attaches. The two secret
+        # headers are placeholders — never the real Bearer token or PoP JWT.
+        headers: dict[str, str] = {
+            "Authorization": "<redacted: OAuth access token — added at send time>",
+            "X-Authorization": "<redacted: PoP JWT — RS256-signed per request at send time>",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Correlation-Id": "<generated per request>",
+        }
+        if self.partner_id:
+            headers["X-Partner-Id"] = self.partner_id
+        if self.sender_id:
+            headers["X-Sender-Id"] = self.sender_id
+        if self.account_id:
+            headers["X-Account-Id"] = self.account_id
+        if callback_location:
+            headers["call-back-location"] = callback_location
+
+        return {
+            "method": "POST",
+            "path": path,
+            "url": url,
+            "payload": payload,
+            "headers": headers,
+            # ehts entries the PoP token signs for a resource call (see _request).
+            "pop_signed_ehts": ["Authorization", "uri", "http-method"],
+            "would_send": False,
+            "notes": [
+                "DRY RUN — nothing was sent to T-Mobile.",
+                "Authorization/X-Authorization are redacted placeholders.",
+                "productId is UNCONFIRMED until T-Mobile validates it.",
+            ],
+        }
 
     async def suspend_subscriber(self, msisdn: str) -> dict[str, Any]:
         """Suspend a subscriber line."""
         return await self.post_json(
-            "/wholesale/subscriber/v2/suspend",
+            self._subscriber_path("suspend"),
             {"msisdn": msisdn, "accountId": self.account_id},
         )
 
     async def restore_subscriber(self, msisdn: str) -> dict[str, Any]:
         """Restore (unsuspend) a subscriber line."""
         return await self.post_json(
-            "/wholesale/subscriber/v2/restore",
+            self._subscriber_path("restore"),
             {"msisdn": msisdn, "accountId": self.account_id},
         )
 
     async def deactivate_subscriber(self, msisdn: str) -> dict[str, Any]:
         """Deactivate (cancel) a subscriber line."""
         return await self.post_json(
-            "/wholesale/subscriber/v2/deactivate",
+            self._subscriber_path("deactivate"),
             {"msisdn": msisdn, "accountId": self.account_id},
         )

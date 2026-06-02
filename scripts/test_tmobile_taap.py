@@ -239,7 +239,7 @@ async def main():
                 "productId": args.product_id,
             }
             result = await client.post_json(
-                "/wholesale/subscriber/v2/activate",
+                client.activation_endpoint(),
                 payload,
                 extra_headers={"call-back-location": CALLBACK_URL},
             )
