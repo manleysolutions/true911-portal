@@ -211,6 +211,27 @@ class TestIngestStaging:
         assert rec_map.map_status == "unmapped"  # never auto-confirmed
 
     @pytest.mark.asyncio
+    async def test_normalizer_flag_off_leaves_lifecycle_none(self, monkeypatch):
+        monkeypatch.setattr("app.config.settings.FEATURE_ZOHO_STATUS_NORMALIZER", "false")
+        db = _FakeSession()
+        result = await ingest.ingest_subscription_event(db, _event(_webber_payload()))
+        assert result["lifecycle_state"] is None
+        sub = next(o for o in db.added if isinstance(o, ZohoSubscriptionRecord))
+        assert sub.lifecycle_state is None
+
+    @pytest.mark.asyncio
+    async def test_normalizer_flag_on_sets_deactivated(self, monkeypatch):
+        monkeypatch.setattr("app.config.settings.FEATURE_ZOHO_STATUS_NORMALIZER", "true")
+        db = _FakeSession()
+        # Webber Infra Device Activation Status = "De-activated"
+        result = await ingest.ingest_subscription_event(db, _event(_webber_payload()))
+        assert result["lifecycle_state"] == "deactivated"
+        sub = next(o for o in db.added if isinstance(o, ZohoSubscriptionRecord))
+        assert sub.lifecycle_state == "deactivated"
+        # Raw status still preserved verbatim alongside the normalized state.
+        assert sub.device_activation_status == "De-activated"
+
+    @pytest.mark.asyncio
     async def test_missing_subscription_id_is_needs_mapping(self):
         db = _FakeSession()
         event = _event({"module": "Subscription_Mgmt", "Account_Name": "No ID Co"})

@@ -24,13 +24,19 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.external_record_map import ExternalRecordMap
 from app.models.integration_event import IntegrationEvent
 from app.models.zoho_payload_observation import ZohoPayloadObservation
 from app.models.zoho_subscription_record import ZohoSubscriptionRecord
 from app.services.zoho_payload_sanitizer import sanitize, top_level_keys
+from app.services.zoho_status_normalizer import normalize_activation_status
 
 logger = logging.getLogger("true911.zoho_subscription_ingest")
+
+
+def _flag_on(value: str) -> bool:
+    return str(value).strip().lower() == "true"
 
 _MODULE = "Subscription_Mgmt"
 _SOURCE = "zoho_crm"
@@ -193,6 +199,7 @@ async def ingest_subscription_event(
         "subscription_mgmt_id": sub_mgmt_id,
         "map_status": rec_map.map_status,
         "device_activation_status": rec.device_activation_status,
+        "lifecycle_state": rec.lifecycle_state,
     }
 
 
@@ -252,7 +259,13 @@ async def _upsert_subscription_record(
         if val is not None:
             setattr(rec, col, val)
 
-    # lifecycle_state intentionally left to the Phase 2 normalizer.
+    # Normalize to a canonical LIFECYCLE state, gated by FEATURE_ZOHO_STATUS_NORMALIZER.
+    # Computed from the EFFECTIVE device_activation_status (post preserve-on-missing
+    # merge above).  When the flag is off, lifecycle_state is left untouched (NULL on
+    # create; prior value preserved on update) so this stays a pure additive opt-in.
+    if _flag_on(settings.FEATURE_ZOHO_STATUS_NORMALIZER):
+        rec.lifecycle_state = normalize_activation_status(rec.device_activation_status)
+
     rec.external_record_map_id = rec_map_id
     rec.last_event_id = event_id
     rec.raw_json = sanitized_payload
