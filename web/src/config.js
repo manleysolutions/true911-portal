@@ -27,6 +27,12 @@ export const config = {
    *  shows a friendly "not enabled" state (the backend also returns 404).
    *  Mirrors the backend FEATURE_DEVICE_HEALTH gate. */
   featureDeviceHealth: import.meta.env.VITE_FEATURE_DEVICE_HEALTH === "true",
+  /** Feature flag: Customer Assurance Dashboard (Protected/Attention/Critical
+   *  portfolio view). Default OFF — when off the nav item is hidden and the
+   *  page shows a friendly "not enabled" state. Consumes the read-only
+   *  /api/assurance endpoints, which are themselves gated by the backend
+   *  FEATURE_ASSURANCE_ENGINE flag (404 when off). */
+  featureAssuranceDashboard: import.meta.env.VITE_FEATURE_ASSURANCE_DASHBOARD === "true",
 };
 
 export const isDemo = config.appMode === "demo";
