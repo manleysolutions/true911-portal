@@ -20,17 +20,64 @@ from app.services.device_health.status import NormalizedStatus
 
 logger = logging.getLogger("true911.device_health.vola")
 
-# Vola's device-list "lastUpdateTime" is a vendor-formatted string (e.g.
-# "Jun 01 2026 09:00" or ISO-8601).  Best-effort parse to a UTC datetime;
-# return None when it can't be trusted rather than inventing a value.
-_VOLA_TS_FORMATS = ("%b %d %Y %H:%M", "%b %d %Y %H:%M:%S", "%Y-%m-%d %H:%M:%S")
+# Vola's device-list "lastUpdateTime" is a vendor-formatted value.  Its exact
+# format must be CONFIRMED against production (run the sync with
+# DEVICE_HEALTH_DEBUG=true to print the raw value — see
+# docs/VOLA_TELEMETRY_RELIABILITY.md).  This parser handles the realistic set
+# of shapes (ISO-8601, several human string layouts, and epoch seconds/ms) and
+# returns None when it cannot trust the value — it NEVER invents a timestamp.
+_VOLA_TS_FORMATS = (
+    "%b %d %Y %H:%M",        # "Jun 01 2026 09:00"
+    "%b %d %Y %H:%M:%S",     # "Jun 01 2026 09:00:00"
+    "%Y-%m-%d %H:%M:%S",     # "2026-06-01 09:00:00"
+    "%Y-%m-%d %H:%M",        # "2026-06-01 09:00"
+    "%Y/%m/%d %H:%M:%S",     # "2026/06/01 09:00:00"
+    "%m/%d/%Y %H:%M:%S",     # "06/01/2026 09:00:00"
+    "%b %d, %Y %H:%M:%S",    # "Jun 01, 2026 09:00:00"
+    "%d %b %Y %H:%M:%S",     # "01 Jun 2026 09:00:00"
+)
+
+# Candidate keys that may carry the device's last-contact time, in priority
+# order.  The Vola device-list documents ``lastUpdateTime``; the alternates are
+# defensive in case a model/firmware reports under a different key.
+HEARTBEAT_TIME_KEYS = (
+    "lastUpdateTime", "last_update", "lastActiveTime",
+    "lastOnlineTime", "lastSeen", "updateTime", "heartbeatTime",
+)
 
 
 def _parse_vola_timestamp(raw):
+    """Best-effort parse of a Vola last-contact value → aware UTC datetime.
+
+    Accepts ISO-8601, the human string layouts in ``_VOLA_TS_FORMATS``, and
+    epoch seconds or milliseconds (int / float / numeric string).  Returns
+    ``None`` for anything it cannot trust — never fabricates a value.
+    """
     from datetime import datetime, timezone
-    if not raw or not isinstance(raw, str):
+
+    if raw is None:
+        return None
+
+    # Epoch — int/float, or a purely-numeric string.
+    if isinstance(raw, (int, float)) or (isinstance(raw, str) and raw.strip().lstrip("-").isdigit()):
+        try:
+            num = float(raw)
+        except (TypeError, ValueError):
+            return None
+        # Heuristic: values too large for plausible seconds are milliseconds.
+        seconds = num / 1000.0 if abs(num) >= 1e12 else num
+        try:
+            ts = datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return ts if 2000 <= ts.year <= 2100 else None
+
+    if not isinstance(raw, str):
         return None
     s = raw.strip()
+    if not s:
+        return None
+
     try:
         ts = datetime.fromisoformat(s.replace("Z", "+00:00"))
         return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
@@ -42,6 +89,36 @@ def _parse_vola_timestamp(raw):
         except ValueError:
             continue
     return None
+
+
+def heartbeat_debug_fields(raw: dict) -> dict:
+    """Return the SAFE, named heartbeat-relevant fields from a raw Vola device
+    item, for operator debugging.  No secrets exist in the Vola device list, and
+    this never returns the whole payload — only the named diagnostic keys plus
+    the parsed last-seen result and which key supplied it.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    named = (
+        "deviceSN", "sn", "status", "deviceModel", "softwareVersion",
+        "firmwareVersion", "version", "ip", "lanIp",
+        "rssi", "signal", "signalStrength", "signal_dbm",
+    ) + HEARTBEAT_TIME_KEYS
+    out = {k: raw.get(k) for k in named if k in raw}
+    chosen_key, chosen_val = _select_heartbeat_value(raw)
+    out["_heartbeat_key_used"] = chosen_key
+    parsed = _parse_vola_timestamp(chosen_val)
+    out["_parsed_last_seen"] = parsed.isoformat() if parsed else None
+    return out
+
+
+def _select_heartbeat_value(raw: dict):
+    """First non-empty heartbeat-time value across the candidate keys."""
+    for key in HEARTBEAT_TIME_KEYS:
+        val = raw.get(key)
+        if val not in (None, ""):
+            return key, val
+    return None, None
 
 
 class VolaCloudAdapter(StatusProbeAdapter):
@@ -129,11 +206,12 @@ class VolaCloudAdapter(StatusProbeAdapter):
                 except (TypeError, ValueError):
                     pass
                 break
-        # Last heartbeat: Vola's lastUpdateTime is a vendor-formatted string;
-        # keep the raw string in raw_payload and best-effort parse to a UTC
-        # datetime for last_seen.  Never fabricate a value we can't parse.
-        vs.last_seen = _parse_vola_timestamp(
-            match.get("lastUpdateTime") or match.get("last_update"))
+        # Last heartbeat: the device's last-contact time.  Pick the first
+        # populated candidate key (lastUpdateTime + alternates), keep the raw
+        # value in raw_payload, and best-effort parse to a UTC datetime.  Never
+        # fabricate a value we can't parse (last_seen stays None).
+        _hb_key, _hb_val = _select_heartbeat_value(match)
+        vs.last_seen = _parse_vola_timestamp(_hb_val)
         vs.raw_payload = match
         vs.reason_codes = [ReasonCode.OK] if online else [ReasonCode.DEVICE_OFFLINE]
         return vs
