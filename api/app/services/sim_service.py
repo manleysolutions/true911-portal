@@ -212,6 +212,7 @@ async def handle_webhook(db: AsyncSession, job: Job) -> dict[str, Any]:
                 "tmobile_reason": result.reason,
                 "tmobile_matched_sim_iccid": result.matched_sim_iccid,
                 "tmobile_matched_device_id": result.matched_device_id,
+                "tmobile_account_capture": result.account_capture,
             }
         # Flag off on this worker — the most common cause is that
         # FEATURE_TMOBILE_CALLBACK_INGEST was set via Render dashboard

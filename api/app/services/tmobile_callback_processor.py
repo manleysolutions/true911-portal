@@ -47,8 +47,15 @@ What this module deliberately does NOT do:
   * Tenant guessing (ICCID is globally unique per
     ``Sim.iccid unique=True``, so a single match implicitly
     identifies the tenant).
-  * Provisioning writes (never create SIM, never create Device).
+  * Device creation (never creates or mutates a Device row).
   * E911 / call routing / customer record updates.
+
+  NOTE: an activation/provisioning callback that carries a generated account
+  ID IS allowed to find-or-create a single ``Sim`` row (keyed on the globally
+  unique ICCID) on the device-fallback path, so the account ID is never
+  dropped — see ``capture_activation_via_device``.  This is the one
+  intentional write that creates a Sim; it never duplicates (the unique ICCID
+  is checked first) and never runs on ambiguous matches.
   * Idempotency tracking (deferred; same payload twice is OK — the
     write is effectively idempotent because both calls set
     ``last_network_event = now`` to ~the same value).
@@ -156,6 +163,9 @@ class ProcessResult:
     reason: Optional[str] = None
     matched_sim_iccid: Optional[str] = None
     matched_device_id: Optional[str] = None
+    # Outcome of activation account-ID capture on the device-fallback path:
+    # "updated_sim" | "created_sim" | "skipped:no_iccid" | None (no capture needed).
+    account_capture: Optional[str] = None
 
 
 # ─── Extraction ────────────────────────────────────────────────────
@@ -263,6 +273,99 @@ def merge_activation_identifiers(
     if assigned_msisdn:
         out["tmobile_msisdn"] = assigned_msisdn
     return out
+
+
+def _apply_activation_to_meta(
+    meta: Optional[dict], signal: "ExtractedSignal", assigned_msisdn: Optional[str]
+) -> dict:
+    """Build the new ``sims.meta`` with identifiers + lifecycle record merged.
+
+    Shared by the Sim-match and device-fallback capture paths so both write the
+    identical meta shape (flat ``tmobile_account_id`` + the ``tmobile_activation``
+    record).  Pure — does not mutate the input.
+    """
+    new_meta = merge_activation_identifiers(meta, signal.account_id, assigned_msisdn)
+    prior = new_meta.get(activation.META_KEY)
+    new_meta[activation.META_KEY] = activation.resolve_from_callback(
+        prior,
+        account_id=signal.account_id,
+        msisdn=assigned_msisdn,
+        activation_status=signal.activation_status,
+        at=signal.event_timestamp.isoformat(),
+    )
+    return new_meta
+
+
+async def capture_activation_via_device(
+    db: AsyncSession, device: Device, signal: "ExtractedSignal"
+) -> str:
+    """Persist activation identifiers when a provisioning callback matched only
+    a Device (no Sim row) — so the generated account ID is never dropped.
+
+    Find-or-create a single ``Sim`` keyed on the globally-unique ICCID, so the
+    account ID always lands on ``sims.meta`` (the one canonical store the
+    QuerySubscriber resolver reads).  Safety contract:
+
+      * The ICCID is resolved as ``signal.iccid`` then ``device.iccid``.  With
+        neither we cannot safely key a Sim (``Sim.iccid`` is NOT NULL + unique),
+        so we skip capture and return ``"skipped:no_iccid"``.
+      * The Sim is re-queried by the resolved ICCID first.  If one exists it is
+        REUSED (meta updated, device linked if unset) — never duplicated.  Only
+        when none exists is a new minimal Sim created.
+      * Tenant comes from the matched ``Device.tenant_id`` — never guessed.
+
+    Returns a short status: ``"updated_sim" | "created_sim" | "skipped:no_iccid"``.
+    Caller commits.
+    """
+    resolved_iccid = (signal.iccid or getattr(device, "iccid", None) or "").strip() or None
+    if not resolved_iccid:
+        logger.info(
+            "T-Mobile device-fallback account capture skipped: no ICCID on "
+            "callback or device (device=%s tenant=%s)",
+            device.device_id, device.tenant_id,
+        )
+        return "skipped:no_iccid"
+
+    assigned_msisdn = signal.msisdn or getattr(device, "msisdn", None)
+
+    # Re-query by the resolved ICCID (globally unique) so a Sim that exists but
+    # wasn't reached by match_sim (e.g. keyed on device.iccid, no msisdn in the
+    # callback) is reused — never duplicated.
+    existing = (
+        await db.execute(select(Sim).where(Sim.iccid == resolved_iccid))
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        existing.meta = _apply_activation_to_meta(existing.meta, signal, assigned_msisdn)
+        if not existing.device_id:
+            existing.device_id = device.device_id
+        logger.info(
+            "T-Mobile device-fallback account capture: updated existing Sim "
+            "(iccid=%s tenant=%s account_id=%s)",
+            _redact_identifier(existing.iccid), existing.tenant_id,
+            _redact_identifier(signal.account_id),
+        )
+        return "updated_sim"
+
+    new_sim = Sim(
+        tenant_id=device.tenant_id,
+        iccid=resolved_iccid,
+        msisdn=assigned_msisdn,
+        carrier="tmobile",
+        status="active",  # device-discovered SIM for a just-activated device
+        device_id=device.device_id,
+        data_source="device_discovered",
+        reconciliation_status="unverified",
+        meta=_apply_activation_to_meta(None, signal, assigned_msisdn),
+    )
+    db.add(new_sim)
+    logger.info(
+        "T-Mobile device-fallback account capture: created Sim from activation "
+        "callback (iccid=%s tenant=%s device=%s account_id=%s)",
+        _redact_identifier(resolved_iccid), device.tenant_id, device.device_id,
+        _redact_identifier(signal.account_id),
+    )
+    return "created_sim"
 
 
 # ─── SIM matching ──────────────────────────────────────────────────
@@ -518,6 +621,16 @@ async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
         if device_match.kind == "one":
             device = device_match.device
             assert device is not None  # mypy aid
+            # Activation-first flow: when this is an activation/provisioning
+            # callback carrying a generated account ID, persist it even though
+            # we only matched a Device (no Sim).  Find-or-create a Sim keyed on
+            # the ICCID so the account ID is never dropped (Gap #2 fix).
+            account_capture: Optional[str] = None
+            captured_iccid: Optional[str] = None
+            if signal.account_id or signal.activation_status:
+                account_capture = await capture_activation_via_device(db, device, signal)
+                if account_capture in ("created_sim", "updated_sim"):
+                    captured_iccid = (signal.iccid or getattr(device, "iccid", None))
             telemetry = CarrierTelemetry(
                 device_id=device.device_id,
                 carrier="t-mobile",
@@ -532,14 +645,16 @@ async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
             logger.info(
                 "T-Mobile callback %s: promoted via device fallback "
                 "(device=%s tenant=%s matched_on=%s event_type=%s "
-                "network_status=%s)",
+                "network_status=%s account_capture=%s)",
                 payload_id, device.device_id, device.tenant_id,
                 device_match.matched_on, signal.event_type,
-                signal.network_status or "<none>",
+                signal.network_status or "<none>", account_capture or "<none>",
             )
             return ProcessResult(
                 status="promoted:device_fallback",
                 matched_device_id=device.device_id,
+                matched_sim_iccid=captured_iccid,
+                account_capture=account_capture,
             )
         if device_match.kind == "ambiguous":
             logger.warning(
@@ -593,17 +708,8 @@ async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
     # on the matched Sim.  Additive only — does not affect matching, promotion,
     # or any existing callback behavior.
     if signal.account_id or signal.activation_status:
-        meta = merge_activation_identifiers(sim.meta, signal.account_id, signal.msisdn)
-        prior = meta.get(activation.META_KEY)
-        record = activation.resolve_from_callback(
-            prior,
-            account_id=signal.account_id,
-            msisdn=signal.msisdn,
-            activation_status=signal.activation_status,
-            at=signal.event_timestamp.isoformat(),
-        )
-        meta[activation.META_KEY] = record
-        sim.meta = meta
+        sim.meta = _apply_activation_to_meta(sim.meta, signal, signal.msisdn)
+        record = sim.meta[activation.META_KEY]
         logger.info(
             "T-Mobile callback %s: activation update on Sim "
             "(iccid=%s tenant=%s state=%s account_id=%s assigned_msisdn=%s "

@@ -58,3 +58,45 @@ Nothing here triggers a real activation automatically.
 `TestActivationPayloadMatchesTMobileSample` pins the generated body (builder, PIT
 constants, and the actual wire bytes) to the sample above;
 `test_disabled_by_default_refuses_to_send` proves the live flag gates sending.
+
+## Lifecycle gaps closed (follow-up)
+
+Two gaps were found in the activation → callback → account-ID lifecycle and
+fixed in a backend-only follow-up. The generated account ID is now persisted to
+the correct ICCID regardless of how the callback matched, and QuerySubscriber
+uses it automatically.
+
+### Gap #1 — QuerySubscriber uses the per-ICCID account ID
+
+`app/services/tmobile_subscriber.py` →
+`query_subscriber_by_iccid(db, iccid)` resolves the **stored per-ICCID** account
+ID (`sims.meta.tmobile_account_id`, falling back to the `tmobile_activation`
+record) and the MSISDN, then calls
+`TMobileTAAPClient.subscriber_inquiry(msisdn, account_id=…)`. The low-level
+`subscriber_inquiry` now accepts an explicit `account_id` (falls back to the
+global `TMOBILE_ACCOUNT_ID` env). The live call is gated behind
+`TMOBILE_PIT_LIVE_CALLS_ENABLED`.
+
+### Gap #2 — account ID captured even on the Device-fallback path
+
+`app/services/tmobile_callback_processor.py` →
+`capture_activation_via_device(db, device, signal)` runs when an
+activation/provisioning callback carries a generated account ID but matched only
+a Device (no Sim row). It **find-or-creates a single Sim keyed on the
+globally-unique ICCID** so the account ID always lands on `sims.meta`:
+
+- existing Sim for that ICCID → reused (meta updated, device linked if unset) —
+  **never duplicated**;
+- no Sim → one minimal Sim created (`carrier=tmobile`,
+  `data_source=device_discovered`, linked to the device);
+- no usable ICCID, or an **ambiguous** device match → capture skipped, **no Sim
+  written**.
+
+`jobs.result.tmobile_account_capture` (`created_sim` / `updated_sim` /
+`skipped:no_iccid` / `null`) surfaces the outcome for operators.
+
+### Tests
+
+`api/tests/test_tmobile_subscriber_resolver.py` (Gap #1) and
+`api/tests/test_tmobile_account_capture.py` (Gap #2 — create, no-duplicate,
+ambiguous-safe, end-to-end promote+capture).
