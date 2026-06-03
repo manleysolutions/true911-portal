@@ -35,6 +35,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 logger = logging.getLogger("true911.sync_device_health")
 
+# Opt-in operator debug: print the SAFE named Vola payload fields per device so
+# the real lastUpdateTime format can be confirmed.  Console-only (this is a CLI)
+# — never a customer surface.  Enable with DEVICE_HEALTH_DEBUG=true.
+_DEBUG = os.environ.get("DEVICE_HEALTH_DEBUG", "").strip().lower() in ("1", "true", "yes")
+
 # Map a T-Mobile subscriber status string to a True911 Sim.status value.
 _SIM_STATUS_MAP = {
     "active": "active",
@@ -164,8 +169,15 @@ async def run(*, dry_run: bool = True, tenant_id=None, site_id=None) -> dict:
                 })
                 print(f"  {d.device_id:24} {vs.vendor:9} "
                       f"available={vs.available} status={vs.normalized_status.value} "
+                      f"last_seen={vs.last_seen.isoformat() if vs.last_seen else None} "
                       f"reasons={[r.value for r in vs.reason_codes]}"
                       + (f" err={vs.error}" if vs.error else ""))
+                # Opt-in: dump the SAFE named Vola payload fields so an operator
+                # can confirm the real lastUpdateTime format. Never prints the
+                # whole payload and never reaches a customer surface.
+                if _DEBUG and vs.vendor == "vola" and vs.raw_payload:
+                    from app.services.device_health.adapters.vola import heartbeat_debug_fields
+                    print(f"    [DEBUG vola fields] {heartbeat_debug_fields(vs.raw_payload)}")
 
             changes = compute_device_updates(statuses, now=now)
             dev_changes, sim_changes = changes["device"], changes["sim"]

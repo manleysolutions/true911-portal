@@ -112,6 +112,44 @@ services:
       - key: APP_MODE
         value: production
 
+  # Scheduled device-health sync (Vola/T-Mobile telemetry → Device fields).
+  # Runs the hardware-agnostic sync every 5 minutes so Device.last_heartbeat /
+  # vola_last_sync / network_status stay fresh, preventing online devices from
+  # ageing to OFFLINE between manual syncs.  This is a Render Cron Job (NOT an
+  # always-running worker) — it runs, syncs, and exits.
+  #
+  # The sync only UPDATES existing Device/SIM health fields (never creates or
+  # deletes) and each vendor adapter self-guards on missing credentials, so a
+  # run with unset VOLA_* creds is a safe no-op.  VOLA_* are dashboard-managed
+  # secrets (sync: false) — set them on this cron service after first apply
+  # (see docs/VOLA_TELEMETRY_RELIABILITY.md "Render Cron setup").
+  - type: cron
+    name: true911-device-health-sync
+    runtime: python
+    plan: starter
+    rootDir: api
+    schedule: "*/5 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.sync_device_health
+    envVars:
+      - key: DRY_RUN
+        value: "false"
+      - key: APP_MODE
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: true911-db
+          property: connectionString
+      # Vola credentials — set in the Render dashboard (secrets, not in git).
+      - key: VOLA_BASE_URL
+        sync: false
+      - key: VOLA_EMAIL
+        sync: false
+      - key: VOLA_PASSWORD
+        sync: false
+      - key: VOLA_ORG_ID
+        sync: false
+
   # React Frontend (Static Site)
   - type: web
     name: true911-web-prod
