@@ -11,6 +11,8 @@ import {
 import PageWrapper from "@/components/PageWrapper";
 import SitePickerModal from "@/components/SitePickerModal";
 import DeviceFormModal from "@/components/DeviceFormModal";
+import AssurancePanel from "@/components/assurance/AssurancePanel";
+import { config } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -742,6 +744,9 @@ export default function SiteDetail() {
         <Link to={createPageUrl("Sites")} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
           <ArrowLeft className="w-4 h-4" /> All Sites
         </Link>
+
+        {/* ── Assurance panel (top of page) — gated; read-only API ── */}
+        {config.featureAssuranceDashboard && <AssurancePanel siteId={site.site_id} />}
 
         {/* ═══════════════════════════════════════════════════════════
             Site Header
