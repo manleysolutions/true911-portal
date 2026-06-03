@@ -104,6 +104,9 @@ class TenantOut(BaseModel):
     active_users: int = 0
     subscriptions: int = 0
     registrations: int = 0
+    # Retired tenants (is_active=False) stay listed for audit but are filtered
+    # out of the active operational dropdowns by the frontend.
+    is_active: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -122,6 +125,7 @@ def assemble_tenant_rows(tenants, count_maps: dict[str, dict[str, int]]) -> list
             "name": t.name,
             "org_type": getattr(t, "org_type", None),
             "created_at": getattr(t, "created_at", None),
+            "is_active": getattr(t, "is_active", True),
         }
         for field, cmap in count_maps.items():
             row[field] = int(cmap.get(tid, 0))

@@ -215,6 +215,9 @@ export default function AdminTenants() {
   }
 
   const dupNames = duplicateNameSet(tenants);
+  // Retired tenants (is_active=false) stay in the table for audit but are
+  // excluded from the operational dropdowns (act-as / cleanup / reset).
+  const activeTenants = tenants.filter(t => t.is_active !== false);
 
   return (
     <PageWrapper>
@@ -247,7 +250,7 @@ export default function AdminTenants() {
                   className="appearance-none pl-3 pr-7 py-1.5 text-xs font-medium border border-purple-300 bg-white text-purple-800 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400"
                 >
                   <option value="">My Tenant (default)</option>
-                  {tenants.map(t => (
+                  {activeTenants.map(t => (
                     <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
                   ))}
                 </select>
@@ -455,7 +458,7 @@ export default function AdminTenants() {
                   className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
                 >
                   <option value="">Select tenant to keep...</option>
-                  {tenants.map(t => (
+                  {activeTenants.map(t => (
                     <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
                   ))}
                 </select>
@@ -533,7 +536,7 @@ export default function AdminTenants() {
                   className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
                 >
                   <option value="">Select target tenant...</option>
-                  {tenants.map(t => (
+                  {activeTenants.map(t => (
                     <option key={t.tenant_id} value={t.tenant_id}>{t.name} ({t.tenant_id})</option>
                   ))}
                 </select>
@@ -680,11 +683,14 @@ export default function AdminTenants() {
                         </div>
                       ) : (
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="text-gray-900">{t.name}</span>
+                          <span className={t.is_active === false ? "text-gray-400" : "text-gray-900"}>{t.name}</span>
                           {warnings.length > 0 && (
-                            <span title={warnings.join(" \u00b7 ")}>
+                            <span title={warnings.join(" · ")}>
                               <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                             </span>
+                          )}
+                          {t.is_active === false && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500 border border-gray-300">Retired</span>
                           )}
                         </span>
                       )}
