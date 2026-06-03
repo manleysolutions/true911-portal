@@ -1,0 +1,17 @@
+[
+  {
+    "device_id": "",
+    "site_id": "",
+    "site_name": "",
+    "current_name": "",
+    "suggested_model": "",
+    "suggested_vendor": "",
+    "required_identifier": "",
+    "imei": "",
+    "iccid": "",
+    "msisdn": "",
+    "serial_number": "",
+    "manual_verification_only": false,
+    "operator_notes": ""
+  }
+]
