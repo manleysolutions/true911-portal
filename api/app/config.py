@@ -220,11 +220,21 @@ class Settings(BaseSettings):
     TMOBILE_PRIVATE_KEY_PATH: str = ""  # path to RSA private key PEM file
     TMOBILE_PRIVATE_KEY_PEM: str = ""   # alternative: PEM content directly (for Render/Docker)
     # Activation-first flow (T-Mobile generates the account ID on activation):
-    # activation passes marketZIP + ICCID + productId and a call-back-location
+    # activation passes a nested baseProduct body + ICCID and a call-back-location
     # header; the account ID returns asynchronously via the callback.
-    TMOBILE_PRODUCT_ID: str = ""        # T-Mobile-assigned product ID (PIT placeholder until provided)
+    TMOBILE_PRODUCT_ID: str = ""        # legacy flat productId (unused by the nested baseProduct body)
     TMOBILE_MARKET_ZIP: str = ""        # PIT test market ZIP, e.g. 30338 or 30346
     TMOBILE_CALLBACK_LOCATION: str = "" # call-back-location header URL for async activation completion
+    # Nested activation payload mapping (T-Mobile Wholesale PIT, REST, sender/partner 128).
+    # Each field has a PIT-safe default baked as a module constant in
+    # app/integrations/tmobile_taap.py; these env vars override without a code edit.
+    TMOBILE_LANGUAGE: str = "ENGL"              # activation "language" field
+    TMOBILE_BASE_PRODUCT_ID: str = ""           # baseProduct.baseProductId, e.g. "Infatrac Internet Access Plan"
+    TMOBILE_WPS: str = ""                        # baseProduct.wps, e.g. "00011586"
+    # HARD live-call switch. Even with valid credentials, activate_subscriber()
+    # refuses to send a real PIT activation unless this is explicitly "true".
+    # The dry-run preview (build_activation_preview) never consults this flag.
+    TMOBILE_PIT_LIVE_CALLS_ENABLED: str = "false"
     # Resource paths are env-driven so a T-Mobile gateway routing change does not
     # require a code edit. The PIT onboarding gateway URL list uses
     # /wholesale/v1/subscriber (NOT the older /wholesale/subscriber/v2).
