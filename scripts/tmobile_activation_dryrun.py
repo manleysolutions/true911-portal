@@ -10,22 +10,21 @@ redacted placeholders so the output is safe to paste into a ticket or share.
 It does NOT require any T-Mobile credentials or RSA key to run.
 
 PIT onboarding defaults (override with flags or env):
-    marketZIP  = 30346                      (TMOBILE_MARKET_ZIP)
-    ICCID      = 8901260963132697538        (one of the 50 PIT ICCIDs)
-    productId  = wps-00011586               (TMOBILE_PRODUCT_ID — PLACEHOLDER)
-
-  ⚠  productId ``wps-00011586`` is the price-plan code from the onboarding
-     packet ("Infatrac Internet Access Plan"). It is a PLACEHOLDER until
-     T-Mobile confirms the exact activation productId. See
-     docs/tmobile_taap_setup.md §"Product ID must be confirmed by T-Mobile".
+    ICCID          = 8901260963132697538            (one of the 50 PIT ICCIDs)
+    marketZip      = 30346                          (TMOBILE_MARKET_ZIP; PIT: 30346/30338)
+    language       = ENGL                           (TMOBILE_LANGUAGE)
+    baseProductId  = Infatrac Internet Access Plan  (TMOBILE_BASE_PRODUCT_ID)
+    wps            = 00011586                        (TMOBILE_WPS)
+    product[]      = NOROAM / ADD                    (PIT default sub-product)
 
 Usage:
     cd api
     python ../scripts/tmobile_activation_dryrun.py
-    python ../scripts/tmobile_activation_dryrun.py --iccid 8901... --product-id wps-00011586
+    python ../scripts/tmobile_activation_dryrun.py --iccid 8901... --market-zip 30338
 
 This script can never activate anything — there is no flag to make it send.
-Use scripts/test_tmobile_taap.py --activate for the live call (requires creds).
+Use scripts/test_tmobile_taap.py --activate for the live call (requires creds
+AND TMOBILE_PIT_LIVE_CALLS_ENABLED=true).
 """
 
 import argparse
@@ -43,7 +42,6 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", "api", ".env"))
 # PIT onboarding test values (see module docstring).
 DEFAULT_MARKET_ZIP = "30346"
 DEFAULT_ICCID = "8901260963132697538"
-DEFAULT_PRODUCT_ID = "wps-00011586"  # PLACEHOLDER — confirm with T-Mobile
 
 
 def main() -> int:
@@ -51,9 +49,11 @@ def main() -> int:
         description="Print the exact T-Mobile activation payload + headers without sending."
     )
     parser.add_argument("--iccid", default=DEFAULT_ICCID, help="SIM ICCID (default: PIT test ICCID)")
-    parser.add_argument("--market-zip", default=DEFAULT_MARKET_ZIP, help="5-digit market ZIP (default: 30346)")
-    parser.add_argument("--product-id", default=DEFAULT_PRODUCT_ID,
-                        help="T-Mobile productId (default: wps-00011586 PLACEHOLDER — confirm with T-Mobile)")
+    parser.add_argument("--market-zip", default=DEFAULT_MARKET_ZIP, help="5-digit market ZIP (default: 30346; PIT: 30346/30338)")
+    parser.add_argument("--language", help="activation language (default: TMOBILE_LANGUAGE / ENGL)")
+    parser.add_argument("--base-product-id",
+                        help="baseProduct.baseProductId (default: TMOBILE_BASE_PRODUCT_ID / 'Infatrac Internet Access Plan')")
+    parser.add_argument("--wps", help="baseProduct.wps (default: TMOBILE_WPS / 00011586)")
     parser.add_argument("--callback-location",
                         help="call-back-location header (default: TMOBILE_CALLBACK_LOCATION env)")
     args = parser.parse_args()
@@ -64,7 +64,9 @@ def main() -> int:
     preview = client.build_activation_preview(
         iccid=args.iccid,
         market_zip=args.market_zip,
-        product_id=args.product_id,
+        language=args.language,
+        base_product_id=args.base_product_id,
+        wps=args.wps,
         callback_location=args.callback_location,
     )
 

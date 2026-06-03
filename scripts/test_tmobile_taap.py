@@ -68,7 +68,7 @@ async def main():
     parser.add_argument("--activate", action="store_true", help="Test Activation API (requires --iccid, --market-zip, --product-id)")
     parser.add_argument("--iccid", help="SIM ICCID for activation test")
     parser.add_argument("--market-zip", help="5-digit market ZIP for activation")
-    parser.add_argument("--product-id", help="T-Mobile product ID for activation")
+    parser.add_argument("--product-id", help="(deprecated/ignored — baseProduct now comes from env/PIT constants)")
     args = parser.parse_args()
 
     from app.config import settings
@@ -227,21 +227,19 @@ async def main():
     CALLBACK_URL = "https://pit-api.manleysolutions.com/tmobile/wholesale/callback"
 
     if args.activate:
-        if not args.iccid or not args.market_zip or not args.product_id:
-            fail("--activate requires --iccid, --market-zip, and --product-id")
+        if not args.iccid or not args.market_zip:
+            fail("--activate requires --iccid and --market-zip")
             return
-        step(f"Step 5: Activation for iccid={args.iccid} marketZIP={args.market_zip} productId={args.product_id}")
+        step(f"Step 5: Activation for iccid={args.iccid} marketZip={args.market_zip}")
         info(f"call-back-location: {CALLBACK_URL}")
+        # activate_subscriber() builds the nested baseProduct body and is
+        # gated behind TMOBILE_PIT_LIVE_CALLS_ENABLED=true — it refuses to send
+        # otherwise.  The base product/wps/language come from env / PIT constants.
         try:
-            payload = {
-                "marketZIP": args.market_zip,
-                "ICCID": args.iccid,
-                "productId": args.product_id,
-            }
-            result = await client.post_json(
-                client.activation_endpoint(),
-                payload,
-                extra_headers={"call-back-location": CALLBACK_URL},
+            result = await client.activate_subscriber(
+                iccid=args.iccid,
+                market_zip=args.market_zip,
+                callback_location=CALLBACK_URL,
             )
             ok("Activation request accepted.")
             print(json.dumps(result, indent=2, default=str)[:2000])
