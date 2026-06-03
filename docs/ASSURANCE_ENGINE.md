@@ -318,6 +318,46 @@ This would power the installer/staging experience and feed Pending Install preci
 - `TEST_STALE_SECONDS` is a single global (90 days); not per-device-class.
 - Compute-live only; no persistence, so no trend/history yet.
 
+### Future assurance signals (planned inputs — not in PR1)
+These richer signals will feed the same engine as additional inputs on the
+existing axes (operational / lifecycle / compliance). Each is additive and
+read-only; none changes the label vocabulary:
+
+| Signal | Axis | Likely source |
+|---|---|---|
+| Vola online status | operational | `vola_service` / device_health vola adapter |
+| T-Mobile activation status | lifecycle/operational | `tmobile_taap` SubscriberInquiry / activation lifecycle |
+| T-Mobile subscriber inquiry | operational | `tmobile_taap` (once account ID exists) |
+| Telnyx registration status (SIP) | operational | `CommandTelemetry` / Telnyx |
+| E911 validation status | compliance | `sites.e911_status` + carrier/PSAP validation |
+| Last emergency test | compliance | `verification_tasks` / `infra_test_results` (already wired) |
+| Last manual verification | compliance | `verification_tasks` (attestation) |
+| Recent Manley activity | accountability | `action_audit` / `command_activity` / `e911` log / jobs |
+| Zoho trouble-ticket activity | issues | Zoho Desk / `SupportEscalation` |
+
+As each lands, it becomes a reason code + an input predicate — the decision
+matrix and labels are unchanged.
+
+### E911 data-readiness consideration (important before customer exposure)
+By approved decision, **an active site with missing/unverified E911 is Critical.**
+If production `e911_status` is not yet normalized to `validated`, enabling the
+flag could surface **many Critical sites at once**.
+
+Mitigations (recommended order — PR1 already makes this safe to do):
+1. **PR1 is API-only and flag-gated** — no customer UI consumes it yet. Enable
+   `FEATURE_ASSURANCE_ENGINE=true` **internally first** and measure how many
+   sites would be Critical purely due to E911 (`reasons` contains
+   `ASSURANCE.E911_MISSING` / `E911_UNVERIFIED`).
+2. **Normalize/validate E911 data** for active sites before any customer surface.
+3. **Optional soft-mode (follow-up):** a config `ASSURANCE_E911_STRICT`
+   (default `true`) that, when `false` during a cleanup window, downgrades
+   *unverified-but-present* E911 from Critical → Attention. **Missing** E911
+   stays Critical regardless (we must never claim protection without an address).
+   Not built in PR1 — add only if the data-cleanup window needs it.
+
+This is why the customer UI is intentionally deferred: the API can be measured
+and the data cleaned before any subscriber sees a label.
+
 ### Future work (not in PR1)
 - Persisted **assurance snapshots** (trends, change-detection).
 - **Recent Manley Activity** timeline on the site view.
