@@ -49,30 +49,47 @@ one tenant (`NAPCO_IMPORT_TENANT`, default `restoration-hardware`).
 > This PR does **not** scrape or call the NAPCO portal. You export the file
 > manually; the command reads that file.
 
-### Expected file columns
-Headers are matched case-insensitively by substring (first match wins; a specific
-header like "Comm Status" beats a generic "Status"):
+### Real export format (validated against `Radiolist-…​.xlsx`, 2026-06-03)
+The NAPCO StarLink dealer portal export is a single `RadioList` worksheet whose
+headers are **NAPCO-native camelCase with no spaces**. The 28 columns include:
 
-| Canonical field | Example headers |
-|---|---|
-| serial | Serial Number, ESN, Device Serial |
-| device_id | Device ID |
-| portal_status | Comm Status, Communication Status, Status |
-| last_comm | Last Communication, Last Check-In, Last Signal |
-| name | Account Name, Site Name, Name |
-| address | Address, Location |
-| trouble | Trouble Condition, Fault |
-| carrier | Carrier, Network |
-| model | Model, Device Type, Communicator |
-| config | Configuration, Profile |
+`RadioNumber · ICCID · DealerId · SubscriberName · DealerCompany · DealerEmail ·
+LastSignalReceived · OnlineDate · SIMStatus · FirmwareVer · … · Plan · GenTech`
 
-A file with neither a serial nor a device-id column is rejected (nothing written).
+Key mapping (the importer's column detection handles both this real export and
+generic exports; headers are matched case-insensitively by substring, most
+specific first):
+
+| Canonical field | Real NAPCO header | Also accepts |
+|---|---|---|
+| serial | **RadioNumber** | Serial Number, ESN, Device Serial |
+| iccid | **ICCID** | SIM ICCID |
+| portal_status | **SIMStatus** | Comm Status, Communication Status, Status |
+| last_comm | **LastSignalReceived** | Last Communication, Last Check-In, Last Signal |
+| name | **SubscriberName** | Account Name, Site Name, Name |
+| config | **Plan** | Configuration, Profile |
+| gen_tech | **GenTech** (`4G:LTE`/`FirstNet`/`LTE-M`/`UNK`) | Network Tech |
+| device_id | _(absent in NAPCO export)_ | Device ID |
+| address / trouble / model | _(absent in NAPCO export)_ | Address, Trouble, Model |
+
+`SIMStatus` is the SIM **provisioning** state (the sample is 100% `Active`), not a
+live comm status — so liveness comes from **LastSignalReceived recency**, and
+`network_status=online` is applied **only** alongside a fresh `last_comm`.
+`GenTech` is archived for diagnostics, **not** written to `Device.carrier`
+(it is network tech, not a carrier name). A file with **none** of serial / ICCID /
+device-id columns is rejected (nothing written).
+
+> The export is the dealer's **entire** radio list, so non-RH `SubscriberName`
+> rows can appear; they simply don't match the RH tenant's devices and become
+> review-required — never written.
 
 ### Matching rules
-1. **Serial number** first (`Device.serial_number`, case-insensitive).
-2. **Device ID** second (if the export carries one).
-3. **Name/address fallback** → row flagged **review-required**, never
-   auto-applied. The operator resolves these by adding the serial.
+1. **Serial number** first — `RadioNumber` vs `Device.serial_number` (case-insensitive).
+2. **ICCID** second — `ICCID` vs `Device.iccid` (the **strongest** join for these
+   cellular communicators; present on both sides).
+3. **Device ID** third (if the export carries one).
+4. **Name/address fallback** → row flagged **review-required**, never
+   auto-applied. The operator resolves these by aligning the serial/ICCID.
 
 ### Proposed updates (apply only)
 A **whitelist** of telemetry fields — nothing else is writable here:
@@ -92,20 +109,24 @@ stored — a stale "last communication" cannot move a device's heartbeat backwar
 and a stale row does **not** regress `network_status` (logged `skipped stale`).
 A heartbeat is only ever a vendor's real timestamp — never fabricated.
 
-## Sample dry-run output
+## Sample dry-run output (against the real `RadioList` export)
 ```
 NAPCO StarLink portal status import — tenant 'restoration-hardware'
   mode: DRY RUN (no writes)
-  columns detected: {'serial': 'Serial Number', 'portal_status': 'Comm Status', 'last_comm': 'Last Communication', ...}
-  RH-DEV-007           match=serial status='Online' -> net=online last_comm=2026-06-01 13:45:00+00:00
+  columns detected: {'serial': 'RadioNumber', 'iccid': 'ICCID', 'portal_status': 'SIMStatus',
+                     'last_comm': 'LastSignalReceived', 'name': 'SubscriberName',
+                     'config': 'Plan', 'gen_tech': 'GenTech'}
+  RH-...7721           match=iccid status='Active' -> net=online last_comm=2026-06-03 07:19:47+00:00
       would update {'telemetry_source': 'napco_portal', 'last_heartbeat': ..., 'last_network_event': ..., 'network_status': 'online'}
-  RH-DEV-012           match=serial status='No Comm' -> net=offline last_comm=2026-05-20 02:10:00+00:00
-      would update {'telemetry_source': 'napco_portal', 'last_heartbeat': ..., 'network_status': 'offline'}
-      · skipped stale last communication (... <= stored ...) — no regression
-  REVIEW  serial='' name='Lobby FACP' addr='42 Oak Ave' — no serial/device_id match; operator review required
+  RH-...9777           match=iccid status='Active' -> net=(unchanged) last_comm=2025-05-07 20:30:30+00:00
+      · skipped stale last communication (2025-05-07... <= stored 2026-06-01...) — no regression
+  REVIEW  serial='10719648' iccid='8914...7854' name='Restoration Hardware 632 Vero Beach' — no serial/ICCID/device_id match; operator review required
 SUMMARY
-  rows:40  matched_serial:34  matched_device_id:0  review_required:6  updated:0(dry)  stale_skipped:1  offline_or_trouble:3
+  rows:99  matched_serial:0  matched_iccid:<n>  matched_device_id:0  review_required:<99-n>  updated:0(dry)  stale_skipped:<s>  offline_or_trouble:0
 ```
+The exact `matched_iccid` / `review_required` split depends on how many of the 99
+exported radios have a corresponding `Device.iccid` in the RH tenant — that
+requires running where the database is reachable (read-only; `DRY_RUN` rolls back).
 
 ## Risks
 - **Looking online without being online** — mitigated: only the real last-comm
