@@ -101,6 +101,7 @@ import Registrations from './pages/Registrations';
 import RegistrationDetail from './pages/RegistrationDetail';
 import OnboardingReview from './pages/OnboardingReview';
 import PropertyHealth from './pages/PropertyHealth';
+import AssuranceDashboard from './pages/AssuranceDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -159,6 +160,7 @@ export const PAGES = {
     "RegistrationDetail": RegistrationDetail,
     "OnboardingReview": OnboardingReview,
     "PropertyHealth": PropertyHealth,
+    "AssuranceDashboard": AssuranceDashboard,
 }
 
 export const pagesConfig = {

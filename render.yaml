@@ -179,3 +179,9 @@ services:
       # whether the UI tries to render the surface.
       - key: VITE_FEATURE_LLLM
         value: "true"
+      # Customer Assurance Dashboard — default OFF. When "true" the Assurance
+      # nav item + page render; they consume the read-only /api/assurance
+      # endpoints, which are themselves gated by FEATURE_ASSURANCE_ENGINE on the
+      # API (404 when off). Flip to "true" only after the API flag is on.
+      - key: VITE_FEATURE_ASSURANCE_DASHBOARD
+        value: "false"

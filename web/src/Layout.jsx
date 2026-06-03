@@ -39,6 +39,9 @@ const FEATURE_FLAGS = {
   // Hardware-agnostic Property Health page.  Default-off via
   // VITE_FEATURE_DEVICE_HEALTH; backend mirrors with FEATURE_DEVICE_HEALTH.
   deviceHealth: config.featureDeviceHealth,
+  // Customer Assurance Dashboard.  Default-off via VITE_FEATURE_ASSURANCE_DASHBOARD;
+  // backend /api/assurance gated by FEATURE_ASSURANCE_ENGINE.
+  assuranceDashboard: config.featureAssuranceDashboard,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -138,6 +141,7 @@ const NOC_NAV = [
 
 const ADMIN_NAV = [
   { name: "Dashboard",     page: "AdminDashboard",  icon: LayoutDashboard },
+  { name: "Assurance",     page: "AssuranceDashboard", icon: ShieldCheck, featureFlag: "assuranceDashboard" },
   { name: "Property Health", page: "PropertyHealth", icon: Activity, featureFlag: "deviceHealth" },
   { name: "Support",       page: "Support",          icon: HelpCircle },
   // Internal-only: hidden during impersonation and for Admins whose
@@ -191,6 +195,7 @@ const ADMIN_NAV = [
 
 const MANAGER_NAV = [
   { name: "Dashboard",   page: "ManagerDashboard", icon: LayoutDashboard },
+  { name: "Assurance",   page: "AssuranceDashboard", icon: ShieldCheck, featureFlag: "assuranceDashboard" },
   { name: "Property Health", page: "PropertyHealth", icon: Activity, featureFlag: "deviceHealth" },
   { name: "Support",     page: "Support",           icon: HelpCircle },
   { name: "My Sites",    page: "Sites",            icon: Building2 },
@@ -213,6 +218,7 @@ const MANAGER_NAV = [
 
 const USER_NAV = [
   { name: "Status",   page: "UserDashboard",  icon: ShieldCheck },
+  { name: "Assurance", page: "AssuranceDashboard", icon: ShieldCheck, featureFlag: "assuranceDashboard" },
   { name: "Property Health", page: "PropertyHealth", icon: Activity, featureFlag: "deviceHealth" },
   { name: "Support",  page: "Support",         icon: HelpCircle },
   { name: "Sites",    page: "Sites",           icon: Building2 },

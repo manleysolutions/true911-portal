@@ -59,6 +59,9 @@ const PAGE_PERMISSIONS = {
   // client-side via config.featureDeviceHealth; backend gates with
   // FEATURE_DEVICE_HEALTH). VIEW_SITES so customer Users can reach it.
   PropertyHealth:      "VIEW_SITES",
+  // Customer Assurance Dashboard — client-gated via config.featureAssuranceDashboard;
+  // backend /api/assurance enforces VIEW_ASSURANCE + FEATURE_ASSURANCE_ENGINE.
+  AssuranceDashboard:  "VIEW_ASSURANCE",
   SiteImport:          "COMMAND_SITE_IMPORT",
   SubscriberImport:    "SUBSCRIBER_IMPORT",
   ImportVerification:  "VIEW_IMPORT_VERIFICATION",
