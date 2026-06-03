@@ -23,12 +23,17 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class DeviceClassification:
-    vendor_cloud: Optional[str] = None        # "vola" | None
+    vendor_cloud: Optional[str] = None        # "vola" | "napco_portal" | None
     connection_type: str = "unknown"          # cellular | sip_over_lte | analog_fxs | cellular_modem | unknown
     voice_type: str = "unknown"               # volte | sip | analog | unknown
     carrier_vendor: Optional[str] = None      # "tmobile" | "verizon" | "att" | None
     voice_vendor: Optional[str] = None        # "telnyx" | None
     probe_vendors: tuple[str, ...] = field(default_factory=tuple)
+    # Vendor-managed devices monitored OUT-OF-BAND (no live probe adapter) —
+    # e.g. NAPCO StarLink fire communicators synced from the NAPCO portal XLS.
+    vendor_managed: bool = False
+    device_family: Optional[str] = None       # "napco_starlink" | None
+    monitoring_source: Optional[str] = None   # "napco_xls_import" | None
 
 
 # Substring-matched identity rules.  First match wins.  Match is tested
@@ -60,6 +65,21 @@ def normalize_carrier(carrier: Optional[str]) -> Optional[str]:
     return _CARRIER_ALIASES.get(_norm(carrier))
 
 
+# NAPCO StarLink model codes / markers. Deliberately does NOT include bare
+# "starlink" (that also means SpaceX Starlink) — only the unambiguous SLE* model
+# codes, "starlink communicator", or a NAPCO manufacturer/carrier.
+_NAPCO_NEEDLES = (
+    "slelte", "sle-lte", "sleltevi", "sle-ltevi", "slemaxvi", "sle5g",
+    "starlink communicator", "napco",
+)
+
+
+def _is_napco(haystacks: list[str], carrier: Optional[str]) -> bool:
+    if "napco" in _norm(carrier):
+        return True
+    return any(h and any(n in h for n in _NAPCO_NEEDLES) for h in haystacks)
+
+
 def classify(
     *,
     model: Optional[str] = None,
@@ -70,6 +90,21 @@ def classify(
 ) -> DeviceClassification:
     """Classify a device from its identity fields. Pure / no I/O."""
     haystacks = [_norm(model), _norm(device_type), _norm(hardware_model_id), _norm(manufacturer)]
+
+    # NAPCO StarLink fire communicators — Manley-supplied, billed to the
+    # subscriber, managed in the NAPCO portal. No public API: monitored via the
+    # portal's XLS export, NOT a live probe adapter (probe_vendors stays empty).
+    if _is_napco(haystacks, carrier):
+        return DeviceClassification(
+            vendor_cloud="napco_portal",
+            connection_type="cellular",
+            voice_type="unknown",
+            carrier_vendor=normalize_carrier(carrier),
+            probe_vendors=(),
+            vendor_managed=True,
+            device_family="napco_starlink",
+            monitoring_source="napco_xls_import",
+        )
 
     vendor_cloud: Optional[str] = None
     connection_type = "unknown"
