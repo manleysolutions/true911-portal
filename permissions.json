@@ -21,6 +21,7 @@
   "EDIT_CUSTOMERS": ["Admin", "DataEntry", "DataSteward"],
   "DELETE_CUSTOMERS": ["Admin"],
   "VIEW_SITES": ["Admin", "Manager", "User", "DataEntry", "DataSteward"],
+  "VIEW_ASSURANCE": ["Admin", "Manager", "User", "DataEntry", "DataSteward"],
   "CREATE_SITES": ["Admin", "Manager", "DataEntry", "DataSteward"],
   "EDIT_SITES": ["Admin", "Manager", "DataEntry", "DataSteward"],
   "DELETE_SITES": ["Admin"],

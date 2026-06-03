@@ -279,4 +279,52 @@ This would power the installer/staging experience and feed Pending Install preci
 
 ---
 
-*End of specification. Reviewers: Stuart Manley (+ ChatGPT). Do not begin engine implementation until this doc and the MVP first-PR plan are confirmed.*
+---
+
+## 19. PR1 — Implemented (backend-first, flag-gated, read-only)
+
+**Status:** Implemented on branch `feat/assurance-engine-pr1`. `FEATURE_ASSURANCE_ENGINE` defaults `false` → no behavior change until enabled.
+
+### Scope delivered
+- `FEATURE_ASSURANCE_ENGINE: str = "false"` in `api/app/config.py`.
+- `api/app/services/assurance/`:
+  - `signals.py` — `AssuranceSignals` + `DeviceSignal` / `ServiceUnitSignal` / `LineSignal` / `TestRecord`, and `AssuranceLabel` (the 6 labels).
+  - `reason_codes.py` — `ASSURANCE.*` codes with severity + customer message + internal action.
+  - `engine.py` — **pure** `compute_device_assurance()` + `compute_site_assurance()`. No I/O, injectable clock, no input mutation.
+  - `loader.py` — **read-only** assembly from existing tables; reuses `services.health.compute_device_state` / `load_signals_for_site` for operational state; **defensive `getattr`** for `lifecycle_status` (absent on a pre-PR#70 deployment → conservative, never "healthy").
+- `api/app/routers/assurance.py` — `GET /api/assurance/site/{site_id}`, returns **404 when the flag is off**, RBAC `VIEW_ASSURANCE`, tenant-scoped to the caller's effective tenant, customer-sanitized (no ICCID/IMEI/SIP/vendor payloads).
+- `permissions.json` — new `VIEW_ASSURANCE` (Admin, Manager, User, DataEntry, DataSteward — mirrors `VIEW_SITES`).
+- Wired into `main.py` under `/api/assurance`.
+- Health-package surface-containment guard updated to register the Assurance Engine loader as the **approved second consumer** of the health normalizer.
+
+### Endpoint response fields
+`site_id`, `site_name`, `customer_name`, `assurance_label`, `internal_label` ("Active & Verified" for Protected), `as_of`, `statement` ("Protected as of <ts>" when Protected), `summary`, `recommended_action`, `reasons[]` (code/severity/message; `internal_action` only for platform users), `devices[]`, `service_units[]`, `e911_status{}`, `last_test`, `disclaimer`, `read_only`.
+
+### Labels & wording
+`Protected` · `Attention Needed` · `Critical` · `Inactive / Deactivated` · `Pending Install` · `Unknown`. "Protected" is shown with an `as_of` timestamp and the disclaimer: *"Status reflects the latest available platform data and does not replace required manual life-safety testing or regulatory inspections."* Internal/support equivalent of Protected is **"Active & Verified."**
+
+### Last-test source priority
+`verification_tasks` (result `pass`/`fail`) first, then `command_testing` (`infra_test_results` status `pass`/`fail`); most recent wins, verification_tasks breaks ties. None on record → `ASSURANCE.TEST_MISSING` → Attention.
+
+### Belle Terre validation
+- Tenant `Integrity Property Management`, site `IPM-BELLE-TERRE`.
+- Enable: set `FEATURE_ASSURANCE_ENGINE=true` (api service), authenticate, then:
+  `GET /api/assurance/site/IPM-BELLE-TERRE`.
+- **Expected:** if the site has E911 verified + a healthy device but **no recorded verification test**, the label is **Attention Needed** with reason `ASSURANCE.TEST_MISSING` (we do not fabricate test history). It becomes **Protected** only once a recent passing test exists. If the seed (`app/seed_integrity.py`) has not been applied to the environment, the site won't exist and the endpoint returns 404 — apply the seed first.
+
+### Known limitations (intentional for MVP)
+- `lifecycle_status` is absent until PR#70 merges → commercial-lifecycle gating is conservative (driven by `onboarding_status` / device status until then).
+- SIP/signal-strength signals are not yet populated by the health loader (live on `CommandTelemetry`) — absent ≠ degraded.
+- `TEST_STALE_SECONDS` is a single global (90 days); not per-device-class.
+- Compute-live only; no persistence, so no trend/history yet.
+
+### Future work (not in PR1)
+- Persisted **assurance snapshots** (trends, change-detection).
+- **Recent Manley Activity** timeline on the site view.
+- **Monthly Executive Summary** + PDF export.
+- Alerts / scheduled recomputation.
+- `/api/assurance/portfolio` + attention queue + customer UI.
+
+---
+
+*End of specification. Reviewers: Stuart Manley (+ ChatGPT).*
