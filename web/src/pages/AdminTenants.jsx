@@ -6,6 +6,7 @@ import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { createPageUrl } from "@/utils";
+import { duplicateNameSet, tenantWarnings } from "@/lib/tenantWarnings";
 
 export default function AdminTenants() {
   const { can, isSuperAdmin } = useAuth();
@@ -212,6 +213,8 @@ export default function AdminTenants() {
       </PageWrapper>
     );
   }
+
+  const dupNames = duplicateNameSet(tenants);
 
   return (
     <PageWrapper>
@@ -646,12 +649,18 @@ export default function AdminTenants() {
                   <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Tenant ID</th>
                   <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Name</th>
                   <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                  <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Customers</th>
+                  <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Sites</th>
+                  <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Devices</th>
+                  <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Users</th>
                   <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Created</th>
                   <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {tenants.map(t => (
+                {tenants.map(t => {
+                  const warnings = tenantWarnings(t, dupNames);
+                  return (
                   <tr key={t.tenant_id} className="hover:bg-gray-50">
                     <td className="px-5 py-3 font-mono text-xs text-gray-700">{t.tenant_id}</td>
                     <td className="px-5 py-3">
@@ -670,10 +679,21 @@ export default function AdminTenants() {
                           <button onClick={() => setEditingId(null)} className="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
                         </div>
                       ) : (
-                        <span className="text-gray-900">{t.name}</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="text-gray-900">{t.name}</span>
+                          {warnings.length > 0 && (
+                            <span title={warnings.join(" \u00b7 ")}>
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                            </span>
+                          )}
+                        </span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-xs text-gray-500">{t.org_type || "customer"}</td>
+                    <td className="px-3 py-3 text-center text-sm text-gray-700 tabular-nums">{t.customers ?? 0}</td>
+                    <td className="px-3 py-3 text-center text-sm text-gray-700 tabular-nums">{t.sites ?? 0}</td>
+                    <td className="px-3 py-3 text-center text-sm text-gray-700 tabular-nums">{t.devices ?? 0}</td>
+                    <td className="px-3 py-3 text-center text-sm text-gray-700 tabular-nums" title={`Active: ${t.active_users ?? 0}`}>{t.users ?? 0}</td>
                     <td className="px-5 py-3 text-xs text-gray-400">
                       {t.created_at ? new Date(t.created_at).toLocaleDateString() : "\u2014"}
                     </td>
@@ -688,7 +708,8 @@ export default function AdminTenants() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}

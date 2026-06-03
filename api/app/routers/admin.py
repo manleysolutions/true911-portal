@@ -93,8 +93,49 @@ class TenantOut(BaseModel):
     name: str
     org_type: Optional[str] = None
     created_at: Optional[datetime] = None
+    # Read-only aggregate counts for SuperAdmin tenant-management visibility.
+    # Aggregates only — no customer names/data are exposed by this endpoint.
+    customers: int = 0
+    sites: int = 0
+    service_units: int = 0
+    devices: int = 0
+    sims: int = 0
+    users: int = 0
+    active_users: int = 0
+    subscriptions: int = 0
+    registrations: int = 0
 
     model_config = {"from_attributes": True}
+
+
+def assemble_tenant_rows(tenants, count_maps: dict[str, dict[str, int]]) -> list[dict]:
+    """Pure: merge per-table {tenant_id: count} maps onto each tenant row.
+
+    ``tenants`` is any iterable of objects with tenant_id/name/org_type/created_at.
+    ``count_maps`` is {field_name: {tenant_id: count}}.  No I/O — unit-testable.
+    """
+    rows: list[dict] = []
+    for t in tenants:
+        tid = t.tenant_id
+        row = {
+            "tenant_id": tid,
+            "name": t.name,
+            "org_type": getattr(t, "org_type", None),
+            "created_at": getattr(t, "created_at", None),
+        }
+        for field, cmap in count_maps.items():
+            row[field] = int(cmap.get(tid, 0))
+        rows.append(row)
+    return rows
+
+
+async def _count_by_tenant(db: AsyncSession, model, *where) -> dict[str, int]:
+    """One efficient GROUP BY on the indexed tenant_id column → {tenant_id: count}."""
+    q = select(model.tenant_id, func.count()).group_by(model.tenant_id)
+    for clause in where:
+        q = q.where(clause)
+    rows = (await db.execute(q)).all()
+    return {r[0]: int(r[1]) for r in rows}
 
 
 class TenantCreate(BaseModel):
@@ -490,9 +531,33 @@ async def update_user_role(
     dependencies=[Depends(require_permission("GLOBAL_ADMIN"))],
 )
 async def list_tenants(db: AsyncSession = Depends(get_db)):
-    """List all tenants. SuperAdmin only."""
-    result = await db.execute(select(Tenant).order_by(Tenant.created_at))
-    return [TenantOut.model_validate(t) for t in result.scalars().all()]
+    """List all tenants with read-only aggregate counts. SuperAdmin only.
+
+    Counts come from a GROUP BY per source table on the indexed ``tenant_id``
+    column (9 small aggregate queries total, independent of tenant count). Only
+    aggregates are returned — no customer names/data are exposed here.
+    """
+    from app.models.customer import Customer
+    from app.models.service_unit import ServiceUnit
+    from app.models.sim import Sim
+    from app.models.subscription import Subscription
+    from app.models.registration import Registration
+
+    tenants = (await db.execute(select(Tenant).order_by(Tenant.created_at))).scalars().all()
+
+    count_maps = {
+        "customers": await _count_by_tenant(db, Customer),
+        "sites": await _count_by_tenant(db, Site),
+        "service_units": await _count_by_tenant(db, ServiceUnit),
+        "devices": await _count_by_tenant(db, Device),
+        "sims": await _count_by_tenant(db, Sim),
+        "users": await _count_by_tenant(db, User),
+        "active_users": await _count_by_tenant(db, User, User.is_active.is_(True)),
+        "subscriptions": await _count_by_tenant(db, Subscription),
+        "registrations": await _count_by_tenant(db, Registration),
+    }
+    rows = assemble_tenant_rows(tenants, count_maps)
+    return [TenantOut(**r) for r in rows]
 
 
 @router.delete(
