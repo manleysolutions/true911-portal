@@ -131,6 +131,16 @@ class Settings(BaseSettings):
     # pilot dataset, not special-cased in code.
     FEATURE_DEVICE_HEALTH: str = "false"
 
+    # ── Assurance Engine (MVP — read-only customer assurance label) ──
+    # When "false" (default) the /api/assurance/* routes return 404 and the
+    # platform behaves exactly as before.  When "true" the read-only Assurance
+    # Engine composes operational / commercial-lifecycle / deployment-lifecycle /
+    # E911 axes into one customer-facing label (Protected / Attention Needed /
+    # Critical / Inactive-Deactivated / Pending Install / Unknown).  It NEVER
+    # writes and never overwrites any source-of-truth axis.  See
+    # docs/ASSURANCE_ENGINE.md.
+    FEATURE_ASSURANCE_ENGINE: str = "false"
+
     # ── Zoho Desk (support ticket escalation) ─────────────────────
     ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
     ZOHO_DESK_ORG_ID: str = ""

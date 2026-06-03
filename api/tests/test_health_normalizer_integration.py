@@ -303,6 +303,9 @@ class TestSurfaceContainment:
     def test_command_map_sites_devices_attention_do_not_import_health_package(self):
         """The health package must only be imported by:
           * app/services/llm/context.py        (the AI Health Summary)
+          * app/services/assurance/loader.py   (the Assurance Engine — approved
+            second consumer; reuses compute_device_state/load_signals_for_site,
+            flag-gated by FEATURE_ASSURANCE_ENGINE)
           * other modules within app/services/health/
           * app/services/device_health/         (the hardware-agnostic
                                                   Device Health layer — a
@@ -311,7 +314,7 @@ class TestSurfaceContainment:
                                                   docs/DEVICE_HEALTH_LAYER.md)
           * test files
 
-        Any other import means the rollout (Devices → Command → Map
+        Any OTHER import means the rollout (Devices → Command → Map
         → Attention) jumped ahead of plan.
 
         Uses a precise import pattern — ``from app.services.health
@@ -336,6 +339,7 @@ class TestSurfaceContainment:
             rel = p.relative_to(api_root)
             allowed = (
                 rel == pathlib.Path("services/llm/context.py")
+                or rel == pathlib.Path("services/assurance/loader.py")
                 or rel.parts[:2] == ("services", "health")
                 or rel.parts[:2] == ("services", "device_health")
             )
