@@ -198,6 +198,9 @@ class TestFlagOnResultIncludesFullProcessorSurface:
             "tmobile_reason": None,
             "tmobile_matched_sim_iccid": "89014103211118510720",
             "tmobile_matched_device_id": "dev-a",
+            # Additive observability field — None on the Sim-match path (capture
+            # only runs on the device-fallback account-ID path).
+            "tmobile_account_capture": None,
         }
 
     @pytest.mark.asyncio
