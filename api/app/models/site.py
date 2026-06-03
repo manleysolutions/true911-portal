@@ -67,6 +67,13 @@ class Site(Base):
     # Subscriber import fields
     reconciliation_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, server_default="imported_unverified")
     import_batch_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Zoho lifecycle status (Phase 5) — a SEPARATE axis from operational `status`
+    # above.  Written ONLY by the gated Zoho promotion from a confirmed mapping;
+    # NULL = not governed by Zoho (existing rows unaffected).  Operational status
+    # stays owned by True911 telemetry and is never touched by Zoho.
+    lifecycle_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    lifecycle_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    lifecycle_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Phase 7 NG911 columns
     psap_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     emergency_class: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

@@ -197,6 +197,13 @@ class Settings(BaseSettings):
     # Adjust via env (Render) as Zoho workflows evolve — no code change/deploy.
     ZOHO_SUBSCRIPTION_MODULES: str = "Subscription_Mgmt"
     ZOHO_SUBSCRIPTION_EVENT_TYPES: str = ""
+    # Phase 5 — promotion of a CONFIRMED-mapped Zoho lifecycle_state to the
+    # additive sites.lifecycle_status column.  This is the ONLY Zoho path that
+    # writes a production row, and even then only the lifecycle_status /
+    # lifecycle_source / lifecycle_synced_at columns — NEVER sites.status
+    # (operational), and never a delete.  Default OFF: the promote endpoint
+    # refuses to apply (dry-run still works) until this is "true".
+    FEATURE_ZOHO_LIFECYCLE_PROMOTION: str = "false"
 
     # ── T-Mobile Wholesale (TAAP / PoP) ────────────────────────────────
     TMOBILE_ENV: str = "pit"  # pit | prod
