@@ -21,6 +21,9 @@ from app.audit_zoho_true911_customer_reconciliation import (
     reconcile_customer,
     scope_true911_by_customer,
     true911_presents_active,
+    facility_site_match,
+    strip_facility_suffix,
+    _t911_msisdn_entities,
     write_csv,
     write_json,
 )
@@ -278,6 +281,114 @@ def test_scope_then_reconcile_reports_real_device_count():
     rec = reconcile_customer("Webber", [zrec(activation="De-activated", msisdn="8563081391")], t)
     assert rec.true911_device_count == 1                         # was 21 (whole tenant)
     assert DEACT_ZOHO_ACTIVE_T911 in [f.classification for f in rec.findings]
+
+
+# ── #1: device+line MSISDN de-dup (R&R inflation fix) ────────────────────
+def _dev_m(did, msisdn, *, site="S1", status="active"):
+    return {"device_id": did, "site_id": site, "status": status, "msisdn": msisdn,
+            "model": None, "iccid": None, "network_status": None}
+
+
+def _line_m(lid, did, *, device_id=None, site="S1", status="active"):
+    return {"line_id": lid, "site_id": site, "status": status, "did": did,
+            "device_id": device_id, "sim_iccid": None}
+
+
+def _t911_dl(devices, lines, sites=None):
+    return {"customer": {"name": "R&R Realty"}, "tenant": {"is_active": True},
+            "sites": sites or [], "devices": devices, "lines": lines}
+
+
+def test_device_and_linked_line_collapse_to_one_service():
+    # R&R: device.msisdn == line.did, line linked to the device, same site.
+    ents = _t911_msisdn_entities(_t911_dl(
+        [_dev_m("D1", "3055551234")],
+        [_line_m("L1", "+1 305 555 1234", device_id="D1")]))
+    assert len(ents) == 1
+    assert ents[0]["kind"] == "service" and ents[0]["msisdn"] == "3055551234"
+
+
+def test_rr_style_shared_msisdn_is_matched_ok_not_duplicate():
+    t = _t911_dl([_dev_m("D1", "3055551234")],
+                 [_line_m("L1", "3055551234", device_id="D1")])
+    rec = reconcile_customer("R&R", [zrec(account="R&R Realty", msisdn="3055551234",
+                                          activation="Active")], t)
+    classes = [f.classification for f in rec.findings if f.scope == "msisdn"]
+    assert MATCHED_OK in classes
+    assert DUPLICATE_CANDIDATE not in classes
+
+
+def test_two_devices_same_msisdn_still_duplicate():
+    t = _t911_dl([_dev_m("D1", "3055551234"), _dev_m("D2", "3055551234")], [])
+    rec = reconcile_customer("R&R", [zrec(account="R&R", msisdn="3055551234")], t)
+    assert DUPLICATE_CANDIDATE in [f.classification for f in rec.findings]
+
+
+def test_unrelated_line_sharing_msisdn_still_duplicate():
+    # Line NOT linked to the device (device_id=None) -> not the same service.
+    t = _t911_dl([_dev_m("D1", "3055551234")],
+                 [_line_m("L1", "3055551234", device_id=None)])
+    rec = reconcile_customer("R&R", [zrec(account="R&R", msisdn="3055551234")], t)
+    assert DUPLICATE_CANDIDATE in [f.classification for f in rec.findings]
+
+
+def test_linked_line_conflicting_site_does_not_collapse():
+    # Linked by device_id but the line is on a DIFFERENT site -> ownership conflict.
+    ents = _t911_msisdn_entities(_t911_dl(
+        [_dev_m("D1", "3055551234", site="S1")],
+        [_line_m("L1", "3055551234", device_id="D1", site="S2")]))
+    assert len(ents) == 2     # not collapsed -> surfaces as ambiguous/duplicate
+
+
+# ── #2: FacilityName matching (suffix-strip + token subset) ──────────────
+def _sites(*names):
+    return [{"site_id": f"S{i}", "site_name": n, "status": "active"} for i, n in enumerate(names)]
+
+
+def test_facility_suffix_stripping_fuzzy_matches_site():
+    for fac in ("Dodge Island - White Phone", "Dodge Island - Red Phone",
+                "Port Miami - DODGE ISLAND", "Dodge Island (RED)"):
+        m, s = facility_site_match(fac, _sites("Dodge Island"))
+        assert m == "fuzzy", f"{fac!r} -> {m}"
+        assert s["site_name"] == "Dodge Island"
+
+
+def test_facility_token_subset_and_abbrev():
+    m, s = facility_site_match("Operations Building at Watson Island (RED)",
+                               _sites("Watson Island"))
+    assert m == "fuzzy" and s["site_name"] == "Watson Island"
+    # abbreviation expansion: ops/bldg -> operations/building
+    m2, _ = facility_site_match("Ops Bldg Watson Island",
+                                _sites("Operations Building Watson Island"))
+    assert m2 in ("exact", "fuzzy")
+
+
+def test_facility_exact_only_on_full_equality():
+    m, _ = facility_site_match("Watson Island", _sites("Watson Island"))
+    assert m == "exact"
+
+
+def test_facility_distinct_numbered_sites_do_not_match():
+    m, _ = facility_site_match("Webber Plant 5", _sites("Webber Plant 1"))
+    assert m == "missing"
+
+
+def test_facility_pure_noise_and_empty_are_missing():
+    assert facility_site_match("Red Phone", _sites("Dodge Island"))[0] == "missing"
+    assert facility_site_match(None, _sites("Dodge Island"))[0] == "missing"
+
+
+def test_strip_facility_suffix():
+    assert strip_facility_suffix("Dodge Island - White Phone") == "dodge island"
+
+
+def test_reconciliation_no_longer_flags_fuzzy_facility_as_missing():
+    z = [zrec(account="R&R", facility="Dodge Island - White Phone", msisdn="3055550000")]
+    t = _t911_dl([], [], sites=_sites("Dodge Island"))
+    rec = reconcile_customer("R&R", z, t)
+    site_missing = [f for f in rec.findings
+                    if f.classification == MISSING_IN_TRUE911 and f.scope == "site"]
+    assert site_missing == []     # fuzzy site match -> not flagged missing
 
 
 # 8 — no destructive writes
