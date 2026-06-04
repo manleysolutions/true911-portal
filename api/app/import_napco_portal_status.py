@@ -43,18 +43,27 @@ ALLOWED_DEVICE_FIELDS = frozenset({
 STALENESS_GUARDED = ("last_heartbeat", "last_network_event")
 
 # Canonical field -> ordered header substrings to look for (case-insensitive).
+# Candidates cover both generic exports AND the real NAPCO StarLink "RadioList"
+# export (validated 2026-06-03): RadioNumber / ICCID / LastSignalReceived /
+# SIMStatus / SubscriberName / Plan / GenTech.  NAPCO headers are camelCase with
+# no spaces, so the no-space variants below matter (e.g. "radionumber",
+# "lastsignalreceived").  More specific candidates are listed first.
 _COLUMN_CANDIDATES = {
-    "serial": ("serial", "esn", "device serial"),
+    "serial": ("radionumber", "radio number", "serial", "esn", "device serial", "radio"),
+    "iccid": ("iccid", "sim iccid", "sim"),
     "device_id": ("device id", "device_id", "deviceid"),
-    "portal_status": ("comm status", "communication status", "status"),
-    "last_comm": ("last communication", "last comm", "last check", "last signal",
+    "portal_status": ("comm status", "communication status", "simstatus", "sim status", "status"),
+    "last_comm": ("lastsignalreceived", "last signal received", "last communication",
+                  "last comm", "last check", "last signal", "signal received",
                   "last report", "last seen", "last received"),
-    "name": ("account name", "site name", "name"),
+    "name": ("subscribername", "subscriber name", "account name", "site name",
+             "subscriber", "name"),
     "address": ("address", "location"),
     "trouble": ("trouble", "fault", "alarm condition"),
-    "carrier": ("carrier", "network"),
-    "model": ("model", "device type", "communicator", "type"),
-    "config": ("configuration", "config", "profile"),
+    "carrier": ("carrier",),
+    "gen_tech": ("gentech", "gen tech", "network tech", "radio tech"),
+    "model": ("model", "device type", "communicator"),
+    "config": ("configuration", "config", "profile", "plan"),
 }
 
 _HEALTHY_STATUS = {"online", "normal", "ok", "good", "communicating", "ready", "active", "clear"}
@@ -136,6 +145,7 @@ def parse_napco_row(row: list, column_map: dict) -> dict:
 
     return {
         "serial": _norm(cell("serial")),
+        "iccid": _norm(cell("iccid")),
         "device_id": _norm(cell("device_id")),
         "portal_status": _norm(cell("portal_status")),
         "last_comm": parse_last_comm(cell("last_comm")),
@@ -143,18 +153,29 @@ def parse_napco_row(row: list, column_map: dict) -> dict:
         "address": _norm(cell("address")),
         "trouble": _norm(cell("trouble")),
         "carrier": _norm(cell("carrier")),
+        "gen_tech": _norm(cell("gen_tech")),
         "model": _norm(cell("model")),
         "config": _norm(cell("config")),
         "network_status": map_status_to_network(cell("portal_status"), cell("trouble")),
     }
 
 
-def match_device(parsed: dict, by_serial: dict, by_device_id: dict) -> tuple:
-    """Return (device_or_None, method, review_required). Serial first, device_id
-    second; otherwise name/address fallback flagged review-required."""
+def match_device(parsed: dict, by_serial: dict, by_device_id: dict,
+                 by_iccid: dict | None = None) -> tuple:
+    """Return (device_or_None, method, review_required).
+
+    Match order (most reliable first): serial (RadioNumber) -> ICCID ->
+    device_id.  For the NAPCO RadioList export the ICCID is the strongest join
+    (present on both the export and ``Device.iccid``).  Anything else falls back
+    to name/address and is flagged review-required (never auto-applied).
+    """
+    by_iccid = by_iccid or {}
     serial = parsed.get("serial", "")
     if serial and serial.lower() in by_serial:
         return by_serial[serial.lower()], "serial", False
+    iccid = parsed.get("iccid", "")
+    if iccid and iccid in by_iccid:
+        return by_iccid[iccid], "iccid", False
     did = parsed.get("device_id", "")
     if did and did in by_device_id:
         return by_device_id[did], "device_id", False
@@ -245,8 +266,9 @@ async def run(*, dry_run: bool = True, path: str | None = None, tenant_id: str =
     from app.services.audit_logger import log_audit
 
     now = _dt.datetime.now(_dt.timezone.utc)
-    summary = {"rows": 0, "matched_serial": 0, "matched_device_id": 0, "review_required": 0,
-               "updated": 0, "stale_skipped": 0, "offline_or_trouble": 0, "notes": []}
+    summary = {"rows": 0, "matched_serial": 0, "matched_iccid": 0, "matched_device_id": 0,
+               "review_required": 0, "updated": 0, "stale_skipped": 0,
+               "offline_or_trouble": 0, "notes": []}
 
     if not path:
         print("No NAPCO_IMPORT_FILE given. Set it to the portal XLS/XLSX/CSV export.")
@@ -257,9 +279,9 @@ async def run(*, dry_run: bool = True, path: str | None = None, tenant_id: str =
         print(f"ERROR reading {path!r}: {exc}. Nothing written.")
         return summary
     column_map = build_column_map(headers)
-    if "serial" not in column_map and "device_id" not in column_map:
-        print(f"ERROR: could not find a serial or device-id column in headers {headers}. "
-              "Nothing written.")
+    if not any(k in column_map for k in ("serial", "iccid", "device_id")):
+        print(f"ERROR: could not find a serial, ICCID, or device-id column in headers "
+              f"{headers}. Nothing written.")
         return summary
     print(f"  columns detected: { {k: headers[v] for k, v in column_map.items()} }")
 
@@ -267,6 +289,7 @@ async def run(*, dry_run: bool = True, path: str | None = None, tenant_id: str =
         devices = (await db.execute(
             select(Device).where(Device.tenant_id == tenant_id))).scalars().all()
         by_serial = {_norm(d.serial_number).lower(): d for d in devices if _norm(d.serial_number)}
+        by_iccid = {_norm(d.iccid): d for d in devices if _norm(d.iccid)}
         by_device_id = {d.device_id: d for d in devices}
 
         for raw in data_rows:
@@ -275,13 +298,14 @@ async def run(*, dry_run: bool = True, path: str | None = None, tenant_id: str =
             if parsed["network_status"] in ("offline", "trouble"):
                 summary["offline_or_trouble"] += 1
 
-            device, method, review = match_device(parsed, by_serial, by_device_id)
+            device, method, review = match_device(parsed, by_serial, by_device_id, by_iccid)
             if review or device is None:
                 summary["review_required"] += 1
-                print(f"  REVIEW  serial={parsed['serial']!r} name={parsed['name']!r} "
-                      f"addr={parsed['address']!r} — no serial/device_id match; operator review required")
+                print(f"  REVIEW  serial={parsed['serial']!r} iccid={parsed['iccid']!r} "
+                      f"name={parsed['name']!r} — no serial/ICCID/device_id match; "
+                      f"operator review required")
                 continue
-            summary["matched_serial" if method == "serial" else "matched_device_id"] += 1
+            summary[f"matched_{method}"] += 1
 
             current = {"last_heartbeat": device.last_heartbeat, "carrier": device.carrier}
             kept, notes = compute_napco_updates(parsed, current, now=now)
@@ -339,8 +363,8 @@ def main() -> None:
     print("\n" + "=" * 66)
     print("SUMMARY")
     print("=" * 66)
-    for k in ("rows", "matched_serial", "matched_device_id", "review_required",
-              "updated", "stale_skipped", "offline_or_trouble"):
+    for k in ("rows", "matched_serial", "matched_iccid", "matched_device_id",
+              "review_required", "updated", "stale_skipped", "offline_or_trouble"):
         print(f"  {k:20}: {summary[k]}")
 
 
