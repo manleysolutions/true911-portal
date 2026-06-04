@@ -94,10 +94,15 @@ def test_default_module_is_subscription_mgmnt():
 
 
 def test_default_fields_cover_required_set():
-    for f in ("id", "Account_Name", "FacilityName", "Mobile_Number",
+    # Confirmed Subscription_Mgmnt API field names (Account/Parent_Account are lookups).
+    for f in ("id", "Account", "Parent_Account", "FacilityName", "MSISDN",
               "Device_Activation_Status", "Subscription_Type", "Connection_Type",
-              "Monthly_Recurring_Charge", "Service_Term_Ends", "Modified_Time"):
+              "Monthly_Charges_MS", "Svc_Term_Ends", "Modified_Time"):
         assert f in DEFAULT_FIELDS
+    # The stringified default must be exactly the Render-confirmed list (order-stable).
+    assert ",".join(DEFAULT_FIELDS) == (
+        "id,Account,Parent_Account,FacilityName,MSISDN,Device_Activation_Status,"
+        "Subscription_Type,Connection_Type,Monthly_Charges_MS,Svc_Term_Ends,Modified_Time")
 
 
 def test_resolve_fields_default_and_overrides(monkeypatch):

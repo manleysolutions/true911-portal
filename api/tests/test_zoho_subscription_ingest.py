@@ -176,6 +176,42 @@ class TestExtraction:
         assert f["mrc"] is None
         assert f["service_term_ends"] is None
 
+    # ── CRM API GET format (lookup objects + confirmed field names) ──────
+    def test_extracts_api_lookup_format(self):
+        f = ingest.extract_subscription_fields({
+            "id": "5901000000123456",
+            "Account": {"name": "Webber Infra", "id": "5901ACC777"},
+            "Parent_Account": {"name": "Webber Parent", "id": "5901PARENT9"},
+            "FacilityName": "Webber Bldg A",
+            "MSISDN": "15555550123",
+            "Device_Activation_Status": "De-activated",
+            "Subscription_Type": "IoT Data",
+            "Connection_Type": "Static IP",
+            "Monthly_Charges_MS": "$45.00",
+            "Svc_Term_Ends": "2026-12-31",
+        })
+        assert f["subscription_mgmt_id"] == "5901000000123456"   # record id
+        assert f["account_name"] == "Webber Infra"               # Account.name
+        assert f["external_account_id"] == "5901ACC777"          # Account.id
+        assert f["facility_name"] == "Webber Bldg A"
+        assert f["msisdn"] == "15555550123"
+        assert f["device_activation_status"] == "De-activated"
+        assert f["mrc"] == 45.0                                  # Monthly_Charges_MS
+        assert f["service_term_ends"] == date(2026, 12, 31)      # Svc_Term_Ends
+
+    def test_account_falls_back_to_parent_account(self):
+        f = ingest.extract_subscription_fields({
+            "id": "1", "Parent_Account": {"name": "Webber Parent", "id": "P-9"},
+        })
+        assert f["account_name"] == "Webber Parent"
+        assert f["external_account_id"] == "P-9"
+
+    def test_lookup_string_passthrough_keeps_webhook_compat(self):
+        # Webhook sends Account_Name as a plain string -> still resolves, no id.
+        f = ingest.extract_subscription_fields({"Account_Name": "Acme", "id": "2"})
+        assert f["account_name"] == "Acme"
+        assert f["external_account_id"] is None
+
 
 # ── Staging upsert (fake session — no real DB, no production writes) ──
 class TestIngestStaging:
