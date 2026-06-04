@@ -165,49 +165,72 @@ class CustomerReconciliation:
 
 
 def _t911_msisdn_entities(t911: dict) -> list[dict]:
-    """Flatten device + line MSISDN-bearing entities for matching, COLLAPSING a
-    device and its own line into one logical service.
+    """Flatten device + line MSISDN-bearing entities, COLLAPSING a device and its
+    line into one ``service`` entity when they are clearly the same service.
 
-    A device D and a line L collapse into a single ``service`` entity when they
-    are the SAME service: L is linked to D (``lines.device_id == D.device_id``),
-    they carry the SAME normalized MSISDN (``devices.msisdn`` == ``lines.did``),
-    and they share the site (or L has no site). This kills the false
-    ``duplicate_candidate`` inflation where every R&R MSISDN matched its device
-    AND its own line.
+    Collapse fires for an MSISDN ONLY when ALL hold:
+      * exactly ONE device and ONE line carry that normalized MSISDN
+        (``devices.msisdn`` == ``lines.did``),
+      * same site (``line.site_id`` is NULL or equals ``device.site_id``),
+      * same customer (``line.customer_id`` is NULL or equals the device's owning
+        customer via ``site.customer_id``),
+      * no device-id CONFLICT (``line.device_id`` is the device's id OR is NULL —
+        a link to a DIFFERENT device blocks the collapse).
 
-    True duplicates are preserved: two devices on one MSISDN, an UNRELATED line
-    (different/absent ``device_id``) on a device's MSISDN, or a linked line whose
-    site CONFLICTS with the device's site — none of those collapse, so they still
-    surface as ambiguous/duplicate.
+    The device-id link is NOT required: subscriber-import lines often have
+    ``line.device_id`` NULL, so a same-MSISDN + same-site + same-customer 1:1 pair
+    is the same service even when unlinked (the R&R ``collapsible_by_msisdn_site``
+    case).
+
+    Protections preserved — these never collapse: two devices on one MSISDN,
+    two lines on one MSISDN, a line linked to a DIFFERENT device, a site mismatch,
+    or a customer mismatch. They stay separate and surface as duplicate/ambiguous.
     """
     devices = t911.get("devices", [])
     lines = t911.get("lines", [])
-    lines_by_device: dict = {}
-    for l in lines:
-        if l.get("device_id"):
-            lines_by_device.setdefault(l["device_id"], []).append(l)
+    site_customer = {s.get("site_id"): s.get("customer_id") for s in t911.get("sites", [])}
 
-    out: list[dict] = []
-    consumed_line_ids: set = set()
+    dev_by_m: dict = {}
+    ln_by_m: dict = {}
     for d in devices:
-        dm = normalize_msisdn(d.get("msisdn"))
-        partner = None
-        for l in lines_by_device.get(d.get("device_id"), []):
-            same_msisdn = dm and normalize_msisdn(l.get("did")) == dm
-            same_site = (l.get("site_id") is None) or (l.get("site_id") == d.get("site_id"))
-            if same_msisdn and same_site and l.get("line_id") not in consumed_line_ids:
-                partner = l
-                break
-        if partner is not None:
-            consumed_line_ids.add(partner["line_id"])
-            out.append({"kind": "service", "id": f"{d.get('device_id')}+{partner.get('line_id')}",
-                        "msisdn": dm, "status": d.get("status"),
-                        "device_id": d.get("device_id"), "line_id": partner.get("line_id"),
-                        "site_id": d.get("site_id")})
-        elif dm:
-            out.append({"kind": "device", "id": d.get("device_id"), "msisdn": dm,
-                        "status": d.get("status"), "site_id": d.get("site_id")})
+        m = normalize_msisdn(d.get("msisdn"))
+        if m:
+            dev_by_m.setdefault(m, []).append(d)
+    for l in lines:
+        m = normalize_msisdn(l.get("did"))
+        if m:
+            ln_by_m.setdefault(m, []).append(l)
 
+    consumed_device_ids: set = set()
+    consumed_line_ids: set = set()
+    out: list[dict] = []
+
+    for m in set(dev_by_m) & set(ln_by_m):
+        devs, lns = dev_by_m[m], ln_by_m[m]
+        if len(devs) != 1 or len(lns) != 1:
+            continue                                  # multiplicity -> never collapse
+        d, l = devs[0], lns[0]
+        device_id_conflict = l.get("device_id") is not None and l.get("device_id") != d.get("device_id")
+        same_site = (l.get("site_id") is None) or (l.get("site_id") == d.get("site_id"))
+        dcust = site_customer.get(d.get("site_id"))
+        lcust = l.get("customer_id") if l.get("customer_id") is not None else site_customer.get(l.get("site_id"))
+        customer_conflict = lcust is not None and dcust is not None and lcust != dcust
+        if device_id_conflict or not same_site or customer_conflict:
+            continue                                  # protections -> leave separate
+        consumed_device_ids.add(d.get("device_id"))
+        consumed_line_ids.add(l.get("line_id"))
+        out.append({"kind": "service", "id": f"{d.get('device_id')}+{l.get('line_id')}",
+                    "msisdn": m, "status": d.get("status"),
+                    "device_id": d.get("device_id"), "line_id": l.get("line_id"),
+                    "site_id": d.get("site_id")})
+
+    for d in devices:
+        if d.get("device_id") in consumed_device_ids:
+            continue
+        m = normalize_msisdn(d.get("msisdn"))
+        if m:
+            out.append({"kind": "device", "id": d.get("device_id"), "msisdn": m,
+                        "status": d.get("status"), "site_id": d.get("site_id")})
     for l in lines:
         if l.get("line_id") in consumed_line_ids:
             continue
