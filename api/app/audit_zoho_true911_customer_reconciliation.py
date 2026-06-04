@@ -364,6 +364,71 @@ def write_csv(recs: list[CustomerReconciliation], path: str) -> int:
     return rows
 
 
+# ── customer-scoped ownership (pure, unit-tested) ────────────────────────
+def scope_true911_by_customer(
+    query: str, customers: list[dict], sites: list[dict],
+    devices: list[dict], lines: list[dict],
+) -> dict:
+    """Scope a customer's True911 footprint by OWNERSHIP, not by tenant.
+
+    Customer -> Sites (``sites.customer_id``) -> Devices (``devices.site_id``).
+    Lines belong to the customer by ``customer_id`` OR by owning a scoped site.
+    Devices have no ``customer_id``, so they are reached only through their site.
+
+    Why: a shared tenant (e.g. ``default``) holds many customers' data, so
+    tenant-scoping over-counts (the Webber bug: 177 devices were the whole
+    ``default`` tenant).  Here, in a SHARED tenant only explicit customer links
+    count — other customers' devices are never attributed.
+
+    Safe dedicated-tenant handling: when the matched customer is the SOLE
+    customer of its tenant, rows with no explicit customer link in that tenant
+    are adopted (they can only belong to that one customer) — so a dedicated
+    tenant whose sites lack ``customer_id`` still reports its full footprint.
+    """
+    customers = customers or []
+    matched = [c for c in customers if name_matches(query, c.get("name"))]
+    if not matched:
+        return {"customer": {}, "tenant": {}, "sites": [], "devices": [],
+                "lines": [], "matched_customer_ids": [], "matched_customer_count": 0}
+
+    cust_ids = {c.get("id") for c in matched}
+    matched_tenants = {c.get("tenant_id") for c in matched}
+    per_tenant = Counter(c.get("tenant_id") for c in customers)
+    sole_tenants = {t for t in matched_tenants if per_tenant.get(t) == 1}
+
+    def _site_owned(s: dict) -> bool:
+        if s.get("customer_id") in cust_ids:
+            return True
+        return not s.get("customer_id") and s.get("tenant_id") in sole_tenants
+
+    scoped_sites = [s for s in (sites or []) if _site_owned(s)]
+    site_ids = {s.get("site_id") for s in scoped_sites}
+    scoped_devices = [
+        d for d in (devices or [])
+        if d.get("site_id") in site_ids
+        or (not d.get("site_id") and d.get("tenant_id") in sole_tenants)
+    ]
+    scoped_lines = [
+        l for l in (lines or [])
+        if l.get("customer_id") in cust_ids
+        or l.get("site_id") in site_ids
+        or (not l.get("customer_id") and not l.get("site_id")
+            and l.get("tenant_id") in sole_tenants)
+    ]
+
+    primary = matched[0]
+    return {
+        "customer": {"name": primary.get("name"), "status": primary.get("status"),
+                     "tenant_id": primary.get("tenant_id"),
+                     "zoho_account_id": primary.get("zoho_account_id"),
+                     "onboarding_status": primary.get("onboarding_status")},
+        "tenant": {"tenant_id": primary.get("tenant_id")},
+        "sites": scoped_sites, "devices": scoped_devices, "lines": scoped_lines,
+        "matched_customer_ids": sorted(i for i in cust_ids if i is not None),
+        "matched_customer_count": len(matched),
+    }
+
+
 # ── DB load (READ-ONLY) ──────────────────────────────────────────────────
 async def _load_zoho_records(db, query: Optional[str]) -> list[dict]:
     from sqlalchemy import select
@@ -390,38 +455,78 @@ async def _load_zoho_records(db, query: Optional[str]) -> list[dict]:
     return out
 
 
+_EMPTY_T911 = {"customer": {}, "tenant": {}, "sites": [], "devices": [], "lines": []}
+
+
 async def _load_true911(db, query: Optional[str]) -> dict:
-    from sqlalchemy import select, or_
+    """Load a customer's True911 footprint scoped by OWNERSHIP (customer -> sites
+    -> devices), NOT by tenant. READ-ONLY."""
+    from sqlalchemy import select
     from app.models.customer import Customer
     from app.models.tenant import Tenant
     from app.models.site import Site
     from app.models.device import Device
     from app.models.line import Line
 
-    customers = (await db.execute(select(Customer))).scalars().all()
-    tenants = {t.tenant_id: t for t in (await db.execute(select(Tenant))).scalars().all()}
+    if not query:
+        return dict(_EMPTY_T911)
 
-    cust = next((c for c in customers if name_matches(query, c.name)), None) if query else None
-    tenant_id = None
-    if cust:
-        tenant_id = cust.tenant_id
-    else:
-        t = next((t for t in tenants.values()
-                  if name_matches(query, t.name) or name_matches(query, t.display_name)
-                  or name_matches(query, t.tenant_id)), None) if query else None
-        tenant_id = t.tenant_id if t else None
-    if tenant_id is None:
-        return {"customer": _cust_dict(cust) if cust else {}, "tenant": {},
-                "sites": [], "devices": [], "lines": []}
+    customers = [{
+        "id": c.id, "name": c.name, "status": c.status, "tenant_id": c.tenant_id,
+        "zoho_account_id": c.zoho_account_id, "onboarding_status": c.onboarding_status,
+    } for c in (await db.execute(select(Customer))).scalars().all()]
 
-    tenant = tenants.get(tenant_id)
-    sites = (await db.execute(select(Site).where(Site.tenant_id == tenant_id))).scalars().all()
-    devices = (await db.execute(select(Device).where(Device.tenant_id == tenant_id))).scalars().all()
-    lines = (await db.execute(select(Line).where(Line.tenant_id == tenant_id))).scalars().all()
+    matched = [c for c in customers if name_matches(query, c["name"])]
+    if not matched:
+        # No customer by name — fall back to a tenant-name match (legacy: a
+        # dedicated tenant with no Customer row, devices directly under it).
+        tenant = next((t for t in (await db.execute(select(Tenant))).scalars().all()
+                       if name_matches(query, t.name) or name_matches(query, t.display_name)
+                       or name_matches(query, t.tenant_id)), None)
+        return await _load_tenant_scoped(db, tenant) if tenant else dict(_EMPTY_T911)
+
+    tenant_ids = {c["tenant_id"] for c in matched}
+    sites = [{"site_id": s.site_id, "site_name": s.site_name, "status": s.status,
+              "customer_id": s.customer_id, "tenant_id": s.tenant_id}
+             for s in (await db.execute(
+                 select(Site).where(Site.tenant_id.in_(tenant_ids)))).scalars().all()]
+    devices = [{"device_id": d.device_id, "site_id": d.site_id, "status": d.status,
+                "model": d.model, "iccid": d.iccid, "msisdn": d.msisdn,
+                "network_status": d.network_status, "tenant_id": d.tenant_id}
+               for d in (await db.execute(
+                   select(Device).where(Device.tenant_id.in_(tenant_ids)))).scalars().all()]
+    lines = [{"line_id": l.line_id, "site_id": l.site_id, "status": l.status,
+              "did": l.did, "sim_iccid": l.sim_iccid, "customer_id": l.customer_id,
+              "tenant_id": l.tenant_id}
+             for l in (await db.execute(
+                 select(Line).where(Line.tenant_id.in_(tenant_ids)))).scalars().all()]
+
+    scoped = scope_true911_by_customer(query, customers, sites, devices, lines)
+    # Attach tenant name / is_active for the primary customer's tenant (reference).
+    primary_tid = scoped["customer"].get("tenant_id")
+    tobj = (await db.execute(
+        select(Tenant).where(Tenant.tenant_id == primary_tid))).scalar_one_or_none() \
+        if primary_tid else None
+    scoped["tenant"] = {"tenant_id": primary_tid, "name": getattr(tobj, "name", None),
+                        "is_active": getattr(tobj, "is_active", None)}
+    return scoped
+
+
+async def _load_tenant_scoped(db, tenant) -> dict:
+    """Legacy fallback: scope by tenant when no Customer row matches the name
+    (a dedicated tenant with devices directly under it)."""
+    from sqlalchemy import select
+    from app.models.site import Site
+    from app.models.device import Device
+    from app.models.line import Line
+
+    tid = tenant.tenant_id
+    sites = (await db.execute(select(Site).where(Site.tenant_id == tid))).scalars().all()
+    devices = (await db.execute(select(Device).where(Device.tenant_id == tid))).scalars().all()
+    lines = (await db.execute(select(Line).where(Line.tenant_id == tid))).scalars().all()
     return {
-        "customer": _cust_dict(cust) if cust else {"tenant_id": tenant_id},
-        "tenant": {"tenant_id": tenant_id, "name": getattr(tenant, "name", None),
-                   "is_active": getattr(tenant, "is_active", None)},
+        "customer": {"tenant_id": tid},
+        "tenant": {"tenant_id": tid, "name": tenant.name, "is_active": tenant.is_active},
         "sites": [{"site_id": s.site_id, "site_name": s.site_name, "status": s.status} for s in sites],
         "devices": [{"device_id": d.device_id, "site_id": d.site_id, "status": d.status,
                      "model": d.model, "iccid": d.iccid, "msisdn": d.msisdn,
@@ -429,11 +534,6 @@ async def _load_true911(db, query: Optional[str]) -> dict:
         "lines": [{"line_id": l.line_id, "site_id": l.site_id, "status": l.status,
                    "did": l.did, "sim_iccid": l.sim_iccid} for l in lines],
     }
-
-
-def _cust_dict(c) -> dict:
-    return {"name": c.name, "status": c.status, "tenant_id": c.tenant_id,
-            "zoho_account_id": c.zoho_account_id, "onboarding_status": c.onboarding_status}
 
 
 def _distinct_queries(db_zoho: list[dict]) -> list[str]:

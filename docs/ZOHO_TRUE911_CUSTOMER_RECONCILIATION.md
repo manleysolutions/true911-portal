@@ -25,6 +25,16 @@ python -m app.audit_zoho_true911_customer_reconciliation --all \
     --export-json /tmp/zoho_recon.json --export-csv /tmp/zoho_recon.csv
 ```
 
+## Ownership scoping (customer, not tenant)
+The True911 side is scoped by **ownership**, not by tenant:
+`Customer → Sites (sites.customer_id) → Devices (devices.site_id)`, and Lines by
+`customer_id` or by owning a scoped site. This matters because a shared tenant
+(e.g. `default`) holds many customers' data — tenant-scoping over-counts (the
+Webber case originally reported the whole `default` tenant's 177 devices). In a
+shared tenant only explicit customer links count; in a **dedicated** tenant where
+the customer is the sole occupant, rows without an explicit customer link are
+adopted (they can only belong to that one customer).
+
 ## What is compared (per customer)
 | Zoho (staged) | True911 |
 |---|---|
