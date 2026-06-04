@@ -23,7 +23,7 @@ from app.services import rbac
 # loader so a regression in rbac doesn't hide itself.
 _PERMISSIONS_PATH = Path(__file__).resolve().parents[2] / "permissions.json"
 
-ALL_ROLES = ["SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward"]
+ALL_ROLES = ["SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST"]
 
 
 def _load_json_matrix() -> Dict[str, List[str]]:
@@ -118,7 +118,7 @@ def test_superadmin_passes_every_action(action: str):
 
 
 def test_unknown_action_denies_non_superadmin():
-    for role in ["Admin", "Manager", "User", "DataEntry", "DataSteward"]:
+    for role in ["Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST"]:
         assert rbac.can(role, "ACTION_THAT_DOES_NOT_EXIST") is False, (
             f"Unknown actions must deny {role}"
         )
@@ -147,6 +147,16 @@ def test_unknown_action_denies_non_superadmin():
         ("Data Steward", "DataSteward"),
         ("operations data steward", "DataSteward"),
         ("Operational Data Steward", "DataSteward"),
+        # UX & QA Analyst variants — Sivmey / Platform Operations Analyst.
+        ("UX_QA_ANALYST", "UX_QA_ANALYST"),
+        ("ux_qa_analyst", "UX_QA_ANALYST"),
+        ("uxqaanalyst", "UX_QA_ANALYST"),
+        ("ux qa analyst", "UX_QA_ANALYST"),
+        ("UX & QA Analyst", "UX_QA_ANALYST"),
+        ("ux and qa analyst", "UX_QA_ANALYST"),
+        ("ux/qa analyst", "UX_QA_ANALYST"),
+        ("Platform Operations Analyst", "UX_QA_ANALYST"),
+        ("platform ops analyst", "UX_QA_ANALYST"),
         # Other roles, mixed case.
         ("superadmin", "SuperAdmin"),
         ("SuperAdmin", "SuperAdmin"),
@@ -301,3 +311,107 @@ def test_datasteward_does_not_weaken_dataentry():
     assert expected.issubset(actual), (
         f"DataEntry lost grants: missing={expected - actual}"
     )
+
+
+# ── UX_QA_ANALYST-specific can() spot checks ────────────────────────
+# Pins the UX & QA Analyst (Sivmey) grant set.  The role is a superset
+# of DataSteward's *safe* grants plus reporting/export; it must never
+# acquire destructive, carrier-provisioning, identity/RBAC, system, or
+# the heavy E911 command surface.  Two capabilities the role spec lists
+# are intentionally NOT granted here and are asserted denied below:
+#   * UPDATE_E911  — the heavy E911 command stays Admin-only until an
+#     approval workflow exists (address-level E911 edits ride EDIT_SITES).
+#   * impersonation — X-Act-As-Tenant is SuperAdmin-only and is not
+#     read-only; granting it to this role would be privilege escalation.
+
+@pytest.mark.parametrize(
+    "action,expected",
+    [
+        # Stewardship / onboarding views the role must have
+        ("VIEW_CUSTOMERS", True),
+        ("VIEW_SITES", True),
+        ("VIEW_DEVICES", True),
+        ("VIEW_LINES", True),
+        ("VIEW_RECORDINGS", True),
+        ("VIEW_ASSURANCE", True),
+        ("VIEW_IMPORT_VERIFICATION", True),
+        ("VIEW_PROVISIONING_QUEUE", True),
+        ("VIEW_ONBOARDING_REVIEW", True),
+        ("VIEW_REGISTRATIONS", True),
+        # Data-stewardship mutations the role must have
+        ("CREATE_CUSTOMERS", True),
+        ("EDIT_CUSTOMERS", True),
+        ("CREATE_SITES", True),
+        ("EDIT_SITES", True),          # address / E911-address correction path
+        ("CREATE_DEVICES", True),
+        ("EDIT_DEVICES", True),        # device assignment / ownership correction
+        ("CREATE_SERVICE_UNITS", True),
+        ("EDIT_SERVICE_UNITS", True),  # subscription metadata / billing mappings
+        ("CREATE_SIMS", True),
+        ("EDIT_SIMS", True),
+        ("CREATE_LINES", True),
+        ("EDIT_LINES", True),
+        ("COMMAND_SITE_IMPORT", True),
+        ("SUBSCRIBER_IMPORT", True),
+        ("MANAGE_IMPORT_VERIFICATION", True),
+        ("MANAGE_ONBOARDING_REVIEW", True),
+        # Reporting / export — the QA scope additions beyond DataSteward
+        ("GENERATE_REPORT", True),
+        ("COMMAND_EXPORT_REPORTS", True),
+        # Must NOT have: heavy E911 command (needs approval workflow)
+        ("UPDATE_E911", False),
+        # Must NOT have: destructive
+        ("DELETE_CUSTOMERS", False),
+        ("DELETE_SITES", False),
+        ("DELETE_DEVICES", False),
+        ("DELETE_LINES", False),
+        ("DELETE_SERVICE_UNITS", False),
+        # Must NOT have: carrier / provisioning / identity / RBAC / system
+        ("MANAGE_SIMS", False),
+        ("MANAGE_DEVICES", False),
+        ("MANAGE_USERS", False),
+        ("MANAGE_PROVIDERS", False),
+        ("MANAGE_NOTIFICATIONS", False),
+        ("MANAGE_INTEGRATIONS", False),
+        ("MANAGE_PROVISIONING", False),
+        ("MANAGE_REGISTRATIONS", False),
+        ("CONVERT_REGISTRATIONS", False),
+        ("ROTATE_DEVICE_KEY", False),
+        ("RUN_RECONCILIATION", False),
+        ("COMMAND_INGEST_CARRIER", False),
+        ("COMMAND_MANAGE_AUTOMATION", False),
+        ("COMMAND_MANAGE_ORG", False),
+        ("VIEW_ADMIN", False),
+        ("GLOBAL_ADMIN", False),
+    ],
+)
+def test_ux_qa_analyst_grants(action: str, expected: bool):
+    assert rbac.can("UX_QA_ANALYST", action) is expected
+
+
+def test_ux_qa_analyst_is_superset_of_datasteward_safe_grants():
+    """UX_QA_ANALYST must grant everything DataSteward grants (it is the
+    QA/reporting superset).  Re-derive DataSteward's grants from the file
+    so the assertion can't silently rot."""
+    matrix = _load_json_matrix()
+    steward = {a for a, roles in matrix.items() if "DataSteward" in roles}
+    ux = {a for a in matrix if rbac.can("UX_QA_ANALYST", a)}
+    assert steward.issubset(ux), (
+        f"UX_QA_ANALYST missing DataSteward grants: {steward - ux}"
+    )
+
+
+def test_new_role_does_not_alter_other_roles():
+    """Adding UX_QA_ANALYST must not change any existing role's grants.
+
+    For every action, the set of *other* roles allowed must equal the
+    JSON minus UX_QA_ANALYST — i.e. the new role only ever adds itself,
+    never removes or adds another role to a cell.
+    """
+    matrix = _load_json_matrix()
+    for action, roles in matrix.items():
+        others = [r for r in roles if r != "UX_QA_ANALYST"]
+        for role in ["Admin", "Manager", "User", "DataEntry", "DataSteward"]:
+            assert rbac.can(role, action) is (role in others), (
+                f"{role} grant for {action!r} changed by the UX_QA_ANALYST addition"
+            )
