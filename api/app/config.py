@@ -207,6 +207,22 @@ class Settings(BaseSettings):
     # Adjust via env (Render) as Zoho workflows evolve — no code change/deploy.
     ZOHO_SUBSCRIPTION_MODULES: str = "Subscription_Mgmt"
     ZOHO_SUBSCRIPTION_EVENT_TYPES: str = ""
+    # ── Zoho Subscription_Mgmt staging BACKFILL (pull, default OFF) ─────
+    # One-time/maintenance backfill that PULLS Subscription_Mgmt records from
+    # the Zoho CRM API and stages them into zoho_subscription_records +
+    # external_record_map (the same additive shadow tables the webhook ingest
+    # writes).  Needed because the mirror only captures records that arrive via
+    # webhook AFTER the flag was enabled — pre-existing Zoho records (e.g. Webber)
+    # are absent.  The backfill is dry-run-first and writes NOTHING to
+    # sites/devices/lines/customers; it NEVER deletes.  This flag must be "true"
+    # for the backfill's APPLY (write) path; dry-run never consults it and never
+    # writes.  Idempotent by (org_id, subscription_mgmt_id).
+    FEATURE_ZOHO_BACKFILL: str = "false"
+    # Stable org_id the backfill keys staging rows on. Should match the webhook's
+    # org_id so backfilled and webhook rows reconcile to the same staging row
+    # (the unique key is (org_id, subscription_mgmt_id)). Falls back to
+    # ZOHO_CRM_ORG_ID, then "zoho_crm".
+    ZOHO_BACKFILL_ORG_ID: str = ""
 
     # ── T-Mobile Wholesale (TAAP / PoP) ────────────────────────────────
     TMOBILE_ENV: str = "pit"  # pit | prod
