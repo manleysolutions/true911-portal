@@ -223,6 +223,14 @@ class Settings(BaseSettings):
     # (the unique key is (org_id, subscription_mgmt_id)). Falls back to
     # ZOHO_CRM_ORG_ID, then "zoho_crm".
     ZOHO_BACKFILL_ORG_ID: str = ""
+    # ── Device site correction (gated WRITE, default OFF) ──────────────
+    # The device→site correction planner (app/plan_device_site_correction.py) is
+    # dry-run-first: it only WRITES (devices.site_id <- the matching line's
+    # site_id) when --apply is passed AND this flag is "true". It corrects
+    # bulk-import placeholder site assignments for ONE customer, customer-scoped,
+    # updating devices.site_id ONLY — never lines/customers, never deletes, and
+    # refusing ambiguous / multi-line / customer-mismatch / no-proposed-site rows.
+    FEATURE_DEVICE_SITE_CORRECTION: str = "false"
     # ── Customer retirement (gated WRITE, default OFF) ─────────────────
     # The customer retirement planner (app/plan_customer_retirement.py) is
     # dry-run-first: it only WRITES (customer/site/device/line status +
