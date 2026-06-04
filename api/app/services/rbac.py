@@ -70,6 +70,17 @@ ROLE_NORMALIZE = {
     "data steward": "DataSteward",
     "operations data steward": "DataSteward",
     "operational data steward": "DataSteward",
+    # UX & QA Analyst (Sivmey / Platform Operations Analyst).  Canonical
+    # stored value is "UX_QA_ANALYST"; the variants below absorb the
+    # spellings an admin UI, hand edit, or legacy seed might produce.
+    "ux_qa_analyst": "UX_QA_ANALYST",
+    "uxqaanalyst": "UX_QA_ANALYST",
+    "ux qa analyst": "UX_QA_ANALYST",
+    "ux & qa analyst": "UX_QA_ANALYST",
+    "ux and qa analyst": "UX_QA_ANALYST",
+    "ux/qa analyst": "UX_QA_ANALYST",
+    "platform operations analyst": "UX_QA_ANALYST",
+    "platform ops analyst": "UX_QA_ANALYST",
 }
 
 

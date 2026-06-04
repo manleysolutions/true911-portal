@@ -105,7 +105,7 @@ async def _run(email: str) -> int:
         if not user.is_active:
             print("  → get_current_user would 401 with 'User not found or inactive'")
             print("    (this is the 'Unauthorized' string the frontend shows).")
-        elif normalized not in {"SuperAdmin", "Admin", "Manager", "User", "DataEntry"}:
+        elif normalized not in {"SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST"}:
             print(f"  → role would silently fall through normalize_role as {normalized!r}.")
             print("    rbac.can() returns False for every action → 403 on protected routes.")
         elif not tenant_exists:

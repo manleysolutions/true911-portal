@@ -33,6 +33,16 @@ const ROLE_MAP = {
   "data steward": "DataSteward",
   "operations data steward": "DataSteward",
   "operational data steward": "DataSteward",
+  // UX & QA Analyst (Sivmey / Platform Operations Analyst). Mirrors the
+  // backend ROLE_NORMALIZE map in api/app/services/rbac.py.
+  ux_qa_analyst: "UX_QA_ANALYST",
+  uxqaanalyst: "UX_QA_ANALYST",
+  "ux qa analyst": "UX_QA_ANALYST",
+  "ux & qa analyst": "UX_QA_ANALYST",
+  "ux and qa analyst": "UX_QA_ANALYST",
+  "ux/qa analyst": "UX_QA_ANALYST",
+  "platform operations analyst": "UX_QA_ANALYST",
+  "platform ops analyst": "UX_QA_ANALYST",
 };
 function normalizeRole(role) {
   if (!role) return "User";
