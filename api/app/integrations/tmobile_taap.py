@@ -562,8 +562,35 @@ class TMobileTAAPClient:
 
     # ── Wholesale API Methods (ready for PIT testing) ───────────────────
 
+    @staticmethod
+    def _callback_headers(callback_location: str | None) -> dict[str, str]:
+        """Resolve the async ``call-back-location`` header, or ``{}`` if unset.
+
+        Async-capable calls pass the callback URL so T-Mobile can return the
+        asynchronous response to our ingest endpoint (per T-Mobile guidance:
+        "asynchronous responses can be validated by passing the callback
+        location").  Resolution mirrors ``activate_subscriber`` exactly:
+        explicit ``callback_location`` arg first, then the
+        ``TMOBILE_CALLBACK_LOCATION`` env, attached as the HTTP header
+        ``call-back-location``.
+
+        Unlike activation — where the callback is MANDATORY because the
+        generated account ID is returned only there — these query/change calls
+        also work synchronously, so a missing callback is NOT an error: the
+        header is simply omitted and the existing request is unchanged byte for
+        byte.  No body field is added.
+        """
+        resolved = (
+            callback_location or settings.TMOBILE_CALLBACK_LOCATION or ""
+        ).strip()
+        return {"call-back-location": resolved} if resolved else {}
+
     async def subscriber_inquiry(
-        self, msisdn: str, *, account_id: str | None = None
+        self,
+        msisdn: str,
+        *,
+        account_id: str | None = None,
+        callback_location: str | None = None,
     ) -> dict[str, Any]:
         """Query subscriber details by MSISDN.
 
@@ -588,13 +615,23 @@ class TMobileTAAPClient:
         return await self.post_json(
             self._subscriber_path("inquiry"),
             {"msisdn": msisdn, "accountId": account_id},
+            extra_headers=self._callback_headers(callback_location),
         )
 
-    async def query_network(self, msisdn: str) -> dict[str, Any]:
-        """Query network/device status for a subscriber."""
+    async def query_network(
+        self, msisdn: str, *, callback_location: str | None = None
+    ) -> dict[str, Any]:
+        """Query network/device status for a subscriber.
+
+        When a callback location is configured (arg or TMOBILE_CALLBACK_LOCATION)
+        the ``call-back-location`` header is attached so T-Mobile can return the
+        status asynchronously to our ingest endpoint; otherwise the call is the
+        plain synchronous query, unchanged.
+        """
         return await self.post_json(
             "/wholesale/network/v1/query",
             {"msisdn": msisdn},
+            extra_headers=self._callback_headers(callback_location),
         )
 
     async def query_usage(self, msisdn: str, start_date: str, end_date: str) -> dict[str, Any]:
@@ -604,11 +641,20 @@ class TMobileTAAPClient:
             {"msisdn": msisdn, "startDate": start_date, "endDate": end_date},
         )
 
-    async def change_sim(self, msisdn: str, new_iccid: str) -> dict[str, Any]:
-        """Initiate a SIM swap for a subscriber."""
+    async def change_sim(
+        self, msisdn: str, new_iccid: str, *, callback_location: str | None = None
+    ) -> dict[str, Any]:
+        """Initiate a SIM swap for a subscriber.
+
+        SIM swap completes asynchronously; when a callback location is
+        configured (arg or TMOBILE_CALLBACK_LOCATION) the ``call-back-location``
+        header is attached so T-Mobile can return the result to our ingest
+        endpoint.  The request body is unchanged.
+        """
         return await self.post_json(
             self._subscriber_path("changesim"),
             {"msisdn": msisdn, "iccid": new_iccid, "accountId": self.account_id},
+            extra_headers=self._callback_headers(callback_location),
         )
 
     @staticmethod
