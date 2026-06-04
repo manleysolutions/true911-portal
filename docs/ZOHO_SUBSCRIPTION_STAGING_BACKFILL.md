@@ -35,10 +35,21 @@ webhook uses.
   Service_Term_Ends, Modified_Time`. Override via `--fields` or the
   `ZOHO_SUBSCRIPTION_FIELDS` env var (precedence: `--fields` > env > default).
 
+## Pagination (Zoho v5 > 2000 records)
+Zoho v5 offset pagination (`page`/`per_page`) only covers the first **2000**
+records — beyond that it returns `DISCRETE_PAGINATION_LIMIT_EXCEEDED` and requires
+a `page_token`. The backfill uses `page`/`per_page` until a response carries
+`info.next_page_token`, then **follows the token** (preferred whenever present),
+and stops when `more_records` is false with no token left. Use **`--max-records N`**
+to bound how many records are *scanned* during a dry-run (omit for a full backfill).
+
 ## Commands
 ```bash
 # Dry-run a single customer (no writes, no flag needed):
 python -m app.backfill_zoho_subscription_staging --customer "Webber Infra"
+
+# Bounded dry-run (scan at most 100 Zoho records — safe quick peek):
+python -m app.backfill_zoho_subscription_staging --customer "Webber Infra" --max-records 100
 
 # Dry-run everything:
 python -m app.backfill_zoho_subscription_staging --all

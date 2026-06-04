@@ -155,3 +155,88 @@ async def test_not_configured_raises_clear(monkeypatch):
     monkeypatch.setattr(zoho_crm, "is_configured", lambda: False)
     with pytest.raises(RuntimeError, match="Zoho CRM not configured"):
         await fetch_subscription_records("Subscription_Mgmnt", "Webber", "id")
+
+
+# ── page_token pagination (Zoho v5 > 2000 records) ───────────────────────
+def _rec(i, account="Webber Infrastructure"):
+    return {"id": str(i), "Account_Name": account}
+
+
+def _mock_get(monkeypatch, responses):
+    """Wire zoho_crm._zoho_get to return the given responses in order; capture calls."""
+    from app.services import zoho_crm
+    monkeypatch.setattr(zoho_crm, "is_configured", lambda: True)
+    calls = []
+
+    async def fake_get(path, params=None):
+        calls.append({"path": path, "params": dict(params or {})})
+        return responses[len(calls) - 1]
+
+    monkeypatch.setattr(zoho_crm, "_zoho_get", AsyncMock(side_effect=fake_get))
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_first_page_only(monkeypatch):
+    calls = _mock_get(monkeypatch, [
+        {"data": [_rec(1), _rec(2)], "info": {"more_records": False}},
+    ])
+    out = await fetch_subscription_records("Subscription_Mgmnt", None, "id")
+    assert [r["id"] for r in out] == ["1", "2"]
+    assert len(calls) == 1
+    assert calls[0]["params"]["page"] == 1            # offset flow
+    assert "page_token" not in calls[0]["params"]
+
+
+@pytest.mark.asyncio
+async def test_multiple_page_token_pages(monkeypatch):
+    calls = _mock_get(monkeypatch, [
+        {"data": [_rec(1)], "info": {"more_records": True, "next_page_token": "TOK1"}},
+        {"data": [_rec(2)], "info": {"more_records": True, "next_page_token": "TOK2"}},
+        {"data": [_rec(3)], "info": {"more_records": False}},
+    ])
+    out = await fetch_subscription_records("Subscription_Mgmnt", None, "id")
+    assert [r["id"] for r in out] == ["1", "2", "3"]
+    assert len(calls) == 3
+    # First call offset; subsequent calls follow the token (no `page`).
+    assert calls[0]["params"].get("page") == 1
+    assert calls[1]["params"].get("page_token") == "TOK1" and "page" not in calls[1]["params"]
+    assert calls[2]["params"].get("page_token") == "TOK2" and "page" not in calls[2]["params"]
+
+
+@pytest.mark.asyncio
+async def test_offset_increments_until_token_appears(monkeypatch):
+    calls = _mock_get(monkeypatch, [
+        {"data": [_rec(1)], "info": {"more_records": True}},                       # no token -> page 2
+        {"data": [_rec(2)], "info": {"more_records": True, "next_page_token": "T"}},# token -> switch
+        {"data": [_rec(3)], "info": {"more_records": False}},
+    ])
+    out = await fetch_subscription_records("Subscription_Mgmnt", None, "id")
+    assert [r["id"] for r in out] == ["1", "2", "3"]
+    assert calls[0]["params"]["page"] == 1
+    assert calls[1]["params"]["page"] == 2            # still offset (no token yet)
+    assert calls[2]["params"]["page_token"] == "T"    # then token
+
+
+@pytest.mark.asyncio
+async def test_customer_filter_across_pages(monkeypatch):
+    _mock_get(monkeypatch, [
+        {"data": [_rec(1, "Webber Infrastructure"), _rec(2, "Acme Co")],
+         "info": {"more_records": True, "next_page_token": "TOK1"}},
+        {"data": [_rec(3, "Restoration Hardware"), _rec(4, "Webber Plant 5")],
+         "info": {"more_records": False}},
+    ])
+    out = await fetch_subscription_records("Subscription_Mgmnt", "Webber", "id")
+    assert sorted(r["id"] for r in out) == ["1", "4"]   # only Webber rows across both pages
+
+
+@pytest.mark.asyncio
+async def test_max_records_caps_scanning(monkeypatch):
+    calls = _mock_get(monkeypatch, [
+        {"data": [_rec(1), _rec(2), _rec(3)],
+         "info": {"more_records": True, "next_page_token": "TOK1"}},
+        {"data": [_rec(4)], "info": {"more_records": False}},  # should never be fetched
+    ])
+    out = await fetch_subscription_records("Subscription_Mgmnt", None, "id", max_records=2)
+    assert [r["id"] for r in out] == ["1", "2"]
+    assert len(calls) == 1                              # stopped after the cap, no 2nd page
