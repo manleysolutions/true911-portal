@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Reuse the reconciliation primitives (all read-only / pure).
 from app.audit_zoho_true911_customer_reconciliation import (  # noqa: E402
-    derive_zoho_lifecycle, normalize_msisdn, normalize_name,
+    derive_zoho_lifecycle, normalize_msisdn, normalize_name, facility_site_match,
     _load_zoho_records, _load_true911,
 )
 
@@ -64,20 +64,12 @@ def _true911_msisdn_index(t911: dict) -> dict:
 
 
 def _closest_site(facility: Optional[str], sites: list[dict]) -> tuple:
-    """Return (site_match, site_dict_or_None): exact | fuzzy | missing."""
-    fn = normalize_name(facility)
-    if not fn:
-        return "missing", None
-    fuzzy = None
-    for s in sites:
-        sn = normalize_name(s.get("site_name"))
-        if not sn:
-            continue
-        if sn == fn:
-            return "exact", s
-        if fuzzy is None and (fn in sn or sn in fn):
-            fuzzy = s
-    return ("fuzzy", fuzzy) if fuzzy else ("missing", None)
+    """Return (site_match, site_dict_or_None): exact | fuzzy | missing.
+
+    Delegates to the shared ``facility_site_match`` (suffix-strip + token overlap
+    + abbreviations). A ``fuzzy`` result is a review lead, never auto-confirmed.
+    """
+    return facility_site_match(facility, sites)
 
 
 def _overall(msisdn_match: str, site_match: str) -> str:

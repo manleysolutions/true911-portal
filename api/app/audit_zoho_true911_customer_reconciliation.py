@@ -165,19 +165,119 @@ class CustomerReconciliation:
 
 
 def _t911_msisdn_entities(t911: dict) -> list[dict]:
-    """Flatten device + line MSISDN-bearing entities for matching."""
+    """Flatten device + line MSISDN-bearing entities for matching, COLLAPSING a
+    device and its own line into one logical service.
+
+    A device D and a line L collapse into a single ``service`` entity when they
+    are the SAME service: L is linked to D (``lines.device_id == D.device_id``),
+    they carry the SAME normalized MSISDN (``devices.msisdn`` == ``lines.did``),
+    and they share the site (or L has no site). This kills the false
+    ``duplicate_candidate`` inflation where every R&R MSISDN matched its device
+    AND its own line.
+
+    True duplicates are preserved: two devices on one MSISDN, an UNRELATED line
+    (different/absent ``device_id``) on a device's MSISDN, or a linked line whose
+    site CONFLICTS with the device's site — none of those collapse, so they still
+    surface as ambiguous/duplicate.
+    """
+    devices = t911.get("devices", [])
+    lines = t911.get("lines", [])
+    lines_by_device: dict = {}
+    for l in lines:
+        if l.get("device_id"):
+            lines_by_device.setdefault(l["device_id"], []).append(l)
+
     out: list[dict] = []
-    for d in t911.get("devices", []):
-        m = normalize_msisdn(d.get("msisdn"))
-        if m:
-            out.append({"kind": "device", "id": d.get("device_id"), "msisdn": m,
-                        "status": d.get("status"), "raw": d})
-    for l in t911.get("lines", []):
+    consumed_line_ids: set = set()
+    for d in devices:
+        dm = normalize_msisdn(d.get("msisdn"))
+        partner = None
+        for l in lines_by_device.get(d.get("device_id"), []):
+            same_msisdn = dm and normalize_msisdn(l.get("did")) == dm
+            same_site = (l.get("site_id") is None) or (l.get("site_id") == d.get("site_id"))
+            if same_msisdn and same_site and l.get("line_id") not in consumed_line_ids:
+                partner = l
+                break
+        if partner is not None:
+            consumed_line_ids.add(partner["line_id"])
+            out.append({"kind": "service", "id": f"{d.get('device_id')}+{partner.get('line_id')}",
+                        "msisdn": dm, "status": d.get("status"),
+                        "device_id": d.get("device_id"), "line_id": partner.get("line_id"),
+                        "site_id": d.get("site_id")})
+        elif dm:
+            out.append({"kind": "device", "id": d.get("device_id"), "msisdn": dm,
+                        "status": d.get("status"), "site_id": d.get("site_id")})
+
+    for l in lines:
+        if l.get("line_id") in consumed_line_ids:
+            continue
         m = normalize_msisdn(l.get("did"))
         if m:
             out.append({"kind": "line", "id": l.get("line_id"), "msisdn": m,
-                        "status": l.get("status"), "raw": l})
+                        "status": l.get("status"), "site_id": l.get("site_id")})
     return out
+
+
+# ── FacilityName ↔ Site matching (suffix-strip + token overlap, no auto-confirm) ──
+# Per-phone / per-line descriptive noise that a Zoho FacilityName carries but a
+# True911 site_name does not (e.g. "Dodge Island - White Phone", "Ops Bldg (RED)").
+_FACILITY_NOISE = frozenset({
+    "red", "white", "blue", "green", "phone", "phones", "line", "lines",
+    "elevator", "alarm", "fire", "voice", "fax", "main", "backup", "primary",
+})
+# Conservative abbreviation expansions (token-wise) for site/facility names.
+_ABBREV = {
+    "bldg": "building", "blg": "building", "ops": "operations", "ctr": "center",
+    "stn": "station", "mgmt": "management", "apt": "apartment", "apts": "apartment",
+    "twr": "tower", "dept": "department", "svc": "service", "comm": "communications",
+}
+
+
+def _facility_tokens(name: Optional[str], *, drop_noise: bool) -> set:
+    toks = []
+    for t in normalize_name(name).split():
+        t = _ABBREV.get(t, t)
+        if drop_noise and t in _FACILITY_NOISE:
+            continue
+        toks.append(t)
+    return set(toks)
+
+
+def strip_facility_suffix(name: Optional[str]) -> str:
+    """Normalized facility name with per-phone/line noise tokens removed."""
+    return " ".join(sorted(_facility_tokens(name, drop_noise=True)))
+
+
+def facility_site_match(facility: Optional[str], sites: list[dict]) -> tuple:
+    """Return (match, site): 'exact' | 'fuzzy' | 'missing'.
+
+    exact — the FULL normalized facility equals a site name (no suffix-strip
+            needed) — the only auto-confirmable tier.
+    fuzzy — matches only after noise-strip: a substring, or one significant-token
+            set is a SUBSET of the other (e.g. "Dodge Island - White Phone" ->
+            "Dodge Island"). A review lead, never auto-confirmed. Distinct sites
+            that merely share a token (e.g. "Webber Plant 5" vs "Webber Plant 1")
+            do NOT match — neither is a subset of the other.
+    """
+    full = normalize_name(facility)
+    stripped = _facility_tokens(facility, drop_noise=True)
+    if not full and not stripped:
+        return "missing", None
+    stripped_str = " ".join(sorted(stripped))
+    site_index = [(s, normalize_name(s.get("site_name")),
+                   _facility_tokens(s.get("site_name"), drop_noise=True)) for s in sites]
+
+    for s, sn, _ in site_index:               # exact: full equality only
+        if sn and sn == full:
+            return "exact", s
+    for s, sn, stoks in site_index:           # fuzzy: substring or token subset
+        if not sn or not stripped:
+            continue
+        if stripped_str and (stripped_str in sn or sn in stripped_str):
+            return "fuzzy", s
+        if stoks and (stripped <= stoks or stoks <= stripped):
+            return "fuzzy", s
+    return "missing", None
 
 
 def reconcile_customer(query: str, zoho_records: list[dict], t911: dict) -> CustomerReconciliation:
@@ -302,16 +402,21 @@ def reconcile_customer(query: str, zoho_records: list[dict], t911: dict) -> Cust
                 f"True911 {e['kind']} {e['id']} has an MSISDN with no Zoho record",
                 true911={"entity": f"{e['kind']}:{e['id']}", "status": e.get("status")}))
 
-    # ── facility / site presence ──
-    t911_site_names = {normalize_name(s.get("site_name")) for s in t911.get("sites", [])}
+    # ── facility / site presence (suffix-strip + token overlap) ──
+    sites = t911.get("sites", [])
     for z in zoho_records:
-        fac = normalize_name(z.get("facility_name"))
-        if fac and t911_site_names and fac not in t911_site_names \
-                and not any(fac in sn or sn in fac for sn in t911_site_names if sn):
+        fac = z.get("facility_name")
+        if not normalize_name(fac) or not sites:
+            continue
+        match, site = facility_site_match(fac, sites)
+        if match == "missing":
             findings.append(Finding(
-                MISSING_IN_TRUE911, "site", z.get("facility_name") or "<facility>",
-                "Zoho FacilityName has no matching True911 site",
-                zoho={"facility_name": z.get("facility_name")}))
+                MISSING_IN_TRUE911, "site", fac or "<facility>",
+                "Zoho FacilityName has no matching True911 site (after suffix-strip "
+                "+ token overlap)",
+                zoho={"facility_name": fac}))
+        # exact / fuzzy -> a site lead exists; not flagged missing. Fuzzy matches
+        # are surfaced as review leads by the mapping-review report, not here.
 
     summary = dict(Counter(f.classification for f in findings))
     return CustomerReconciliation(
