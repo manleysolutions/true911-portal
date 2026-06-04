@@ -324,12 +324,70 @@ def test_two_devices_same_msisdn_still_duplicate():
     assert DUPLICATE_CANDIDATE in [f.classification for f in rec.findings]
 
 
-def test_unrelated_line_sharing_msisdn_still_duplicate():
-    # Line NOT linked to the device (device_id=None) -> not the same service.
-    t = _t911_dl([_dev_m("D1", "3055551234")],
-                 [_line_m("L1", "3055551234", device_id=None)])
+def test_line_on_different_site_still_duplicate():
+    # device_id NULL is now collapsible, BUT a DIFFERENT site keeps them separate
+    # (site-mismatch protection) — they surface as a duplicate, not one service.
+    t = _t911_dl([_dev_m("D1", "3055551234", site="S1")],
+                 [_line_m("L1", "3055551234", device_id=None, site="S2")])
     rec = reconcile_customer("R&R", [zrec(account="R&R", msisdn="3055551234")], t)
     assert DUPLICATE_CANDIDATE in [f.classification for f in rec.findings]
+
+
+def test_device_id_null_same_site_collapses_matched_ok():
+    # PR #107 relaxation: device_id NULL + same MSISDN + same site + same customer
+    # + exactly 1 device & 1 line -> ONE service (collapsible_by_msisdn_site).
+    sites = [{"site_id": "S1", "site_name": "P1", "customer_id": 7, "status": "active"}]
+    t = _t911_dl([_dev_m("D1", "3055551234", site="S1")],
+                 [_line_m("L1", "3055551234", device_id=None, site="S1")], sites=sites)
+    rec = reconcile_customer("R&R", [zrec(account="R&R", msisdn="3055551234")], t)
+    classes = [f.classification for f in rec.findings if f.scope == "msisdn"]
+    assert MATCHED_OK in classes and DUPLICATE_CANDIDATE not in classes
+
+
+def test_collapse_blocked_by_customer_mismatch():
+    # device's site -> customer 7; line carries customer 9 -> conflict -> no collapse.
+    sites = [{"site_id": "S1", "customer_id": 7}]
+    line = {"line_id": "L1", "did": "3055551234", "device_id": None, "site_id": "S1",
+            "customer_id": 9, "status": "active", "sim_iccid": None}
+    t = _t911_dl([_dev_m("D1", "3055551234", site="S1")], [line], sites=sites)
+    rec = reconcile_customer("R&R", [zrec(account="R&R", msisdn="3055551234")], t)
+    assert DUPLICATE_CANDIDATE in [f.classification for f in rec.findings]
+
+
+# ── #107: R&R regression — 55 collapsible_by_msisdn_site -> matched_ok ────
+def test_rr_55_pairs_collapse_duplicate_drops_to_zero():
+    n = 55
+    sites = [{"site_id": f"RR-S{i}", "site_name": f"Prop {i}", "customer_id": 7,
+              "status": "active"} for i in range(n)]
+    devices = [_dev_m(f"RR-D{i}", f"30555{i:05d}", site=f"RR-S{i}") for i in range(n)]
+    # subscriber-import lines: device_id NULL, on the SAME (corrected) site.
+    lines = [_line_m(f"RR-L{i}", f"30555{i:05d}", device_id=None, site=f"RR-S{i}") for i in range(n)]
+    t = _t911_dl(devices, lines, sites=sites)
+    zoho = [zrec(account="R&R Realty Group", msisdn=f"30555{i:05d}", activation="Active")
+            for i in range(n)]
+    rec = reconcile_customer("R&R Realty Group", zoho, t)
+    from collections import Counter as _C
+    classes = _C(f.classification for f in rec.findings if f.scope == "msisdn")
+    assert classes["matched_ok"] == n              # all 55 pairs matched
+    assert classes["duplicate_candidate"] == 0     # near-zero (exactly zero here)
+    # the fleet flattened to exactly 55 service entities
+    assert len(_t911_msisdn_entities(t)) == n
+
+
+def test_rr_collapse_still_flags_a_genuine_duplicate():
+    # 54 clean pairs + 1 MSISDN with TWO devices -> that one stays duplicate.
+    sites = [{"site_id": f"RR-S{i}", "customer_id": 7} for i in range(54)]
+    devices = [_dev_m(f"RR-D{i}", f"30555{i:05d}", site=f"RR-S{i}") for i in range(54)]
+    lines = [_line_m(f"RR-L{i}", f"30555{i:05d}", device_id=None, site=f"RR-S{i}") for i in range(54)]
+    # extra second device on the SAME msisdn as pair 0 -> true duplicate
+    devices.append(_dev_m("RR-DUP", "3055500000", site="RR-S0"))
+    t = _t911_dl(devices, lines, sites=sites)
+    zoho = [zrec(account="R&R", msisdn=f"30555{i:05d}") for i in range(54)]
+    rec = reconcile_customer("R&R", zoho, t)
+    from collections import Counter as _C
+    classes = _C(f.classification for f in rec.findings if f.scope == "msisdn")
+    assert classes["duplicate_candidate"] == 1     # only the 2-device MSISDN
+    assert classes["matched_ok"] == 53
 
 
 def test_linked_line_conflicting_site_does_not_collapse():

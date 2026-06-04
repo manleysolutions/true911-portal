@@ -35,6 +35,17 @@ shared tenant only explicit customer links count; in a **dedicated** tenant wher
 the customer is the sole occupant, rows without an explicit customer link are
 adopted (they can only belong to that one customer).
 
+## Device+line collapse (no false duplicates)
+A device and a line are collapsed into one logical **service** for MSISDN matching
+when they are clearly the same service: exactly one device and one line share the
+normalized MSISDN (`device.msisdn == line.did`), on the **same site** and **same
+customer**, with no device-id conflict. The `line.device_id` link is **not**
+required (subscriber-import lines often leave it NULL) — so R&R's device_id-NULL
+pairs collapse to `matched_ok` instead of inflating `duplicate_candidate`.
+Protections are preserved: two devices on one MSISDN, two lines on one MSISDN, a
+line linked to a different device, a site mismatch, or a customer mismatch never
+collapse and still surface as duplicate/ambiguous.
+
 ## What is compared (per customer)
 | Zoho (staged) | True911 |
 |---|---|
