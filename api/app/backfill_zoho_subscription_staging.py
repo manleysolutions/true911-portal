@@ -43,10 +43,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.config import settings  # noqa: E402
 
-# Default Zoho module API name (overridable via --module / first
-# ZOHO_SUBSCRIPTION_MODULES entry).
-DEFAULT_MODULE = (settings.ZOHO_SUBSCRIPTION_MODULES.split(",")[0].strip()
-                  or "Subscription_Mgmt")
+# Default Zoho CRM API module name. NOTE: the LIVE custom module is spelled
+# "Subscription_Mgmnt" (confirmed in the Render shell) — intentionally distinct
+# from the webhook payload label in ZOHO_SUBSCRIPTION_MODULES. Overridable via
+# --module.
+DEFAULT_MODULE = "Subscription_Mgmnt"
+
+# Minimum safe field set requested on the Zoho v5 GET. Custom-module reads return
+# 400 REQUIRED_PARAM_MISSING (fields) without an explicit `fields` param. These
+# map to the staging columns via the webhook extractor's tolerant key index.
+DEFAULT_FIELDS = (
+    "id", "Account_Name", "FacilityName", "Mobile_Number",
+    "Device_Activation_Status", "Subscription_Type", "Connection_Type",
+    "Monthly_Recurring_Charge", "Service_Term_Ends", "Modified_Time",
+)
 
 # Staging tables this tool may write (APPLY mode only). Declared for the report
 # and asserted by tests — operational tables are deliberately NOT in this set.
@@ -65,6 +75,17 @@ def resolve_org_id() -> str:
     """Stable org_id staging rows are keyed on (idempotency)."""
     return (settings.ZOHO_BACKFILL_ORG_ID.strip()
             or settings.ZOHO_CRM_ORG_ID.strip() or "zoho_crm")
+
+
+def resolve_fields(cli_fields: Optional[str] = None) -> str:
+    """Resolve the Zoho `fields` param: --fields > ZOHO_SUBSCRIPTION_FIELDS env >
+    DEFAULT_FIELDS. Returns a normalized comma-separated string."""
+    raw = (cli_fields or settings.ZOHO_SUBSCRIPTION_FIELDS or "").strip()
+    if raw:
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if parts:
+            return ",".join(dict.fromkeys(parts))  # dedupe, preserve order
+    return ",".join(DEFAULT_FIELDS)
 
 
 def _norm_name(s: Optional[str]) -> str:
@@ -93,12 +114,13 @@ def classify_action(existing) -> str:
 
 # ── Zoho read (reuses app.services.zoho_crm OAuth + GET) ──────────────────
 async def fetch_subscription_records(
-    module: str, customer: Optional[str], *, max_pages: int = 100
+    module: str, customer: Optional[str], fields: str, *, max_pages: int = 100
 ) -> list[dict]:
     """Pull Subscription_Mgmt records from Zoho CRM, filtered by account name.
 
-    Read-only against Zoho. Client-side account-name filter keeps it robust to
-    custom field-API-name variance (the webhook extractor is tolerant too).
+    Read-only against Zoho. ``fields`` is the required Zoho v5 `fields` param
+    (comma-separated API names). Client-side account-name filter keeps it robust
+    to custom field-API-name variance (the webhook extractor is tolerant too).
     """
     from app.services import zoho_crm
     from app.services.zoho_subscription_ingest import extract_subscription_fields
@@ -112,7 +134,7 @@ async def fetch_subscription_records(
     page = 1
     while page <= max_pages:
         data = await zoho_crm._zoho_get(
-            f"/{module}", params={"page": page, "per_page": 200})
+            f"/{module}", params={"page": page, "per_page": 200, "fields": fields})
         records = data.get("data") or []
         if not records:
             break
@@ -129,7 +151,7 @@ async def fetch_subscription_records(
 
 # ── orchestration ─────────────────────────────────────────────────────────
 async def run(*, customer: Optional[str], do_all: bool, apply_requested: bool,
-              module: str) -> dict:
+              module: str, fields: str) -> dict:
     from app.database import AsyncSessionLocal
     from sqlalchemy import select
     from app.models.zoho_subscription_record import ZohoSubscriptionRecord
@@ -148,7 +170,7 @@ async def run(*, customer: Optional[str], do_all: bool, apply_requested: bool,
         print("REFUSED to apply: set FEATURE_ZOHO_BACKFILL=true to authorize "
               "staging writes. Running as DRY-RUN instead.\n")
 
-    raw_records = await fetch_subscription_records(module, customer)
+    raw_records = await fetch_subscription_records(module, customer, fields)
     summary["fetched"] = len(raw_records)
 
     mode = "APPLY (staging writes)" if apply else "DRY RUN (no writes)"
@@ -156,6 +178,7 @@ async def run(*, customer: Optional[str], do_all: bool, apply_requested: bool,
     print(f"Zoho Subscription_Mgmt → staging backfill — {mode}")
     print(f"  module={module}  org_id={org_id}  "
           f"filter={customer or '(all)'}  fetched={len(raw_records)}")
+    print(f"  fields={fields}")
     print("=" * 74)
 
     async with AsyncSessionLocal() as db:
@@ -211,11 +234,15 @@ def main() -> None:
                         help="WRITE to staging (requires FEATURE_ZOHO_BACKFILL=true)")
     parser.add_argument("--module", default=DEFAULT_MODULE,
                         help=f"Zoho module API name (default {DEFAULT_MODULE})")
+    parser.add_argument("--fields", default=None,
+                        help="comma-separated Zoho field API names "
+                             "(default: ZOHO_SUBSCRIPTION_FIELDS env or the safe minimum set)")
     args = parser.parse_args()
 
     if not args.customer and not args.do_all:
         print("Specify --customer \"<name>\" or --all.")
         raise SystemExit(2)
+    fields = resolve_fields(args.fields)
     # DRY_RUN=true (if set) forces dry-run even when --apply is passed.
     apply_requested = bool(args.apply)
     dry_run_env = os.environ.get("DRY_RUN")
@@ -223,7 +250,8 @@ def main() -> None:
         apply_requested = False
     try:
         asyncio.run(run(customer=args.customer, do_all=args.do_all,
-                        apply_requested=apply_requested, module=args.module))
+                        apply_requested=apply_requested, module=args.module,
+                        fields=fields))
     except Exception as exc:  # pragma: no cover - connectivity edge
         print(f"\nERROR: backfill aborted — {type(exc).__name__}: {exc}")
         raise SystemExit(1)

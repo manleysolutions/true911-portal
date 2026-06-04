@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
 
 from app.backfill_zoho_subscription_staging import (
+    DEFAULT_FIELDS,
+    DEFAULT_MODULE,
     STAGING_TABLES,
     account_matches,
     classify_action,
+    fetch_subscription_records,
+    resolve_fields,
     resolve_org_id,
     should_apply,
 )
@@ -79,3 +86,72 @@ def test_dry_run_default_documented():
     src = Path(__file__).resolve().parents[1].joinpath(
         "app", "backfill_zoho_subscription_staging.py").read_text(encoding="utf-8")
     assert "DRY RUN" in src and "FEATURE_ZOHO_BACKFILL" in src
+
+
+# ── module name + fields param (Render-confirmed Zoho contract) ──────────
+def test_default_module_is_subscription_mgmnt():
+    assert DEFAULT_MODULE == "Subscription_Mgmnt"   # the live (misspelled) API name
+
+
+def test_default_fields_cover_required_set():
+    for f in ("id", "Account_Name", "FacilityName", "Mobile_Number",
+              "Device_Activation_Status", "Subscription_Type", "Connection_Type",
+              "Monthly_Recurring_Charge", "Service_Term_Ends", "Modified_Time"):
+        assert f in DEFAULT_FIELDS
+
+
+def test_resolve_fields_default_and_overrides(monkeypatch):
+    monkeypatch.setattr("app.config.settings.ZOHO_SUBSCRIPTION_FIELDS", "")
+    assert resolve_fields(None) == ",".join(DEFAULT_FIELDS)
+    # CLI override wins
+    assert resolve_fields("id,Account_Name") == "id,Account_Name"
+    # env override
+    monkeypatch.setattr("app.config.settings.ZOHO_SUBSCRIPTION_FIELDS", "id,FacilityName")
+    assert resolve_fields(None) == "id,FacilityName"
+    # CLI beats env
+    assert resolve_fields("id,Mobile_Number") == "id,Mobile_Number"
+    # dedupe + trim
+    assert resolve_fields(" id , id , Account_Name ") == "id,Account_Name"
+
+
+@pytest.mark.asyncio
+async def test_fields_param_sent_to_zoho(monkeypatch):
+    from app.services import zoho_crm
+    monkeypatch.setattr(zoho_crm, "is_configured", lambda: True)
+    captured = {}
+
+    async def fake_get(path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return {"data": [{"id": "1", "Account_Name": "Webber Infrastructure"}],
+                "info": {"more_records": False}}
+
+    monkeypatch.setattr(zoho_crm, "_zoho_get", AsyncMock(side_effect=fake_get))
+    fields = "id,Account_Name,Device_Activation_Status"
+    out = await fetch_subscription_records("Subscription_Mgmnt", "Webber", fields)
+
+    assert captured["path"] == "/Subscription_Mgmnt"
+    assert captured["params"]["fields"] == fields      # fields param included
+    assert len(out) == 1
+
+
+@pytest.mark.asyncio
+async def test_module_error_propagates_clearly(monkeypatch):
+    from app.services import zoho_crm
+    monkeypatch.setattr(zoho_crm, "is_configured", lambda: True)
+
+    async def boom(path, params=None):
+        raise zoho_crm.ZohoCRMError(f"Zoho API {path}: 400 REQUIRED_PARAM_MISSING fields")
+
+    monkeypatch.setattr(zoho_crm, "_zoho_get", AsyncMock(side_effect=boom))
+    with pytest.raises(zoho_crm.ZohoCRMError, match="REQUIRED_PARAM_MISSING"):
+        await fetch_subscription_records("Subscription_Mgmnt", "Webber",
+                                         ",".join(DEFAULT_FIELDS))
+
+
+@pytest.mark.asyncio
+async def test_not_configured_raises_clear(monkeypatch):
+    from app.services import zoho_crm
+    monkeypatch.setattr(zoho_crm, "is_configured", lambda: False)
+    with pytest.raises(RuntimeError, match="Zoho CRM not configured"):
+        await fetch_subscription_records("Subscription_Mgmnt", "Webber", "id")
