@@ -114,13 +114,21 @@ def classify_action(existing) -> str:
 
 # ── Zoho read (reuses app.services.zoho_crm OAuth + GET) ──────────────────
 async def fetch_subscription_records(
-    module: str, customer: Optional[str], fields: str, *, max_pages: int = 100
+    module: str, customer: Optional[str], fields: str, *,
+    per_page: int = 200, max_pages: int = 10000,
+    max_records: Optional[int] = None,
 ) -> list[dict]:
     """Pull Subscription_Mgmt records from Zoho CRM, filtered by account name.
 
-    Read-only against Zoho. ``fields`` is the required Zoho v5 `fields` param
-    (comma-separated API names). Client-side account-name filter keeps it robust
-    to custom field-API-name variance (the webhook extractor is tolerant too).
+    Read-only against Zoho.  Pagination follows the Zoho v5 contract: page/
+    per_page works only for the first 2000 records (``DISCRETE_PAGINATION_LIMIT_
+    EXCEEDED`` beyond that), after which a ``page_token`` is required.  We use
+    page/per_page until the response carries ``info.next_page_token``, then
+    PREFER the token, and stop when ``more_records`` is false with no token left.
+
+    ``fields`` is the required v5 `fields` param (comma-separated API names).
+    ``max_records`` bounds how many raw records are SCANNED (a dry-run safety
+    cap), independent of the customer filter; ``None`` = unbounded (full backfill).
     """
     from app.services import zoho_crm
     from app.services.zoho_subscription_ingest import extract_subscription_fields
@@ -131,27 +139,46 @@ async def fetch_subscription_records(
             "_REFRESH_TOKEN (run inside the environment that has them).")
 
     out: list[dict] = []
+    scanned = 0
     page = 1
-    while page <= max_pages:
-        data = await zoho_crm._zoho_get(
-            f"/{module}", params={"page": page, "per_page": 200, "fields": fields})
+    page_token: Optional[str] = None
+    pages = 0
+
+    while pages < max_pages:
+        params: dict = {"per_page": per_page, "fields": fields}
+        if page_token:
+            params["page_token"] = page_token       # token flow — no `page`
+        else:
+            params["page"] = page                   # offset flow (first ≤2000)
+        data = await zoho_crm._zoho_get(f"/{module}", params=params)
+        pages += 1
+
         records = data.get("data") or []
+        for raw in records:
+            scanned += 1
+            parsed = extract_subscription_fields(raw)   # do NOT shadow `fields`
+            if not customer or account_matches(customer, parsed.get("account_name")):
+                out.append(raw)
+            if max_records is not None and scanned >= max_records:
+                return out                          # dry-run safety cap reached
         if not records:
             break
-        for raw in records:
-            fields = extract_subscription_fields(raw)
-            if customer and not account_matches(customer, fields.get("account_name")):
-                continue
-            out.append(raw)
-        if not data.get("info", {}).get("more_records"):
-            break
-        page += 1
+
+        info = data.get("info") or {}
+        next_token = info.get("next_page_token")
+        more = bool(info.get("more_records"))
+        if next_token:
+            page_token = next_token                 # prefer token whenever present
+        elif more and not page_token:
+            page += 1                               # still inside the offset window
+        else:
+            break                                   # more_records false & no token
     return out
 
 
 # ── orchestration ─────────────────────────────────────────────────────────
 async def run(*, customer: Optional[str], do_all: bool, apply_requested: bool,
-              module: str, fields: str) -> dict:
+              module: str, fields: str, max_records: Optional[int] = None) -> dict:
     from app.database import AsyncSessionLocal
     from sqlalchemy import select
     from app.models.zoho_subscription_record import ZohoSubscriptionRecord
@@ -170,14 +197,17 @@ async def run(*, customer: Optional[str], do_all: bool, apply_requested: bool,
         print("REFUSED to apply: set FEATURE_ZOHO_BACKFILL=true to authorize "
               "staging writes. Running as DRY-RUN instead.\n")
 
-    raw_records = await fetch_subscription_records(module, customer, fields)
+    raw_records = await fetch_subscription_records(
+        module, customer, fields, max_records=max_records)
     summary["fetched"] = len(raw_records)
+    summary["max_records"] = max_records
 
     mode = "APPLY (staging writes)" if apply else "DRY RUN (no writes)"
     print("=" * 74)
     print(f"Zoho Subscription_Mgmt → staging backfill — {mode}")
     print(f"  module={module}  org_id={org_id}  "
-          f"filter={customer or '(all)'}  fetched={len(raw_records)}")
+          f"filter={customer or '(all)'}  fetched={len(raw_records)}  "
+          f"max_records={max_records if max_records is not None else '(unbounded)'}")
     print(f"  fields={fields}")
     print("=" * 74)
 
@@ -237,6 +267,9 @@ def main() -> None:
     parser.add_argument("--fields", default=None,
                         help="comma-separated Zoho field API names "
                              "(default: ZOHO_SUBSCRIPTION_FIELDS env or the safe minimum set)")
+    parser.add_argument("--max-records", dest="max_records", type=int, default=None,
+                        help="safety cap on how many Zoho records to SCAN "
+                             "(useful for bounded dry-runs; omit for a full backfill)")
     args = parser.parse_args()
 
     if not args.customer and not args.do_all:
@@ -251,7 +284,7 @@ def main() -> None:
     try:
         asyncio.run(run(customer=args.customer, do_all=args.do_all,
                         apply_requested=apply_requested, module=args.module,
-                        fields=fields))
+                        fields=fields, max_records=args.max_records))
     except Exception as exc:  # pragma: no cover - connectivity edge
         print(f"\nERROR: backfill aborted — {type(exc).__name__}: {exc}")
         raise SystemExit(1)
