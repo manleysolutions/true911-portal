@@ -24,6 +24,17 @@ webhook uses.
 - **Lifecycle unchanged** — `lifecycle_state` stays NULL unless the separate
   `FEATURE_ZOHO_STATUS_NORMALIZER` is enabled (same rule the webhook follows).
 
+## Zoho module + fields (Render-confirmed)
+- The live CRM module API name is **`Subscription_Mgmnt`** (misspelled in Zoho —
+  this is now the default; override with `--module`). It is intentionally
+  distinct from the webhook payload label in `ZOHO_SUBSCRIPTION_MODULES`.
+- Zoho v5 custom-module reads **require a `fields` param** (otherwise
+  `400 REQUIRED_PARAM_MISSING fields`). The backfill sends a safe default set:
+  `id, Account_Name, FacilityName, Mobile_Number, Device_Activation_Status,
+  Subscription_Type, Connection_Type, Monthly_Recurring_Charge,
+  Service_Term_Ends, Modified_Time`. Override via `--fields` or the
+  `ZOHO_SUBSCRIPTION_FIELDS` env var (precedence: `--fields` > env > default).
+
 ## Commands
 ```bash
 # Dry-run a single customer (no writes, no flag needed):
@@ -31,6 +42,10 @@ python -m app.backfill_zoho_subscription_staging --customer "Webber Infra"
 
 # Dry-run everything:
 python -m app.backfill_zoho_subscription_staging --all
+
+# Override fields or module if needed:
+python -m app.backfill_zoho_subscription_staging --customer "Webber Infra" \
+  --module "Subscription_Mgmnt" --fields "id,Account_Name,Device_Activation_Status,Modified_Time"
 
 # APPLY for one customer (requires the flag; writes only staging tables):
 FEATURE_ZOHO_BACKFILL=true \
