@@ -107,13 +107,21 @@ def extract_subscription_fields(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
     idx = _index_by_norm(payload)
+    # Account / Parent_Account are CRM-API lookup objects ({name, id}); webhook
+    # payloads send plain strings. Resolve name + id, falling back to the parent.
+    account_val = _get(idx, "Account", "Account_Name", "Account Name")
+    parent_val = _get(idx, "Parent_Account", "Parent Account", "ParentAccount")
     return {
         "subscription_mgmt_id": _coerce_str(
             _get(idx, "Subscription_Mgmt_ID", "Subscription Mgmt ID",
                  "subscription_mgmt_id", "Subscription_ID", "external_record_id",
                  "external_id", "id")
         ),
-        "account_name": _coerce_str(_get(idx, "Account_Name", "Account Name", "Account")),
+        "account_name": (_coerce_str(_lookup_name(account_val))
+                         or _coerce_str(_lookup_name(parent_val))),
+        # Not persisted (no column — would need a migration); retained in raw_json.
+        "external_account_id": (_coerce_str(_lookup_id(account_val))
+                                or _coerce_str(_lookup_id(parent_val))),
         "facility_name": _coerce_str(_get(idx, "FacilityName", "Facility_Name", "Facility Name")),
         "msisdn": _coerce_str(
             _get(idx, "MSISDN", "Mobile_Number", "Mobile Number", "Mobile", "Phone_Number")
@@ -123,9 +131,13 @@ def extract_subscription_fields(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "connection_type": _coerce_str(_get(idx, "Connection_Type", "Connection Type")),
         "subscription_type": _coerce_str(_get(idx, "Subscription_Type", "Subscription Type")),
-        "mrc": _parse_decimal(_get(idx, "Monthly_Recurring_Charge", "Monthly Recurring Charge", "MRC")),
+        "mrc": _parse_decimal(
+            _get(idx, "Monthly_Charges_MS", "Monthly_Recurring_Charge",
+                 "Monthly Recurring Charge", "MRC")
+        ),
         "service_term_ends": _parse_date(
-            _get(idx, "Service_Term_Ends", "Service Term Ends", "Term_End", "term_end_date")
+            _get(idx, "Svc_Term_Ends", "Service_Term_Ends", "Service Term Ends",
+                 "Term_End", "term_end_date")
         ),
     }
 
@@ -135,6 +147,25 @@ def _coerce_str(val: Any) -> Optional[str]:
         return None
     s = str(val).strip()
     return s or None
+
+
+def _lookup_name(val: Any) -> Any:
+    """Resolve a Zoho lookup field to its display name.
+
+    The CRM API returns lookups (Account / Parent_Account) as
+    ``{"name": "...", "id": "..."}``; webhook payloads send a plain string.
+    Pass-through for non-dict values keeps both formats working.
+    """
+    if isinstance(val, dict):
+        return val.get("name") or val.get("Name")
+    return val
+
+
+def _lookup_id(val: Any) -> Any:
+    """Resolve a Zoho lookup field to its record id, or None for a plain string."""
+    if isinstance(val, dict):
+        return val.get("id") or val.get("Id")
+    return None
 
 
 # ── DB writes (staging only) ─────────────────────────────────────────

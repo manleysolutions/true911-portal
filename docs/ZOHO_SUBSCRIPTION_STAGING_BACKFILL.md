@@ -29,11 +29,32 @@ webhook uses.
   this is now the default; override with `--module`). It is intentionally
   distinct from the webhook payload label in `ZOHO_SUBSCRIPTION_MODULES`.
 - Zoho v5 custom-module reads **require a `fields` param** (otherwise
-  `400 REQUIRED_PARAM_MISSING fields`). The backfill sends a safe default set:
-  `id, Account_Name, FacilityName, Mobile_Number, Device_Activation_Status,
-  Subscription_Type, Connection_Type, Monthly_Recurring_Charge,
-  Service_Term_Ends, Modified_Time`. Override via `--fields` or the
-  `ZOHO_SUBSCRIPTION_FIELDS` env var (precedence: `--fields` > env > default).
+  `400 REQUIRED_PARAM_MISSING fields`). The backfill sends the **confirmed**
+  Subscription_Mgmnt field set:
+  `id, Account, Parent_Account, FacilityName, MSISDN, Device_Activation_Status,
+  Subscription_Type, Connection_Type, Monthly_Charges_MS, Svc_Term_Ends,
+  Modified_Time`. Override via `--fields` or the `ZOHO_SUBSCRIPTION_FIELDS` env
+  var (precedence: `--fields` > env > default).
+
+### Field → staging mapping
+`Account` and `Parent_Account` are Zoho **lookup objects** (`{name, id}`); the
+extractor resolves `.name` / `.id` and falls back from Account to Parent_Account.
+The extractor is backward-compatible with the webhook's plain-string spellings.
+
+| Staging field | Zoho API source (with fallbacks) |
+|---|---|
+| `subscription_mgmt_id` | `id` |
+| `account_name` | `Account.name` → `Parent_Account.name` |
+| `external_account_id` * | `Account.id` → `Parent_Account.id` |
+| `facility_name` | `FacilityName` |
+| `msisdn` | `MSISDN` |
+| `device_activation_status` | `Device_Activation_Status` |
+| `connection_type` / `subscription_type` | `Connection_Type` / `Subscription_Type` |
+| `mrc` | `Monthly_Charges_MS` |
+| `service_term_ends` | `Svc_Term_Ends` |
+
+\* `external_account_id` is extracted but **not** persisted to a dedicated column
+(no migration); it is retained in the sanitized `raw_json` snapshot.
 
 ## Pagination (Zoho v5 > 2000 records)
 Zoho v5 offset pagination (`page`/`per_page`) only covers the first **2000**

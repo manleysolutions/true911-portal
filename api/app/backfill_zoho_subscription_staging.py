@@ -49,13 +49,14 @@ from app.config import settings  # noqa: E402
 # --module.
 DEFAULT_MODULE = "Subscription_Mgmnt"
 
-# Minimum safe field set requested on the Zoho v5 GET. Custom-module reads return
-# 400 REQUIRED_PARAM_MISSING (fields) without an explicit `fields` param. These
-# map to the staging columns via the webhook extractor's tolerant key index.
+# Field set requested on the Zoho v5 GET (custom-module reads 400 without an
+# explicit `fields` param). These are the CONFIRMED Subscription_Mgmnt API field
+# names. Account / Parent_Account are lookup objects ({name, id}); the extractor
+# resolves .name / .id. They map to staging columns via the tolerant key index.
 DEFAULT_FIELDS = (
-    "id", "Account_Name", "FacilityName", "Mobile_Number",
+    "id", "Account", "Parent_Account", "FacilityName", "MSISDN",
     "Device_Activation_Status", "Subscription_Type", "Connection_Type",
-    "Monthly_Recurring_Charge", "Service_Term_Ends", "Modified_Time",
+    "Monthly_Charges_MS", "Svc_Term_Ends", "Modified_Time",
 )
 
 # Staging tables this tool may write (APPLY mode only). Declared for the report
