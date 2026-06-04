@@ -223,6 +223,14 @@ class Settings(BaseSettings):
     # (the unique key is (org_id, subscription_mgmt_id)). Falls back to
     # ZOHO_CRM_ORG_ID, then "zoho_crm".
     ZOHO_BACKFILL_ORG_ID: str = ""
+    # ── Customer retirement (gated WRITE, default OFF) ─────────────────
+    # The customer retirement planner (app/plan_customer_retirement.py) is
+    # dry-run-first: it only WRITES (customer/site/device/line status +
+    # external_record_map.map_status) when --apply is passed AND this flag is
+    # "true" AND its hard safety gates pass (Zoho lifecycle De-activated for all
+    # the customer's subscriptions, AND no asset shows recent liveness). It is
+    # strictly customer-scoped, never deletes, and never touches other customers.
+    FEATURE_CUSTOMER_RETIREMENT: str = "false"
     # Comma-separated Zoho field API names the backfill requests on the GET.
     # Zoho CRM v5 requires a `fields` param for custom-module reads. Blank ->
     # the backfill's DEFAULT_FIELDS (id, Account_Name, FacilityName,
