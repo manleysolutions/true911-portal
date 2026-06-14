@@ -4,13 +4,25 @@
 > engineer) can resume work from it alone. Keep it accurate — update it at the end
 > of every session (Operating Loop step 16).
 >
-> Last updated: 2026-06-13. Branch at time of writing: `feat/tmobile-async-callback-location`.
+> Last updated: 2026-06-14. Branch at time of writing: `docs/product-constitution`
+> (documentation-only; not committed at time of writing).
 
 ## 1. Current Objective
 
-Stand up the **project operating system** (this docs set) and use it to drive the
-next phase of work safely. No application behavior is being changed by this task —
-it is documentation and analysis only.
+Capture the approved product vision into **constitution-level documents** that
+guide all future development (the True911 product constitution). No application
+behavior is being changed — this is a **documentation-only** effort. New docs:
+`PRODUCT_MANIFESTO.md`, `ASSURANCE_PLATFORM_SPEC.md`, `CUSTOMER_EXPERIENCE.md`,
+`SCREEN_BY_SCREEN_SPEC.md`, `DESIGN_SYSTEM.md`, `IMPLEMENTATION_MASTER_PLAN.md`;
+plus surgical updates to MISSION / MASTER_PLAN / BACKLOG / PROJECT_STATE /
+ARCHITECTURE. Prior objective (stand up the operating-system docs set) is
+**complete** (PR #113, merged).
+
+The active product direction is the **operating system for life-safety
+communications assurance** (see `docs/PRODUCT_MANIFESTO.md` and
+`docs/ASSURANCE_PLATFORM_SPEC.md`): a read-only, deterministic, explainable
+Assurance Label per device → site → customer, with evidence/proof behind every
+status.
 
 The active product direction is to mature True911 into an **Emergency
 Communications Assurance Platform** (see `docs/MISSION.md` and
@@ -40,19 +52,33 @@ lifecycle, and E911 data.
 
 ## 3. In Progress
 
-- **BACKLOG C1 (private-key remediation)** — ✅ repo cleanup MERGED (PR #112).
-  Rotation deferred as accepted PIT-only risk; now tracked as the **C3
-  pre-production gate**, not active work.
-- **BACKLOG C2 (T-Mobile callback authentication)** — ✅ implemented 2026-06-14
-  behind `FEATURE_TMOBILE_CALLBACK_AUTH` (default off); full suite green (2319
-  passed). On branch `security/tmobile-callback-auth`; PR pending review. HMAC
-  verification deferred to T-Mobile spec. See `docs/TMOBILE_CALLBACK_AUTH.md`.
-- **This operating-system docs set** (MISSION / OPERATING_LOOP / MASTER_PLAN /
-  PROJECT_STATE / BACKLOG / ARCHITECTURE) — created 2026-06-13 (PR #113).
-- **T-Mobile async callback location** — on the current branch; verify merge state.
+- **Product constitution docs** — created 2026-06-14 on branch
+  `docs/product-constitution` (documentation-only; **not yet committed**). 6 new
+  docs + 5 updated. Awaiting user approval before commit/PR.
 - **Integrity / Belle Terre onboarding** — `app/seed_integrity.py` built and tested,
   **not yet applied to prod** (3 LM150 VoLTE elevator phones; first managed-POTS-
   style pilot dataset for the hardware-agnostic health layer).
+- **Assurance Engine PR1** — implemented on branch `feat/assurance-engine-pr1`
+  (backend, read-only, `FEATURE_ASSURANCE_ENGINE` default off); verify merge state
+  and graduate per `docs/IMPLEMENTATION_MASTER_PLAN.md` Track B.
+
+## 3a. Recently Completed (merged 2026-06-14 — verified on GitHub)
+
+- **C1 (private-key repo cleanup)** — ✅ MERGED (PR #112, merge `d6cb9a9`). Key
+  rotation deferred as accepted PIT-only risk → tracked as **C3 pre-production
+  gate**.
+- **Operating-system docs set** (MISSION / OPERATING_LOOP / MASTER_PLAN /
+  PROJECT_STATE / BACKLOG / ARCHITECTURE) — ✅ MERGED (PR #113, merge `ad6b940`).
+- **C2 (T-Mobile callback authentication)** — ✅ MERGED (PR #114, merged
+  04:41Z; merge commit `4b4f27d`). Behind `FEATURE_TMOBILE_CALLBACK_AUTH` (default
+  off); full suite green (2319 passed). HMAC deferred to T-Mobile spec.
+  **Residual:** enable the flag with a provisioned token before any internet-
+  exposed ingest (Track A item A6). See `docs/TMOBILE_CALLBACK_AUTH.md`.
+- **T-Mobile async callback location** — ✅ MERGED (PR #111).
+
+> Note: a local `git fetch` was stale at audit time (origin/main showed pre-#114);
+> GitHub confirms all of the above merged. Local `main` may need a fetch to catch
+> up — no work was lost.
 
 ## 4. Blockers
 
