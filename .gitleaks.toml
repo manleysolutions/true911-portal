@@ -1,0 +1,71 @@
+# True911+ — gitleaks configuration (CI secret scanning)
+#
+# Used by the "Secret scan (gitleaks)" CI job (.github/workflows/ci.yml).
+# The job runs `gitleaks dir` (filesystem / working-tree mode) on a clean
+# checkout, NOT `gitleaks detect` (git-history mode).
+#
+# Why working-tree mode, not history:
+#   - History mode would re-flag the known, accepted PIT-only private key that
+#     remains in git history (BACKLOG C1). Its rotation is a separate, explicit
+#     pre-production gate (BACKLOG C3) — it must not turn every build red here.
+#   - A clean CI checkout contains only committed source (no .venv, node_modules,
+#     or the gitignored secrets/ dir), so working-tree mode scans exactly the
+#     code we are gating: "do not let a NEW secret land in the tree."
+#
+# Path regexes use the [/\\] separator class so the config behaves identically
+# on Linux CI and on Windows developer machines.
+#
+# This config extends gitleaks' default rule set and adds a tuned allowlist.
+# Every allowlist entry below is an intentional, reviewed non-secret. Adding a
+# new entry is a deliberate act: confirm the match is genuinely not a live
+# credential before allowlisting it.
+
+title = "True911 gitleaks config"
+
+[extend]
+# Start from gitleaks' built-in rules, then narrow with the allowlist below.
+useDefault = true
+
+[allowlist]
+description = "True911 reviewed non-secrets and non-source paths"
+
+# Reviewed non-secret VALUES (matched against the finding text, any file).
+# Surgical — does not blanket-allow a whole file.
+regexes = [
+  # localStorage key NAME, not a credential:
+  #   web/src/contexts/AuthContext.jsx  ->  IMPERSONATION_KEY = "t911_impersonation"
+  # The default generic-api-key rule matches the `_KEY = "..."` shape.
+  '''t911_impersonation''',
+]
+
+# Path excludes. These keep local developer runs identical to CI (where these
+# directories do not exist because they are gitignored / not committed).
+paths = [
+  # --- Vendored / generated / environment directories (never first-party source) ---
+  '''(^|[/\\])\.venv[/\\]''',
+  '''(^|[/\\])venv[/\\]''',
+  '''(^|[/\\])node_modules[/\\]''',
+  '''(^|[/\\])dist[/\\]''',
+  '''(^|[/\\])build[/\\]''',
+  '''(^|[/\\])__pycache__[/\\]''',
+  '''\.pyc$''',
+
+  # --- Gitignored local secret material (never committed) ---
+  # The operator's PIT key lives here on a workstation only. It is gitignored;
+  # rotation before any production exposure is tracked as BACKLOG C3.
+  '''(^|[/\\])secrets[/\\]''',
+
+  # --- Tracked, intentional non-secrets ---
+  # Documented placeholder shipped so operators know the env-var loading path.
+  # Contents are literally "THIS IS A PLACEHOLDER — NOT A REAL KEY."
+  '''(^|[/\\])tmobile_private\.pem\.example$''',
+
+  # Setup doc whose example shows a TRUNCATED placeholder key
+  # ("-----BEGIN PRIVATE KEY-----\nMIIE....\n-----END PRIVATE KEY-----").
+  '''(^|[/\\])tmobile_taap_setup\.md$''',
+
+  # Test fixtures that contain deliberately fake credentials for unit tests.
+  # Scoped to the specific files so a real secret added elsewhere is still caught.
+  '''(^|[/\\])tests[/\\]test_webhook_auth\.py$''',
+  '''(^|[/\\])tests[/\\]test_verizon_thingspace\.py$''',
+]
