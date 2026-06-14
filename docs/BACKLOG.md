@@ -121,6 +121,46 @@
 
 ---
 
+## PRODUCT EXPERIENCE (Track B epics)
+
+> Derived from the product constitution (`docs/PRODUCT_MANIFESTO.md`,
+> `ASSURANCE_PLATFORM_SPEC.md`, `CUSTOMER_EXPERIENCE.md`, `SCREEN_BY_SCREEN_SPEC.md`,
+> `DESIGN_SYSTEM.md`). Sequencing + dependencies in
+> `docs/IMPLEMENTATION_MASTER_PLAN.md` (Track B). Each ships flag-gated, read-only
+> first, behind the Track-A foundation gate. **Do not start a customer surface
+> while a Critical (C*) item is open** and not before the E911 data sweep (PE7).
+
+- **PE1 — Assurance Engine graduation** (build on the implemented PR1; portfolio +
+  attention endpoints). Depends on M1 (canonical normalization). *CX, safety-first.*
+- **PE2 — View Proof** — evidence bundle per status (the trust mechanism; answers
+  "Why should I believe this?"). Depends on the Assurance Engine + E911 regression
+  (H6). *Safety / CX.*
+- **PE3 — Morning Test dashboard (Home)** — <15s portfolio snapshot. Depends on
+  PE1 + the E911 data sweep. *CX.*
+- **PE4 — Site experience** — four-axis breakdown + E911 checklist + status +
+  proof. *CX.*
+- **PE5 — Assurance Timeline** — customer / support / audit versions + proof
+  export (read-only aggregation, no new capture). *CX / Support / Compliance.*
+- **PE6 — Installer mobile workflow** — live-online + test-call + E911 verify +
+  "Site Accepted" (ships the managed-POTS playbook; unblocks PR #51). *Safety / CX.*
+- **PE7 — E911 data normalization sweep** — validate active-site addresses before
+  any customer label is exposed (active + unverified E911 = Critical by rule).
+  *Safety. Gating dependency for PE3/PE4.*
+- **PE8 — Support workflow console** — reason codes → recommended action, gated
+  remediation, Zoho Desk escalation. Depends on M4 (worker flag parity). *Support.*
+- **PE9 — Executive dashboard + monthly PDF** — trend, Protected %, Lives
+  Protected, revenue at risk. *Revenue / CX.*
+- **PE10 — Revenue & business-impact layer** — revenue at risk, upsell, churn-risk
+  (read-only over Zoho lifecycle; never writes commercial state). *Revenue.*
+
+> **Standing veto — Features That Should Never Be Built:** the authoritative list
+> is in `docs/ASSURANCE_PLATFORM_SPEC.md §7` (e.g. customer-facing numeric score,
+> autonomous AI life-safety decisions, 911-will-always-connect guarantee, green
+> without explanation, cross-tenant benchmarking, raw vendor telemetry as the
+> primary customer experience). Adding any requires overturning the manifesto.
+
+---
+
 ## IDEAS (unprioritized; validate against MISSION before promoting)
 
 - Customer-facing Assurance portal with the "Recent Manley Activity" timeline

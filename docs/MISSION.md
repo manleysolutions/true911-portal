@@ -3,14 +3,27 @@
 > Living document. Last reviewed: 2026-06-13. Update on any change to product
 > positioning, priority order, or non-negotiable principles.
 
+> **Product constitution:** the highest-altitude product philosophy now lives in
+> `docs/PRODUCT_MANIFESTO.md`, with the platform model in
+> `docs/ASSURANCE_PLATFORM_SPEC.md`. This MISSION doc remains the source of truth
+> for *who we serve*, the *priority order*, and the *non-negotiable principles*.
+
 ## 1. What True911 Is
 
-True911+ is a **mission-critical, life-safety emergency-communications assurance
-platform**. It exists to answer one question for every protected location, on
-demand and truthfully:
+True911+ is the **operating system for life-safety communications assurance** — a
+mission-critical platform that continuously assures every life-safety
+communication path is **operational, compliant, monitored, and provable**. It
+exists to answer one question for every protected location, on demand and
+truthfully:
 
 > **"If someone needs to call 911 from this location right now, will it work — and
 > can we prove it?"**
+
+The **core customer promise** is that the person responsible can answer, in
+seconds and with proof: **"Are my people protected, and can I prove it?"** Every
+feature supports the assurance chain: **Asset → Communication Path → Protection
+Status → Business Impact → Recommended Action → Proof** (see
+`docs/ASSURANCE_PLATFORM_SPEC.md`).
 
 It is **not** a device-monitoring dashboard. Customers do not think in SIMs,
 ICCIDs, SIP registrations, or firmware versions. They think in *locations* and
@@ -84,9 +97,18 @@ above, and leaves `PROJECT_STATE.md` accurate for the next session.
 
 ## 6. Related Documents
 
+**Product constitution (vision):**
+- `docs/PRODUCT_MANIFESTO.md` — guiding product philosophy (governs all docs).
+- `docs/ASSURANCE_PLATFORM_SPEC.md` — the assurance model, statuses, and proof.
+- `docs/CUSTOMER_EXPERIENCE.md` — ideal experience per persona + the Morning Test.
+- `docs/SCREEN_BY_SCREEN_SPEC.md` — finished screens, Assurance Timeline, View Proof.
+- `docs/DESIGN_SYSTEM.md` — the True911 design language.
+- `docs/IMPLEMENTATION_MASTER_PLAN.md` — the two-track build sequence.
+
+**Engineering + process:**
 - `docs/OPERATING_LOOP.md` — how every development session must proceed.
-- `docs/MASTER_PLAN.md` — long-term roadmap.
+- `docs/MASTER_PLAN.md` — long-term roadmap (horizons).
 - `docs/PROJECT_STATE.md` — resumable current state (read this first each session).
 - `docs/BACKLOG.md` — prioritized work.
 - `docs/ARCHITECTURE.md` — system architecture and design decisions.
-- `docs/ASSURANCE_ENGINE.md` — the product spine specification.
+- `docs/ASSURANCE_ENGINE.md` — the product-spine engineering specification.

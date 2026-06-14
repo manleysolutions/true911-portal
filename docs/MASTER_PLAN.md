@@ -9,10 +9,17 @@
 
 ## Guiding Arc
 
-True911 evolves from a telemetry/operations portal into an **Emergency
-Communications Assurance Platform**. The Assurance Engine (`docs/ASSURANCE_ENGINE.md`)
-is the spine that every customer-facing surface reads. The technical strategy is:
-*collect once, normalize per axis, compose into calm labels, never overwrite.*
+True911 evolves from a telemetry/operations portal into the **operating system for
+life-safety communications assurance** (`docs/PRODUCT_MANIFESTO.md`). The Assurance
+Engine (`docs/ASSURANCE_ENGINE.md`) is the spine that every customer-facing surface
+reads. The technical strategy is: *collect once, normalize per axis, compose into
+calm labels, never overwrite.*
+
+> **Two parallel tracks.** Execution now runs on two tracks — **Track A
+> (Foundation Hardening)** and **Track B (Product Experience)** — sequenced in
+> `docs/IMPLEMENTATION_MASTER_PLAN.md`. The horizons below remain the strategic
+> framing; the two-track plan is their execution view. No Track-B customer surface
+> ships while a Track-A Critical foundation item is open.
 
 ---
 

@@ -4,6 +4,15 @@
 > `feat/tmobile-async-callback-location`. Counts below were measured from the repo;
 > if you change structure, update them. Items the author could not fully confirm
 > are marked **Needs Verification**.
+>
+> **Product context:** this doc describes *how the system is built*. For *what we
+> are building and why*, see the product constitution —
+> `docs/PRODUCT_MANIFESTO.md` (philosophy), `docs/ASSURANCE_PLATFORM_SPEC.md` (the
+> assurance model + proof contract), and `docs/ASSURANCE_ENGINE.md` (the
+> deterministic engine that is the architectural spine every customer surface
+> reads). The evidence/proof model (`View Proof`, the Assurance Timeline) is
+> served read-only from existing tables — no new operational columns; see the
+> Assurance Engine spec.
 
 ## 1. System Architecture
 
