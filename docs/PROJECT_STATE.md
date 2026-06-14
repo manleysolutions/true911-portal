@@ -40,10 +40,13 @@ lifecycle, and E911 data.
 
 ## 3. In Progress
 
-- **BACKLOG C1 (private-key remediation)** — repo cleanup committed in this branch;
-  awaiting operator key rotation + Render secret update (not yet pushed / no PR).
+- **BACKLOG C1 (private-key remediation)** — ✅ repo cleanup MERGED (PR #112).
+  Rotation deferred as accepted PIT-only risk; now tracked as the **C3
+  pre-production gate**, not active work.
+- **BACKLOG C2 (T-Mobile callback authentication)** — planning started 2026-06-14
+  (plan-only; awaiting approval before implementation).
 - **This operating-system docs set** (MISSION / OPERATING_LOOP / MASTER_PLAN /
-  PROJECT_STATE / BACKLOG / ARCHITECTURE) — created 2026-06-13.
+  PROJECT_STATE / BACKLOG / ARCHITECTURE) — created 2026-06-13 (PR #113).
 - **T-Mobile async callback location** — on the current branch; verify merge state.
 - **Integrity / Belle Terre onboarding** — `app/seed_integrity.py` built and tested,
   **not yet applied to prod** (3 LM150 VoLTE elevator phones; first managed-POTS-
@@ -61,11 +64,15 @@ lifecycle, and E911 data.
 
 ## 5. Known Risks (snapshot — full list with severity in BACKLOG.md)
 
-1. **Committed private key (C1)** — ⏳ repo cleanup DONE (file removed, `.gitignore`
-   hardened, placeholder + remediation doc added); **key rotation still pending as a
-   manual operator step** (generate new pair, register with T-Mobile, set
-   `TMOBILE_PRIVATE_KEY_PEM` Render secret). Leaked key in history must be treated as
-   compromised. See `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md`. *(Critical/Security)*
+1. **Committed private key (C1)** — ✅ repo cleanup MERGED (PR #112). ⚠️ **Key
+   rotation INTENTIONALLY DEFERRED as an accepted temporary risk (decided
+   2026-06-14):** the leaked key is **PIT/testing-only**, in a non-production,
+   non-customer-facing environment. The key in history remains compromised and
+   **MUST be rotated before any production exposure — hard gate tracked as BACKLOG
+   C3** (external evaluators / customer pilots / production traffic / carrier
+   certification / gov or customer demos). Do not set `TMOBILE_ENV=prod` or
+   `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` for a real account until C3 closes. See
+   `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md`. *(Critical/Security — risk accepted for PIT)*
 2. **T-Mobile PIT callback unauthenticated at app layer** — life-safety-adjacent
    inbound webhook relies solely on Cloudflare WAF + passive IP audit. *(Safety/Security)*
 3. **JWT in `localStorage`** — exposed to XSS token theft. *(Security)*

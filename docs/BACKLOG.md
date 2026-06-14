@@ -12,17 +12,33 @@
 
 ## CRITICAL
 
-- **C1 — Committed private key (`api/tmobile_private.pem`).** ⏳ *Repo cleanup DONE
-  (2026-06-13); key rotation is a pending MANUAL operator step.* An RSA *private*
-  key was tracked in git (commit `a65d7a3`, ancestor of `main` + ~90 branches,
-  pushed to `origin`). **Done in branch:** removed both `.pem` files from the tree,
-  added `api/tmobile_private.pem.example` placeholder, hardened `.gitignore`
-  (root + api), documented env-var loading. No code/behavior changed (env-var
-  loading already existed and is preferred). **Still required (operator, manual):**
-  rotate the key, register new public key with T-Mobile + deregister old, set
-  `TMOBILE_PRIVATE_KEY_PEM` as a Render secret. **Optional/approval-gated:** git
-  history rewrite. Full plan + steps in `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md`.
-  *Security / Safety. Needs Verification (PIT-only vs prod-registered key).*
+- **C1 — Committed private key (`api/tmobile_private.pem`).** ✅ *Repo cleanup MERGED
+  (PR #112, 2026-06-14).* ⚠️ *Key rotation INTENTIONALLY DEFERRED — accepted
+  temporary risk; see C3 gate.* An RSA *private* key was tracked in git (commit
+  `a65d7a3`, ancestor of `main` + ~90 branches, pushed to `origin`). **Done:**
+  removed both `.pem` files from the tree, added `api/tmobile_private.pem.example`
+  placeholder, hardened `.gitignore` (root + api), documented env-var loading. No
+  code/behavior changed (env-var loading already existed and is preferred).
+  **Accepted-risk decision (2026-06-14):** the leaked key is a **PIT/testing-only**
+  credential in a non-production, non-customer-facing environment, so rotation is
+  deferred. The key in history must still be treated as compromised. **Mandatory
+  before any production exposure → tracked as C3 (pre-production gate).** Full plan +
+  rotation steps in `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md`. Git history rewrite
+  remains out of scope (approval-gated). *Security / Safety.*
+- **C3 — PRE-PRODUCTION GATE: rotate the T-Mobile key before any non-PIT exposure.**
+  🚧 *Hard gate. Blocks go-live.* The PIT key leaked in C1 is accepted as a
+  temporary risk **only** while the T-Mobile integration stays in PIT/testing. The
+  key **MUST be rotated** (new pair → register new public key with T-Mobile +
+  deregister old → set `TMOBILE_PRIVATE_KEY_PEM` as a Render secret → verify with
+  `scripts/test_tmobile_taap.py --dry-run`) **before ANY of the following:**
+  - external evaluators / third-party assessment,
+  - customer pilots,
+  - production traffic (real subscribers / live activations),
+  - carrier certification,
+  - government or customer demonstrations.
+  Do not flip `TMOBILE_ENV=prod` or `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` for a
+  real account until this is closed. Owner: operator (manual). Steps:
+  `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md` §5. *Security / Safety.*
 - **C2 — T-Mobile PIT callback has no app-layer authentication.** Inbound carrier
   callback (`/tmobile/wholesale/callback/*`) is unauthenticated; the only controls
   are the Cloudflare WAF and an optional *passive* IP audit that never blocks. For
