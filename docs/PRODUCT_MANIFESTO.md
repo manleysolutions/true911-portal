@@ -1,143 +1,78 @@
 # True911+ — PRODUCT MANIFESTO
 
-> **Constitution-level document.** This is the highest-altitude statement of what
-> True911 is and why it exists. It governs every other document and every product
-> decision. When a feature, screen, or roadmap item conflicts with this manifesto,
-> the manifesto wins. Living document; change only with deliberate intent.
->
-> Read alongside `docs/MISSION.md` (priority order + principles),
-> `docs/ASSURANCE_PLATFORM_SPEC.md` (the model), and
-> `docs/ASSURANCE_ENGINE.md` (the deterministic decision logic).
+> **Narrative companion to the Constitution.** This document tells the *story and
+> philosophy* of True911 in prose. The **binding** rules, priority order, and
+> vetoes live in `CONSTITUTION.md` and are referenced — never restated — here
+> (per `CONSTITUTION.md` P1, Single Source of Truth). If this narrative ever
+> conflicts with the Constitution, the Constitution wins.
+
+| Metadata | |
+|---|---|
+| **Authority Level** | 5 — Subsystem (narrative companion) |
+| **Owner** | Chief Product Officer |
+| **Last Reviewed** | 2026-06-14 |
+| **Change Frequency** | Rare |
+| **Governed By** | `CONSTITUTION.md`, `PRODUCT_VISION.md` |
+| **Detailed In** | `PRODUCT_VISION.md`, `MISSION.md` |
+| **Related Decisions** | `DECISIONS.md` → D-009 (Constitution promoted from this doc) |
 
 ---
 
 ## 1. What True911 Is
 
-**True911 is the operating system for life-safety communications assurance.**
+True911 is the **operating system for life-safety communications assurance**. It is
+not a device dashboard and not merely a 911 verifier — it is the independent system
+of record that turns messy telemetry into a calm, plain-language, **provable**
+answer for every protected location.
 
-It continuously assures that every life-safety communication path is
-**operational, compliant, monitored, and provable** — and it expresses that
-assurance in calm, plain language that a non-technical owner can act on in
-seconds.
+## 2. What Customers Are Buying
 
-True911 is **not** a device dashboard. It is **not** merely a 911 verifier. It is
-an **Assurance Platform**: the independent system of record that answers, for
-every protected location, on demand and truthfully:
-
-> **"If someone calls 911 from this location right now, will it work — and can we
-> prove it?"**
-
-## 2. What Customers Are Actually Buying
-
-Customers are not buying devices, dashboards, SIMs, telemetry, or reports.
-
-**Customers are buying confidence, proof, and reduced operational risk.**
-
-They are buying the ability to answer one question without hesitation:
-
-> **"Are my people protected, and can I prove it?"**
-
-Everything we build is justified only insofar as it strengthens the customer's
-ability to answer that question quickly, honestly, and defensibly.
+Customers are not buying devices, dashboards, SIMs, telemetry, or reports. **They
+are buying confidence, proof, and reduced operational risk** — the ability to
+answer one question without hesitation: *"Are my people protected, and can I prove
+it?"*
 
 ## 3. The Core Story
 
-This exchange is the product. Every screen, label, and feature exists to make it
-true:
+This exchange is the product. Every feature exists to make it true:
 
-> **CEO:** "Are we protected?"
-> **Judy:** "Yes."
-> **CEO:** "How do you know?"
+> **CEO:** "Are we protected?" · **Judy:** "Yes." · **CEO:** "How do you know?" ·
 > **Judy:** "I can prove it."
-
-If a feature does not help Judy say "Yes" with confidence and then **prove it**,
-it does not belong in True911.
 
 ## 4. The Assurance Chain
 
-Every feature must support — and can be located on — this chain. Nothing in the
-product exists outside it:
+Every feature lives on this chain (model detail in `ASSURANCE_PLATFORM_SPEC.md`):
 
 ```
-Asset
-  → Communication Path
-    → Protection Status
-      → Business Impact
-        → Recommended Action
-          → Proof
+Asset → Communication Path → Protection Status → Business Impact
+      → Recommended Action → Proof
 ```
 
-- **Asset** — the physical thing at the location (device, line, SIM, radio).
-- **Communication Path** — the end-to-end route a 911 call would take.
-- **Protection Status** — the calm label (Protected / Attention Needed / Critical
-  / Pending Install / Inactive / Unknown).
-- **Business Impact** — what this means commercially (revenue at risk, accounts
-  affected, compliance exposure).
-- **Recommended Action** — the single safest next step.
-- **Proof** — the evidence that the status is true (timestamps, device/carrier/
-  E911/test/monitoring evidence, Recent Manley activity).
+A status without proof, or a problem without a recommended action, is incomplete.
 
-A feature that produces a status without proof, or a proof without a recommended
-action, is incomplete.
+## 5. Philosophy (the spirit behind the law)
 
-## 5. Guiding Principles (non-negotiable)
+The platform must be **calm, plain-language, defensible, and trustworthy**: no green
+without evidence, no status without proof, deterministic before AI, AI never makes
+autonomous life-safety decisions, separate axes never collapse, read-only and
+additive first, smallest safe change. These are codified as binding principles and
+rules in **`CONSTITUTION.md` §4–§5** — this section is the *why*, the Constitution
+is the *law*.
 
-These extend the `MISSION.md` priority order (Safety > Reliability > Security >
-Data integrity > CX > Support > Scalability > Revenue > Internal) with the product
-philosophy that makes True911 trustworthy:
-
-1. **The platform must be calm, plain-language, defensible, and trustworthy.**
-   Calm beats comprehensive. A customer should feel *reassured*, never alarmed
-   without cause.
-2. **No customer-facing screen shows green without explaining why.** Every
-   positive assurance is paired with the evidence and timestamp behind it.
-3. **No status exists without evidence.** A label is a claim; a claim without
-   proof is not allowed to render.
-4. **Every screen must answer: "Why should I believe this?"** If a screen cannot
-   answer that, it is not finished.
-5. **No AI may make autonomous life-safety decisions.** AI never changes,
-   suppresses, or asserts a life-safety status on its own.
-6. **Deterministic logic comes first.** Every status is produced by deterministic,
-   explainable rules with a deterministic fallback. The platform must behave
-   identically with AI disabled.
-7. **AI may explain, summarize, and assist — only after deterministic truth is
-   established.** AI is an enhancement layered on top of proven truth, never a
-   source of truth.
-8. **Separate axes never collapse.** Commercial-active ≠ operationally healthy ≠
-   E911-verified. A live heartbeat never hides a compliance gap. Missing data is
-   never "healthy."
-9. **Read-only first, additive always.** New intelligence computes and stages; it
-   never overwrites a source-of-truth axis.
-10. **Smallest safe change, flag-gated, with a rollback path.** This is a
-    life-safety system; it changes incrementally.
-
-## 6. The Promise We Make
+## 6. The Promise
 
 > True911 continuously assures that every life-safety communication path is
-> operational, compliant, monitored, and provable — so that the people
-> responsible can answer, in seconds and with proof: **"Are my people protected?"**
+> operational, compliant, monitored, and provable — so the people responsible can
+> answer, in seconds and with proof: **"Are my people protected?"**
 
-## 7. What This Manifesto Forbids
+## 7. What We Refuse To Build
 
-The manifesto is also a list of things we refuse to do. The authoritative list
-lives in `docs/ASSURANCE_PLATFORM_SPEC.md` → *Features That Should Never Be Built*
-and is summarized here as a standing veto:
+The standing veto list (customer-facing score, autonomous AI safety decisions, a
+911-will-always-connect guarantee, green without explanation, cross-tenant
+benchmarking, raw vendor telemetry as the primary experience, …) is authoritative
+in **`CONSTITUTION.md` §7**, with rationale in `ASSURANCE_PLATFORM_SPEC.md`.
 
-- No customer-facing numeric "readiness score."
-- No autonomous AI life-safety decisions or auto-remediation without human
-  approval.
-- No guarantee that 911 will always connect.
-- No green/red without explanation.
-- No raw vendor telemetry as the primary customer experience.
-- No cross-tenant benchmarking.
-- No competing/configurable health scores.
+## 8. Related
 
-## 8. Related Constitution Documents
-
-- `docs/MISSION.md` — who we serve, the priority order, non-negotiable principles.
-- `docs/ASSURANCE_PLATFORM_SPEC.md` — the Assurance model, statuses, and proof.
-- `docs/ASSURANCE_ENGINE.md` — the deterministic decision matrix (engineering spec).
-- `docs/CUSTOMER_EXPERIENCE.md` — the ideal experience per persona.
-- `docs/SCREEN_BY_SCREEN_SPEC.md` — the finished screens.
-- `docs/DESIGN_SYSTEM.md` — the visual + language design language.
-- `docs/IMPLEMENTATION_MASTER_PLAN.md` — the two-track build sequence.
+`CONSTITUTION.md` (law) · `PRODUCT_VISION.md` (positioning + North Star) ·
+`MISSION.md` (audience) · `README.md` (documentation entry point).
