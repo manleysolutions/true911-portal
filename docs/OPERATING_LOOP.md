@@ -2,16 +2,44 @@
 
 > Living document. This is the discipline every development session must follow.
 > It is deliberately heavyweight because True911 is a life-safety platform.
-> Last reviewed: 2026-06-13.
+> Last reviewed: 2026-06-14.
+>
+> **Authority Level:** 4 — Process. **Governed by:** `CONSTITUTION.md`. This
+> document operationalizes the constitutional rules P1–P5; it does not redefine
+> them (`CONSTITUTION.md` §5).
 
-## 0. Before You Touch Anything
+## 0. Before You Touch Anything — AI Session Rule (`CONSTITUTION.md` P4)
 
-1. **Read `docs/PROJECT_STATE.md`** — it is written so a fresh session can resume
-   from it alone. It tells you the current objective, what's in flight, blockers,
-   and known risks.
-2. **Read `docs/MISSION.md` §3** — the priority order is the tiebreaker for every
-   decision below.
-3. Confirm the working branch and that `git status` is clean before starting.
+Start every session at **`README.md`** (the documentation entry point), then in
+order:
+
+1. Read `docs/CONSTITUTION.md` (principles + priority order + P1–P5).
+2. Read `docs/DECISIONS.md` (what was already decided, and why).
+3. Read `docs/PROJECT_STATE.md` (current objective, in-flight, blockers, risks).
+4. Read `docs/MASTER_PLAN.md` (where this fits) and `docs/BACKLOG.md` (priorities).
+5. Build a dependency graph for the task.
+6. Plan → **wait for approval** → implement in the **smallest safe slice** (P5).
+7. Confirm the working branch and that `git status` is clean before starting.
+
+The **priority order** in `CONSTITUTION.md` §3 is the tiebreaker for every decision
+below.
+
+## 0a. Governance Gates (enforce on every change)
+
+- **P1 — Single Source of Truth:** put each new fact in exactly one doc; reference,
+  never copy.
+- **P2 — Documentation Freshness:** a change is not done until docs +
+  `PROJECT_STATE.md` are updated and any decision is recorded in `DECISIONS.md`.
+- **P3 — No Conversation Dependency:** before any work depends on a decision, rule,
+  workflow, or design, confirm it is written in the correct doc; if it exists only
+  in chat, write it first.
+- **P5 — Smallest Safe Slice:** decompose until each slice is independently
+  reviewable, testable, and reversible.
+
+## 0b. Data Steward Workflow
+
+The Data Steward operates `Import → Validate → Reconcile → Approve → Publish`
+(detail: `TRUTH_ENGINE.md` §10) — owning data trustworthiness, not cosmetics.
 
 ## 1. The Loop (run for every objective)
 
