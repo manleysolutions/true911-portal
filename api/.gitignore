@@ -6,3 +6,12 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+
+# Private keys / certs — never commit. *.example placeholders are exempt.
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets/

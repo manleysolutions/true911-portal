@@ -16,6 +16,33 @@ __pycache__/
 
 # Local-only secrets (never commit private keys, certs, tokens)
 api/secrets/
+secrets/
+
+# Private keys, certificates, and key material — NEVER commit these.
+# Tracked *.example placeholders are deliberately NOT matched (different suffix).
+*.pem
+*.key
+*.crt
+*.cert
+*.cer
+*.der
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.asc
+*.gpg
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# Local secret / credential files
+*.secret
+*.secrets
+credentials.json
+service-account*.json
+*.env.secret
 
 # OS
 .DS_Store

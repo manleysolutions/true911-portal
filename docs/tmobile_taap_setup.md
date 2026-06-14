@@ -34,6 +34,18 @@ openssl rsa -in tmobile_private.pem -pubout -out tmobile_public.pem
 
 Keep `tmobile_private.pem` secure — never commit it to git.
 
+> 🔐 **Security guardrails (added 2026-06-13).**
+> - `*.pem`, `*.key`, `*.crt`, and related key material are now git-ignored at the
+>   repo root and in `api/.gitignore`. A real `tmobile_private.pem` you generate
+>   locally will **not** be tracked by git.
+> - A tracked **placeholder** lives at `api/tmobile_private.pem.example` showing the
+>   expected format. It is NOT a usable key.
+> - A private key was previously committed and removed; the key must be treated as
+>   compromised and rotated. See `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md` for the
+>   incident record, rotation steps, and the git-history decision.
+> - **Production never uses a file.** Provide the PEM via the `TMOBILE_PRIVATE_KEY_PEM`
+>   environment variable (Render secret), not `TMOBILE_PRIVATE_KEY_PATH`.
+
 ## 2. Configure Environment Variables
 
 Add to your `.env` file (local) or Render environment variables (production):
