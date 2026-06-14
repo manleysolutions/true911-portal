@@ -1,8 +1,11 @@
 # True911+ — BACKLOG
 
 > Living document. Categorized by urgency, then ranked within category by the
-> `MISSION.md` priority order (Safety > Reliability > Security > Data integrity >
-> CX > Support > Scalability > Revenue > Internal). Last reviewed: 2026-06-13.
+> **priority order in `CONSTITUTION.md` §3**. Last reviewed: 2026-06-14.
+>
+> **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`. The
+> standing "never build" vetoes are authoritative in `CONSTITUTION.md` §7
+> (rationale in `ASSURANCE_PLATFORM_SPEC.md`). Entry point: `README.md`.
 >
 > This backlog is derived from the codebase audit. Items marked **Needs
 > Verification** require confirming a fact before acting. Nothing here authorizes

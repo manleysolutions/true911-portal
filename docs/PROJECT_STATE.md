@@ -1,10 +1,12 @@
 # True911+ — PROJECT STATE
 
-> **Read this first.** This document is written so a future Claude session (or any
-> engineer) can resume work from it alone. Keep it accurate — update it at the end
-> of every session (Operating Loop step 16).
+> **Read this first** (after `CONSTITUTION.md` and `DECISIONS.md` — the AI Session
+> Rule, `CONSTITUTION.md` P4; entry point `README.md`). Written so a future session
+> can resume from it alone. Keep it accurate — update at the end of every session
+> per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
-> Last updated: 2026-06-14. Branch at time of writing: `docs/product-constitution`
+> **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
+> Last updated: 2026-06-14. Branch at time of writing: `docs/docos-integrate-existing`
 > (documentation-only; not committed at time of writing).
 
 ## 1. Current Objective

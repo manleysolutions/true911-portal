@@ -1,18 +1,19 @@
 # True911+ — ARCHITECTURE
 
-> Living document. Last reviewed: 2026-06-13. Reflects the repository as of branch
-> `feat/tmobile-async-callback-location`. Counts below were measured from the repo;
-> if you change structure, update them. Items the author could not fully confirm
-> are marked **Needs Verification**.
+> Living document. Last reviewed: 2026-06-14. Counts below were measured from the
+> repo; if you change structure, update them. Items the author could not fully
+> confirm are marked **Needs Verification**.
 >
-> **Product context:** this doc describes *how the system is built*. For *what we
-> are building and why*, see the product constitution —
-> `docs/PRODUCT_MANIFESTO.md` (philosophy), `docs/ASSURANCE_PLATFORM_SPEC.md` (the
-> assurance model + proof contract), and `docs/ASSURANCE_ENGINE.md` (the
-> deterministic engine that is the architectural spine every customer surface
-> reads). The evidence/proof model (`View Proof`, the Assurance Timeline) is
-> served read-only from existing tables — no new operational columns; see the
-> Assurance Engine spec.
+> **Authority Level:** 2 — Architecture. **Governed by:** `CONSTITUTION.md`.
+> **Entry point:** `README.md`.
+>
+> **Scope split (single source of truth, P1):** this doc describes *how the system
+> is built* (runtime tiers, integrations, event flow). The **canonical entity
+> hierarchy and identity anchors** live in `docs/DATA_MODEL.md`; the **identity
+> resolution / Truth Engine** in `docs/TRUTH_ENGINE.md`. For *what we are building
+> and why*: `CONSTITUTION.md`, `PRODUCT_VISION.md`, `ASSURANCE_PLATFORM_SPEC.md`,
+> and `ASSURANCE_ENGINE.md` (the deterministic engine; the evidence/proof model is
+> served read-only from existing tables — no new operational columns).
 
 ## 1. System Architecture
 
