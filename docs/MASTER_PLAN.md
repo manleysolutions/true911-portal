@@ -1,0 +1,106 @@
+# True911+ — MASTER PLAN
+
+> Long-term roadmap. Living document; sequencing is guided by the `MISSION.md`
+> priority order, not by feature excitement. Last reviewed: 2026-06-13.
+>
+> Phasing principle: **stabilize the foundation (safety/reliability/security)
+> before expanding surface.** Every roadmap item ships flag-gated, additive, and
+> read-only-first where it touches source-of-truth data.
+
+## Guiding Arc
+
+True911 evolves from a telemetry/operations portal into an **Emergency
+Communications Assurance Platform**. The Assurance Engine (`docs/ASSURANCE_ENGINE.md`)
+is the spine that every customer-facing surface reads. The technical strategy is:
+*collect once, normalize per axis, compose into calm labels, never overwrite.*
+
+---
+
+## Horizon 0 — Foundation Hardening (now → next)
+
+*Priority: Safety, Reliability, Security, Data integrity. Must precede major
+feature expansion.*
+
+- **Security baseline:** remediate the committed private key; add app-layer auth to
+  the T-Mobile callback; refuse-to-start on default JWT secret in prod; guard CORS
+  wildcard in prod; plan JWT-off-`localStorage`. (BACKLOG C1, C2, H3, H4, H5)
+- **CI/CD hardening:** lint, frontend smoke tests, coverage floor on safety modules,
+  dependency/secret scanning, `npm ci`. (BACKLOG H1)
+- **Disaster recovery:** verify + rehearse DB backup/restore; document RPO/RTO.
+  (BACKLOG H2)
+- **E911 assurance regression suite** — prove the life-safety path. (BACKLOG H6)
+
+## Horizon 1 — The Assurance Spine
+
+*Priority: Safety, then Customer experience built safety-first.*
+
+- **Assurance Engine backend MVP** — read-only, deterministic, flag-gated, labels
+  only, exhaustive table-driven tests; composes operational / commercial-lifecycle /
+  deployment-lifecycle / E911 axes. (BACKLOG M6; spec in `docs/ASSURANCE_ENGINE.md`)
+- **Health layer graduation** — exit the Health Normalizer soak; extend canonical
+  device state to additional consumers beyond AI Health Summary once proven.
+- **Device Health adapters** — mature the hardware-agnostic adapter set (VOLA,
+  T-Mobile, Telnyx, Inseego, Cisco ATA, MS130) behind `FEATURE_DEVICE_HEALTH`;
+  Belle Terre/Integrity is the pilot dataset, not a special case.
+
+## Horizon 2 — Customer & Device Health Surfaces
+
+- **Customer Health** — per-customer portfolio assurance rollup; reconciliation
+  surfaced to internal ops (already partly built: portfolio reconciliation dashboard).
+- **Device Health UI** — Property Health / per-site drill-down reading the read-only
+  device-health APIs.
+- **Customer portal UX** — calm, plain-language assurance for Cindy/Judy; the
+  "Recent Manley Activity" timeline; no telecom jargon.
+
+## Horizon 3 — Workflows & Operations
+
+- **E911 workflows** — surface E911 out of Admin into a first-class, guided,
+  auditable workflow (address verify, confirmation-required handling, change log).
+- **Support workflows** — mature the support console: deterministic diagnostics,
+  gated self-healing/remediation, Zoho Desk escalation; reduce time-to-safe-fix.
+- **Onboarding/installer experience** — Day-0 guided flow that confirms a site is
+  live and E911 is correct before the installer leaves; managed-POTS playbook
+  (Red Tag Line / US Courts Tampa as first deployment).
+- **Mapping** — geographic health overlay beyond the current `DeploymentMap`.
+
+## Horizon 4 — Enterprise, Mobile, API
+
+- **Enterprise reporting** — defensible compliance reports and exports for Judy's
+  hundreds of locations; scheduled report/PDF generation (deferred in Assurance MVP).
+- **Mobile experience** — installer-first mobile flow; responsive assurance views.
+- **API strategy** — read-only customer-facing API so enterprises can pull their
+  own assurance state; versioned, tenant-scoped, rate-limited.
+
+## Horizon 5 — AI Capabilities (deterministic-first, gated)
+
+- **LLLM graduation** — Phase 1b external egress only after governance approval
+  (`docs/AI_OPERATIONAL_SAFETY.md`); always with deterministic fallback and
+  per-tenant token caps.
+- **AI Health Summary** expansion to more scopes once the deterministic baseline is
+  trusted.
+- **AI-assisted support** — remediation suggestions surfaced to techs, never
+  auto-applied to life-safety state without human confirmation.
+
+## Cross-Cutting Tracks (continuous across all horizons)
+
+- **Scalability** — keep hot paths (Command Center, health sync cron, assurance
+  rollups) query-bounded; plan for Postgres/Redis growth beyond starter plans;
+  watch the `*/5` health-sync cost as device count grows.
+- **Disaster recovery** — backups, restore drills, runbooks; multi-region is a
+  later consideration.
+- **Security** — periodic dependency + secret scans, webhook-auth coverage for
+  every inbound integration, tenant-isolation tests, secret rotation cadence.
+- **Testing strategy** — backend pytest stays the gate; add frontend tests; add
+  table-driven tests for every new normalization/label mapping; soak new behavior
+  behind flags with runbooks before graduation.
+- **Monitoring** — build on `X-Request-ID` request logging; add health/SLO
+  dashboards, alerting on webhook failures, job-queue depth, and false-state
+  detection; daily soak runbooks (already practiced for T-Mobile callback).
+- **Documentation** — keep this docs set and `PROJECT_STATE.md` current every
+  session; add a `docs/README.md` index; per-flag graduation notes.
+
+## Sequencing Rule
+
+Do not start a Horizon-2+ feature while a Horizon-0 Critical item is open. Safety
+and reliability debt is paid down first. Each horizon item enters work only through
+the Operating Loop, smallest-safe-change first, flag-gated.
