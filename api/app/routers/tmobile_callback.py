@@ -4,10 +4,18 @@ Includes the original generic /callback (single bring-up probe) plus the
 six event-specific paths T-Mobile uses for callback validation against
 https://pit-api.manleysolutions.com.
 
-These endpoints are intentionally unauthenticated for now — they exist
-so T-Mobile's callback validator can confirm DNS/TLS/routing reach the
-target paths. Signature/IP validation will be added once T-Mobile
-provides their final callback signing requirements.
+Reachability probes (GET) are unauthenticated so T-Mobile's callback
+validator can confirm DNS/TLS/routing reach the target paths.
+
+Authenticity of state-changing POSTs is gated at the INGEST step (C2):
+when FEATURE_TMOBILE_CALLBACK_AUTH is on, a callback is only archived +
+enqueued (i.e. allowed to mutate Device state) if it presents the shared
+secret (X-True911-Callback-Token header or ?token= query) and, when
+TMOBILE_CALLBACK_IP_ENFORCE is on, arrives from an allowlisted source.
+A failed check is logged and dropped; the handler still returns HTTP 200
+to preserve the validator contract.  HMAC signature verification remains
+deferred until T-Mobile publishes a callback-signing spec.  See
+app/security/tmobile_callback_auth.py and docs/TMOBILE_CALLBACK_AUTH.md.
 
 Logging policy (per requirement #7):
   Log method, path, event, query params, and a safe body preview.
@@ -29,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.dependencies import get_db
 from app.models.integration_payload import IntegrationPayload
+from app.security.tmobile_callback_auth import check_callback_auth
 from app.services import job_service
 
 logger = logging.getLogger("true911.tmobile_callback")
@@ -120,6 +129,18 @@ async def _maybe_archive(
     """
     if not _ingest_enabled():
         return
+    # C2: authenticity gate.  When FEATURE_TMOBILE_CALLBACK_AUTH is off this
+    # is always authentic (byte-identical to pre-C2).  When on, an
+    # unauthenticated callback is logged and dropped here — never archived,
+    # never promoted to Device state — while the handler still returns 200.
+    auth = check_callback_auth(request)
+    if not auth.authentic:
+        logger.warning(
+            "T-Mobile callback ingest DENIED | event=%s | reason=%s | "
+            "method=%s | path=%s — skipping archive, returning 200",
+            event_type, auth.reason, request.method, request.url.path,
+        )
+        return
     try:
         await _archive_tmobile_callback(request, event_type, db)
     except Exception:
@@ -141,6 +162,23 @@ def _safe_headers(headers) -> dict[str, str]:
     """Return a header dict with sensitive values redacted."""
     redacted: dict[str, str] = {}
     for name, value in headers.items():
+        if _SENSITIVE_HEADER_RE.search(name):
+            redacted[name] = "[REDACTED]"
+        else:
+            redacted[name] = value
+    return redacted
+
+
+def _safe_query(query_params) -> dict[str, str]:
+    """Return query params with auth/token/secret-like values redacted.
+
+    The C2 callback-auth token may travel as ``?token=...`` in the URL we
+    register with T-Mobile, so query params must be scrubbed before
+    logging exactly as headers are — otherwise the shared secret would
+    leak into the log stream.
+    """
+    redacted: dict[str, str] = {}
+    for name, value in query_params.items():
         if _SENSITIVE_HEADER_RE.search(name):
             redacted[name] = "[REDACTED]"
         else:
@@ -186,7 +224,7 @@ async def _log_callback(request: Request, event: str, *, include_body: bool) -> 
         request.method,
         request.url.path,
         event,
-        dict(request.query_params),
+        _safe_query(request.query_params),
         _safe_headers(request.headers),
         body_preview,
     )
@@ -205,7 +243,7 @@ async def tmobile_wholesale_callback(request: Request):
     logger.info(
         "T-Mobile PIT callback received | method=%s | query=%s | headers=%s | body=%s",
         request.method,
-        dict(request.query_params),
+        _safe_query(request.query_params),
         _safe_headers(request.headers),
         body_preview,
     )
@@ -218,7 +256,7 @@ async def tmobile_wholesale_callback_probe(request: Request):
     """Manual liveness probe (curl/browser). Not used by T-Mobile."""
     logger.info(
         "T-Mobile PIT callback GET probe | query=%s | headers=%s",
-        dict(request.query_params),
+        _safe_query(request.query_params),
         _safe_headers(request.headers),
     )
     return {"success": True, "message": "callback received"}

@@ -269,11 +269,21 @@ The two surface-containment tests at the bottom of `test_tmobile_callback_integr
 
 ## Known gaps (deliberate, documented in code + tests)
 
-1. **Inbound signature verification not implemented.** T-Mobile has not published their callback signing spec. Current callback endpoints accept any payload. **Mitigations to apply at the operator/network layer:**
-   - IP allowlist via Render / Cloudflare to T-Mobile's source CIDRs.
-   - Keep the flag OFF in any environment exposed to the public internet until either signing is implemented OR the IP allowlist is verified.
-   - Document the gap in operator runbook so anyone enabling the flag knows.
-   See `docs/TMOBILE_INTEGRATION_AUDIT.md` §6 risk #1 for the threat model.
+1. **Inbound *signature* verification not implemented** (HMAC), still pending
+   T-Mobile's signing spec. **However, app-layer callback authentication now
+   exists (C2)** — see `docs/TMOBILE_CALLBACK_AUTH.md`. With
+   `FEATURE_TMOBILE_CALLBACK_AUTH=true`, ingest requires a shared-secret token
+   (`X-True911-Callback-Token` header or `?token=` query) and optional enforced IP
+   allowlist; a failed check is logged and dropped while the endpoint still returns
+   200. This closes the spoofing / false-state-injection gap without depending on
+   T-Mobile signing. **Recommended posture:**
+   - Enable `FEATURE_TMOBILE_CALLBACK_AUTH` (with a provisioned token) before
+     `FEATURE_TMOBILE_CALLBACK_INGEST` is trusted on any internet-exposed env.
+   - Keep the IP allowlist (Cloudflare and/or `TMOBILE_CALLBACK_IP_ENFORCE`) as
+     defense-in-depth.
+   - Add HMAC verification when T-Mobile publishes the spec
+     (`services/webhook_auth.py` helper is ready).
+   See `docs/TMOBILE_INTEGRATION_AUDIT.md` §6 risk #1 for the original threat model.
 
 2. **No idempotency check.** Same callback arriving twice (T-Mobile retries on transient failure) writes `last_network_event = now` twice. Both writes are effectively the same value within a second, so this is harmless operationally — but it means our archive contains duplicates. Phase 1c can add a SELECT-before-promote check using `(source, hash(body))`. Skipped here to avoid a schema change.
 
@@ -291,12 +301,12 @@ The two surface-containment tests at the bottom of `test_tmobile_callback_integr
 
 | Surface | Defense |
 |---|---|
-| Inbound callback authenticity | **Not implemented** (known gap). Operator must use IP allowlist + flag-off-by-default until T-Mobile spec lands. |
+| Inbound callback authenticity | **App-layer auth available (C2)** — `FEATURE_TMOBILE_CALLBACK_AUTH` gates ingest on a shared-secret token (header or query, constant-time) + optional enforced IP allowlist. Default off; enable with a provisioned token before any internet-exposed ingest. HMAC sig still deferred to T-Mobile spec. See `docs/TMOBILE_CALLBACK_AUTH.md`. |
 | Inbound callback PII exposure in logs | ICCID/MSISDN passed through `_redact_identifier()` before any log line. Raw body never logged in normal operation (debug-only). |
 | Inbound callback PII exposure in archive | `IntegrationPayload` retains raw body + headers — accepted; this is the existing pattern for Telnyx / VOLA. Access to `integration_payloads` is RBAC-gated. |
 | Cross-tenant write | Sim.iccid UNIQUE constraint + MSISDN ambiguity refusal — structurally impossible to write to the wrong tenant. Static test guards. |
 | Replay | `TMOBILE_CALLBACK_MAX_AGE_SECONDS` (default 600) — events older than 10 min are archived but not promoted. |
-| Spoofing | **Not defended** (no sig verification). Same mitigations as authenticity above. |
+| Spoofing | **Defended (C2)** when `FEATURE_TMOBILE_CALLBACK_AUTH=true`: forged callbacks without the shared-secret token are logged and dropped (no archive/promote), still 200. Without the flag, undefended — same mitigations as authenticity above. |
 | HTTP 5xx leaking to T-Mobile | Archive exceptions swallowed; handler always returns 200. Tested. |
 | Worker hijack (non-tmobile job dispatched to processor) | Worker checks `source == "tmobile"` before delegation. Tested (`test_flag_on_but_non_tmobile_source_uses_legacy_stub`). |
 

@@ -43,8 +43,10 @@ lifecycle, and E911 data.
 - **BACKLOG C1 (private-key remediation)** — ✅ repo cleanup MERGED (PR #112).
   Rotation deferred as accepted PIT-only risk; now tracked as the **C3
   pre-production gate**, not active work.
-- **BACKLOG C2 (T-Mobile callback authentication)** — planning started 2026-06-14
-  (plan-only; awaiting approval before implementation).
+- **BACKLOG C2 (T-Mobile callback authentication)** — ✅ implemented 2026-06-14
+  behind `FEATURE_TMOBILE_CALLBACK_AUTH` (default off); full suite green (2319
+  passed). On branch `security/tmobile-callback-auth`; PR pending review. HMAC
+  verification deferred to T-Mobile spec. See `docs/TMOBILE_CALLBACK_AUTH.md`.
 - **This operating-system docs set** (MISSION / OPERATING_LOOP / MASTER_PLAN /
   PROJECT_STATE / BACKLOG / ARCHITECTURE) — created 2026-06-13 (PR #113).
 - **T-Mobile async callback location** — on the current branch; verify merge state.
@@ -73,8 +75,11 @@ lifecycle, and E911 data.
    certification / gov or customer demos). Do not set `TMOBILE_ENV=prod` or
    `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` for a real account until C3 closes. See
    `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md`. *(Critical/Security — risk accepted for PIT)*
-2. **T-Mobile PIT callback unauthenticated at app layer** — life-safety-adjacent
-   inbound webhook relies solely on Cloudflare WAF + passive IP audit. *(Safety/Security)*
+2. **T-Mobile PIT callback authenticity (C2)** — ✅ app-layer auth now available
+   (`FEATURE_TMOBILE_CALLBACK_AUTH`, default off): shared-secret token + optional
+   enforced IP allowlist gate ingest. **Residual:** flag must be enabled with a
+   provisioned token before any internet-exposed ingest; HMAC sig still pending
+   T-Mobile spec. *(Safety/Security — mitigation built, enablement pending)*
 3. **JWT in `localStorage`** — exposed to XSS token theft. *(Security)*
 4. **CORS wildcard default + credentials** — safe in prod (explicit origins) but a
    foot-gun if the default ever ships. *(Security)*

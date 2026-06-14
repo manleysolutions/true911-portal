@@ -39,14 +39,17 @@
   Do not flip `TMOBILE_ENV=prod` or `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` for a
   real account until this is closed. Owner: operator (manual). Steps:
   `docs/TMOBILE_PRIVATE_KEY_REMEDIATION.md` §5. *Security / Safety.*
-- **C2 — T-Mobile PIT callback has no app-layer authentication.** Inbound carrier
-  callback (`/tmobile/wholesale/callback/*`) is unauthenticated; the only controls
-  are the Cloudflare WAF and an optional *passive* IP audit that never blocks. For
-  a life-safety platform this is a spoofing / false-state-injection vector once
-  `FEATURE_TMOBILE_CALLBACK_INGEST` promotes payloads to device state. **Action:**
-  add signed-token or HMAC verification (coordinate with T-Mobile on what they can
-  sign), or at minimum enforce (not just log) source IP at the app layer as
-  defense-in-depth. *Safety / Security.*
+- **C2 — T-Mobile PIT callback app-layer authentication.** ✅ *Implemented behind
+  `FEATURE_TMOBILE_CALLBACK_AUTH` (default off); PR pending review.* Ingest is now
+  gated on a shared-secret token (`X-True911-Callback-Token` header or `?token=`
+  query, constant-time) plus optional enforced IP allowlist
+  (`TMOBILE_CALLBACK_IP_ENFORCE`); a failed check is logged and dropped while the
+  endpoint still returns HTTP 200. The token is redacted from query logs. Closes
+  the spoofing / false-state-injection vector without depending on T-Mobile
+  signing. **Follow-ups:** add HMAC verification when T-Mobile publishes a callback
+  signing spec (`services/webhook_auth.py` helper ready); enable the flag with a
+  provisioned token before any internet-exposed ingest. See
+  `docs/TMOBILE_CALLBACK_AUTH.md`. *Safety / Security.*
 
 ---
 

@@ -109,6 +109,37 @@ class Settings(BaseSettings):
         "206.29.176.74-206.29.176.79,208.54.104.32-208.54.104.37"
     )
 
+    # ── T-Mobile Callback Authentication (gates INGEST, default OFF) ──
+    # App-layer authenticity check for the T-Mobile PIT callback URLs.
+    # When "false" (default) the callback endpoints behave exactly as
+    # today — no authentication, ingest gated only by
+    # FEATURE_TMOBILE_CALLBACK_INGEST.  When "true", a callback may only
+    # ARCHIVE + enqueue (i.e. mutate Device state via the worker) if it
+    # presents the shared secret AND (when IP enforcement is on) arrives
+    # from an allowlisted source.  On a failed check the handler logs a
+    # structured WARNING and SKIPS ingest, but STILL returns HTTP 200 —
+    # the always-200 PIT-validator contract is preserved end-to-end.
+    #
+    # This defends the spoofing / false-state-injection vector: without
+    # it, anyone who can reach the URL could promote a stale/forged
+    # network event and make an offline life-safety line read CONNECTED.
+    # GET reachability probes are unaffected (they mutate nothing).
+    # See docs/TMOBILE_CALLBACK_AUTH.md.
+    FEATURE_TMOBILE_CALLBACK_AUTH: str = "false"
+    # Shared secret T-Mobile must echo back on every callback, either as
+    # the X-True911-Callback-Token header (preferred) or a ?token=...
+    # query param embedded in the call-back-location URL we register.
+    # Compared in constant time.  Empty while FEATURE_TMOBILE_CALLBACK_AUTH
+    # is "true" => fail closed (skip ingest, error log, never 500).
+    # Dashboard-managed secret (Render env, sync:false) — never in git.
+    TMOBILE_CALLBACK_TOKEN: str = ""
+    # When "true" (and FEATURE_TMOBILE_CALLBACK_AUTH is on), additionally
+    # require the CF-Connecting-IP to fall inside TMOBILE_CALLBACK_SOURCE_IPS
+    # before ingesting — defense-in-depth on top of the token.  When
+    # "false" (default) the token alone authenticates; the existing
+    # passive FEATURE_TMOBILE_CALLBACK_IP_AUDIT logging is unaffected.
+    TMOBILE_CALLBACK_IP_ENFORCE: str = "false"
+
     # ── Health Normalization Layer (MVP — AI Health Summary only) ──
     # When "false" (default) the AI Health Summary uses its existing
     # heartbeat-only derivation in app/services/llm/context.py.  When
