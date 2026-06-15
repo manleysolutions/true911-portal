@@ -11,12 +11,21 @@
 
 ## 1. Current Objective
 
-**Phase 0 / PR-1a — Identity Engine foundation.** Implement the pure, deterministic
-`IdentityResolver` (`api/app/services/identity/`): proof-chain-first
-(`Facts → Proof Chain → Decision`), Resolved/Ambiguous/Orphan derived from the
-chain, never guesses. **Inert** — nothing in the running app imports it (no
-router/endpoint/flag/write/migration). Table-driven tests added; full suite green
-(2343 passed). See `TRUTH_ENGINE.md` and `DECISIONS.md` D-011…D-014.
+**Phase 0 / PR-1b1 — read-only Identity Audit (loader + aggregation).** Done on
+branch `feat/identity-audit`: `services/identity/loader.py` (read-only, bounded
+SELECTs → resolver facts; pure `build_dataset`) + `services/identity/audit.py`
+(pure `run_identity_audit` → totals / by_reason / by_match_basis / gaps / E911
+three-dimension metrics / Truth Score component seeds / bounded samples). **Inert**
+— nothing in the running app imports it (no router/endpoint/flag/write/migration).
++13 tests; full suite green (2356 passed). E911 reported as three distinct
+dimensions (`DECISIONS.md` D-015). **Next slice: PR-1b2** (SuperAdmin endpoint +
+`FEATURE_TRUTH_ENGINE` + internal→external mapping).
+
+**Phase 0 / PR-1a — Identity Engine foundation** *(merged, PR #119).* The pure,
+deterministic `IdentityResolver` (`api/app/services/identity/resolver.py`):
+proof-chain-first (`Facts → Proof Chain → Decision`), Resolved/Ambiguous/Orphan
+derived from the chain, never guesses. See `TRUTH_ENGINE.md` and `DECISIONS.md`
+D-011…D-014.
 
 Completed since last update: the **Documentation Operating System** is live
 (PRs #117/#118 merged) — Constitution, Product Vision (+North Star), Data Model,

@@ -8,6 +8,13 @@ See ``docs/TRUTH_ENGINE.md``.
 from __future__ import annotations
 
 from . import reason_codes
+from .audit import run_identity_audit
+from .loader import (
+    IdentityDataset,
+    SiteE911Facts,
+    build_dataset,
+    load_identity_dataset,
+)
 from .resolver import (
     CustomerFacts,
     DeviceFacts,
@@ -28,6 +35,11 @@ from .resolver import (
 __all__ = [
     "reason_codes",
     "resolve_device",
+    "run_identity_audit",
+    "load_identity_dataset",
+    "build_dataset",
+    "IdentityDataset",
+    "SiteE911Facts",
     "ResolverInput",
     "HierarchyResolution",
     "ProofLink",
