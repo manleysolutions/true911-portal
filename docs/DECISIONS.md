@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-011 recorded; latest ID: D-011 |
+| **Status** | Active — D-001 … D-014 recorded; latest ID: D-014 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -113,3 +113,36 @@ Decision · Consequences.
   frontend, no `permissions.json` change (reuse `GLOBAL_ADMIN`). Recommended split:
   PR-1a pure resolver + tests, then PR-1b audit + endpoint.
 - **Consequences:** Implementation pending approval. Design in `TRUTH_ENGINE.md`.
+
+### D-012 — Layered engine architecture; "Identity Engine" subsystem
+- **Date:** 2026-06-14 · **Status:** Accepted
+- **Decision:** Adopt the stack **Reality → Identity Engine → Truth Engine →
+  Assurance Engine → AI → Automation.** The identity-resolution subsystem is the
+  **Identity Engine**; its pure deterministic core is the **IdentityResolver**.
+  Documented within `TRUTH_ENGINE.md` for now; promote to a dedicated
+  `IDENTITY_ENGINE.md` only if it grows.
+- **Consequences:** Naming/framing; the Truth Engine's **Truth Score** (composite:
+  Identity, Hierarchy, Data Completeness, API Freshness, E911 Completeness)
+  unifies with the earlier "Data Health Score" — one metric, name "Truth Score";
+  definition in `TRUTH_ENGINE.md`, KPI in `PRODUCT_VISION.md`. Not built in PR-1a.
+
+### D-013 — Proof Chain is the canonical resolver artifact
+- **Date:** 2026-06-14 · **Status:** Accepted
+- **Decision:** The resolver builds **Facts → Proof Chain → Decision**. The
+  `proof_chain` (ordered, explainable evidence links) is the canonical output;
+  resolution status is **derived** from it. `proof_chain` is part of the canonical
+  contract from PR-1a (locking it now avoids a later breaking change to a
+  foundational component).
+- **Consequences:** Output set is `status · proof_chain · reason_codes ·
+  match_basis · suggestions · confidence` + hierarchy projections; confidence is a
+  ranking aid only, not the primary justification.
+
+### D-014 — Internal vs external resolution vocabularies (separate layers)
+- **Date:** 2026-06-14 · **Status:** Accepted
+- **Decision:** The resolver emits only the **internal** machine verdict
+  (Resolved / Ambiguous / Orphan). The **external** vocabulary
+  (Verified / Supported / Suggested / Unknown) is a presentation mapping applied in
+  a later layer, never inside the pure resolver.
+- **Consequences:** PR-1a stays internal-only; mapping (Resolved→Verified;
+  weaker-basis→Supported; suggestion→Suggested; else→Unknown) recorded for the
+  audit/console PR. Both vocabularies added to `GLOSSARY.md` later.

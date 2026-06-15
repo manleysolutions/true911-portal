@@ -11,26 +11,23 @@
 
 ## 1. Current Objective
 
-Capture the approved product vision into **constitution-level documents** that
-guide all future development (the True911 product constitution). No application
-behavior is being changed — this is a **documentation-only** effort. New docs:
-`PRODUCT_MANIFESTO.md`, `ASSURANCE_PLATFORM_SPEC.md`, `CUSTOMER_EXPERIENCE.md`,
-`SCREEN_BY_SCREEN_SPEC.md`, `DESIGN_SYSTEM.md`, `IMPLEMENTATION_MASTER_PLAN.md`;
-plus surgical updates to MISSION / MASTER_PLAN / BACKLOG / PROJECT_STATE /
-ARCHITECTURE. Prior objective (stand up the operating-system docs set) is
-**complete** (PR #113, merged).
+**Phase 0 / PR-1a — Identity Engine foundation.** Implement the pure, deterministic
+`IdentityResolver` (`api/app/services/identity/`): proof-chain-first
+(`Facts → Proof Chain → Decision`), Resolved/Ambiguous/Orphan derived from the
+chain, never guesses. **Inert** — nothing in the running app imports it (no
+router/endpoint/flag/write/migration). Table-driven tests added; full suite green
+(2343 passed). See `TRUTH_ENGINE.md` and `DECISIONS.md` D-011…D-014.
+
+Completed since last update: the **Documentation Operating System** is live
+(PRs #117/#118 merged) — Constitution, Product Vision (+North Star), Data Model,
+Truth Engine, Decisions, Glossary, README; existing docs defer to it. **CI secret
+scanning** (gitleaks, PR #116) is live and blocking.
 
 The active product direction is the **operating system for life-safety
-communications assurance** (see `docs/PRODUCT_MANIFESTO.md` and
-`docs/ASSURANCE_PLATFORM_SPEC.md`): a read-only, deterministic, explainable
-Assurance Label per device → site → customer, with evidence/proof behind every
-status.
-
-The active product direction is to mature True911 into an **Emergency
-Communications Assurance Platform** (see `docs/MISSION.md` and
-`docs/ASSURANCE_ENGINE.md`): a read-only, deterministic, explainable Assurance
-Label per device → site → customer, layered on the existing telemetry, health,
-lifecycle, and E911 data.
+communications assurance** (`CONSTITUTION.md`, `PRODUCT_VISION.md`): a read-only,
+deterministic, explainable Assurance Label per device → site → customer, with
+evidence/proof behind every status. The **Identity Engine** is the first layer
+(Reality → Identity Engine → Truth Engine → Assurance Engine → AI → Automation).
 
 ## 2. Completed Work (recent, from git history + project memory)
 

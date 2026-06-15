@@ -5,9 +5,26 @@
 > This document captures designs previously held only in conversation, per
 > `CONSTITUTION.md` P3 (No Conversation Dependency).
 >
-> **Status: DESIGNED — not yet implemented.** First slice (read-only Identity
-> Resolution Audit) is planned; nothing here changes runtime behavior until built
-> behind `FEATURE_TRUTH_ENGINE` (default off).
+> **Status: PARTIAL.** Phase 0 / **PR-1a is implemented** — the pure
+> `IdentityResolver` core (`api/app/services/identity/`), proof-chain-first, with
+> table-driven tests. It is **inert**: nothing in the running app imports it yet
+> (no router/endpoint/flag/write). The read-only audit endpoint and Data Health
+> console remain designed-not-built (PR-1b+), gated behind `FEATURE_TRUTH_ENGINE`
+> (default off). See `DECISIONS.md` D-012/D-013/D-014.
+>
+> **Engine framing (D-012):** this is the **Identity Engine** (subsystem); the pure
+> function is the **IdentityResolver** (core). Stack: Reality → Identity Engine →
+> Truth Engine → Assurance Engine → AI → Automation.
+>
+> **Canonical artifact (D-013):** **Facts → Proof Chain → Decision.** The resolver
+> builds the `proof_chain` (ordered, explainable evidence links); the status
+> (Resolved/Ambiguous/Orphan) is **derived** from it. Output:
+> `status · proof_chain · reason_codes · match_basis · suggestions · confidence`
+> + hierarchy projections. Confidence is a ranking aid, not the justification.
+>
+> **Internal vs external (D-014):** the resolver emits only the internal verdict
+> (Resolved/Ambiguous/Orphan); the external vocabulary
+> (Verified/Supported/Suggested/Unknown) is a later presentation layer.
 
 | Metadata | |
 |---|---|
