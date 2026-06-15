@@ -1,7 +1,11 @@
 # True911+ — MASTER PLAN
 
-> Long-term roadmap. Living document; sequencing is guided by the `MISSION.md`
-> priority order, not by feature excitement. Last reviewed: 2026-06-13.
+> Long-term roadmap. Living document; sequencing is guided by the **priority order
+> in `CONSTITUTION.md` §3**, not by feature excitement. Last reviewed: 2026-06-14.
+>
+> **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`,
+> `PRODUCT_VISION.md`. Each roadmap item should name which **North Star** metric it
+> moves (`PRODUCT_VISION.md` §2). Entry point: `README.md`.
 >
 > Phasing principle: **stabilize the foundation (safety/reliability/security)
 > before expanding surface.** Every roadmap item ships flag-gated, additive, and
