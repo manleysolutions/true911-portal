@@ -133,12 +133,18 @@
 > first, behind the Track-A foundation gate. **Do not start a customer surface
 > while a Critical (C*) item is open** and not before the E911 data sweep (PE7).
 
-- **PE0 — Truth Engine / Identity Engine.** *In progress.* **PR-1a DONE** — pure
-  `IdentityResolver` core (proof-chain-first; Resolved/Ambiguous/Orphan; inert,
-  flag-free, fully tested). Next: PR-1b read-only Identity Audit + SuperAdmin
-  endpoint behind `FEATURE_TRUTH_ENGINE`; PR-1c Truth Score composite + Data Health
-  console. See `TRUTH_ENGINE.md`, `DECISIONS.md` D-011…D-014. *Data integrity /
-  Safety.*
+- **PE0 — Truth Engine / Identity Engine.** *In progress.*
+  - **PR-1a DONE** (merged #119) — pure `IdentityResolver` core (proof-chain-first;
+    Resolved/Ambiguous/Orphan; inert, flag-free, fully tested).
+  - **PR-1b1 DONE** — read-only Identity Audit (loader + pure aggregation): totals,
+    gaps, E911 three-dimension metrics (D-015), Truth Score component seeds,
+    bounded samples. Inert; +13 tests.
+  - **PR-1b2 NEXT (next implementation slice)** — SuperAdmin, read-only endpoint
+    `GET /api/data-health/identity-audit` behind `FEATURE_TRUTH_ENGINE` (default
+    off → 404), RBAC `GLOBAL_ADMIN`, + internal→external label mapping (D-014).
+  - **PR-1c** — Truth Score composite (Identity + Hierarchy + Completeness + API
+    Freshness + E911) + Data Health console read API.
+  See `TRUTH_ENGINE.md`, `DECISIONS.md` D-011…D-015. *Data integrity / Safety.*
 - **PE1 — Assurance Engine graduation** (build on the implemented PR1; portfolio +
   attention endpoints). Depends on M1 (canonical normalization). *CX, safety-first.*
 - **PE2 — View Proof** — evidence bundle per status (the trust mechanism; answers

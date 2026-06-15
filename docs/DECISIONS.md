@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-014 recorded; latest ID: D-014 |
+| **Status** | Active — D-001 … D-015 recorded; latest ID: D-015 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -146,3 +146,22 @@ Decision · Consequences.
 - **Consequences:** PR-1a stays internal-only; mapping (Resolved→Verified;
   weaker-basis→Supported; suggestion→Suggested; else→Unknown) recorded for the
   audit/console PR. Both vocabularies added to `GLOSSARY.md` later.
+
+### D-015 — E911: report three distinct dimensions; never collapse
+- **Date:** 2026-06-14 · **Status:** Accepted
+- **Context:** The Identity Audit must surface E911 readiness without overstating
+  it. A populated address is not the same as a verified one (life-safety
+  distinction).
+- **Decision:** The audit reports **three separate** E911 dimensions, never
+  collapsed into one boolean:
+  - `e911_address_present` = `e911_street` + `e911_city` + `e911_state` +
+    `e911_zip` are populated.
+  - `e911_verified` = `e911_status` indicates verified/validated
+    (set `{validated, verified}`, case-insensitive).
+  - `e911_confirmation_required` = `sites.e911_confirmation_required` is true.
+  Audit gaps include `missing_e911_address`, `unverified_e911` (address present but
+  not verified), and `e911_confirmation_required`.
+- **Consequences:** The shipped resolver is **untouched** — its
+  `SiteFacts.e911_present` maps to *address present* only (identity gap), while
+  verification is reported as a data-quality metric by the audit, not an identity
+  gate. See `TRUTH_ENGINE.md` and `api/app/services/identity/{loader,audit}.py`.
