@@ -6,8 +6,7 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-06-14. Branch at time of writing: `docs/docos-integrate-existing`
-> (documentation-only; not committed at time of writing).
+> Last updated: 2026-06-17. Branch at time of writing: `main` (in sync with origin).
 
 ## 1. Current Objective
 
@@ -60,6 +59,20 @@ evidence/proof behind every status. The **Identity Engine** is the first layer
 
 ## 3. In Progress
 
+- **T-Mobile Wholesale PIT activation** *(2026-06-17)* — activation now **reaches the
+  T-Mobile activation service** and returns `400 GENS-0003 Invalid partnerID`.
+  Validated end-to-end: OAuth token acquisition, PoP signing, activation **endpoint
+  correction** (`POST /wholesale/v1/subscriber/activation` — not `/activate`),
+  diagnostic logging + correlation-ID capture (PR #121 merged), Service/partner
+  transaction-ID capture, and the **`partner-id` / `sender-id`** header
+  implementation (PR #122 merged — replaced the rejected `X-Partner-Id`/`X-Sender-Id`).
+  **Current blocker:** awaiting T-Mobile Engineering (Aman) review of the `partnerID`
+  value/format — see §4. **Trace identifiers for support:**
+  - failing call: `POST /wholesale/v1/subscriber/activation` (PIT host)
+  - ICCID: `8901240204219434247`; rejected `partnerID=128` (sent as `partner-id`)
+  - error: `400 GENS-0003 Invalid partnerID`
+  - correlation: `X-Correlation-Id` (now logged per request) + `partner_transaction_id`
+    captured from the response on failure (PR #121).
 - **Product constitution docs** — created 2026-06-14 on branch
   `docs/product-constitution` (documentation-only; **not yet committed**). 6 new
   docs + 5 updated. Awaiting user approval before commit/PR.
@@ -90,6 +103,13 @@ evidence/proof behind every status. The **Identity Engine** is the first layer
 
 ## 4. Blockers
 
+- **T-Mobile PIT activation — `GENS-0003 Invalid partnerID`** *(external dependency)* —
+  blocked on **T-Mobile Engineering (Aman)** reviewing the activation logs/payload and
+  confirming the correct `partnerID` value/format (and whether `partner-id`/`sender-id`
+  are now read correctly). True911 side is implemented and logging the trace IDs;
+  no further code change pending T-Mobile's answer. Do not re-fire live activations
+  to brute-force the value. *(Also note: real/prod activation still gated by C3 key
+  rotation.)*
 - **LLLM Phase 1b** (external egress, `LLLM_ALLOW_EXTERNAL=true`) — blocked on
   **governance approval** per `docs/AI_OPERATIONAL_SAFETY.md` §3 and
   `docs/LLLM_PHASE1_ROLLOUT.md` §4. Do not flip without it.
