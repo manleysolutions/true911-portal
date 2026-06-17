@@ -112,3 +112,32 @@ say which. Do not hedge a verified result and do not assert an unverified one.
 Before ending: tests + build green (or explicitly noted), `PROJECT_STATE.md`
 updated, `BACKLOG.md` updated if debt/ideas surfaced, and a ranked
 "next priorities" list delivered to the user.
+
+## 6. Field Lessons (carry into every integration)
+
+Reusable lessons; the first batch came from the T-Mobile Wholesale TAAP effort
+(2026-06), where each was learned from a live failure.
+
+- **Never assume an external vendor's contract — confirm against their docs/packet.**
+  Three live failures were assumptions, not bugs: the activation path
+  (`/activate` → the real `/activation`), the partner/sender **header names**
+  (`X-Partner-Id`/`X-Sender-Id` → the required `partner-id`/`sender-id`), and the
+  `partnerID` **value** (`128`, still under T-Mobile review). Resource paths, header
+  names, IDs, and base hosts are vendor-defined — verify before the first live call.
+- **Make every external value env-overridable.** Paths/IDs/hosts behind `*_*` env
+  vars (e.g. `TMOBILE_ACTIVATION_PATH`, `TMOBILE_PARTNER_ID`) let a vendor correction
+  land without a code change. Where a name/placement is hard-coded (e.g. a header
+  name), a vendor change becomes a code change — prefer configurable.
+- **Add diagnostic logging BEFORE the first live external call.** Generate a named
+  correlation id, log it per request, and on failure log status + correlation id +
+  any vendor transaction-id + **redacted** response headers + truncated body. Without
+  it the first failure is unrecoverable for support (we could not hand T-Mobile a
+  transaction id). Never log auth tokens, PoP JWTs, secrets, keys, or full PII.
+- **Dry-run/preview the exact wire request before sending.** A no-network preview
+  (payload + resolved URL + headers, secrets redacted) catches wrong path/host/headers
+  with zero live attempts.
+- **Do not brute-force a live external API.** When a value is unknown, get it from the
+  vendor — repeated guessing live reads as probing/abuse and wastes attempts. Treat a
+  changed error code as progress (the prior layer is now correct) and re-diagnose.
+- **Capture the vendor's transaction/correlation id** so support tickets are answerable
+  on the first round.

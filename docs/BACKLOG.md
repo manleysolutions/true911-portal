@@ -53,6 +53,18 @@
   signing spec (`services/webhook_auth.py` helper ready); enable the flag with a
   provisioned token before any internet-exposed ingest. See
   `docs/TMOBILE_CALLBACK_AUTH.md`. *Safety / Security.*
+- **C4 — T-Mobile PIT activation blocked on `GENS-0003 Invalid partnerID`.**
+  🚧 *External dependency — waiting on T-Mobile Engineering (Aman).* Activation now
+  reaches the T-Mobile activation service (`POST /wholesale/v1/subscriber/activation`)
+  with validated OAuth/PoP, the corrected endpoint, and the required `partner-id` /
+  `sender-id` headers (PR #122) plus correlation-ID + partner-transaction-ID logging
+  (PR #121). T-Mobile rejects `partnerID=128` with `400 GENS-0003`. **Done (True911
+  side):** headers renamed to `partner-id`/`sender-id`; diagnostics in place; trace IDs
+  logged. **Open (T-Mobile side):** confirm the correct `partnerID` value/format and
+  that the headers are now read. **Follow-up (small, env or 1-line):** if T-Mobile
+  also requires lowercase `account-id` for post-activation ops, rename `X-Account-Id`
+  (currently unchanged). Do not re-fire live activations to guess the value. See
+  `PROJECT_STATE.md` §3/§4 for trace identifiers. *Revenue / Reliability.*
 
 ---
 
