@@ -227,6 +227,52 @@ def generate_pop_token(
     return token
 
 
+# ── Outbound diagnostic logging helpers ─────────────────────────────────────
+
+# Response header names that must never be logged verbatim.
+_SENSITIVE_RESPONSE_HEADERS = frozenset({
+    "authorization", "x-authorization", "set-cookie", "cookie",
+    "proxy-authorization", "www-authenticate",
+})
+
+# Response header names T-Mobile may use to carry a partner / transaction id.
+_PARTNER_TXN_HEADER_CANDIDATES = (
+    "partner-transaction-id", "x-partner-transaction-id",
+    "transaction-id", "x-transaction-id",
+    "x-correlation-id", "correlation-id",
+)
+
+
+def _redact_response_headers(headers: Any) -> dict[str, str]:
+    """Return response headers safe to log — auth/cookie values masked.
+
+    Used only for outbound-call diagnostics; never logs credential material.
+    """
+    safe: dict[str, str] = {}
+    try:
+        items = list(headers.items())
+    except AttributeError:
+        items = list(dict(headers or {}).items())
+    for key, value in items:
+        if str(key).lower() in _SENSITIVE_RESPONSE_HEADERS:
+            safe[str(key)] = "<redacted>"
+        else:
+            safe[str(key)] = str(value)
+    return safe
+
+
+def _partner_transaction_id(headers: Any) -> str | None:
+    """Best-effort extraction of a T-Mobile partner / transaction id header."""
+    getter = getattr(headers, "get", None)
+    if getter is None:
+        getter = dict(headers or {}).get
+    for name in _PARTNER_TXN_HEADER_CANDIDATES:
+        val = getter(name)
+        if val:
+            return str(val)
+    return None
+
+
 # ── T-Mobile TAAP Client ───────────────────────────────────────────────────
 
 class TMobileTAAPClient:
@@ -506,12 +552,15 @@ class TMobileTAAPClient:
             ],
         )
 
+        # Named so it can be logged + correlated with T-Mobile's server logs.
+        # Same value/behavior as before (one uuid4 per request) — just captured.
+        correlation_id = str(uuid.uuid4())
         headers: dict[str, str] = {
             "Authorization": authorization_value,
             "X-Authorization": pop,
             "Content-Type": req_content_type,
             "Accept": "application/json",
-            "X-Correlation-Id": str(uuid.uuid4()),
+            "X-Correlation-Id": correlation_id,
         }
 
         # T-Mobile partner identification headers
@@ -526,7 +575,12 @@ class TMobileTAAPClient:
             headers.update(extra_headers)
 
         client = await self._client()
-        logger.debug("T-Mobile TAAP %s %s", method.upper(), url)
+        # Log the correlation id for EVERY outbound request so any later failure
+        # (or a T-Mobile log review) can be tied to this exact call. No secrets.
+        logger.info(
+            "T-Mobile TAAP request: method=%s path=%s correlation_id=%s",
+            method.upper(), path, correlation_id,
+        )
 
         try:
             resp = await client.request(
@@ -542,9 +596,16 @@ class TMobileTAAPClient:
 
         if resp.status_code >= 400:
             body = resp.text[:500]
+            # Diagnostic detail for T-Mobile troubleshooting. Request auth
+            # headers are never logged; response headers are redacted of any
+            # auth/cookie material; body is truncated to a safe length.
+            partner_txn = _partner_transaction_id(resp.headers)
             logger.warning(
-                "T-Mobile TAAP API error %s %s: %s",
-                resp.status_code, path, body,
+                "T-Mobile TAAP API error: method=%s path=%s status=%s "
+                "correlation_id=%s partner_transaction_id=%s "
+                "response_headers=%s body=%s",
+                method.upper(), path, resp.status_code, correlation_id,
+                partner_txn, _redact_response_headers(resp.headers), body,
             )
             raise RuntimeError(
                 f"T-Mobile API error ({resp.status_code}): {body}"
