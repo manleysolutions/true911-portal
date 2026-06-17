@@ -329,8 +329,8 @@ async def test_subscriber_inquiry():
     x_auth = api_call.request.headers["X-Authorization"]
     assert x_auth.count(".") == 2, f"X-Authorization not a JWT: {x_auth!r}"
     assert all(seg for seg in x_auth.split(".")), "JWT segments must be non-empty"
-    assert api_call.request.headers.get("X-Partner-Id") == "test-partner"
-    assert api_call.request.headers.get("X-Sender-Id") == "test-sender"
+    assert api_call.request.headers.get("partner-id") == "test-partner"
+    assert api_call.request.headers.get("sender-id") == "test-sender"
     assert api_call.request.headers.get("X-Account-Id") == "test-account"
     assert "X-Correlation-Id" in api_call.request.headers
 
