@@ -485,7 +485,7 @@ class TMobileTAAPClient:
         Every T-Mobile API call requires:
         - Authorization: Bearer <access_token>
         - X-Authorization: PoP <pop_token>  (signed for this specific URL)
-        - X-Sender-Id, X-Partner-Id, X-Account-Id headers
+        - sender-id, partner-id, X-Account-Id headers
         """
         access_token = await self.get_access_token()
         url = f"{self.base_url}/{path.lstrip('/')}"
@@ -514,11 +514,12 @@ class TMobileTAAPClient:
             "X-Correlation-Id": str(uuid.uuid4()),
         }
 
-        # T-Mobile partner identification headers
+        # T-Mobile partner identification headers. T-Mobile (Aman, 2026-06)
+        # requires the lowercase header names "partner-id" / "sender-id".
         if self.partner_id:
-            headers["X-Partner-Id"] = self.partner_id
+            headers["partner-id"] = self.partner_id
         if self.sender_id:
-            headers["X-Sender-Id"] = self.sender_id
+            headers["sender-id"] = self.sender_id
         if self.account_id:
             headers["X-Account-Id"] = self.account_id
 
@@ -699,7 +700,7 @@ class TMobileTAAPClient:
         Inputs fall back to env / PIT constants when not passed (see
         ``_build_activation_payload``).  ``callback_location`` ->
         TMOBILE_CALLBACK_LOCATION.  The partner / sender headers
-        (X-Partner-Id / X-Sender-Id) are applied by ``_request`` from
+        (partner-id / sender-id) are applied by ``_request`` from
         TMOBILE_PARTNER_ID / TMOBILE_SENDER_ID (both 128 for Infatrac).
 
         Two fail-closed guards before anything is sent:
@@ -839,9 +840,9 @@ class TMobileTAAPClient:
             "X-Correlation-Id": "<generated per request>",
         }
         if self.partner_id:
-            headers["X-Partner-Id"] = self.partner_id
+            headers["partner-id"] = self.partner_id
         if self.sender_id:
-            headers["X-Sender-Id"] = self.sender_id
+            headers["sender-id"] = self.sender_id
         if self.account_id:
             headers["X-Account-Id"] = self.account_id
         # Always SHOW call-back-location so a dry-run surfaces a missing callback

@@ -117,8 +117,9 @@ class TestActivateSubscriber:
         assert "msisdn" not in body
         assert req.headers["call-back-location"] == "https://cb.example/hook"
         # Infatrac sender/partner = 128 (applied by _request from env).
-        assert req.headers["X-Sender-Id"] == "128"
-        assert req.headers["X-Partner-Id"] == "128"
+        # T-Mobile requires the lowercase header names "sender-id" / "partner-id".
+        assert req.headers["sender-id"] == "128"
+        assert req.headers["partner-id"] == "128"
         # No account header while account ID is unknown.
         assert "X-Account-Id" not in req.headers
 
@@ -290,8 +291,8 @@ class TestActivationPreview:
         assert "redacted" in preview["headers"]["X-Authorization"].lower()
         assert "Bearer " not in preview["headers"]["Authorization"]
         # Non-sensitive headers are real.
-        assert preview["headers"]["X-Sender-Id"] == "128"
-        assert preview["headers"]["X-Partner-Id"] == "128"
+        assert preview["headers"]["sender-id"] == "128"
+        assert preview["headers"]["partner-id"] == "128"
         assert preview["headers"]["call-back-location"] == "https://cb.example/hook"
 
     def test_preview_falls_back_to_env(self, tmobile_env):
