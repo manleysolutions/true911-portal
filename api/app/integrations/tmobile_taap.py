@@ -555,12 +555,16 @@ class TMobileTAAPClient:
         # Named so it can be logged + correlated with T-Mobile's server logs.
         # Same value/behavior as before (one uuid4 per request) — just captured.
         correlation_id = str(uuid.uuid4())
+        # Per-request partner transaction id (T-Mobile, Aman 2026-06): a unique
+        # random string T-Mobile correlates to its server-side logs.
+        partner_transaction_id = f"true911-pit-{uuid.uuid4()}"
         headers: dict[str, str] = {
             "Authorization": authorization_value,
             "X-Authorization": pop,
             "Content-Type": req_content_type,
             "Accept": "application/json",
             "X-Correlation-Id": correlation_id,
+            "partner-transaction-id": partner_transaction_id,
         }
 
         # T-Mobile partner identification headers. T-Mobile (Aman, 2026-06)
@@ -579,8 +583,9 @@ class TMobileTAAPClient:
         # Log the correlation id for EVERY outbound request so any later failure
         # (or a T-Mobile log review) can be tied to this exact call. No secrets.
         logger.info(
-            "T-Mobile TAAP request: method=%s path=%s correlation_id=%s",
-            method.upper(), path, correlation_id,
+            "T-Mobile TAAP request: method=%s path=%s correlation_id=%s "
+            "partner_transaction_id=%s",
+            method.upper(), path, correlation_id, partner_transaction_id,
         )
 
         try:
@@ -899,6 +904,7 @@ class TMobileTAAPClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-Correlation-Id": "<generated per request>",
+            "partner-transaction-id": "true911-pit-<generated per request>",
         }
         if self.partner_id:
             headers["partner-id"] = self.partner_id
