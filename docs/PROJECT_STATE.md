@@ -6,36 +6,66 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-06-17. Branch at time of writing: `main` (in sync with origin).
+> Last updated: 2026-06-23. Branch at time of writing: `main` (in sync with origin).
 
 ## 1. Current Objective
 
-**Phase 0 / PR-1b1 — read-only Identity Audit (loader + aggregation).** Done on
-branch `feat/identity-audit`: `services/identity/loader.py` (read-only, bounded
-SELECTs → resolver facts; pure `build_dataset`) + `services/identity/audit.py`
-(pure `run_identity_audit` → totals / by_reason / by_match_basis / gaps / E911
-three-dimension metrics / Truth Score component seeds / bounded samples). **Inert**
-— nothing in the running app imports it (no router/endpoint/flag/write/migration).
-+13 tests; full suite green (2356 passed). E911 reported as three distinct
-dimensions (`DECISIONS.md` D-015). **Next slice: PR-1b2** (SuperAdmin endpoint +
-`FEATURE_TRUTH_ENGINE` + internal→external mapping).
+**PRIMARY BUSINESS OBJECTIVE — RH Customer Go-Live.** Place **Restoration Hardware
+(Judy)** into production as the **first production customer actively using True911
+every week**, scoped to the **assurance + support** use case (billing/QuickBooks/
+invoicing explicitly deferred). Tracked as **`EPIC-RH-GO-LIVE`** in `BACKLOG.md`
+(four phases). This is now the top of the execution stack; the engine work below
+continues underneath it as the substrate the customer surface reads.
 
-**Phase 0 / PR-1a — Identity Engine foundation** *(merged, PR #119).* The pure,
-deterministic `IdentityResolver` (`api/app/services/identity/resolver.py`):
-proof-chain-first (`Facts → Proof Chain → Decision`), Resolved/Ambiguous/Orphan
-derived from the chain, never guesses. See `TRUTH_ENGINE.md` and `DECISIONS.md`
-D-011…D-014.
+**Customer-go-live planning is COMPLETE (design phase done; nothing implemented yet).**
+The full customer boundary architecture is documented and ready to build:
+- `RH_PRODUCTION_GO_LIVE.md` — per-area readiness (Green/Yellow/Red); ~32% all-areas,
+  ~40% assurance-scoped with a 1-month path to ~80%.
+- `RH_GO_LIVE_EXECUTION_PLAN.md` — four tracks (A Data · B Customer Experience ·
+  C Assurance · D Billing Visibility) + 30-day plan.
+- `RH_SECURITY_READINESS.md` — **tenant isolation audited** across ~140 GET endpoints:
+  **no CRITICAL findings**, isolation core sound; 1 HIGH (subscriber-import batch rows)
+  + bounded MED/LOW fix set; CONDITIONAL GO.
+- `RH_ROLE_MATRIX.md` — **customer RBAC design complete**: the existing "User" role is
+  unsafe for a customer; needs a scoped `CUSTOMER_*` role + guards on bare-auth GETs.
+- `CUSTOMER_EXPERIENCE_BOUNDARY.md` — four customer roles (ADMIN/USER/BILLING/READONLY),
+  the `INTERNAL_OPS` guard strategy, the eight-item customer nav.
+- `CUSTOMER_DATA_BOUNDARY.md` — field-level SHOW/HIDE/DERIVE/AGGREGATE per entity (Device
+  is ~100% HIDE/DERIVE — the §7 jargon veto holds).
+- `CUSTOMER_API_CONTRACTS.md` — **customer API contract design complete**: a dedicated
+  read-only `/api/customer/*` namespace, allow-list serializer, evidence-on-green invariant.
+- `FEATURE_CUSTOMER_API_ROLLOUT.md` — **rollout design complete**: two-key flag
+  (`FEATURE_CUSTOMER_API` + `CUSTOMER_API_TENANT_ALLOWLIST`), default OFF, RH-only
+  enablement, instant flag rollback, go/no-go matrix.
 
-Completed since last update: the **Documentation Operating System** is live
-(PRs #117/#118 merged) — Constitution, Product Vision (+North Star), Data Model,
-Truth Engine, Decisions, Glossary, README; existing docs defer to it. **CI secret
-scanning** (gitleaks, PR #116) is live and blocking.
+**Engine substrate (continues underneath EPIC-RH-GO-LIVE):** the **Identity Engine**
+core (`IdentityResolver`, PR #119) + read-only Identity Audit (PR #120, inert) are
+merged; **Assurance Engine PR1** is merged but `FEATURE_ASSURANCE_ENGINE` is off. The
+RH go-live graduates these for the RH tenant once Track-A data is clean. The active
+product direction remains the **operating system for life-safety communications
+assurance** (`CONSTITUTION.md`, `PRODUCT_VISION.md`): Reality → Identity → Truth →
+Assurance → AI → Automation. **Next implementation slice: `EPIC-RH-GO-LIVE` Phase 1**
+(tenant-isolation fixes → `CUSTOMER_ADMIN` role → `INTERNAL_OPS` guards).
 
-The active product direction is the **operating system for life-safety
-communications assurance** (`CONSTITUTION.md`, `PRODUCT_VISION.md`): a read-only,
-deterministic, explainable Assurance Label per device → site → customer, with
-evidence/proof behind every status. The **Identity Engine** is the first layer
-(Reality → Identity Engine → Truth Engine → Assurance Engine → AI → Automation).
+**Platform-vs-customer boundary (binding):** RH is the **pilot** that validates the
+**generic** customer plane — not a one-off portal. RH-specific *data remediation* scripts
+are allowed; the **customer API, roles, permissions, serializer, and navigation stay
+reusable** across all customers (statement in `CUSTOMER_API_CONTRACTS.md` §0). The only
+runtime generality gap (dashboard `company_name` single-customer `LIMIT 1`) is fixed
+(PR #130); broader generalization is tracked as **EPIC-GEN-001** (portfolio display) and
+**EPIC-GEN-002** (generic service-unit builder) — neither gates RH go-live.
+
+**Inventory Reconciliation (EPIC-GEN-003) — IMPLEMENTED (merged, PRs #134–#137).** A
+customer- and vendor-agnostic, **read-only** reconciliation engine
+(`api/app/services/inventory_reconciliation/`) compares an external carrier/vendor
+inventory (pluggable adapter; **NAPCO StarLink** first) against True911 inventory →
+`INVENTORY_RECONCILIATION.csv`/`.json` + summary (matching: ICCID → RadioNumber →
+SubscriberName → site similarity; results MATCHED/PARTIAL/MISSING_IN_TRUE911/
+MISSING_IN_VENDOR/DUPLICATE/REVIEW). Runner `python -m app.reconcile_inventory`; runbook
+`docs/INVENTORY_RECONCILIATION_RUNBOOK.md`. No DB writes, no flags. **Status:** code
+merged + tests green (3170 passed); real RH NAPCO identifiers scrubbed from tests/docs
+(PRs #135–#137). **Remaining:** operator runs the CLI against the prod-read DB + the RH
+NAPCO export to produce the real reconciliation artifacts (part of Operation Green Phase 2/P1).
 
 ## 2. Completed Work (recent, from git history + project memory)
 
@@ -167,13 +197,17 @@ evidence/proof behind every status. The **Identity Engine** is the first layer
 
 ## 8. Next Actions (do these next, in order)
 
-1. Get user approval of this operating-system docs set and the priority order.
-2. Triage the **Critical** items in `BACKLOG.md` (private key, callback auth) into a
-   single smallest-safe-change PR plan each.
-3. Confirm Render service/DB names and DB backup posture (close the §11 ARCHITECTURE
-   verifications).
-4. Pick the first safe implementation phase with the user (recommended:
-   CI hardening, then the private-key remediation).
+**`EPIC-RH-GO-LIVE` Phase 1 — the foundation that gates Judy's credentials** (see
+`BACKLOG.md` for the full four-phase epic):
+1. **PR-S1 — tenant-isolation fixes** (H1 subscriber-import batch rows; L1/L2/L3
+   child-query tenant filters; M2 gate `/api/zoho/config`) per `RH_SECURITY_READINESS.md` §5.
+2. **PR-B1 — `INTERNAL_OPS` guard** on bare-`get_current_user` internal GETs, granted to
+   all six existing roles (behavior-preserving; no-regression test gate).
+3. **PR-B2 — four `CUSTOMER_*` roles** + customer perms in `permissions.json`; Bucket-B
+   customer guards (`CUSTOMER_EXPERIENCE_BOUNDARY.md` §A).
+4. Then **Phase 2** (RH data remediation: E911 42/42, device mapping 51/51, telemetry,
+   service units) in parallel via Sivmey + Eng; **Phase 3** (customer API) gated behind it;
+   **Phase 4** (Judy onboarding + launch) per `FEATURE_CUSTOMER_API_ROLLOUT.md`.
 
 ## 9. How to Resume
 
