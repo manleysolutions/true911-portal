@@ -6,11 +6,12 @@ import json
 
 from app.services.inventory_reconciliation.adapters import base, napco
 
-# Synthetic NAPCO Radiolist (tab-delimited) — shape only, fabricated values.
+# Synthetic NAPCO Radiolist (tab-delimited) — shape only, FABRICATED values
+# (no real RadioNumbers / ICCIDs / DealerId / customer from any export).
 _TSV = (
     "RadioNumber\tICCID\tDealerId\tSubscriberName\tDealerCompany\tDealerEmail\tSIMStatus\n"
-    "10107087\t89148000007194217721\t9493400088\tAcme #351 Beverly Modern\tManley Solutions\tbilling@example.com\tActive\n"
-    "10719648\t89148000007459957854\t9493400088\tAcme 632 Vero Beach\tManley Solutions\tbilling@example.com\tActive\n"
+    "10000001\t89000000000000000001\t1234567890\tAcme #351 Beverly Modern\tExample Dealer\tbilling@example.com\tActive\n"
+    "10000002\t89000000000000000002\t1234567890\tAcme 632 Vero Beach\tExample Dealer\tbilling@example.com\tActive\n"
 )
 
 
@@ -18,22 +19,22 @@ def test_parse_tsv_maps_canonical_fields():
     recs = napco.parse_text(_TSV)
     assert len(recs) == 2
     assert recs[0].vendor == "napco"
-    assert recs[0].radio_number == "10107087"
-    assert recs[0].iccid == "89148000007194217721"
+    assert recs[0].radio_number == "10000001"
+    assert recs[0].iccid == "89000000000000000001"
     assert recs[0].subscriber_name == "Acme #351 Beverly Modern"
     assert recs[0].site_hint == recs[0].subscriber_name
 
 
 def test_parse_csv_variant():
     recs = napco.parse_text(_TSV.replace("\t", ","))
-    assert len(recs) == 2 and recs[1].iccid == "89148000007459957854"
+    assert len(recs) == 2 and recs[1].iccid == "89000000000000000002"
 
 
 def test_no_sensitive_fields_retained():
     recs = napco.parse_text(_TSV)
     blob = json.dumps([r.raw for r in recs])
     # carrier account / dealer email must NOT be carried into the canonical record
-    assert "9493400088" not in blob and "billing@example.com" not in blob
+    assert "1234567890" not in blob and "billing@example.com" not in blob
     assert "sim_status" in blob  # only the non-sensitive extra is kept
 
 
