@@ -1,7 +1,7 @@
 # True911+ — BACKLOG
 
 > Living document. Categorized by urgency, then ranked within category by the
-> **priority order in `CONSTITUTION.md` §3**. Last reviewed: 2026-06-14.
+> **priority order in `CONSTITUTION.md` §3**. Last reviewed: 2026-06-23.
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`. The
 > standing "never build" vetoes are authoritative in `CONSTITUTION.md` §7
@@ -10,6 +10,68 @@
 > This backlog is derived from the codebase audit. Items marked **Needs
 > Verification** require confirming a fact before acting. Nothing here authorizes
 > implementation — see `OPERATING_LOOP.md` §3 Hard Stops.
+
+---
+
+## ⭐ PRIMARY OBJECTIVE — EPIC-RH-GO-LIVE (RH Customer Go-Live)
+
+> **The current top business objective:** place **Restoration Hardware (Judy)** into
+> production as the first customer **actively using True911 every week**, scoped to
+> **assurance + support** (billing/QuickBooks/invoicing deferred). Planning is
+> **complete** (design done, nothing implemented). Authoritative design docs:
+> `RH_PRODUCTION_GO_LIVE.md`, `RH_GO_LIVE_EXECUTION_PLAN.md`, `RH_SECURITY_READINESS.md`,
+> `RH_ROLE_MATRIX.md`, `CUSTOMER_EXPERIENCE_BOUNDARY.md`, `CUSTOMER_DATA_BOUNDARY.md`,
+> `CUSTOMER_API_CONTRACTS.md`, `FEATURE_CUSTOMER_API_ROLLOUT.md`.
+>
+> **Reprioritization (this review):** all `EPIC-RH-GO-LIVE` work ranks **ahead of the
+> PRODUCT EXPERIENCE (PE) epics and all future platform initiatives.** The Constitution
+> sequencing rule still holds — Phase 1 **is** the Track-A foundation (isolation/RBAC)
+> that gates customer exposure; no customer surface (Phase 3) ships before Phase 2's
+> E911 data sweep. **Status recorded:** customer boundary architecture complete · tenant
+> isolation audited (no CRITICAL) · customer RBAC design complete · customer API contract
+> design complete · `FEATURE_CUSTOMER_API` rollout design complete.
+
+### Phase 1 — Foundation (gates Judy's credentials; smallest-safe-slice, additive)
+- **RH-P1.1 — Tenant-isolation fixes (PR-S1).** H1 (`/subscriber-import/batches/{id}/rows`
+  tenant scope), L1 (`/sites/{id}/infrastructure` child filter), L2 (`/devices/{id}/sims`
+  filter), L3 (vendor-name lookups), M2 (gate `/api/zoho/config`). Per
+  `RH_SECURITY_READINESS.md` §5. *Security / Safety.*
+- **RH-P1.2 — `INTERNAL_OPS` guard (PR-B1).** Add `INTERNAL_OPS` (granted to all six
+  existing roles → behavior-preserving) to every bare-`get_current_user` internal GET so
+  customers are excluded. No-regression test gate. *Security.*
+- **RH-P1.3 — `CUSTOMER_ADMIN` + customer roles (PR-B2).** Add `CUSTOMER_ADMIN`,
+  `CUSTOMER_USER`, `CUSTOMER_BILLING`, `CUSTOMER_READONLY` + `CUSTOMER_*` perms to
+  `permissions.json`; Bucket-B customer guards. Per `CUSTOMER_EXPERIENCE_BOUNDARY.md`. *Security / CX.*
+
+### Phase 2 — RH Data Remediation (parallel; Sivmey proposes, Eng applies, Stuart approves)
+- **RH-P2.1 — E911 verification.** 42/42 RH sites `address_complete_needs_validation →
+  validated`, evidence captured (PR #80, dry-run-first). *Safety. Gating.*
+- **RH-P2.2 — Device mapping.** 51/51 devices → vendor adapters + keyed identifiers (PR #81).
+- **RH-P2.3 — Telemetry enablement.** Heartbeat/health sync so `last_heartbeat` populates (PR #82).
+- **RH-P2.4 — Service-unit creation.** ~51 emergency service units from install data (PR #83).
+- **RH-P2.5 — Re-audit.** Confirm Health Score 30 → ~80+; 0 active sites Critical-for-unverified-E911 (PR #84).
+
+### Phase 3 — Customer API (gated behind Phase 1 + Phase 2; `FEATURE_CUSTOMER_API` off)
+- **RH-P3.1 — Serializer + namespace (PR-C1/C2).** Allow-list customer serializer +
+  read-only `/api/customer/*` (double-gated 404-off). *Per `CUSTOMER_API_CONTRACTS.md`.*
+- **RH-P3.2 — Dashboard / Morning Test** (`/api/customer/dashboard`).
+- **RH-P3.3 — Locations** (list + detail).
+- **RH-P3.4 — E911 summary** (read-only; correction-request is request-only, Manley-gated).
+- **RH-P3.5 — Support** (read + create; `customer_safe_summary` only).
+- **RH-P3.6 — Billing visibility** (read-only MRR/MRC over existing data).
+- **RH-P3.7 — Reports** (portfolio JSON + PDF); + frontend PR-F1…F8 (customer nav + pages).
+
+### Phase 4 — Launch
+- **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
+- **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in
+  `FEATURE_CUSTOMER_API_ROLLOUT.md`; serialization safety net + 403/404 matrix green.
+- **RH-P4.3 — Launch.** Enable `FEATURE_CUSTOMER_API` + `CUSTOMER_API_TENANT_ALLOWLIST=
+  restoration-hardware`; issue credentials; schedule weekly digest; Day-1 monitoring.
+
+**Gating dependencies:** P1 before any customer login · P2 (esp. E911) before P3 surface
+is enabled · P4 launch only on the go/no-go GO (no false green; 42/42 E911 or affected
+sites shown honestly Critical). C3 (T-Mobile key rotation) is **not** an RH blocker unless
+live T-Mobile activation enters RH's path.
 
 ---
 
@@ -138,6 +200,12 @@
 
 ## PRODUCT EXPERIENCE (Track B epics)
 
+> **Reprioritized 2026-06-22:** these PE epics now rank **behind `EPIC-RH-GO-LIVE`**
+> (top of this file). RH go-live operationalizes the spine these epics generalize — the
+> customer surfaces here are the platform-wide version of what RH receives first. Resume
+> PE sequencing after RH launch (Phase 4) or where an item is a shared dependency of
+> `EPIC-RH-GO-LIVE` (e.g. Assurance graduation, E911 sweep, Support spine).
+>
 > Derived from the product constitution (`docs/PRODUCT_MANIFESTO.md`,
 > `ASSURANCE_PLATFORM_SPEC.md`, `CUSTOMER_EXPERIENCE.md`, `SCREEN_BY_SCREEN_SPEC.md`,
 > `DESIGN_SYSTEM.md`). Sequencing + dependencies in
@@ -185,6 +253,41 @@
 > autonomous AI life-safety decisions, 911-will-always-connect guarantee, green
 > without explanation, cross-tenant benchmarking, raw vendor telemetry as the
 > primary customer experience). Adding any requires overturning the manifesto.
+
+---
+
+## PLATFORM GENERALIZATION (post-pilot; ranked BEHIND EPIC-RH-GO-LIVE)
+
+> RH is the **pilot** that validates the **generic** customer plane (boundary statement
+> in `CUSTOMER_API_CONTRACTS.md` §0). These epics generalize the plane for all customers
+> (R&R, Benson, Integrity, schools, healthcare, airports, government). **Neither gates RH
+> go-live.**
+
+- **EPIC-GEN-001 — Generic Customer Portfolio Display.** *Purpose:* customer-facing
+  dashboard identity works for single- **and** multi-customer tenants. *Slice 1 (done,
+  PR #130):* `portfolio.company_name` no longer uses an arbitrary `LIMIT 1` — single
+  Customer → its name (RH path), else tenant org name, else `"Your Portfolio"`. *Remaining:*
+  the **user→Customer resolution** that activates the "resolved customer context" preference
+  (needs a `User.customer_id` or Person/Contact link from D-024). *CX / Data integrity.*
+- **EPIC-GEN-002 — Generic Service Unit Builder.** *Purpose:* a generalized service-unit
+  builder supporting **1 device→1 service · 1 device→many services · many devices→1 service ·
+  device-less services · line-based services · port-based services · customer-specific
+  mapping profiles.** ⛔ **Explicitly NOT required for RH go-live** — RH uses the
+  intentionally device-anchored P3 tool (`P3_SERVICE_UNIT_CREATION_SPEC.md`); EPIC-GEN-002
+  is the post-pilot generalization and **does not gate P3 or RH launch.** *Scalability / CX.*
+- **EPIC-GEN-003 — Inventory Reconciliation Framework.** ✅ **IMPLEMENTED (merged, PRs
+  #134–#137).** Customer- and vendor-agnostic, **read-only** engine
+  (`api/app/services/inventory_reconciliation/`) that compares an external carrier/vendor
+  inventory (pluggable adapter) against True911 inventory → `INVENTORY_RECONCILIATION.csv`
+  + `.json` + summary stats. Matching hierarchy ICCID → RadioNumber → SubscriberName →
+  site similarity; results MATCHED/PARTIAL/MISSING_IN_TRUE911/MISSING_IN_VENDOR/DUPLICATE/
+  REVIEW. **NAPCO StarLink** adapter ships first; runner `python -m app.reconcile_inventory`
+  (no DB writes, no flags, tenant-scopable). Runbook `docs/INVENTORY_RECONCILIATION_RUNBOOK.md`.
+  No real customer export committed (synthetic test fixtures; pre-existing real NAPCO
+  identifiers scrubbed, PRs #135–#137). *Reusable for RH/R&R/Benson/Integrity/USPS + any
+  future vendor.* **Remaining:** operator runs the CLI against prod-read DB + the vendor
+  export to produce the real artifacts; add further vendor adapters as needed. *Data
+  integrity / Scalability.*
 
 ---
 
