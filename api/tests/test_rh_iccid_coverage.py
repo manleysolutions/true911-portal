@@ -20,9 +20,9 @@ from app.audit_rh_iccid_coverage import (
     REPORT_FIELDS,
 )
 
-# A real, well-formed 20-digit ICCID (NAPCO export shape, leading 89148…).
-GOOD = "89148000007194217721"
-GOOD2 = "89148000007459957854"
+# A well-formed 20-digit ICCID (NAPCO export shape; fabricated value).
+GOOD = "89000000000000000001"
+GOOD2 = "89000000000000000002"
 
 
 def _dev(device_id, *, iccid=None, serial=None, model="SLE-LTEVI-FIRE",
@@ -38,23 +38,23 @@ def _dev(device_id, *, iccid=None, serial=None, model="SLE-LTEVI-FIRE",
 # ── ICCID validity / normalization ───────────────────────────────────────
 def test_valid_iccid():
     assert is_valid_iccid(GOOD)
-    assert is_valid_iccid("8914 8000 0071 9421 7721")     # spaces tolerated
-    assert is_valid_iccid("89148000007194217721F")        # trailing F pad
+    assert is_valid_iccid("8900 0000 0000 0000 0001")     # spaces tolerated
+    assert is_valid_iccid("89000000000000000001F")        # trailing F pad
     assert iccid_invalid_reason(GOOD) is None
 
 
 def test_normalize_iccid():
-    assert normalize_iccid("8914-8000-0071") == "891480000071"
-    assert normalize_iccid("89148000007194217721F") == "89148000007194217721"
+    assert normalize_iccid("8900-0000-0001") == "890000000001"
+    assert normalize_iccid("89000000000000000001F") == "89000000000000000001"
     assert normalize_iccid(None) == "" and normalize_iccid("  ") == ""
 
 
 def test_malformed_iccid():
     assert not is_valid_iccid("123")                      # too short
-    assert not is_valid_iccid("12348000007194217721")     # wrong prefix
+    assert not is_valid_iccid("12340000000000000001")     # wrong prefix
     assert not is_valid_iccid("abcd")                     # non-numeric
-    assert "too short" in iccid_invalid_reason("8914")
-    assert "!= '89'" in iccid_invalid_reason("12348000007194217721")
+    assert "too short" in iccid_invalid_reason("8900")
+    assert "!= '89'" in iccid_invalid_reason("12340000000000000001")
 
 
 # ── NAPCO candidate classification ───────────────────────────────────────
@@ -148,7 +148,7 @@ def test_coverage_zero_when_no_candidates():
 # ── cross-reference vs export ────────────────────────────────────────────
 def test_cross_reference_counts():
     recs = _records()
-    export_iccids = {normalize_iccid(GOOD), normalize_iccid("89148000009999999999")}
+    export_iccids = {normalize_iccid(GOOD), normalize_iccid("89000000000000009999")}
     cross = cross_reference(recs, export_iccids, export_radio_numbers=set())
     assert cross["match_today_by_iccid"] == 1            # only GOOD is ready + in export
     assert cross["need_iccid_backfill"] == 1             # 'noicc'
