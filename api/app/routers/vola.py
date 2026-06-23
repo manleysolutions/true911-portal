@@ -180,7 +180,7 @@ class TestConnectionResponse(BaseModel):
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
-@router.get("/test", response_model=TestConnectionResponse)
+@router.get("/test", response_model=TestConnectionResponse, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def test_vola_connection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -202,7 +202,7 @@ async def test_vola_connection(
         )
 
 
-@router.get("/orgs", response_model=VolaOrgsResponse)
+@router.get("/orgs", response_model=VolaOrgsResponse, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_orgs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -227,7 +227,7 @@ async def list_orgs(
     return VolaOrgsResponse(orgs=orgs)
 
 
-@router.get("/devices", response_model=VolaDevicesResponse)
+@router.get("/devices", response_model=VolaDevicesResponse, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_vola_devices(
     usage_status: str = Query("inUse"),
     db: AsyncSession = Depends(get_db),
@@ -527,7 +527,7 @@ async def deploy_pr12(
     )
 
 
-@router.get("/device/{device_sn}/status")
+@router.get("/device/{device_sn}/status", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def device_status(
     device_sn: str,
     db: AsyncSession = Depends(get_db),

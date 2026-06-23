@@ -253,7 +253,7 @@ async def delete_verification_task(
 # Summary / stats
 # ---------------------------------------------------------------------------
 
-@router.get("/verification-summary")
+@router.get("/verification-summary", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def verification_summary(
     site_id: str | None = None,
     db: AsyncSession = Depends(get_db),

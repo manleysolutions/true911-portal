@@ -18,7 +18,7 @@ from app.schemas.incident import (
 router = APIRouter()
 
 
-@router.get("", response_model=list[IncidentOut])
+@router.get("", response_model=list[IncidentOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_incidents(
     sort: str | None = Query("-opened_at"),
     limit: int = Query(100, le=500),

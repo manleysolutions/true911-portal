@@ -1,4 +1,5 @@
 {
+  "INTERNAL_OPS": ["Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST"],
   "PING": ["Admin", "Manager"],
   "REBOOT": ["Admin"],
   "GENERATE_REPORT": ["Admin", "Manager", "UX_QA_ANALYST"],

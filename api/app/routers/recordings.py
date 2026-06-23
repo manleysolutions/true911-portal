@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
 from app.models.recording import Recording
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -11,7 +11,7 @@ from app.schemas.recording import RecordingCreate, RecordingOut
 router = APIRouter()
 
 
-@router.get("", response_model=list[RecordingOut])
+@router.get("", response_model=list[RecordingOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_recordings(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),
@@ -40,7 +40,7 @@ async def list_recordings(
     return [RecordingOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{recording_pk}", response_model=RecordingOut)
+@router.get("/{recording_pk}", response_model=RecordingOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_recording(
     recording_pk: int,
     db: AsyncSession = Depends(get_db),

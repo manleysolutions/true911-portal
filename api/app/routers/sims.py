@@ -123,7 +123,7 @@ async def _assert_no_sim_identifier_conflict(
 
 # ── CRUD ──────────────────────────────────────────────────────────
 
-@router.get("", response_model=list[SimOut])
+@router.get("", response_model=list[SimOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_sims(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),
@@ -173,7 +173,7 @@ async def list_sims(
     return [SimOut.model_validate(s) for s in result.scalars().all()]
 
 
-@router.get("/{pk}", response_model=SimOut)
+@router.get("/{pk}", response_model=SimOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_sim(
     pk: int,
     db: AsyncSession = Depends(get_db),

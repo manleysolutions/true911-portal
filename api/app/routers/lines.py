@@ -82,7 +82,7 @@ async def _assert_no_did_conflict(
         )
 
 
-@router.get("", response_model=list[LineOut])
+@router.get("", response_model=list[LineOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_lines(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),
@@ -111,7 +111,7 @@ async def list_lines(
     return [LineOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{line_pk}", response_model=LineOut)
+@router.get("/{line_pk}", response_model=LineOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_line(
     line_pk: int,
     db: AsyncSession = Depends(get_db),

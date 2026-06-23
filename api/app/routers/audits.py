@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
 from app.models.action_audit import ActionAudit
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -11,7 +11,7 @@ from app.schemas.action_audit import ActionAuditCreate, ActionAuditOut
 router = APIRouter()
 
 
-@router.get("", response_model=list[ActionAuditOut])
+@router.get("", response_model=list[ActionAuditOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_audits(
     sort: str | None = Query("-timestamp"),
     limit: int = Query(100, le=500),
