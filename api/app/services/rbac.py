@@ -81,6 +81,18 @@ ROLE_NORMALIZE = {
     "ux/qa analyst": "UX_QA_ANALYST",
     "platform operations analyst": "UX_QA_ANALYST",
     "platform ops analyst": "UX_QA_ANALYST",
+    # Customer-plane roles (RH Go-Live Phase 1).  Registered so role strings
+    # normalize consistently; they hold NO permissions yet (customer grants
+    # land with the customer API namespace, not in this PR).
+    "customer_admin": "CUSTOMER_ADMIN",
+    "customer admin": "CUSTOMER_ADMIN",
+    "customer_user": "CUSTOMER_USER",
+    "customer user": "CUSTOMER_USER",
+    "customer_billing": "CUSTOMER_BILLING",
+    "customer billing": "CUSTOMER_BILLING",
+    "customer_readonly": "CUSTOMER_READONLY",
+    "customer readonly": "CUSTOMER_READONLY",
+    "customer read only": "CUSTOMER_READONLY",
 }
 
 

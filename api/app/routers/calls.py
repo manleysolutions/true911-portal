@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
 from app.models.call_record import CallRecord
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -11,7 +11,7 @@ from app.schemas.call_record import CallRecordOut
 router = APIRouter()
 
 
-@router.get("", response_model=list[CallRecordOut])
+@router.get("", response_model=list[CallRecordOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_call_records(
     sort: str | None = Query("-started_at"),
     limit: int = Query(100, le=500),
@@ -52,7 +52,7 @@ async def list_call_records(
     return [CallRecordOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{call_pk}", response_model=CallRecordOut)
+@router.get("/{call_pk}", response_model=CallRecordOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_call_record(
     call_pk: int,
     db: AsyncSession = Depends(get_db),

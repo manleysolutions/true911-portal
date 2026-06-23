@@ -11,7 +11,7 @@ from app.schemas.provider import ProviderCreate, ProviderOut, ProviderUpdate
 router = APIRouter()
 
 
-@router.get("", response_model=list[ProviderOut])
+@router.get("", response_model=list[ProviderOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_providers(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),
@@ -31,7 +31,7 @@ async def list_providers(
     return [ProviderOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{provider_pk}", response_model=ProviderOut)
+@router.get("/{provider_pk}", response_model=ProviderOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_provider(
     provider_pk: int,
     db: AsyncSession = Depends(get_db),

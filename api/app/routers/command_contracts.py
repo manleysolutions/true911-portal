@@ -224,7 +224,7 @@ async def delete_outbound_webhook(
 # Organization settings
 # ---------------------------------------------------------------------------
 
-@router.get("/org", response_model=TenantOrgOut)
+@router.get("/org", response_model=TenantOrgOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_org_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

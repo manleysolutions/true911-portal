@@ -370,7 +370,7 @@ def _compute_readiness(sites, devices, incidents, *, verification_tasks=None, st
 # Dashboard summary
 # ---------------------------------------------------------------------------
 
-@router.get("/summary")
+@router.get("/summary", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def command_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -648,7 +648,7 @@ async def command_summary(
 # Site detail
 # ---------------------------------------------------------------------------
 
-@router.get("/site/{site_id}")
+@router.get("/site/{site_id}", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def command_site_detail(
     site_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1089,7 +1089,7 @@ async def ingest_telemetry(
     }
 
 
-@router.get("/telemetry/{device_id}", response_model=list[TelemetryOut])
+@router.get("/telemetry/{device_id}", response_model=list[TelemetryOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_device_telemetry(
     device_id: str,
     limit: int = Query(20, le=100),
@@ -1109,7 +1109,7 @@ async def get_device_telemetry(
     return [TelemetryOut.model_validate(t) for t in result.scalars().all()]
 
 
-@router.get("/telemetry/site/{site_id}", response_model=list[TelemetryOut])
+@router.get("/telemetry/site/{site_id}", response_model=list[TelemetryOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_site_telemetry(
     site_id: str,
     limit: int = Query(50, le=200),
@@ -1133,7 +1133,7 @@ async def get_site_telemetry(
 # Activity timeline
 # ---------------------------------------------------------------------------
 
-@router.get("/activities", response_model=list[CommandActivityOut])
+@router.get("/activities", response_model=list[CommandActivityOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_activities(
     site_id: str | None = None,
     activity_type: str | None = None,
@@ -1159,7 +1159,7 @@ async def list_activities(
 # Incident detail (Phase 4)
 # ---------------------------------------------------------------------------
 
-@router.get("/incidents/{incident_pk}")
+@router.get("/incidents/{incident_pk}", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def command_incident_detail(
     incident_pk: int,
     db: AsyncSession = Depends(get_db),
@@ -1289,7 +1289,7 @@ async def command_digest(
 # Operator view (Phase 4 — simplified role-aware view)
 # ---------------------------------------------------------------------------
 
-@router.get("/operator")
+@router.get("/operator", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def operator_view(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -15,7 +15,7 @@ Endpoints:
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import authenticate_device, get_current_user, get_db
+from app.dependencies import authenticate_device, get_current_user, get_db, require_permission
 from app.models.user import User
 from app.schemas.line_intelligence import (
     ClassifyRequest,
@@ -45,7 +45,7 @@ def _require_feature() -> None:
 # GET /status
 # ---------------------------------------------------------------------------
 
-@router.get("/status", response_model=LineIntelligenceStatusOut)
+@router.get("/status", response_model=LineIntelligenceStatusOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -59,7 +59,7 @@ async def get_status(
 # GET /ports
 # ---------------------------------------------------------------------------
 
-@router.get("/ports", response_model=list[PortStateOut])
+@router.get("/ports", response_model=list[PortStateOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_ports(
     device_id: str | None = None,
     site_id: str | None = None,
@@ -83,7 +83,7 @@ async def list_ports(
 # GET /events
 # ---------------------------------------------------------------------------
 
-@router.get("/events", response_model=list[LineIntelligenceEventOut])
+@router.get("/events", response_model=list[LineIntelligenceEventOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_events(
     event_type: str | None = None,
     line_id: str | None = None,
@@ -109,7 +109,7 @@ async def list_events(
 # GET /profiles
 # ---------------------------------------------------------------------------
 
-@router.get("/profiles", response_model=list[ProtocolProfileOut])
+@router.get("/profiles", response_model=list[ProtocolProfileOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_profiles(
     current_user: User = Depends(get_current_user),
 ):

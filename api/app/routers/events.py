@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
 from app.models.event import Event
 from app.models.user import User
 from app.routers.helpers import apply_sort
@@ -11,7 +11,7 @@ from app.schemas.event import EventCreate, EventOut
 router = APIRouter()
 
 
-@router.get("", response_model=list[EventOut])
+@router.get("", response_model=list[EventOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_events(
     sort: str | None = Query("-created_at"),
     limit: int = Query(100, le=500),

@@ -43,6 +43,17 @@ const ROLE_MAP = {
   "ux/qa analyst": "UX_QA_ANALYST",
   "platform operations analyst": "UX_QA_ANALYST",
   "platform ops analyst": "UX_QA_ANALYST",
+  // Customer-plane roles (RH Go-Live Phase 1). Registration only — mirrors
+  // the backend ROLE_NORMALIZE map. No grants / nav / isCustomerRole change.
+  customer_admin: "CUSTOMER_ADMIN",
+  "customer admin": "CUSTOMER_ADMIN",
+  customer_user: "CUSTOMER_USER",
+  "customer user": "CUSTOMER_USER",
+  customer_billing: "CUSTOMER_BILLING",
+  "customer billing": "CUSTOMER_BILLING",
+  customer_readonly: "CUSTOMER_READONLY",
+  "customer readonly": "CUSTOMER_READONLY",
+  "customer read only": "CUSTOMER_READONLY",
 };
 function normalizeRole(role) {
   if (!role) return "User";

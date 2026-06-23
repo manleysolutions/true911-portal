@@ -95,7 +95,7 @@ async def delete_vendor(
 # Site Vendor Assignments
 # ---------------------------------------------------------------------------
 
-@router.get("/site/{site_id}/vendors")
+@router.get("/site/{site_id}/vendors", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_site_vendors(
     site_id: str,
     db: AsyncSession = Depends(get_db),

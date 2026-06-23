@@ -14,7 +14,7 @@ from ..schemas.notification_rule import (
 router = APIRouter(prefix="/notification-rules", tags=["notification-rules"])
 
 
-@router.get("", response_model=list[NotificationRuleOut])
+@router.get("", response_model=list[NotificationRuleOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_rules(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

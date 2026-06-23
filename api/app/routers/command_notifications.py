@@ -27,7 +27,7 @@ router = APIRouter()
 # Notification center
 # ---------------------------------------------------------------------------
 
-@router.get("/notifications", response_model=list[NotificationOut])
+@router.get("/notifications", response_model=list[NotificationOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_notifications(
     unread_only: bool = False,
     limit: int = Query(30, le=100),
@@ -55,7 +55,7 @@ async def list_notifications(
     return [NotificationOut.model_validate(n) for n in result.scalars().all()]
 
 
-@router.get("/notifications/count")
+@router.get("/notifications/count", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def notification_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

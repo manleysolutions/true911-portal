@@ -27,7 +27,7 @@ router = APIRouter()
 # Site Templates CRUD
 # ---------------------------------------------------------------------------
 
-@router.get("/templates", response_model=list[SiteTemplateOut])
+@router.get("/templates", response_model=list[SiteTemplateOut], dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def list_templates(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -41,7 +41,7 @@ async def list_templates(
     return [SiteTemplateOut.model_validate(t) for t in result.scalars().all()]
 
 
-@router.get("/templates/{template_id}", response_model=SiteTemplateOut)
+@router.get("/templates/{template_id}", response_model=SiteTemplateOut, dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_template(
     template_id: int,
     db: AsyncSession = Depends(get_db),
@@ -196,7 +196,7 @@ async def bulk_import_sites(
     return BulkImportResult(**result)
 
 
-@router.get("/bulk-import/template-csv")
+@router.get("/bulk-import/template-csv", dependencies=[Depends(require_permission("INTERNAL_OPS"))])
 async def get_csv_template():
     """Return a CSV template for bulk import."""
     headers = "site_name,site_id,customer_name,e911_street,e911_city,e911_state,e911_zip,building_type,device_type,manufacturer,device_model,device_serial,imei,sim_iccid,phone_number,mac_address,sim_id,carrier,firmware_version,activated_at,term_end_date,poc_name,poc_phone,poc_email,notes"
