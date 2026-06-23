@@ -23,7 +23,12 @@ from app.services import rbac
 # loader so a regression in rbac doesn't hide itself.
 _PERMISSIONS_PATH = Path(__file__).resolve().parents[2] / "permissions.json"
 
-ALL_ROLES = ["SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST"]
+ALL_ROLES = [
+    "SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST",
+    # Customer-plane roles (RH Go-Live Phase 1/3). They appear only in CUSTOMER_*
+    # actions; the cell-by-cell matrix below verifies they hold no operator grant.
+    "CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_BILLING", "CUSTOMER_READONLY",
+]
 
 
 def _load_json_matrix() -> Dict[str, List[str]]:
