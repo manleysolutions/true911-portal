@@ -172,6 +172,14 @@ class Settings(BaseSettings):
     # docs/ASSURANCE_ENGINE.md.
     FEATURE_ASSURANCE_ENGINE: str = "false"
 
+    # ── Customer API namespace (RH Go-Live Phase 3) ───────────────
+    # Two-key gate for /api/customer/*: a global kill-switch plus a per-tenant
+    # allowlist.  Default OFF everywhere; a customer route 404s unless BOTH
+    # FEATURE_CUSTOMER_API == "true" AND the caller's tenant_id is listed in
+    # CUSTOMER_API_TENANT_ALLOWLIST.  Enabling for RH is a Phase-4 ops action.
+    FEATURE_CUSTOMER_API: str = "false"
+    CUSTOMER_API_TENANT_ALLOWLIST: str = ""
+
     # ── Zoho Desk (support ticket escalation) ─────────────────────
     ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
     ZOHO_DESK_ORG_ID: str = ""
@@ -401,6 +409,17 @@ class Settings(BaseSettings):
     def internal_tenant_id_set(self) -> set[str]:
         """Parsed INTERNAL_TENANT_IDS, ready for membership checks."""
         return {t.strip() for t in self.INTERNAL_TENANT_IDS.split(",") if t.strip()}
+
+    @property
+    def customer_api_tenant_id_set(self) -> set[str]:
+        """Tenants allowed to reach /api/customer/* (when FEATURE_CUSTOMER_API
+        is on).  Plain @property (not cached) so a flag/allowlist change takes
+        effect without a process restart."""
+        return {
+            t.strip()
+            for t in self.CUSTOMER_API_TENANT_ALLOWLIST.split(",")
+            if t.strip()
+        }
 
 
 settings = Settings()
