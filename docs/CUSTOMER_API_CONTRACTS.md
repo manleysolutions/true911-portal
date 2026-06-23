@@ -14,6 +14,17 @@
 
 ## 0. Architecture decision — a dedicated customer read namespace
 
+> **Platform-vs-customer boundary (binding).** RH is the **first production customer used
+> to validate the *generic* True911 customer plane** — not a custom one-off portal.
+> RH-specific **data remediation** scripts (`audit_rh_*`, `verify_rh_e911`,
+> `backfill_rh_device_identity`, `sync_rh_device_telemetry`, the P3 service-unit tool) are
+> allowed and expected. But the **customer API, customer roles, customer permissions,
+> customer serializer, and customer navigation must remain reusable across all customers**
+> (R&R, Benson, Integrity, schools, healthcare, airports, government). Customer-specificity
+> belongs in data + remediation tooling, **never** in the customer plane. *(Generalization
+> backlog: EPIC-GEN-001 customer portfolio display, EPIC-GEN-002 generic service-unit
+> builder — neither gates RH go-live.)*
+
 All customer traffic is served by a **new, read-mostly `/api/customer/*` namespace**,
 **not** by retrofitting customer-safe serialization onto the operator endpoints.
 Rationale: the data boundary is mostly HIDE/DERIVE; a single customer serializer is the
@@ -87,7 +98,7 @@ shapes below.
 
 | Response field | Source | Disposition |
 |---|---|---|
-| `company` | `Customer.name` | SHOW |
+| `company` | resolved Customer · else single `Customer.name` · else tenant org name · else `"Your Portfolio"` (`portfolio.company_name`) | DERIVE |
 | `as_of` | server time | DERIVE |
 | `portfolio.{protected,attention_needed,critical,pending_install,inactive,unknown,total}` | Assurance labels over all tenant sites | **AGGREGATE** |
 | `headline` | portfolio counts | DERIVE (D-004 wording) |

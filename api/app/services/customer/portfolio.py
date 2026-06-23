@@ -24,6 +24,7 @@ from app.models.device import Device
 from app.models.e911_change_log import E911ChangeLog
 from app.models.service_unit import ServiceUnit
 from app.models.site import Site
+from app.models.tenant import Tenant
 from app.services.assurance import compute_site_assurance, reason_codes as rc
 from app.services.assurance.loader import load_site_assurance_signals
 from app.services.assurance.signals import AssuranceLabel
@@ -242,10 +243,31 @@ async def load_e911_history(db: AsyncSession, tenant_id: str, site_id: str):
     )).scalars().all()
 
 
-async def company_name(db: AsyncSession, tenant_id: str) -> str:
-    """Display company for the tenant (single-customer assumption; RH is one
-    Customer).  Falls back to the tenant id."""
-    name = (await db.execute(
-        select(Customer.name).where(Customer.tenant_id == tenant_id).limit(1)
-    )).scalar_one_or_none()
-    return name or tenant_id
+async def company_name(db: AsyncSession, tenant_id: str, *, resolved_customer=None) -> str:
+    """Customer-facing display name for the dashboard, generic across single-
+    and multi-customer tenants:
+
+      1. a resolved Customer (from the authenticated customer context) -> its name
+         — forward hook; inert today (User has no Customer link). See EPIC-GEN-001.
+      2. tenant has EXACTLY ONE Customer -> that Customer.name (the RH path).
+      3. zero or many Customers -> the tenant org name (display_name or name).
+      4. neither resolvable -> a neutral "Your Portfolio".
+
+    Never picks an arbitrary Customer via LIMIT 1, and never exposes the raw
+    tenant_id slug as a customer-facing string.
+    """
+    if resolved_customer is not None:
+        return resolved_customer.name
+    # Probe up to 2 to distinguish "exactly one" from "more than one".
+    names = (await db.execute(
+        select(Customer.name).where(Customer.tenant_id == tenant_id)
+        .order_by(Customer.id).limit(2)
+    )).scalars().all()
+    if len(names) == 1:
+        return names[0]
+    tenant = (await db.execute(
+        select(Tenant.display_name, Tenant.name).where(Tenant.tenant_id == tenant_id)
+    )).first()
+    if tenant:
+        return tenant.display_name or tenant.name or "Your Portfolio"
+    return "Your Portfolio"
