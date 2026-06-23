@@ -221,3 +221,72 @@ def support_case_summary(session, *, messages=None, diagnostics=None) -> dict:
     if diagnostics is not None:
         out["checks"] = [support_diagnostic_safe(d) for d in diagnostics]
     return out
+
+
+# ── PR-C2: dashboard + location-detail composition (allow-list) ──────
+_CUSTOMER_ACTION = {
+    "Protected": "No action needed.",
+    "Attention Needed": "Manley Solutions is reviewing this location.",
+    "Critical": "Manley Solutions has been alerted and is addressing this.",
+    "Pending Install": "Installation and testing are in progress.",
+    "Inactive": "No action needed — service is inactive.",
+    "Unknown": "Manley Solutions is confirming this location's status.",
+}
+_CUSTOMER_SUMMARY = {
+    "Attention Needed": "We're reviewing an item at this location.",
+    "Critical": "This location needs attention.",
+    "Pending Install": "This location is being set up.",
+    "Inactive": "Service at this location is not currently active.",
+    "Unknown": "We're confirming this location's status.",
+}
+
+
+def location_detail(site, *, protection: dict) -> dict:
+    """Detail-level Location.  Adds service_address + site_contact to the
+    summary fields; deliberately stops short of services[] and the full E911
+    object (those are later customer-API slices)."""
+    return {
+        "location_ref": encode_ref("loc", site.id),
+        "location": site.site_name,
+        "building_type": site.building_type,
+        "service_address": _address(site),
+        "protection": protection,
+        "emergency_address_state": e911_state_label(site),
+        "site_contact": {
+            "name": site.poc_name,
+            "phone": site.poc_phone,
+            "email": site.poc_email,
+            "editable": False,
+        },
+    }
+
+
+def attention_item(site, *, protection: dict) -> dict:
+    status = protection.get("status", "Unknown")
+    return {
+        "location_ref": encode_ref("loc", site.id),
+        "location": site.site_name,
+        "status": status,
+        "reason": protection.get("reason") or _CUSTOMER_SUMMARY.get(status, ""),
+        "action": _CUSTOMER_ACTION.get(status, ""),
+    }
+
+
+def portfolio_counts(labels: Iterable[str]) -> dict:
+    key = {"Protected": "protected", "Attention Needed": "attention_needed",
+           "Critical": "critical", "Pending Install": "pending_install",
+           "Inactive": "inactive", "Unknown": "unknown"}
+    counts = {"total": 0, "protected": 0, "attention_needed": 0, "critical": 0,
+              "pending_install": 0, "inactive": 0, "unknown": 0}
+    for lbl in labels:
+        counts["total"] += 1
+        counts[key.get(lbl, "unknown")] += 1
+    return counts
+
+
+def headline(counts: dict, as_of: Optional[str] = None) -> str:
+    total = counts.get("total", 0)
+    if total == 0:
+        return "No locations yet — setup in progress"
+    base = f"{counts.get('protected', 0)} of {total} locations Protected"
+    return f"{base} (as of {as_of})" if as_of else base
