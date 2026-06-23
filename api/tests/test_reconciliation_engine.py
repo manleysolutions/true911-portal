@@ -49,14 +49,14 @@ def test_iccid_beats_radionumber():
 
 # ── Hierarchy 2: RadioNumber ─────────────────────────────────────────
 def test_radio_match_when_no_iccid():
-    items = [_item("D1", radio="10107087", site_id="S1", su="SU1")]
-    rows, _ = engine.reconcile([_vr(radio="10107087")], items)
+    items = [_item("D1", radio="10000001", site_id="S1", su="SU1")]
+    rows, _ = engine.reconcile([_vr(radio="10000001")], items)
     assert rows[0].result == "MATCHED" and rows[0].confidence == 0.9
 
 
 def test_radio_leading_zero_normalized():
-    items = [_item("D1", radio="10107087", site_id="S", su="U")]
-    rows, _ = engine.reconcile([_vr(radio="0010107087")], items)
+    items = [_item("D1", radio="10000001", site_id="S", su="U")]
+    rows, _ = engine.reconcile([_vr(radio="0010000001")], items)
     assert rows[0].result == "MATCHED"
 
 
