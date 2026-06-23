@@ -117,7 +117,12 @@ async def get_site_vendors(
     vendor_ids = list(set(a.vendor_id for a in assignments))
     vendors_map = {}
     if vendor_ids:
-        vendors_q = await db.execute(select(Vendor).where(Vendor.id.in_(vendor_ids)))
+        vendors_q = await db.execute(
+            select(Vendor).where(
+                Vendor.id.in_(vendor_ids),
+                Vendor.tenant_id == current_user.tenant_id,
+            )
+        )
         for v in vendors_q.scalars().all():
             vendors_map[v.id] = v
 

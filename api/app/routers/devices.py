@@ -545,6 +545,7 @@ async def list_device_sims(
         .where(
             DeviceSim.device_id == device_pk,
             DeviceSim.active == True,
+            Sim.tenant_id == current_user.tenant_id,
         )
     )
     return [SimOut.model_validate(s) for s in sim_result.scalars().all()]

@@ -51,7 +51,12 @@ async def list_contracts(
     vendor_ids = list(set(c.vendor_id for c in contracts))
     vendors_map = {}
     if vendor_ids:
-        v_q = await db.execute(select(Vendor).where(Vendor.id.in_(vendor_ids)))
+        v_q = await db.execute(
+            select(Vendor).where(
+                Vendor.id.in_(vendor_ids),
+                Vendor.tenant_id == current_user.tenant_id,
+            )
+        )
         for v in v_q.scalars().all():
             vendors_map[v.id] = v.name
 
