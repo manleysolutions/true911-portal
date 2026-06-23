@@ -389,17 +389,23 @@ async def get_site_infrastructure(
     sid = site.site_id
 
     dev_result = await db.execute(
-        select(Device).where(Device.site_id == sid).order_by(Device.created_at.desc())
+        select(Device)
+        .where(Device.site_id == sid, Device.tenant_id == current_user.tenant_id)
+        .order_by(Device.created_at.desc())
     )
     devices = dev_result.scalars().all()
 
     sim_result = await db.execute(
-        select(Sim).where(Sim.site_id == sid).order_by(Sim.created_at.desc())
+        select(Sim)
+        .where(Sim.site_id == sid, Sim.tenant_id == current_user.tenant_id)
+        .order_by(Sim.created_at.desc())
     )
     sims = sim_result.scalars().all()
 
     line_result = await db.execute(
-        select(Line).where(Line.site_id == sid).order_by(Line.created_at.desc())
+        select(Line)
+        .where(Line.site_id == sid, Line.tenant_id == current_user.tenant_id)
+        .order_by(Line.created_at.desc())
     )
     lines = line_result.scalars().all()
 

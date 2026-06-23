@@ -1333,8 +1333,24 @@ async def get_import_batches(db: AsyncSession, tenant_id: str) -> list[dict]:
     ]
 
 
-async def get_batch_rows(db: AsyncSession, batch_id: str) -> list[dict]:
-    """Return all rows for a given batch."""
+async def get_batch_rows(
+    db: AsyncSession, tenant_id: str, batch_id: str
+) -> list[dict] | None:
+    """Return all rows for a batch owned by ``tenant_id``.
+
+    Returns ``None`` when the batch does not exist or belongs to another
+    tenant — the router maps that to a 404.  This prevents a caller from
+    reading another tenant's import rows by supplying a foreign ``batch_id``
+    (``ImportRow`` has no tenant column, so ownership is enforced via the
+    parent ``ImportBatch``).
+    """
+    owner = await db.execute(
+        select(ImportBatch).where(
+            ImportBatch.batch_id == batch_id, ImportBatch.tenant_id == tenant_id
+        )
+    )
+    if owner.scalar_one_or_none() is None:
+        return None
     q = await db.execute(
         select(ImportRow).where(ImportRow.batch_id == batch_id).order_by(ImportRow.row_number)
     )

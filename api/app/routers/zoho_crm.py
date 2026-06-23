@@ -10,9 +10,12 @@ from app.services import zoho_crm
 router = APIRouter()
 
 
-@router.get("/config")
+@router.get(
+    "/config",
+    dependencies=[Depends(require_permission("VIEW_INTEGRATIONS"))],
+)
 async def zoho_config(current_user: User = Depends(get_current_user)):
-    """Return safe Zoho CRM config summary (no secrets)."""
+    """Return safe Zoho CRM config summary (no secrets). Internal only."""
     return zoho_crm.config_summary()
 
 

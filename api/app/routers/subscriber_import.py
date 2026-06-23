@@ -19,7 +19,7 @@ Endpoints:
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,7 +158,9 @@ async def list_batch_rows(
     current_user: User = Depends(require_permission("SUBSCRIBER_IMPORT")),
 ):
     """Get row-level detail for a specific batch."""
-    rows = await get_batch_rows(db, batch_id)
+    rows = await get_batch_rows(db, current_user.tenant_id, batch_id)
+    if rows is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Batch not found")
     return [ImportRowDetail(**r) for r in rows]
 
 
