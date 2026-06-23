@@ -110,11 +110,77 @@ async def customer_location_detail(
     current_user: User = Depends(require_customer_api),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Single location detail.  No services[]/E911-detail (later slices).
-    Unknown / forged / cross-tenant ref -> 404."""
+    """Single location detail with a minimal services[] preview (PR-C3).  No
+    full E911 object (its own endpoint).  Unknown / forged / cross-tenant -> 404."""
     now = datetime.now(timezone.utc)
     resolved = await cportfolio.resolve_location(db, current_user.tenant_id, location_ref, now)
     if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
-    site, protection = resolved
-    return {"as_of": now.isoformat(), "data": cs.location_detail(site, protection=protection)}
+    site, protection, services = resolved
+    return {
+        "as_of": now.isoformat(),
+        "data": cs.location_detail(site, protection=protection, services=services),
+    }
+
+
+@router.get(
+    "/services/{service_ref}",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_SERVICES"))],
+)
+async def customer_service_detail(
+    service_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """One service (emergency endpoint) + its equipment health.  Service and
+    equipment protection both derive from the site assurance engine."""
+    now = datetime.now(timezone.utc)
+    resolved = await cportfolio.resolve_service(db, current_user.tenant_id, service_ref, now)
+    if resolved is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
+    unit, device, service_protection, equipment_protection = resolved
+    equipment = cs.equipment_from_device(device, protection=equipment_protection) if device is not None else None
+    return {
+        "as_of": now.isoformat(),
+        "data": cs.service_from_unit(unit, protection=service_protection, equipment=equipment),
+    }
+
+
+@router.get(
+    "/services/{service_ref}/equipment",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_DEVICES"))],
+)
+async def customer_service_equipment(
+    service_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Equipment health for a service.  No linked device -> Unknown empty state."""
+    now = datetime.now(timezone.utc)
+    resolved = await cportfolio.resolve_service(db, current_user.tenant_id, service_ref, now)
+    if resolved is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
+    _unit, device, _service_protection, equipment_protection = resolved
+    if device is None:
+        return {"as_of": now.isoformat(), "data": {"equipment": None, "protection": equipment_protection}}
+    return {"as_of": now.isoformat(), "data": cs.equipment_from_device(device, protection=equipment_protection)}
+
+
+@router.get(
+    "/locations/{location_ref}/e911",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_E911"))],
+)
+async def customer_location_e911(
+    location_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Read-only emergency-address summary — E911 axis ONLY (never device
+    health).  ``is_critical`` = active location with an unverified address."""
+    now = datetime.now(timezone.utc)
+    site = await cportfolio.resolve_site(db, current_user.tenant_id, location_ref)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    logs = await cportfolio.load_e911_history(db, current_user.tenant_id, site.site_id)
+    history = [cs.e911_history_item(log) for log in logs]
+    return {"as_of": now.isoformat(), "data": cs.e911_summary(site, history=history)}

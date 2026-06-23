@@ -124,7 +124,7 @@ def test_location_detail_200(monkeypatch):
     prot = _prot("Protected")
 
     async def _rl(db, tenant, ref, now):
-        return (site, prot)
+        return (site, prot, [])  # PR-C3: (site, protection, services preview[])
     monkeypatch.setattr(cportfolio, "resolve_location", _rl)
 
     ref = cs.encode_ref("loc", 5)
@@ -135,8 +135,8 @@ def test_location_detail_200(monkeypatch):
     assert d["service_address"] == "6725 Washington St, Yountville, CA 94599"
     assert d["site_contact"]["editable"] is False
     assert d["emergency_address_state"] == "Verified"
-    # scope limits: no services / no full E911 object in PR-C2
-    assert "services" not in d and "emergency_dispatch_address" not in d
+    # PR-C3: services[] preview present; full E911 object still on its own endpoint
+    assert "services" in d and "emergency_dispatch_address" not in d
     assert "LEAK" not in r.text
 
 
