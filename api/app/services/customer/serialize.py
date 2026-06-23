@@ -241,10 +241,10 @@ _CUSTOMER_SUMMARY = {
 }
 
 
-def location_detail(site, *, protection: dict) -> dict:
+def location_detail(site, *, protection: dict, services: Optional[list] = None) -> dict:
     """Detail-level Location.  Adds service_address + site_contact to the
-    summary fields; deliberately stops short of services[] and the full E911
-    object (those are later customer-API slices)."""
+    summary fields, plus a minimal services[] preview (PR-C3).  Still stops
+    short of the full E911 object (its own read-only endpoint)."""
     return {
         "location_ref": encode_ref("loc", site.id),
         "location": site.site_name,
@@ -258,6 +258,31 @@ def location_detail(site, *, protection: dict) -> dict:
             "email": site.poc_email,
             "editable": False,
         },
+        "services": services or [],
+    }
+
+
+def service_preview(unit, *, protection: dict) -> dict:
+    """Minimal service card for the location detail (PR-C3): ref + label +
+    where + protection.  Full service detail is a separate endpoint."""
+    return {
+        "service_ref": encode_ref("svc", unit.id),
+        "label": _SERVICE_LABELS.get((unit.unit_type or "").lower(), "Emergency service"),
+        "where": unit.location_description,
+        "protection": protection,
+    }
+
+
+def e911_history_item(log) -> dict:
+    """Customer-safe E911 change-log entry — when / change / by / state only.
+    Drops the requester email and correlation id."""
+    when = getattr(log, "applied_at", None) or getattr(log, "requested_at", None)
+    verified = (log.status or "").lower() in {"validated", "verified", "applied"}
+    return {
+        "when": when.date().isoformat() if when else None,
+        "change": "Address verified" if verified else "Address updated",
+        "by": getattr(log, "requester_name", None) or "Manley",
+        "state": log.status,
     }
 
 
