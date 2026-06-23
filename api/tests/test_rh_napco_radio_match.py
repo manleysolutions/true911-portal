@@ -15,9 +15,9 @@ from app.audit_rh_napco_radio_match import (
     write_plan,
 )
 
-GOOD = "89148000007194217721"   # valid 20-digit ICCID
-GOOD2 = "89148000007459957854"
-RH = "Restoration Hardware #351 Beverly Modern"
+GOOD = "89000000000000000001"   # valid 20-digit ICCID
+GOOD2 = "89000000000000000002"
+RH = "Restoration Hardware #999 Test Store"
 
 
 def _dev(device_id, *, serial_number=None, iccid=None, model="SLELTE - Fire",
@@ -43,15 +43,15 @@ def _one(devices, export):
 
 # 1 — device_id matches RadioNumber
 def test_device_id_matches_radionumber():
-    rec, _ = _one([_dev("5483291")], [_exp("5483291", GOOD)])
+    rec, _ = _one([_dev("10000004")], [_exp("10000004", GOOD)])
     assert rec["match_status"] == "exact_device_id_match"
     assert rec["backfill_decision"] == "backfill_ready"
-    assert rec["matched_radio_number"] == "5483291"
+    assert rec["matched_radio_number"] == "10000004"
 
 
 # 2 — serial_number matches RadioNumber
 def test_serial_matches_radionumber():
-    rec, _ = _one([_dev("dev-x", serial_number="9741483")], [_exp("9741483", GOOD)])
+    rec, _ = _one([_dev("dev-x", serial_number="10000005")], [_exp("10000005", GOOD)])
     assert rec["match_status"] == "exact_serial_match"
     assert rec["backfill_decision"] == "backfill_ready"
 
@@ -67,7 +67,7 @@ def test_iccid_proposed_when_empty():
 
 # 4 — existing different ICCID refuses proposal
 def test_existing_different_iccid_review_required():
-    rec, _ = _one([_dev("5483291", iccid=GOOD2)], [_exp("5483291", GOOD)])
+    rec, _ = _one([_dev("10000004", iccid=GOOD2)], [_exp("10000004", GOOD)])
     assert rec["match_status"] == "data_conflict"
     assert rec["backfill_decision"] == "review_required"
     assert rec["proposed_update"] is None
@@ -75,7 +75,7 @@ def test_existing_different_iccid_review_required():
 
 # 5 — duplicate RadioNumber in export refuses proposal
 def test_duplicate_radionumber_refused():
-    rec, _ = _one([_dev("5483291")], [_exp("5483291", GOOD), _exp("5483291", GOOD2)])
+    rec, _ = _one([_dev("10000004")], [_exp("10000004", GOOD), _exp("10000004", GOOD2)])
     assert rec["match_status"] == "duplicate_radio_number"
     assert rec["backfill_decision"] == "refused"
 
@@ -83,32 +83,32 @@ def test_duplicate_radionumber_refused():
 # 6 — multiple RH devices match same RadioNumber refuses proposal
 def test_ambiguous_multiple_rh_devices_refused():
     recs = build_records(
-        [_dev("5483291"), _dev("other", serial_number="5483291")],
-        [_exp("5483291", GOOD)], classify)
+        [_dev("10000004"), _dev("other", serial_number="10000004")],
+        [_exp("10000004", GOOD)], classify)
     assert all(r["match_status"] == "ambiguous_match" for r in recs)
     assert all(r["backfill_decision"] == "refused" for r in recs)
 
 
 # 7 — SubscriberName unrelated to RH becomes review_required
 def test_unrelated_subscriber_review_required():
-    rec, _ = _one([_dev("5483291")],
-                  [_exp("5483291", GOOD, subscriber="Acme Plumbing LLC")])
+    rec, _ = _one([_dev("10000004")],
+                  [_exp("10000004", GOOD, subscriber="Acme Plumbing LLC")])
     assert rec["backfill_decision"] == "review_required"
     assert "not clearly Restoration Hardware" in rec["reason"]
 
 
 # 8 — non-NAPCO device skipped
 def test_non_napco_device_skipped():
-    rec, _ = _one([_dev("5483291", model="LM150", manufacturer="FlyingVoice")],
-                  [_exp("5483291", GOOD)])
+    rec, _ = _one([_dev("10000004", model="LM150", manufacturer="FlyingVoice")],
+                  [_exp("10000004", GOOD)])
     assert rec["match_status"] == "non_napco_device"
     assert rec["backfill_decision"] == "skipped_non_napco"
 
 
 # 9 — export JSON plan importer rows contain only whitelisted fields
 def test_export_plan_only_whitelisted_fields():
-    recs = build_records([_dev("5483291"), _dev("9741483")],
-                         [_exp("5483291", GOOD), _exp("9741483", GOOD2)], classify)
+    recs = build_records([_dev("10000004"), _dev("10000005")],
+                         [_exp("10000004", GOOD), _exp("10000005", GOOD2)], classify)
     allowed = set(ALLOWED_FIELDS) | {"device_id"}
     for row in importer_mapping(recs):
         assert set(row).issubset(allowed), f"non-whitelisted field in {row}"
@@ -128,7 +128,7 @@ def test_read_only_no_db_writes():
 
 # 11 — malformed ICCID refuses proposal
 def test_malformed_iccid_refused():
-    rec, _ = _one([_dev("5483291")], [_exp("5483291", "12345")])
+    rec, _ = _one([_dev("10000004")], [_exp("10000004", "12345")])
     assert rec["backfill_decision"] == "refused"
     assert "malformed" in rec["reason"]
 
@@ -136,23 +136,23 @@ def test_malformed_iccid_refused():
 # 12 — summary math correct
 def test_summary_math():
     devices = [
-        _dev("5483291"),                       # backfill_ready
-        _dev("9741483"),                       # backfill_ready
+        _dev("10000004"),                       # backfill_ready
+        _dev("10000005"),                       # backfill_ready
         _dev("13864", iccid=GOOD2),            # review_required (diff iccid) — uses GOOD on export
-        _dev("12885992"),                      # refused (malformed export iccid)
+        _dev("10000002"),                      # refused (malformed export iccid)
         _dev("nomatch-1"),                     # unmatched
         _dev("vola-1", model="LM150", manufacturer="FlyingVoice"),  # non_napco
     ]
     export = [
-        _exp("5483291", GOOD), _exp("9741483", GOOD2),
-        _exp("13864", GOOD), _exp("12885992", "bad"),
+        _exp("10000004", GOOD), _exp("10000005", GOOD2),
+        _exp("13864", GOOD), _exp("10000002", "bad"),
     ]
     recs = build_records(devices, export, classify)
     s = summarize(recs, export)
     assert s["rh_devices_total"] == 6
     assert s["napco_candidates"] == 5          # all but the LM150
     assert s["napco_export_rows"] == 4
-    assert s["matched_by_device_id"] == 3      # 5483291, 9741483, 13864 (conflict still matched)
+    assert s["matched_by_device_id"] == 3      # 10000004, 10000005, 13864 (conflict still matched)
     assert s["backfill_ready"] == 2
     assert s["review_required"] == 1
     assert s["refused"] == 1
@@ -162,14 +162,14 @@ def test_summary_math():
 
 # ── plan document + file export ──────────────────────────────────────────
 def test_plan_document_and_write(tmp_path):
-    recs = build_records([_dev("5483291"), _dev("9741483")],
-                         [_exp("5483291", GOOD), _exp("9741483", GOOD2)], classify)
+    recs = build_records([_dev("10000004"), _dev("10000005")],
+                         [_exp("10000004", GOOD), _exp("10000005", GOOD2)], classify)
     doc = build_plan_document(recs, summarize(recs, []), "restoration-hardware")
     assert doc["apply"] is False and doc["read_only"] is True
     assert len(doc["importer_mapping"]) == 2
     # review_plan carries the rich NAPCO metadata (separate from importer rows).
     rp = doc["review_plan"][0]
-    assert rp["napco_radio_number"] in ("5483291", "9741483")
+    assert rp["napco_radio_number"] in ("10000004", "10000005")
     assert rp["suggested_vendor"] == "napco"
     out = tmp_path / "plan.json"
     n = write_plan(doc, str(out))

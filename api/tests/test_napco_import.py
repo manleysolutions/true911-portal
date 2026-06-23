@@ -190,13 +190,13 @@ def test_napco_real_headers_map_to_canonical_fields():
 
 def test_napco_real_row_parses():
     from app.import_napco_portal_status import _norm
-    row = ["10107087", "89148000007194217721", "9493400088",
-           "Restoration Hardware #351 Beverly Modern", "Manley Solutions",
-           "billing@ManleySolutions.com", "2026-06-03 07:19:47", "2022-01-25 00:00:00",
+    row = ["10000001", "89000000000000000001", "1234567890",
+           "Acme Retail #999 Test Store", "Example Dealer",
+           "billing@example.com", "2026-06-03 07:19:47", "2022-01-25 00:00:00",
            "Active", "128.4.85/6.1"] + ["-"] * 16 + ["SLF-SVC-10-LSVI", "4G:LTE"]
     p = parse_napco_row(row, build_column_map(NAPCO_HEADERS))
-    assert p["serial"] == "10107087"
-    assert p["iccid"] == "89148000007194217721"
+    assert p["serial"] == "10000001"
+    assert p["iccid"] == "89000000000000000001"
     assert p["last_comm"] == _dt.datetime(2026, 6, 3, 7, 19, 47, tzinfo=UTC)
     assert p["network_status"] == "online"   # SIMStatus Active
     assert p["gen_tech"] == "4G:LTE"
@@ -204,9 +204,9 @@ def test_napco_real_row_parses():
 
 def test_match_by_iccid():
     dev = object()
-    by_iccid = {"89148000007194217721": dev}
+    by_iccid = {"89000000000000000001": dev}
     d, method, review = match_device(
-        {"serial": "", "device_id": "", "iccid": "89148000007194217721"},
+        {"serial": "", "device_id": "", "iccid": "89000000000000000001"},
         {}, {}, by_iccid)
     assert d is dev and method == "iccid" and review is False
 

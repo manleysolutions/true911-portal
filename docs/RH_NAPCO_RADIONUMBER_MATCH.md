@@ -11,8 +11,8 @@ device. Yet the NAPCO export carries an ICCID for **every** radio. The missing
 link is the join key.
 
 ## Why RadioNumber may solve it
-Many RH NAPCO `device_id` values look like NAPCO RadioNumbers (e.g. `15474214`,
-`5483291`, `13864`). If `Device.device_id` (or `serial_number`) equals the
+Many RH NAPCO `device_id` values look like NAPCO RadioNumbers (e.g. `10000003`,
+`10000004`, `13864`). If `Device.device_id` (or `serial_number`) equals the
 export's `RadioNumber`, we can read that radio's ICCID straight from the export
 and propose it as a backfill — turning 0% coverage into a matchable fleet.
 
@@ -63,15 +63,15 @@ to RH.
 
 ## Example JSON backfill row (importer-compatible)
 ```json
-{ "device_id": "10107087", "iccid": "89148000007194217721", "serial_number": "10107087" }
+{ "device_id": "10000001", "iccid": "89000000000000000001", "serial_number": "10000001" }
 ```
 Rich review row:
 ```json
 {
-  "device_id": "10107087", "site_id": "SITE-...", "current_model": "SLELTE - Fire",
+  "device_id": "10000001", "site_id": "SITE-...", "current_model": "SLELTE - Fire",
   "suggested_vendor": "napco", "suggested_model": "SLELTE - Fire",
-  "serial_number": "10107087", "iccid": "89148000007194217721",
-  "napco_radio_number": "10107087", "napco_plan": "SLF-SVC-10-LSVI",
+  "serial_number": "10000001", "iccid": "89000000000000000001",
+  "napco_radio_number": "10000001", "napco_plan": "SLF-SVC-10-LSVI",
   "napco_gentech": "4G:LTE", "napco_subscriber_name": "Restoration Hardware #351 …",
   "operator_notes": "Matched by exact RadioNumber/device_id from NAPCO export"
 }

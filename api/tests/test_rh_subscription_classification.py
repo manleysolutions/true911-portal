@@ -12,7 +12,7 @@ from app.audit_rh_subscription_classification import (
     write_json,
 )
 
-GOOD_ICCID = "89148000007194217721"
+GOOD_ICCID = "89000000000000000001"
 
 
 def _kw(**over):
@@ -66,7 +66,7 @@ def test_unresolved():
 
 # ── normalize_iccid ──────────────────────────────────────────────────────
 def test_normalize_iccid():
-    assert normalize_iccid("8914 8000 0071 9421 7721") == GOOD_ICCID
+    assert normalize_iccid("8900 0000 0000 0000 0001") == GOOD_ICCID
     assert normalize_iccid(GOOD_ICCID + "F") == GOOD_ICCID
     assert normalize_iccid(None) == ""
 
