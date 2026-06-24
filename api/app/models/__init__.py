@@ -60,6 +60,7 @@ from app.models.registration_status_event import RegistrationStatusEvent
 from app.models.onboarding_review import OnboardingReview
 from app.models.llm_audit import LLMAuditLog
 from app.models.llm_cache import LLMSummaryCache
+from app.models.ops_center import AssetIdentity, OpsSupportSession, OpsOtpChallenge, OpsSessionEvent
 
 __all__ = [
     "Tenant",
@@ -130,4 +131,8 @@ __all__ = [
     "OnboardingReview",
     "LLMAuditLog",
     "LLMSummaryCache",
+    "AssetIdentity",
+    "OpsSupportSession",
+    "OpsOtpChallenge",
+    "OpsSessionEvent",
 ]

@@ -291,6 +291,45 @@ live T-Mobile activation enters RH's path.
 
 ---
 
+## EPIC-OPS-CENTER — AI Customer Operations Center / Support Center
+
+> Caller-facing Tier-1 support workflow: a caller WITHOUT an account number is
+> matched by a real-world field identifier (elevator phone number, MSISDN, Napco
+> radio number, ICCID, Starlink ID, site/building name, …), verified by **SMS
+> OTP** to an authorized contact on file, then given a temporary verified support
+> session with triage diagnostics and a human-handoff summary. Distinct from the
+> internal **AI Support Assistant** (`/api/support`, authenticated users). Design
+> + Phase-1 backend authoritative in `AI_CUSTOMER_OPERATIONS_CENTER.md`,
+> `SUPPORT_CENTER_ARCHITECTURE.md`, `ASSET_IDENTITY_MODEL.md`,
+> `SUPPORT_VERIFICATION_WORKFLOW.md`, `SUPPORT_ESCALATION_MATRIX.md`.
+>
+> **Status:** Phase 1 (backend foundation) **IMPLEMENTED** behind `FEATURE_OPS_CENTER`
+> (default OFF → all `/api/ops-center/*` routes 404; migration `048` additive). Not
+> yet enabled in any environment. Does **not** gate EPIC-RH-GO-LIVE.
+
+### Phase 1 — Backend foundation (IMPLEMENTED, flag-gated, additive)
+- **OPS-P1.1 — Data model + migration `048`.** `asset_identities`, `ops_support_sessions`,
+  `ops_otp_challenges`, `ops_session_events`. *Done.*
+- **OPS-P1.2 — Asset lookup.** `asset_identities` index + native-field fallback
+  (Device/Site/ServiceUnit/Line); redacted matches; contact-on-file resolution. *Done.*
+- **OPS-P1.3 — Verification.** SMS-OTP issue/verify; salted-hash codes (never stored
+  plaintext); attempt-limit + expiry; sensitive fields withheld until verified. *Done.*
+- **OPS-P1.4 — Triage hooks.** Device health / last-seen / carrier-SIM / SIP-ATA /
+  signal / events / tickets / billing — graceful-degrade stubs; verified-only. *Done.*
+- **OPS-P1.5 — Escalation.** Handoff summary + optional incident; emergency life-safety
+  incident allowed while unverified. *Done.*
+
+### Phase 2 — UI (Support Center surface)
+- **OPS-P2.1 — Customer/internal Support Center placeholder** (flag-gated nav).
+- **OPS-P2.2 — Asset lookup interface, session detail, verification-state display,
+  handoff-summary display.**
+
+### Phase 3 — Real OTP provider
+- **OPS-P3.1 — Twilio/Telnyx `OtpProvider` implementation** behind the existing
+  `app/services/ops_center/otp` abstraction (stub is the safe default today).
+- **OPS-P3.2 — Rate-limiting + abuse controls** on lookup + OTP send before any
+  internet/customer-portal exposure (see `SUPPORT_VERIFICATION_WORKFLOW.md` "Follow-ups").
+
 ## IDEAS (unprioritized; validate against MISSION before promoting)
 
 - Customer-facing Assurance portal with the "Recent Manley Activity" timeline
