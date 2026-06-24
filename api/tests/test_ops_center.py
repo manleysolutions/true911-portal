@@ -22,7 +22,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app import dependencies as deps
@@ -177,10 +177,11 @@ async def test_stub_provider_simulated_and_no_send():
 
 
 def test_get_otp_provider_selection():
-    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="stub")).name == "stub"
-    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="console")).name == "console"
+    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="stub", APP_MODE="demo")).name == "stub"
+    # console is dev-only; allowed in demo mode (production guard tested separately).
+    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="console", APP_MODE="demo")).name == "console"
     # Future providers degrade to the stub rather than failing.
-    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="twilio")).name == "stub"
+    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="twilio", APP_MODE="demo")).name == "stub"
 
 
 def test_attach_match_masks_contact_and_stashes_destination():
@@ -206,12 +207,28 @@ def test_build_handoff_summary_shape():
         verification_status="verified", matched_label="Elevator 3",
         meta={"identifiers_used": ["msisdn"]},
     )
-    h = session_svc.build_handoff_summary(s, diagnostics=[{"check": "last_seen"}])
+    h = session_svc.build_handoff_summary(s, diagnostics=[{"check": "last_seen"}], reveal_sensitive=True)
     assert h["session_ref"] == "OPS-TEST0001"
     assert h["customer"] == "rh" and h["device_id"] == "dev-1"
     assert h["identifiers_used"] == ["msisdn"]
     assert h["diagnostics"] == [{"check": "last_seen"}]
     assert h["recommended_next_action"]
+
+
+def test_build_handoff_summary_redacts_when_not_revealable():
+    """Item 1: unverified, non-emergency handoff hides matched customer/device,
+    aligned with _serialize_session."""
+    s = _session(
+        matched_tenant_id="rh", matched_site_id="S1", matched_device_id="dev-1",
+        verification_status="unverified", matched_label="Elevator 3",
+        matched_service_unit_id="SU-3",
+    )
+    h = session_svc.build_handoff_summary(s, reveal_sensitive=False)
+    assert h["customer"] is None      # tenant/customer withheld
+    assert h["device_id"] is None     # device withheld
+    # Non-sensitive context the session view also keeps pre-verification.
+    assert h["site_id"] == "S1"
+    assert h["asset_label"] == "Elevator 3"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -425,3 +442,122 @@ def test_features_endpoint_exposes_ops_center_flag(monkeypatch):
     client = TestClient(main_app, raise_server_exceptions=False)
     body = client.get("/api/config/features").json()
     assert body.get("ops_center") is True
+
+
+# ════════════════════════════════════════════════════════════════════
+# Hardening — cross-tenant isolation (Item 2)
+# ════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_load_session_404_for_foreign_tenant_user():
+    """A tenant-scoped internal user must NOT read another tenant's session."""
+    foreign = _session(matched_tenant_id="other-co", opened_by_tenant_id="other-co")
+    db = FakeDB(results=[[foreign]])  # session exists in the DB...
+    user = SimpleNamespace(role="User", tenant_id="rh", email="rep@rh.example", id=uuid4())
+    with pytest.raises(HTTPException) as exc:
+        await ops_center._load_session(db, foreign.id, user)
+    assert exc.value.status_code == 404  # ...but hidden as not-found
+
+
+@pytest.mark.asyncio
+async def test_load_session_allows_owning_tenant_user():
+    own = _session(matched_tenant_id="rh", opened_by_tenant_id="rh")
+    db = FakeDB(results=[[own]])
+    user = SimpleNamespace(role="User", tenant_id="rh", email="rep@rh.example", id=uuid4())
+    got = await ops_center._load_session(db, own.id, user)
+    assert got is own
+
+
+@pytest.mark.asyncio
+async def test_load_session_platform_user_sees_any_tenant():
+    foreign = _session(matched_tenant_id="other-co", opened_by_tenant_id="other-co")
+    db = FakeDB(results=[[foreign]])
+    admin = SimpleNamespace(role="Admin", tenant_id="default", email="op@true911.com", id=uuid4())
+    got = await ops_center._load_session(db, foreign.id, admin)
+    assert got is foreign  # platform operators are intentionally cross-tenant
+
+
+# ════════════════════════════════════════════════════════════════════
+# Hardening — console OTP production guard (Item 3)
+# ════════════════════════════════════════════════════════════════════
+
+def test_console_provider_refused_in_production():
+    prod = SimpleNamespace(OPS_CENTER_OTP_PROVIDER="console", APP_MODE="production")
+    assert get_otp_provider(prod).name == "stub"  # fail closed → no code logged
+
+
+def test_console_provider_allowed_in_demo():
+    demo = SimpleNamespace(OPS_CENTER_OTP_PROVIDER="console", APP_MODE="demo")
+    assert get_otp_provider(demo).name == "console"
+
+
+def test_console_provider_fails_closed_without_app_mode():
+    # No APP_MODE attribute → treated as production → stub.
+    assert get_otp_provider(SimpleNamespace(OPS_CENTER_OTP_PROVIDER="console")).name == "stub"
+
+
+# ════════════════════════════════════════════════════════════════════
+# Hardening — destination_override guard (Item 4)
+# ════════════════════════════════════════════════════════════════════
+
+def test_destination_override_rejected_for_non_platform_user(monkeypatch):
+    monkeypatch.setattr("app.config.settings.FEATURE_OPS_CENTER", "true")
+    sid = uuid4()
+    sess = _session(id=sid, matched_tenant_id="rh")
+
+    async def _fake_load(db, session_id, user):
+        return sess
+
+    monkeypatch.setattr(ops_center, "_load_session", _fake_load)
+    # internal role but a customer-tenant (non-platform) context
+    c = _client(role="User", tenant="rh")
+    r = c.post(f"/api/ops-center/session/{sid}/send-otp", json={"destination_override": "+18563081391"})
+    assert r.status_code == 403
+    assert "internal platform operators" in r.json()["detail"]
+
+
+def test_destination_override_disabled_while_real_provider(monkeypatch):
+    monkeypatch.setattr("app.config.settings.FEATURE_OPS_CENTER", "true")
+    monkeypatch.setattr("app.config.settings.OPS_CENTER_OTP_PROVIDER", "twilio")
+    sid = uuid4()
+    sess = _session(id=sid, matched_tenant_id="rh")
+
+    async def _fake_load(db, session_id, user):
+        return sess
+
+    monkeypatch.setattr(ops_center, "_load_session", _fake_load)
+    c = _client(role="Admin", tenant="default")  # platform operator
+    r = c.post(f"/api/ops-center/session/{sid}/send-otp", json={"destination_override": "+18563081391"})
+    assert r.status_code == 403
+    assert "rate-limiting" in r.json()["detail"]
+
+
+# ════════════════════════════════════════════════════════════════════
+# Hardening — emergency self-assert guard (Item 5)
+# ════════════════════════════════════════════════════════════════════
+
+def test_emergency_blocked_from_customer_portal_source(monkeypatch):
+    monkeypatch.setattr("app.config.settings.FEATURE_OPS_CENTER", "true")
+    c = _client(role="Admin", tenant="default")  # even a platform operator...
+    r = c.post("/api/ops-center/session",
+               json={"source": "customer_portal", "is_emergency": True})
+    assert r.status_code == 403  # ...cannot declare emergency via a public source
+    assert "internal operator" in r.json()["detail"]
+
+
+def test_emergency_blocked_for_non_platform_user(monkeypatch):
+    monkeypatch.setattr("app.config.settings.FEATURE_OPS_CENTER", "true")
+    c = _client(role="User", tenant="rh")  # internal role, customer tenant → not platform
+    r = c.post("/api/ops-center/session",
+               json={"source": "phone", "is_emergency": True})
+    assert r.status_code == 403
+
+
+def test_non_emergency_session_not_blocked_by_guard(monkeypatch):
+    """The guard must only fire for emergency assertions, not normal sessions."""
+    monkeypatch.setattr("app.config.settings.FEATURE_OPS_CENTER", "true")
+    c = _client(role="User", tenant="rh")
+    r = c.post("/api/ops-center/session", json={"source": "customer_portal", "is_emergency": False})
+    # The create path proceeds past the emergency guard and succeeds.
+    assert r.status_code == 201
+    assert r.json()["verification_status"] == "unverified"

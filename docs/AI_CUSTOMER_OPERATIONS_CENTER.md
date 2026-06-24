@@ -102,7 +102,7 @@ Full detail in `SUPPORT_CENTER_ARCHITECTURE.md` and
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `FEATURE_OPS_CENTER` | `false` | Master switch (404 when off). |
-| `OPS_CENTER_OTP_PROVIDER` | `stub` | `stub` (no send) · `console` (dev log) · `twilio`/`telnyx` (Phase 3). |
+| `OPS_CENTER_OTP_PROVIDER` | `stub` | `stub` (no send) · `console` (dev log; **refused in `APP_MODE=production`** → falls back to `stub`) · `twilio`/`telnyx` (Phase 3). |
 | `OPS_CENTER_OTP_CODE_LENGTH` | `6` | OTP digits. |
 | `OPS_CENTER_OTP_TTL_SECONDS` | `300` | OTP validity window. |
 | `OPS_CENTER_OTP_MAX_ATTEMPTS` | `5` | Wrong-code attempts before lockout. |
@@ -113,7 +113,12 @@ Full detail in `SUPPORT_CENTER_ARCHITECTURE.md` and
 - Phase 1 is **operator-driven**: an authenticated internal agent (or the AI
   on the caller's behalf) drives the endpoints. A self-service caller/customer-
   portal front-end (`source=customer_portal`) is supported in the data model
-  but needs Phase 2 UI + Phase 3 rate-limiting before public exposure.
+  but needs Phase 2 UI + Phase 3 rate-limiting before public exposure. As
+  defense-in-depth, privileged options are already gated to an internal
+  platform context: **`is_emergency`** cannot be self-asserted from a public
+  source, and **`destination_override`** is internal-only and auto-disabled for
+  a real sending provider until rate-limiting lands
+  (see `SUPPORT_VERIFICATION_WORKFLOW.md` §6–§7).
 - "Authorized contact on file" currently resolves to the matched **Site POC
   phone** (`sites.poc_phone`). A dedicated multi-contact authorization model is
   a natural Phase 2+ extension (`ASSET_IDENTITY_MODEL.md` §6).

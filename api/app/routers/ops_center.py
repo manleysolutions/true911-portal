@@ -64,9 +64,18 @@ from app.services.ops_center import lookup as lookup_svc
 from app.services.ops_center import sessions as session_svc
 from app.services.ops_center import triage as triage_svc
 from app.services.ops_center.normalize import mask_phone, normalize_identifier
+from app.services.ops_center.otp import provider_sends_real_sms
 
 logger = logging.getLogger("true911.ops_center")
 router = APIRouter()
+
+# Sources that represent a self-service caller / public-facing flow (as
+# opposed to an authenticated internal operator driving the session).  These
+# are NOT permitted to self-assert privileged options (emergency bypass).
+# Until a Phase-3 public flow with explicit policy + rate-limiting exists,
+# these are gated here at the API boundary as defense-in-depth — the RBAC
+# layer already withholds OPS_CENTER_* from customer roles.
+PUBLIC_SOURCES = {"customer_portal"}
 
 
 # ── gates / helpers ──────────────────────────────────────────────────
@@ -227,6 +236,19 @@ async def create_session(
     if body.issue_category and body.issue_category not in ISSUE_CATEGORIES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown issue_category")
 
+    # Emergency assertion is INTERNAL-OPERATOR ONLY for now: it bypasses
+    # caller verification and opens a life-safety incident.  A self-service /
+    # public source (or a non-platform context) must not be able to
+    # self-declare an emergency until an explicit policy + rate-limiting
+    # exists.  Customer roles are already blocked by RBAC; this is the second
+    # layer that also covers an internal operator relaying a public flow.
+    if body.is_emergency and (body.source in PUBLIC_SOURCES or not is_platform_user(current_user)):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Emergency sessions can only be declared by an internal operator. "
+            "Self-service/public callers cannot self-assert an emergency.",
+        )
+
     session = await session_svc.create_session(
         db,
         caller_phone=body.caller_phone,
@@ -320,6 +342,28 @@ async def send_otp(
 ):
     _require_feature()
     session = await _load_session(db, session_id, current_user)
+
+    # destination_override lets the operator send the OTP to a number OTHER
+    # than the contact on file.  It is an abuse-sensitive capability (send to
+    # an arbitrary number), so it is gated twice:
+    #   1. INTERNAL platform operators only — never a customer-tenant context.
+    #   2. Disabled while a real sending provider is configured but OTP
+    #      rate-limiting does not yet exist (today every provider is simulated,
+    #      so this is inert; it becomes a hard gate the moment Twilio/Telnyx
+    #      is wired without rate-limiting).  See SUPPORT_VERIFICATION_WORKFLOW.md.
+    if body.destination_override:
+        if not is_platform_user(current_user):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "destination_override is restricted to internal platform operators.",
+            )
+        if provider_sends_real_sms(settings):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "destination_override is disabled until OTP rate-limiting is "
+                "implemented for the live SMS provider.",
+            )
+
     if not session.matched_tenant_id and not body.destination_override:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -417,7 +461,11 @@ async def escalate(
     if session.status not in ("resolved", "closed"):
         session.status = "escalated"
 
-    summary_dict = session_svc.build_handoff_summary(session, diagnostics)
+    # Redaction mirrors the session view: matched customer/device are only
+    # revealed in the handoff when verified or emergency-limited.
+    summary_dict = session_svc.build_handoff_summary(
+        session, diagnostics, reveal_sensitive=_reveal_sensitive(session)
+    )
     if body.reason:
         summary_dict["recommended_next_action"] = body.reason
 

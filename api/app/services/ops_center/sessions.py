@@ -95,6 +95,7 @@ async def create_session(
         is_emergency=bool(is_emergency),
         status="open",
         verification_status="unverified",
+        escalation_status="none",
         opened_by_user_id=getattr(operator, "id", None),
         opened_by_email=getattr(operator, "email", None),
         opened_by_tenant_id=getattr(operator, "tenant_id", None),
@@ -322,8 +323,22 @@ async def create_emergency_incident(
     return incident
 
 
-def build_handoff_summary(session: OpsSupportSession, diagnostics: Optional[list[dict]] = None) -> dict:
-    """Assemble the human-handoff summary (internal-operator view)."""
+def build_handoff_summary(
+    session: OpsSupportSession,
+    diagnostics: Optional[list[dict]] = None,
+    *,
+    reveal_sensitive: bool,
+) -> dict:
+    """Assemble the human-handoff summary.
+
+    ``reveal_sensitive`` MUST mirror the session-view redaction rule
+    (verified OR emergency).  When it is False the matched customer/tenant
+    and device identifiers are withheld from the returned payload — exactly
+    the fields ``_serialize_session`` blanks — so an unverified, non-emergency
+    escalation never exposes which customer/device the caller *claimed*.  The
+    data still lives on the session server-side for an internal operator to
+    look up by ``session_ref`` through normal tenant-scoped tools.
+    """
     meta = session.meta or {}
     return {
         "session_ref": session.session_ref,
@@ -331,9 +346,11 @@ def build_handoff_summary(session: OpsSupportSession, diagnostics: Optional[list
         "issue_summary": session.issue_summary,
         "is_emergency": session.is_emergency,
         "verification_status": session.verification_status,
-        "customer": session.matched_tenant_id,
+        # Sensitive matched identifiers — gated, aligned with _serialize_session.
+        "customer": session.matched_tenant_id if reveal_sensitive else None,
+        "device_id": session.matched_device_id if reveal_sensitive else None,
+        # Non-sensitive context the session view also exposes pre-verification.
         "site_id": session.matched_site_id,
-        "device_id": session.matched_device_id,
         "service_unit_id": session.matched_service_unit_id,
         "asset_label": session.matched_label,
         "identifiers_used": list(meta.get("identifiers_used", [])),

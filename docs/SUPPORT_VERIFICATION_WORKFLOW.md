@@ -68,12 +68,31 @@ Until `verified` (or emergency), the API withholds:
 
 - `matched_tenant_id` and `matched_device_id` from the session view
   (`_serialize_session`);
+- the **same** fields from the **escalation handoff summary**
+  (`build_handoff_summary(..., reveal_sensitive=…)` is driven by the identical
+  verified-or-emergency rule, so an unverified, non-emergency escalation never
+  exposes the customer/device the caller *claimed* — `customer` and `device_id`
+  come back `null`; non-sensitive context like `site_id`/`asset_label` mirrors
+  what the session view keeps);
 - **all triage** (device health, last-seen, carrier/SIM, SIP/ATA, signal,
   events, tickets, billing) — `POST /triage` returns **403** and logs
   `sensitive_access_blocked`.
 
 The lookup response is always redacted: contact masked, `has_contact_on_file`
 boolean only, and `tenant_id` shown only to platform operators.
+
+### `destination_override` (internal-only)
+
+`POST /send-otp` accepts an optional `destination_override` so an operator can
+send the code to a number other than the contact on file. It is **abuse-
+sensitive** (send to an arbitrary number) and gated twice:
+
+1. **Internal platform operators only** — a non-platform / customer-tenant
+   context gets **403**. It is **never** exposed to a customer/public flow.
+2. **Disabled while a real sending provider is configured** (`twilio`/`telnyx`)
+   until OTP rate-limiting exists → **403** (`provider_sends_real_sms`). Today
+   every provider is simulated, so this is inert; it becomes a hard gate the
+   moment a live provider is wired without rate-limiting.
 
 ## 7. Emergency path (life-safety)
 
@@ -89,6 +108,14 @@ This satisfies "allow creation of a limited emergency incident while
 verification continues" without exposing the full record. Emergencies also
 reveal the matched context in the session view (a responder needs it).
 
+**Emergency is INTERNAL-OPERATOR ASSERTED ONLY (for now).** Because the
+emergency flag bypasses verification, `is_emergency=true` is rejected (**403**)
+when the request comes from a self-service/public source (`source=customer_portal`)
+**or** a non-platform context. Customer roles already lack `OPS_CENTER_*`
+entirely; this is the second layer that also blocks an internal operator
+relaying a public flow. A self-service caller cannot self-declare an emergency
+until an explicit policy + rate-limiting exists (`OPS-P3.2`).
+
 ## 8. Audit
 
 Every step appends an `ops_session_events` row (`session_created`,
@@ -102,7 +129,18 @@ the matched tenant is known, `otp_sent` / `otp_verified` / `otp_failed` /
 
 - **Rate-limiting / abuse controls** on `lookup-asset` and `send-otp`
   (per-caller, per-destination, per-IP) — *required* before `source=customer_portal`
-  or any internet-facing front-end. Tracked as `OPS-P3.2`.
+  or any internet-facing front-end. Tracked as `OPS-P3.2`. Until then,
+  `destination_override` is internal-only **and** auto-disabled for a real
+  sending provider (see §6), and `is_emergency` is internal-operator-only (§7).
 - **Real OTP provider** (Twilio/Telnyx) — `stub` sends nothing today (`OPS-P3.1`).
 - **Per-destination cooldown** between re-issues.
 - **Authorized-contact model** beyond the single Site POC (`ASSET_IDENTITY_MODEL.md` §6).
+
+### Already hardened (pre-enablement)
+
+- **Handoff redaction** aligned with the session view (§6).
+- **`console` OTP provider refused in production** app mode (`APP_MODE=production`)
+  → falls back to `stub` (fail-closed), so a misconfigured prod env can never log
+  an OTP code. Allowed only in demo/dev.
+- **Cross-tenant session isolation** (`_load_session` 404 for a foreign tenant)
+  is regression-tested.

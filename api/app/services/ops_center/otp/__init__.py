@@ -10,6 +10,6 @@ emit a real message and never need credentials.
 """
 
 from app.services.ops_center.otp.base import OtpProvider, OtpSendResult
-from app.services.ops_center.otp.factory import get_otp_provider
+from app.services.ops_center.otp.factory import get_otp_provider, provider_sends_real_sms
 
-__all__ = ["OtpProvider", "OtpSendResult", "get_otp_provider"]
+__all__ = ["OtpProvider", "OtpSendResult", "get_otp_provider", "provider_sends_real_sms"]

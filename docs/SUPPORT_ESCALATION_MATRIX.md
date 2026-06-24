@@ -21,6 +21,14 @@ diagnostics (only when verified/emergency), and a recommended next action.
 This is the "everything the next human needs" packet
 (`sessions.build_handoff_summary`).
 
+**Redaction (aligned with the session view):** the summary is built with
+`reveal_sensitive = verified OR emergency`. For an **unverified, non-emergency**
+escalation the matched **`customer` (tenant)** and **`device_id`** come back
+`null` — the operator escalates with `session_ref` and looks the rest up through
+normal tenant-scoped tools. Diagnostics are likewise attached only when
+verified/emergency. This prevents an unverified caller's *claimed* customer/
+device from leaking through the handoff path.
+
 ```json
 {
   "session_ref": "OPS-3F9A2B1C",
