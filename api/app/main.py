@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .bootstrap import ensure_bootstrap_admin
 from .middleware import RequestVisibilityMiddleware, TmobileCallbackAuditMiddleware
-from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, zoho_review, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls, llm, device_health, assurance, customer
+from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, zoho_review, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, onboarding_review, calls, llm, device_health, assurance, customer, ops_center
 
 # Configure app-level logging so INFO emits to Render's stdout stream.
 # Uvicorn manages its own access/error loggers; this sets the level on
@@ -206,6 +206,10 @@ app.include_router(llm.router,                prefix="/api/llm",              ta
 app.include_router(device_health.router,      prefix="/api/device-health",    tags=["device-health"])
 app.include_router(assurance.router,          prefix="/api/assurance",        tags=["assurance"])
 app.include_router(customer.router,           prefix="/api/customer",         tags=["customer"])
+# AI Customer Operations Center / Support Center.  Routes self-gate on
+# FEATURE_OPS_CENTER and 404 when off, so registering unconditionally is a
+# no-op deploy until the env var is set (default off).
+app.include_router(ops_center.router,         prefix="/api/ops-center",       tags=["ops-center"])
 
 
 @app.get("/api/config/features")
@@ -217,6 +221,10 @@ async def feature_flags():
         # Phase 1 LLLM master switch.  When false, /api/llm routes 404
         # and the UI hides the AI nav item + Command card.  Default off.
         "lllm": settings.FEATURE_LLLM.lower() == "true",
+        # AI Customer Operations Center / Support Center master switch.
+        # When false, /api/ops-center routes 404 and the UI hides the
+        # Support Center surface.  Default off.
+        "ops_center": settings.FEATURE_OPS_CENTER.lower() == "true",
     }
 
 

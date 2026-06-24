@@ -180,6 +180,29 @@ class Settings(BaseSettings):
     FEATURE_CUSTOMER_API: str = "false"
     CUSTOMER_API_TENANT_ALLOWLIST: str = ""
 
+    # ── AI Customer Operations Center / Support Center ─────────────
+    # Caller-facing Tier-1 support workflow: identifier lookup → SMS-OTP
+    # caller verification → temporary support session → triage → human
+    # handoff.  Distinct from the internal AI Support Assistant
+    # (/api/support) which serves authenticated users.  When "false"
+    # (default) every /api/ops-center route returns 404 and no asset
+    # lookup, OTP, or session can be created — the platform behaves
+    # exactly as before.  See docs/AI_CUSTOMER_OPERATIONS_CENTER.md.
+    FEATURE_OPS_CENTER: str = "false"
+    # OTP delivery provider.  "stub" (default) records the challenge and
+    # reports success WITHOUT sending anything (safe for dev/CI).
+    # "console" additionally logs the code to the server log (dev only —
+    # never enable in an internet-exposed environment).  "twilio" and
+    # "telnyx" are reserved for Phase 3+ real providers (not yet wired).
+    OPS_CENTER_OTP_PROVIDER: str = "stub"  # stub | console | twilio | telnyx
+    OPS_CENTER_OTP_CODE_LENGTH: int = 6
+    OPS_CENTER_OTP_TTL_SECONDS: int = 300  # OTP validity window
+    OPS_CENTER_OTP_MAX_ATTEMPTS: int = 5   # wrong-code attempts before lockout
+    # Default escalation / human-handoff phone number used when a session
+    # cannot be resolved by the workflow.  Empty = no default; the
+    # escalate endpoint then records the handoff without a routing number.
+    OPS_CENTER_HANDOFF_NUMBER: str = ""
+
     # ── Zoho Desk (support ticket escalation) ─────────────────────
     ZOHO_DESK_DOMAIN: str = ""  # e.g. https://desk.zoho.com — empty = stub mode
     ZOHO_DESK_ORG_ID: str = ""
