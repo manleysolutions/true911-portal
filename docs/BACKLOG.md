@@ -319,6 +319,23 @@ live T-Mobile activation enters RH's path.
 - **OPS-P1.5 — Escalation.** Handoff summary + optional incident; emergency life-safety
   incident allowed while unverified. *Done.*
 
+### Phase 1.5 — Operational-intelligence foundations (IMPLEMENTED, additive, inert)
+> Schema + library scaffolding only — no UI, no routes, no workflow change, no
+> public exposure; entirely inert until a later phase wires it. Migration `049`
+> additive. Doc: `OPS_CENTER_PHASE_1_5.md`.
+- **OPS-P1.5.1 — Canonical `IncidentSeverity` + status enums** + issue-category→
+  severity / priority mapping. *Done.*
+- **OPS-P1.5.2 — `OpsEscalationQueue` model + `enqueue_escalation` helper** (not
+  yet wired to `escalate`). *Done.*
+- **OPS-P1.5.3 — Support knowledge stubs:** `OpsKnowledgeArticle`, `OpsPlaybook`,
+  `OpsResolutionPattern` models. *Done.*
+- **OPS-P1.5.4 — `CustomerHealthSnapshot` service stub** (read-only, tenant-scoped,
+  graceful-degrade; may later delegate to the Assurance Engine). *Done.*
+- **OPS-P1.5.5 — Carrier/`VendorContext` service output** (normalized; no new
+  Device/Sim columns). *Done.*
+- **OPS-P1.5.6 — (later)** wire the queue into `escalate`; author KB/playbooks;
+  learn resolution patterns — all still internal + flag-gated.
+
 ### Phase 2 — UI (Support Center surface)
 - **OPS-P2.1 — Customer/internal Support Center placeholder** (flag-gated nav).
 - **OPS-P2.2 — Asset lookup interface, session detail, verification-state display,
