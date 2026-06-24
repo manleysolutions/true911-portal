@@ -61,6 +61,7 @@ from app.models.onboarding_review import OnboardingReview
 from app.models.llm_audit import LLMAuditLog
 from app.models.llm_cache import LLMSummaryCache
 from app.models.ops_center import AssetIdentity, OpsSupportSession, OpsOtpChallenge, OpsSessionEvent
+from app.models.ops_center_intelligence import OpsEscalationQueue, OpsKnowledgeArticle, OpsPlaybook, OpsResolutionPattern
 
 __all__ = [
     "Tenant",
@@ -135,4 +136,8 @@ __all__ = [
     "OpsSupportSession",
     "OpsOtpChallenge",
     "OpsSessionEvent",
+    "OpsEscalationQueue",
+    "OpsKnowledgeArticle",
+    "OpsPlaybook",
+    "OpsResolutionPattern",
 ]
