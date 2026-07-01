@@ -9,6 +9,27 @@
 > Last updated: 2026-07-01. Branch at time of writing:
 > `feat/ops-center-phase-1-6-resolution-intelligence`.
 
+## 0d. Latest change — Location Digital Twin [2026-07-01]
+
+The Location tier of the Command Center is now a **Digital Twin** — each customer
+building is a complete operational record. Additive on `/api/customer/*`:
+- **New endpoints (CUSTOMER_VIEW_LOCATIONS):** `/locations/{ref}/documents`,
+  `/photos`, `/contacts`, `/inspections`, `/health` (per-location building health).
+- **Enriched service model** (`serialize.service_with_equipment`, additive): carrier
+  **name**, telephone numbers, equipment count, last test/inspection, attention items.
+  New serializers: `carrier_label`, `timeline_entry`, `location_contacts`,
+  documents/photos/inspections placeholders + `TIMELINE_KINDS`/`DOCUMENT_CATEGORIES`/
+  `INSPECTION_KINDS`. Loaders in `command_center.py`.
+- **Frontend:** `LocationCommandCenter.jsx` is now the full Location Workspace
+  (Overview · Health · Services+Equipment · E911 · Documents · Photos · Inspections ·
+  Timeline · Contacts · Emergency Procedures · Service Requests · Billing · Notes);
+  breadcrumb + **permanent `?location=<ref>` shareable deep-link** + quick actions
+  in `CustomerAssuranceView.jsx`.
+- **Truth/isolation:** no fabricated E911/telemetry/inspections; per-location health
+  uses real signals only (unknowns lower confidence); carrier *name* only (never
+  credentials/IMEI/ICCID/firmware/SIM); CUSTOMER_* isolation unchanged. Full suite
+  green (3656); web build green. Docs: `docs/customer/LOCATION_DIGITAL_TWIN.md` (new).
+
 ## 0c. Latest change — Customer Command Center (Phase 1) [2026-07-01]
 
 The RH customer dashboard is now the first version of the **Customer Command
