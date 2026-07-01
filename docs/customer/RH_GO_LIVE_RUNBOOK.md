@@ -113,12 +113,19 @@ Verify every RH location / device / E911 record in **Zoho CRM** exists correctly
 ```bash
 cd api && python -m scripts.rh_zoho_reconciliation \
     --tenant restoration-hardware --module Accounts \
-    --csv /tmp/rh_zoho_reconciliation.csv --json /tmp/rh_zoho_reconciliation.json
+    --csv /tmp/rh_zoho_reconciliation.csv --json /tmp/rh_zoho_reconciliation.json \
+    --report /tmp/rh_zoho_sync_report.md
+# Zoho v5 sometimes needs an explicit field list — override the safe default with:
+#   --fields "Account_Name,Billing_Street,Billing_City,Billing_State,Billing_Code,\
+#             Shipping_Street,Shipping_City,Shipping_State,Shipping_Code,Phone"
 ```
 
 Read-only (SELECTs + the existing authenticated Zoho GET layer — **never writes
 Zoho or True911**). Matches by store name, address, city/state, phone, and
-device/line label; writes a CSV + JSON report and prints a summary. Exit codes:
+device/line label; writes CSV + JSON + a Markdown **sync report** (matched /
+inconsistencies / needs-investigation / punch list) and prints a summary.
+`--fields` is a safe default for the Accounts module and can be overridden.
+Exit codes:
 **0** clean · **1** findings present · **2** error / Zoho not configured. Flags:
 Zoho location missing in True911 · True911 location missing in Zoho · address
 mismatch · missing device · missing service unit · missing callback number · E911
