@@ -160,8 +160,12 @@ cd api && python -m scripts.rh_portfolio_certification \
 # live Zoho mode (reuses the existing OAuth client + pagination — needs ZOHO_CRM_* configured)
 cd api && python -m scripts.rh_portfolio_certification \
     --tenant restoration-hardware --zoho-live --module Accounts \
-    --report /tmp/rh_portfolio_certification.md
+    --report /tmp/rh_portfolio_certification.md \
+    --csv /tmp/rh_portfolio_certification.csv \
+    --json /tmp/rh_portfolio_certification.json
 # override the live field set with --fields "Account_Name,Billing_Street,..." if needed
+# handles large portfolios: fetch_records switches to Zoho page_token cursor
+# pagination automatically past the first 2000 records (no manual paging needed)
 ```
 
 Read-only (SELECTs only + reads the operator-supplied CSV **or** the authenticated

@@ -119,6 +119,14 @@ def config_summary() -> dict:
     }
 
 
+# Zoho v5 caps ``page``-number pagination at the first 2000 records ("discrete
+# pagination limit"); beyond that you MUST switch to cursor pagination via
+# ``page_token``.  ``fetch_records`` starts on page numbers (cheap for small result
+# sets) and transparently switches to ``page_token`` as soon as Zoho hands back an
+# ``info.next_page_token`` — so it never trips DISCRETE_PAGINATION_LIMIT_EXCEEDED.
+_DISCRETE_PAGE_LIMIT = 2000
+
+
 async def fetch_records(module: str = "Accounts", *, fields: str | None = None,
                         per_page: int = 200, max_pages: int = 100) -> list[dict]:
     """READ-ONLY: pull all records from a Zoho CRM module (paginated).  Uses the
@@ -126,20 +134,44 @@ async def fetch_records(module: str = "Accounts", *, fields: str | None = None,
 
     ``fields`` (a comma-separated Zoho field list) is passed straight through to
     the Zoho ``fields`` query param — Zoho v5 requires it for some modules and it
-    keeps the payload lean.  Bounded by ``max_pages`` as a runaway guard."""
+    keeps the payload lean.
+
+    Pagination: uses ``page``/``per_page`` while it works (small result sets), and
+    switches to cursor pagination via ``page_token`` the moment Zoho returns
+    ``info.next_page_token`` — required past the first 2000 records.  Bounded by
+    ``max_pages`` as a runaway guard."""
     if not is_configured():
         raise ZohoCRMError("Zoho CRM not configured")
     out: list[dict] = []
     page = 1
-    while page <= max_pages:
-        params: dict = {"page": page, "per_page": per_page}
+    page_token: str | None = None
+    for _ in range(max_pages):
+        params: dict = {"per_page": per_page}
         if fields:
             params["fields"] = fields
+        # Cursor mode once we have a token: Zoho ignores/forbids ``page`` alongside
+        # ``page_token``, so send only the token.  Otherwise use the page number.
+        if page_token:
+            params["page_token"] = page_token
+        else:
+            params["page"] = page
         data = await _zoho_get(f"/{module}", params=params)
         records = data.get("data") or []
         out.extend(records)
-        if not records or not (data.get("info") or {}).get("more_records"):
+        info = data.get("info") or {}
+
+        next_token = info.get("next_page_token")
+        if next_token:
+            page_token = next_token          # continue with the cursor (drops ``page``)
+            page += 1
+            continue
+        if not records or not info.get("more_records"):
             break
+        # No cursor token, but Zoho claims more records: page-number pagination
+        # cannot cross the discrete 2000-record limit — stop rather than error.
+        if len(out) >= _DISCRETE_PAGE_LIMIT:
+            break
+        page_token = None
         page += 1
     return out
 
