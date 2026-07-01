@@ -180,7 +180,15 @@ missing in Zoho · E duplicate Zoho · F duplicate True911 · G address mismatch
 phone/callback mismatch · I device mismatch · J missing service unit · K E911
 unverified · L weird RH label. **Blocking** gates (C/F/I/J/K) must reach zero;
 **conditional** items (B/D/E/G/H/L) need explicit operator sign-off. **Judy's invite
-stays blocked until this reads PASS** (or CONDITIONAL with sign-off). Full spec:
+stays blocked until this reads PASS** (or CONDITIONAL with sign-off).
+
+**Known special RH locations.** Operator-confirmed non-standard locations
+(Greenwich 265, RHNYC, Beverly Modern, Patterson Warehouse, MDC, Linden House) are
+recognized from a registry, canonicalized with the right site type, counted as
+legitimate RH locations, and listed under **"Known special RH locations"** in the
+report — they are **not** flagged as weird labels, but are still checked for
+missing/address/duplicate/device/service-unit/E911. To confirm another special
+location, add it to `KNOWN_RH_LOCATIONS` in the script. Full spec:
 `docs/customer/RH_PORTFOLIO_CERTIFICATION.md`.
 
 ## 5. Verify login

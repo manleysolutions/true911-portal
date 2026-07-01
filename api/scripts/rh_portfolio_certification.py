@@ -154,6 +154,9 @@ def is_rh_label(*labels) -> bool:
     blob = " ".join((x or "") for x in labels).lower()
     if "restoration hardware" in blob or "restoration hdwr" in blob:
         return True
+    # operator-confirmed known special location (e.g. a bare "MDC" / "RHNYC")
+    if match_known_location(blob):
+        return True
     # standalone RH token or an RH### / RH- store code
     return bool(re.search(r"\brh\b", blob) or re.search(r"\brh[#\-\s]?\d", blob))
 
@@ -194,6 +197,61 @@ def detect_site_type(name) -> str:
     if any(w in b for w in ("house", "modern", "grocery", "pier")):
         return "special"
     return "store"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Known RH special-location registry (operator-confirmed 2026-07-01).
+#
+# These labels are LEGITIMATE RH customer locations — they were previously flagged
+# as "weird RH label" only because they lack a numeric store number.  The operator
+# has confirmed each one, so we canonicalize them, give them a definitive
+# ``site_type``, count them as real RH locations, and DO NOT flag them L.  They are
+# still checked for missing-in-True911 / address / duplicate / device / service
+# unit / E911 exactly like every other location.
+#
+# ``match`` tokens are matched against a NORMALIZED name (lowercase, alphanumeric).
+# ``code`` is an optional alpha store code.  ``city``/``state`` are context for
+# reporting/disambiguation only — never injected into the E911 address.
+# ══════════════════════════════════════════════════════════════════════
+KNOWN_RH_LOCATIONS = (
+    {"alias": "Greenwich 265", "match": ("greenwich 265",),
+     "canonical_name": "RH Greenwich (265)", "site_type": "special",
+     "code": None, "city": "Greenwich", "state": "CT"},
+    {"alias": "RHNYC", "match": ("rhnyc",),
+     "canonical_name": "RH NYC Gallery", "site_type": "gallery",
+     "code": "RHNYC", "city": "New York", "state": "NY"},
+    {"alias": "Beverly Modern", "match": ("beverly modern",),
+     "canonical_name": "RH Beverly Modern", "site_type": "special",
+     "code": None, "city": None, "state": None},
+    {"alias": "Patterson Warehouse", "match": ("patterson warehouse",),
+     "canonical_name": "RH Patterson Warehouse", "site_type": "warehouse",
+     "code": None, "city": None, "state": None},
+    {"alias": "MDC", "match": ("mdc",),
+     "canonical_name": "RH MDC (Distribution Center)", "site_type": "distribution_center",
+     "code": None, "city": None, "state": None},
+    {"alias": "Linden House", "match": ("linden house",),
+     "canonical_name": "RH Linden House", "site_type": "special",
+     "code": None, "city": None, "state": None},
+)
+
+
+def match_known_location(name) -> dict | None:
+    """Return the known-RH-location registry entry whose alias token(s) appear in
+    ``name`` (operator-confirmed legitimate special locations), else None.  Short
+    codes (e.g. ``mdc``) are matched as whole normalized-name tokens to avoid
+    substring false positives; multi-word aliases match as a phrase."""
+    n = norm_name(name)
+    if not n:
+        return None
+    tokens = set(n.split())
+    for entry in KNOWN_RH_LOCATIONS:
+        for tok in entry["match"]:
+            if " " in tok:
+                if tok in n:
+                    return entry
+            elif tok in tokens:
+                return entry
+    return None
 
 
 def _pick(rec: dict, *keys):
@@ -276,11 +334,14 @@ def canonical_key(name, store_number) -> tuple:
     return ("name", norm_name(name))
 
 
-def confidence_score(store_number, street, city, state, zip_, has_phone, has_device) -> int:
+def confidence_score(store_number, street, city, state, zip_, has_phone, has_device,
+                     known_alias=False) -> int:
     """0–100 quality of a canonical Zoho record's identity (not a match score)."""
     score = 0
     if store_number and store_number.isdigit():
         score += 30
+    if known_alias:
+        score += 15                       # operator-confirmed known location
     if all([street, city, state, zip_]):
         score += 30
     elif any([street, city, state, zip_]):
@@ -310,6 +371,17 @@ def build_canonical_locations(zoho_rows: list[dict]) -> list[dict]:
         site_type = detect_site_type(name)
         # prefer the first row that actually carries an address
         addr_row = next((r for r in rows if r.get("street")), first)
+
+        # Known operator-confirmed special location? -> legitimate; use its
+        # definitive site_type / canonical name / code, and never flag it "weird".
+        known = match_known_location(name)
+        known_alias = bool(known)
+        known_tokens = list(known["match"]) if known else []
+        if known:
+            site_type = known["site_type"]
+            if known.get("code") and not (store_number and store_number.isdigit()):
+                store_number = known["code"]
+
         devices = [{
             "imei": r.get("imei"), "sim": r.get("sim"), "starlink_id": r.get("starlink_id"),
             "msisdn": r.get("msisdn"), "connection_type": r.get("connection_type"),
@@ -320,22 +392,33 @@ def build_canonical_locations(zoho_rows: list[dict]) -> list[dict]:
         state = addr_row.get("state")
         non_us = bool(state) and state not in US_STATES
         conf = confidence_score(store_number, addr_row.get("street"), addr_row.get("city"),
-                                state, addr_row.get("zip"), bool(phones), bool(device_ids))
-        manual = (
-            store_number is None
-            or not store_number.isdigit()
-            or site_type in ("guest_house", "warehouse", "outlet", "distribution_center",
-                             "corporate", "special")
-            or non_us
-            or not all([addr_row.get("street"), addr_row.get("city"), state, addr_row.get("zip")])
-        )
+                                state, addr_row.get("zip"), bool(phones), bool(device_ids),
+                                known_alias=known_alias)
+        # A known location is legitimate by operator confirmation — it is NOT weird.
+        # Everything else keeps the original manual-review heuristics.
+        if known:
+            manual = False
+        else:
+            manual = (
+                store_number is None
+                or not store_number.isdigit()
+                or site_type in ("guest_house", "warehouse", "outlet", "distribution_center",
+                                 "corporate", "special")
+                or non_us
+                or not all([addr_row.get("street"), addr_row.get("city"), state, addr_row.get("zip")])
+            )
+        canonical_name = known["canonical_name"] if known else _canonical_name(
+            name, store_number, addr_row.get("city"))
         canon.append({
             "key": list(key),
-            "canonical_location_name": _canonical_name(name, store_number, addr_row.get("city")),
+            "canonical_location_name": canonical_name,
             "raw_zoho_name": name,
             "raw_zoho_names": sorted({(r["account_name"] or r["facility_name"] or "") for r in rows}),
             "store_number": store_number,
             "site_type": site_type,
+            "known_alias": known_alias,
+            "known_alias_label": known["alias"] if known else None,
+            "known_tokens": known_tokens,
             "street": addr_row.get("street"), "city": addr_row.get("city"),
             "state": state, "zip": addr_row.get("zip"),
             "non_us": non_us,
@@ -386,29 +469,55 @@ def _site_indexes(true911: dict):
 
 
 def match_site(canon: dict, sites, site_phones, site_device_ids) -> list[dict]:
-    """All True911 sites matching a canonical Zoho location, with the signals hit."""
+    """All True911 sites matching a canonical Zoho location, with the signals hit.
+    ``known`` = an operator-confirmed alias appears in the True911 site name — a
+    high-precision positive signal (e.g. "MDC", "Patterson Warehouse", "RHNYC")."""
     ca = norm_addr(canon.get("street"), canon.get("city"), canon.get("state"))
     cstore = canon.get("store_number")
+    known_tokens = canon.get("known_tokens") or []
     out = []
     for s in sites:
         sid = s.get("site_id")
-        blob = f"{s.get('name') or ''} {sid or ''}"
+        raw_blob = f"{s.get('name') or ''} {sid or ''}"
+        norm_blob = norm_name(raw_blob)
+        # store signal: numeric store numbers only (alpha codes go via ``known``)
         sig_store = bool(cstore) and cstore.isdigit() and bool(
-            re.search(rf"#?\s*0*{re.escape(cstore)}\b", blob))
+            re.search(rf"#?\s*0*{re.escape(cstore)}\b", raw_blob))
         sig_addr = bool(ca) and ca == norm_addr(s.get("street"), s.get("city"), s.get("state"))
         sig_name = _name_match(canon.get("raw_zoho_name"), s.get("name"))
         sig_phone = bool(set(canon.get("phones", [])) & site_phones.get(sid, set()))
         sig_device = bool(set(canon.get("device_ids", [])) & site_device_ids.get(sid, set()))
+        sig_known = any(
+            (tok in norm_blob if " " in tok else tok in set(norm_blob.split()))
+            for tok in known_tokens)
         signals = {"store": sig_store, "addr": sig_addr, "name": sig_name,
-                   "phone": sig_phone, "device": sig_device}
+                   "phone": sig_phone, "device": sig_device, "known": sig_known}
         if any(signals.values()):
             out.append({"site": s, "signals": signals, "score": sum(signals.values())})
     return sorted(out, key=lambda m: -m["score"])
 
 
+# Generic RH tokens carry no matching information on their own — a name match must
+# rest on the DISTINCTIVE part (store #, city, alias), never on "Restoration Hardware".
+_GENERIC_RH_TOKENS = frozenset({"restoration", "hardware", "hdwr", "rh"})
+
+
+def _distinctive_tokens(name) -> set:
+    return set(norm_name(name).split()) - _GENERIC_RH_TOKENS
+
+
 def _name_match(a, b) -> bool:
-    a, b = norm_name(a), norm_name(b)
-    return bool(a) and bool(b) and (a == b or a in b or b in a)
+    """Match on shared DISTINCTIVE tokens (generic "Restoration Hardware" stripped).
+    A single shared token counts only when it is specific — a numeric store number
+    or a long token (>=5 chars) — so a bare 3-letter city like "nyc" alone does not
+    force a match (avoids RHNYC ↔ generic-NYC confusion)."""
+    shared = _distinctive_tokens(a) & _distinctive_tokens(b)
+    if not shared:
+        return False
+    if len(shared) >= 2:
+        return True
+    tok = next(iter(shared))
+    return tok.isdigit() or len(tok) >= 5
 
 
 def certify(true911: dict, canon_locations: list[dict]) -> dict:
@@ -470,7 +579,9 @@ def certify(true911: dict, canon_locations: list[dict]) -> dict:
         s = best["site"]
         sid = s.get("site_id")
         matched_site_ids.add(sid)
-        strong = best["score"] >= 2
+        # A recognized known-alias hit is high-precision -> counts as a strong match;
+        # otherwise require >=2 independent signals.
+        strong = best["score"] >= 2 or bool(best["signals"].get("known"))
         classes.append(CLASS_MATCHED if strong else CLASS_POSSIBLE)
         if not strong:
             add(CLASS_POSSIBLE, canonical=c["canonical_location_name"], site_id=sid,
@@ -550,6 +661,7 @@ def certify(true911: dict, canon_locations: list[dict]) -> dict:
         "e911_unverified": by_class.get(CLASS_E911_UNVERIFIED, 0),
         "weird_labels": by_class.get(CLASS_WEIRD_LABEL, 0),
         "manual_review": sum(1 for c in canon_locations if c["manual_review_required"]),
+        "known_special_locations": sum(1 for c in canon_locations if c.get("known_alias")),
         "findings_total": len(findings),
         "by_class": dict(by_class),
     }
@@ -560,9 +672,22 @@ def certify(true911: dict, canon_locations: list[dict]) -> dict:
 def _result_row(c: dict) -> dict:
     return {"canonical_location_name": c["canonical_location_name"], "raw_zoho_name": c["raw_zoho_name"],
             "store_number": c["store_number"], "site_type": c["site_type"],
+            "known_alias": c.get("known_alias", False),
+            "known_alias_label": c.get("known_alias_label"),
             "street": c["street"], "city": c["city"], "state": c["state"], "zip": c["zip"],
             "phones": c["phones"], "device_count": c["device_count"],
             "confidence": c["confidence"], "manual_review_required": c["manual_review_required"]}
+
+
+def _match_status(classes: list) -> str:
+    """Short human status for a canonical location from its assigned classes."""
+    if CLASS_MATCHED in classes:
+        return "Matched"
+    if CLASS_POSSIBLE in classes:
+        return "Possible"
+    if CLASS_MISSING_T911 in classes:
+        return "Missing in True911"
+    return "Review"
 
 
 def _verdict(summary: dict, by_class: Counter) -> str:
@@ -697,6 +822,8 @@ def write_markdown_report(path: str, report: dict) -> None:
              f"· Device mismatch: {s['device_mismatch']}")
     L.append(f"- Missing service units: **{s['missing_service_units']}** · "
              f"E911 unverified: **{s['e911_unverified']}** · Weird labels: {s['weird_labels']}")
+    L.append(f"- Known special RH locations (operator-confirmed): "
+             f"**{s.get('known_special_locations', 0)}**")
     L.append("")
 
     L.append("### Why this verdict")
@@ -726,6 +853,24 @@ def write_markdown_report(path: str, report: dict) -> None:
                      f"{r['raw_zoho_name']} | {r.get('match_site_name') or r.get('match_site_id')} | "
                      f"{','.join(r.get('match_signals', []))} | {r.get('site_devices', '—')} | "
                      f"{r.get('site_units', '—')} | {r.get('site_e911_status') or '—'} |")
+    L.append("")
+
+    # Known special RH locations (operator-confirmed legitimate specials)
+    L.append("## Known special RH locations")
+    known_rows = [r for r in results if r.get("known_alias")]
+    if not known_rows:
+        L.append("_None in this portfolio._")
+    else:
+        L.append("> Operator-confirmed legitimate RH locations — counted as real, "
+                 "not flagged as weird labels. Still checked for match / address / "
+                 "device / service unit / E911.")
+        L.append("")
+        L.append("| Alias used | Canonical name | Site type | Match status | Confidence |")
+        L.append("|---|---|---|---|--:|")
+        for r in known_rows:
+            L.append(f"| {r.get('known_alias_label') or r['raw_zoho_name']} | "
+                     f"{r['canonical_location_name']} | {r.get('site_type') or '—'} | "
+                     f"{_match_status(r['classes'])} | {r.get('confidence', '—')} |")
     L.append("")
 
     # Class sections C–L

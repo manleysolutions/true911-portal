@@ -200,6 +200,26 @@
   canonical locations (20 manual-review). Live match runs on Render.
   - **Roadmap:** approved punch-list items feed the existing controlled create/update
     flows; re-run to confirm PASS before the invite is sent.
+  - ✅ **v1 base wizard merged** (PR #155, `1712d17`); **v1.1 live Zoho mode merged**
+    (PR #156, `3b0b374`); **page_token pagination hotfix merged** (PR #157, `d9f3b7a`).
+
+### Phase 3.12 — RH Certification v2: known special-location registry (IN PROGRESS; branch `feat/rh-cert-known-locations`, PR open, read-only)
+- **RH-P3.12-KNOWN — Treat operator-confirmed RH specials as legitimate.** 🔧 *PR open 2026-07-01, not merged.*
+  Adds `KNOWN_RH_LOCATIONS` (Greenwich 265, RHNYC, Beverly Modern, Patterson
+  Warehouse, MDC, Linden House): each canonicalized with a definitive site_type
+  (special/gallery/warehouse/distribution_center), counted as a real RH location, and
+  **no longer flagged "weird RH label"** — still checked for missing/address/dup/
+  device/service-unit/E911. Matching: known-alias recognition is a positive
+  high-precision signal (bumps confidence, strong-match when the alias is in the
+  True911 site name); name matching ignores the generic "Restoration Hardware" tokens
+  and won't force a match on a bare short city token, so **RHNYC doesn't overmatch a
+  generic NYC record**. Report adds a **"Known special RH locations"** section +
+  `known_special_locations` count. Read-only; no auto-create; E911 never verified.
+  Tests: `test_rh_portfolio_certification.py` (42). **Dry run (2026-07-01 export):**
+  manual-review canonicals drop 20 → 14; 6 specials now recognized. Docs:
+  `customer/RH_PORTFOLIO_CERTIFICATION.md` §3a, `RH_GO_LIVE_RUNBOOK.md` §4b.
+  - **Roadmap:** add further confirmed specials to the registry as the operator
+    validates them.
 
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
