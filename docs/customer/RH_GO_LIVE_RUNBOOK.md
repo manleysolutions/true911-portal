@@ -105,6 +105,28 @@ customer users, location/device/service-unit counts, and the E911 posture
 prints no secrets. E911 gaps are surfaced (also via `GET /api/e911-changes/gaps`)
 so ops can correct them **before** verification — E911 is never greened.
 
+## 4a. Zoho reconciliation (read-only)
+
+Verify every RH location / device / E911 record in **Zoho CRM** exists correctly in
+**True911** (and vice-versa) before go-live:
+
+```bash
+cd api && python -m scripts.rh_zoho_reconciliation \
+    --tenant restoration-hardware --module Accounts \
+    --csv /tmp/rh_zoho_reconciliation.csv --json /tmp/rh_zoho_reconciliation.json
+```
+
+Read-only (SELECTs + the existing authenticated Zoho GET layer — **never writes
+Zoho or True911**). Matches by store name, address, city/state, phone, and
+device/line label; writes a CSV + JSON report and prints a summary. Exit codes:
+**0** clean · **1** findings present · **2** error / Zoho not configured. Flags:
+Zoho location missing in True911 · True911 location missing in Zoho · address
+mismatch · missing device · missing service unit · missing callback number · E911
+unverified · duplicate sites · duplicate phone numbers. Requires the `ZOHO_CRM_*`
+credentials to be configured; run against the prod-read DB. Work the CSV to zero
+(or knowingly-accepted) findings — E911-unverified rows also appear on the internal
+gaps worklist (§4).
+
 ## 5. Verify login
 
 - Judy accepts her invite, sets a password, signs in.

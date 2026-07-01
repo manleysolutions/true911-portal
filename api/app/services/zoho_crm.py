@@ -119,6 +119,25 @@ def config_summary() -> dict:
     }
 
 
+async def fetch_records(module: str = "Accounts", *, per_page: int = 200,
+                        max_pages: int = 100) -> list[dict]:
+    """READ-ONLY: pull all records from a Zoho CRM module (paginated).  Uses the
+    existing authenticated GET layer; never writes.  Returns the raw record
+    dicts.  Bounded by ``max_pages`` as a runaway guard."""
+    if not is_configured():
+        raise ZohoCRMError("Zoho CRM not configured")
+    out: list[dict] = []
+    page = 1
+    while page <= max_pages:
+        data = await _zoho_get(f"/{module}", params={"page": page, "per_page": per_page})
+        records = data.get("data") or []
+        out.extend(records)
+        if not records or not (data.get("info") or {}).get("more_records"):
+            break
+        page += 1
+    return out
+
+
 # ── Sync: Zoho Accounts → True911 Customers ─────────────────────
 
 async def sync_accounts(db: AsyncSession, tenant_id: str) -> dict:
