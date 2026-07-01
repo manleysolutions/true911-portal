@@ -8,9 +8,36 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — RH Portfolio Certification: live Zoho mode (branch `feat/rh-cert-zoho-live`, PR open, NOT merged) [2026-07-01]
+## 0·NEXT — RH Certification v2: known special-location registry (branch `feat/rh-cert-known-locations`, PR open, NOT merged) [2026-07-01]
 
-Upgrades the certification wizard to read from **either** an offline CSV **or**
+Teaches the certification engine that operator-confirmed RH special locations are
+legitimate (were previously flagged "weird RH label"). Additive, read-only.
+
+- New `KNOWN_RH_LOCATIONS` registry (Greenwich 265, RHNYC, Beverly Modern,
+  Patterson Warehouse, MDC, Linden House) → each canonicalized with a definitive
+  `site_type` (special / gallery / warehouse / distribution_center), counted as a
+  real RH location, and **not** flagged L. Still checked for missing/address/
+  duplicate/device/service-unit/E911.
+- Matching improvements: known-alias recognition is a **positive, high-precision
+  signal** (bumps confidence, strong-matches when the alias is in the True911 site
+  name); name matching now **ignores the generic "Restoration Hardware" tokens**
+  (matches on the distinctive part only) and won't force a match on a bare short
+  city token — so **RHNYC no longer overmatches a generic NYC record**.
+- Report adds a **"Known special RH locations"** section (alias · canonical · site
+  type · match status · confidence) and a summary `known_special_locations` count.
+- **Dry run (2026-07-01 export):** the 6 confirmed specials are now recognized;
+  manual-review canonicals drop **20 → 14**; still 44 canonical locations.
+- Tests: `test_rh_portfolio_certification.py` now **42** (+14: each alias, not-weird,
+  still-require-match, warehouse/distribution/special typing, RHNYC non-overmatch,
+  generic-name-match guard). Reconciliation/readiness/zoho slice green (**325**).
+- Docs: `RH_PORTFOLIO_CERTIFICATION.md` §3a, `RH_GO_LIVE_RUNBOOK.md` §4b.
+
+**Prior certification PRs merged to main:** #155 (base wizard, `1712d17`), #156
+(live Zoho mode, `3b0b374`), #157 (page_token pagination, `d9f3b7a`).
+
+## 0·PREV — RH Portfolio Certification: live Zoho mode (PR #156, MERGED `3b0b374`; pagination hotfix PR #157, MERGED `d9f3b7a`) [2026-07-01]
+
+Upgraded the certification wizard to read from **either** an offline CSV **or**
 **live Zoho CRM**, so it no longer requires a CSV export. Additive, read-only.
 
 - `--zoho-live` fetches RH records live via the **existing** authenticated client

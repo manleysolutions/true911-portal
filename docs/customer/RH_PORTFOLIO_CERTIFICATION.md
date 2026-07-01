@@ -90,7 +90,35 @@ confidence (0–100) · manual_review_required`.
   distribution_center · corporate · special.
 - **confidence** — 30 numeric store# · 30 full address · 20 phone · 20 device id.
 - **manual_review_required** — true for non-numeric store#, special/warehouse/etc.
-  types, non-US locations, or incomplete addresses.
+  types, non-US locations, or incomplete addresses — **unless** the location is in
+  the known-alias registry (§3a), which the operator has already confirmed.
+
+### 3a. Known RH special-location registry
+
+Some legitimate RH locations do not follow the `#<number> <City>` pattern. The
+operator has confirmed these, so a small registry
+(`KNOWN_RH_LOCATIONS` in the script) canonicalizes them, assigns a definitive
+`site_type`, counts them as real RH locations, and **stops them being flagged
+"weird RH label" (L) just because of the alias**. They are still checked for
+missing-in-True911, address mismatch, duplicate, missing device, missing service
+unit, and E911 status like every other location.
+
+| Alias | Canonical name | Site type |
+|---|---|---|
+| Greenwich 265 | RH Greenwich (265) | special |
+| RHNYC | RH NYC Gallery | gallery (assoc. NYC) |
+| Beverly Modern | RH Beverly Modern | special |
+| Patterson Warehouse | RH Patterson Warehouse | warehouse |
+| MDC | RH MDC (Distribution Center) | distribution_center |
+| Linden House | RH Linden House | special |
+
+**Matching.** Recognizing a known alias is a **positive, high-precision signal**:
+when the alias also appears in the True911 site name it counts as a strong match
+(and adds to `confidence`). Name matching ignores the generic "Restoration
+Hardware" tokens — a match must rest on the distinctive part (store #, city, alias),
+never on the brand alone — and a bare short token like "nyc" alone does not force a
+match, so **RHNYC is not confused with a generic NYC record** unless address/store
+signals support it.
 
 ## 4. Classification (A–L)
 

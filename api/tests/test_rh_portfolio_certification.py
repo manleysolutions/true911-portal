@@ -89,10 +89,13 @@ def test_canonical_grouping_merges_device_rows():
 
 
 def test_canonical_manual_review_for_weird_label():
-    canon = cert.build_canonical_locations([_row(account_name="Restoration Hardware - MDC",
+    # a genuinely-unrecognized special label (NOT in the known registry) still
+    # requires manual review
+    canon = cert.build_canonical_locations([_row(account_name="Restoration Hardware - Soda Grocery",
                                                  street=None, city=None, state=None, zip=None)])
     c = canon[0]
-    assert c["store_number"] is None and c["site_type"] == "distribution_center"
+    assert c["store_number"] is None and c["site_type"] == "special"
+    assert c["known_alias"] is False
     assert c["manual_review_required"] is True
     assert c["confidence"] < 100
 
@@ -376,3 +379,99 @@ _SUMMARY_KEYS = ("zoho_rows", "canonical_locations", "true911_sites", "true911_d
                  "missing_in_zoho", "duplicate_zoho", "duplicate_true911", "address_mismatch",
                  "phone_mismatch", "device_mismatch", "missing_service_units", "e911_unverified",
                  "weird_labels", "manual_review", "findings_total")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# v2 — known RH special-location registry (operator-confirmed 2026-07-01)
+# ══════════════════════════════════════════════════════════════════════
+_KNOWN_CASES = [
+    ("Restoration Hardware - Greenwich 265", "special", "RH Greenwich (265)"),
+    ("Restoration Hardware #RHNYC", "gallery", "RH NYC Gallery"),
+    ("Restoration Hardware Beverly Modern", "special", "RH Beverly Modern"),
+    ("Restoration Hardware - Patterson Warehouse", "warehouse", "RH Patterson Warehouse"),
+    ("Restoration Hardware - MDC", "distribution_center", "RH MDC (Distribution Center)"),
+    ("Restoration Hardware Linden House", "special", "RH Linden House"),
+]
+
+
+@pytest.mark.parametrize("label,site_type,canonical", _KNOWN_CASES)
+def test_known_alias_recognized_typed_and_not_weird(label, site_type, canonical):
+    assert cert.is_rh_label(label)                          # included in the portfolio
+    assert cert.match_known_location(label) is not None
+    c = cert.build_canonical_locations([_row(account_name=label, street=None, city=None,
+                                             state=None, zip=None)])[0]
+    assert c["known_alias"] is True and c["known_alias_label"]
+    assert c["site_type"] == site_type                      # classified per registry
+    assert c["canonical_location_name"] == canonical
+    assert c["manual_review_required"] is False             # NOT flagged weird
+
+
+def test_patterson_warehouse_is_warehouse():
+    c = cert.build_canonical_locations([_row(account_name="Restoration Hardware - Patterson Warehouse")])[0]
+    assert c["site_type"] == "warehouse" and c["known_alias"] is True
+
+
+def test_mdc_is_distribution_center():
+    c = cert.build_canonical_locations([_row(account_name="Restoration Hardware - MDC")])[0]
+    assert c["site_type"] == "distribution_center" and c["known_alias"] is True
+
+
+def test_linden_house_is_special():
+    c = cert.build_canonical_locations([_row(account_name="Restoration Hardware Linden House")])[0]
+    assert c["site_type"] in ("special", "hospitality") and c["known_alias"] is True
+
+
+def test_known_aliases_counted_and_not_flagged_weird_but_still_need_match():
+    canon = cert.build_canonical_locations(
+        [_row(account_name=lbl, street=None, city=None, state=None, zip=None)
+         for lbl, _, _ in _KNOWN_CASES])
+    rep = cert.certify(_t911(sites=[], devices=[], units=[], lines=[]), canon)
+    s = rep["summary"]
+    assert s["known_special_locations"] == 6                # all counted as legitimate
+    assert s["weird_labels"] == 0                           # none flagged L
+    assert s["missing_in_true911"] == 6                     # still must exist in True911
+    # every one is reported in the Known special section rows
+    assert sum(1 for r in rep["results"] if r["known_alias"]) == 6
+
+
+def test_known_alias_matched_when_site_bears_alias():
+    canon = cert.build_canonical_locations([_row(account_name="Restoration Hardware - MDC",
+                                                 street=None, city=None, state=None, zip=None)])
+    site = {"site_id": "RH-MDC", "name": "RH MDC", "street": None, "city": None, "state": None,
+            "zip": None, "e911_status": "validated"}
+    t = _t911(sites=[site], devices=[],
+              units=[{"unit_id": "U", "site_id": "RH-MDC", "unit_type": "x",
+                      "device_id": None, "line_id": None}])
+    rep = cert.certify(t, canon)
+    r = rep["results"][0]
+    assert cert.CLASS_MATCHED in r["classes"]               # known signal -> strong match
+    assert cert.CLASS_WEIRD_LABEL not in r["classes"]
+    assert "known" in r["match_signals"]
+
+
+def test_rhnyc_does_not_overmatch_generic_nyc():
+    rhnyc = cert.build_canonical_locations([_row(account_name="Restoration Hardware #RHNYC",
+                                                 street=None, city=None, state=None, zip=None)])[0]
+    guesthouse = {"site_id": "RH-GH", "name": "Restoration Hardware # NYC Guesthouse",
+                  "street": "55 Gansevoort St", "city": "New York", "state": "NY", "zip": "10014",
+                  "e911_status": "validated"}
+    # no store/address/name/known signal links RHNYC to the generic NYC guesthouse
+    assert cert.match_site(rhnyc, [guesthouse], {}, {}) == []
+
+
+def test_rhnyc_matches_site_bearing_the_code():
+    rhnyc = cert.build_canonical_locations([_row(account_name="Restoration Hardware #RHNYC",
+                                                 street=None, city=None, state=None, zip=None)])[0]
+    site = {"site_id": "RH-RHNYC", "name": "RH RHNYC Gallery", "street": None, "city": "New York",
+            "state": "NY", "zip": None, "e911_status": "validated"}
+    matches = cert.match_site(rhnyc, [site], {}, {})
+    assert matches and matches[0]["signals"]["known"] is True
+
+
+def test_name_match_ignores_generic_restoration_hardware():
+    # two different stores must NOT match on the generic brand tokens alone
+    assert cert._name_match("Restoration Hardware #140 Houston",
+                            "Restoration Hardware #642 Gilbert") is False
+    # a distinctive shared token does match
+    assert cert._name_match("Restoration Hardware #177 Jacksonville",
+                            "RH #177 Jacksonville") is True
