@@ -57,9 +57,18 @@ Exactly **one** source is required: `--zoho-csv <path>` **or** `--zoho-live`
 Both modes emit the **identical** CSV, JSON, and Markdown report.
 
 **Live mode** reuses `zoho_crm.fetch_records(module, fields=…)` — the existing
-authenticated GET layer — which walks every page (`more_records`) and passes the
-`fields` param through. `--fields` defaults to a safe Accounts field set and can be
-overridden; non-Accounts modules fall back to Zoho's default field set.
+authenticated GET layer — and passes the `fields` param through. `--fields`
+defaults to a safe Accounts field set and can be overridden; non-Accounts modules
+fall back to Zoho's default field set.
+
+**Pagination.** `fetch_records` starts on `page`/`per_page` (cheap for small result
+sets) and **automatically switches to cursor pagination via `page_token`** the
+moment Zoho returns `info.next_page_token`. This is required past the first 2000
+records — Zoho v5 caps page-number pagination at the "discrete pagination limit"
+(`DISCRETE_PAGINATION_LIMIT_EXCEEDED`: *"You can only get the first 2000 records
+without using page_token"*). The `fields` param is preserved across every page,
+including cursor pages; a `max_pages` guard bounds runaway loops. All reads stay
+read-only.
 
 **Offline CSV mode is fully backward compatible** — the original
 `--zoho-csv <path>` invocation is unchanged.
