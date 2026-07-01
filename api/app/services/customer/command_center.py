@@ -22,6 +22,7 @@ from app.models.site import Site
 from app.services.assurance import compute_site_assurance
 from app.services.assurance.loader import load_site_assurance_signals
 from app.services.customer import serialize as cs
+from app.services.customer import service_inference as si
 from app.services.customer.preview import preview_enabled, preview_protection
 from app.services.customer.portfolio import (
     _protection_from_device_assurance,
@@ -99,6 +100,30 @@ async def load_portfolio_health(db: AsyncSession, tenant_id: str, now) -> dict:
     return {"as_of": now.isoformat(), "health": summary["monthly_health_score"]}
 
 
+async def load_services_summary(db: AsyncSession, tenant_id: str, now) -> dict:
+    """Portfolio Life-Safety service inventory (Phase 6): totals + protected /
+    attention + a by-type breakdown.  Service counts are building/service-derived
+    (not a raw device count) — Phase 5."""
+    summary = await load_portfolio_summary(db, tenant_id, now)
+    rows = (await db.execute(
+        select(ServiceUnit.unit_type, func.count())
+        .where(ServiceUnit.tenant_id == tenant_id)
+        .group_by(ServiceUnit.unit_type))).all()
+    by_type: dict = {}
+    for ut, n in rows:
+        label = cs.enterprise_service_label(ut)
+        by_type[label] = by_type.get(label, 0) + int(n)
+    total = summary["life_safety_services"]
+    protected = summary["protected_services"]
+    return {
+        "as_of": now.isoformat(),
+        "total_services": total,
+        "protected_services": protected,
+        "attention_services": max(total - protected, 0),
+        "inventory": [{"service": k, "count": v} for k, v in sorted(by_type.items())],
+    }
+
+
 async def load_e911_history_all(db: AsyncSession, tenant_id: str):
     from app.models.e911_change_log import E911ChangeLog
     return (await db.execute(
@@ -107,13 +132,54 @@ async def load_e911_history_all(db: AsyncSession, tenant_id: str):
         .order_by(E911ChangeLog.requested_at.desc()))).scalars().all()
 
 
-# ── Service-first location detail (Phase 4) ──────────────────────────
-async def load_location_services(db: AsyncSession, tenant_id: str, location_ref: str, now):
-    """Life-Safety Services for a location, each with the equipment that supports
-    it grouped beneath.  Returns None when the location is unknown/cross-tenant."""
-    site = await resolve_site(db, tenant_id, location_ref)
-    if site is None:
-        return None
+# ── Service intelligence: inferred Life-Safety services (Phase 1-7) ──
+async def load_overrides(db: AsyncSession, tenant_id: str, site_id: str) -> dict:
+    """Current manual service-classification overrides for a site — read from the
+    append-only ActionAudit log (latest per device wins).  {device_id: service_type}."""
+    import json
+
+    from app.models.action_audit import ActionAudit
+    rows = (await db.execute(
+        select(ActionAudit).where(
+            ActionAudit.tenant_id == tenant_id,
+            ActionAudit.site_id == site_id,
+            ActionAudit.action_type == si.OVERRIDE_ACTION,
+        ).order_by(ActionAudit.id.desc()))).scalars().all()
+    out: dict = {}
+    for r in rows:
+        try:
+            d = json.loads(r.details or "{}")
+        except Exception:
+            continue
+        did, st = d.get("device_id"), d.get("service_type")
+        if did and st and did not in out:   # desc order -> first seen is latest
+            out[did] = st
+    return out
+
+
+def _service_status(svc: dict, preview: bool, now) -> dict:
+    """Service health (Phase 3) derived from the service's supporting equipment
+    (never a raw device count).  Preview greens the operational axis."""
+    if preview:
+        return preview_protection(now)
+    statuses = [_protection_from_device_assurance(it.get("_da"), now)
+                for it in svc["equipment"] if it.get("_da")]
+    as_of = now.isoformat()
+    if not statuses:
+        return cs.status_object("Unknown", as_of=as_of, reason="No monitored equipment yet")
+    labels = [s["status"] for s in statuses]
+    if "Critical" in labels:
+        return cs.status_object("Critical", as_of=as_of, reason="This service needs attention.")
+    if "Attention Needed" in labels:
+        return cs.status_object("Attention Needed", as_of=as_of, reason="We're reviewing an item for this service.")
+    if all(lbl == "Protected" for lbl in labels):
+        ev = next((s.get("evidence") for s in statuses if s.get("evidence")), None)
+        return cs.status_object("Protected", as_of=as_of, evidence=ev)
+    return cs.status_object("Unknown", as_of=as_of, reason="We're confirming this service's status.")
+
+
+async def _build_location_services(db, tenant_id, site, now) -> list[dict]:
+    """Infer + assemble the Life-Safety Service cards for a site (service-first)."""
     preview = preview_enabled(tenant_id)
     device_by_id = {}
     if not preview:
@@ -124,36 +190,69 @@ async def load_location_services(db: AsyncSession, tenant_id: str, location_ref:
     units = (await db.execute(
         select(ServiceUnit).where(
             ServiceUnit.tenant_id == tenant_id, ServiceUnit.site_id == site.site_id))).scalars().all()
+    devices = (await db.execute(
+        select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site.site_id))).scalars().all()
+    lines = (await db.execute(
+        select(Line).where(Line.tenant_id == tenant_id, Line.site_id == site.site_id))).scalars().all()
+    overrides = await load_overrides(db, tenant_id, site.site_id)
 
-    # devices for the site (one query) + line DIDs for callback identifiers.
-    device_rows = {d.device_id: d for d in (await db.execute(
-        select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site.site_id))).scalars().all()}
-    line_did = {r.line_id: r.did for r in (await db.execute(
-        select(Line).where(Line.tenant_id == tenant_id, Line.site_id == site.site_id))).scalars().all()}
+    unit_by_device = {u.device_id: u for u in units if u.device_id}
+    line_by_device = {ln.device_id: ln for ln in lines if ln.device_id}
+    line_did_by_id = {ln.line_id: ln.did for ln in lines}
 
-    services = []
-    for u in units:
-        da = device_by_id.get(u.device_id) if u.device_id else None
-        status = preview_protection(now) if preview else _service_protection(u, da, now)
-        equip = []
-        phone_numbers = []
-        carrier = None
-        dev = device_rows.get(u.device_id) if u.device_id else None
-        if dev is not None:
-            identifier = (line_did.get(u.line_id) if u.line_id else None) or getattr(dev, "msisdn", None)
-            if identifier:
-                phone_numbers.append(identifier)
-            carrier = getattr(dev, "carrier", None)
-            dev_status = preview_protection(now) if preview else _protection_from_device_assurance(da, now)
-            equip.append(cs.location_device(dev, protection=dev_status, preview=preview, identifier=identifier))
-        # attention items = the service's own reason when not Protected (real).
-        attention = []
-        if status.get("status") not in ("Protected", "Inactive") and status.get("reason"):
-            attention.append(status["reason"])
-        services.append(cs.service_with_equipment(
-            u, status=status, equipment=equip, carrier=carrier, phone_numbers=phone_numbers,
-            last_test=None, last_inspection=None, attention_items=attention))
-    return {"location": site.site_name, "services": services}
+    present = set()
+    items = []
+    for d in devices:
+        present.add(d.device_id)
+        u = unit_by_device.get(d.device_id)
+        ln = line_by_device.get(d.device_id)
+        phone = ((line_did_by_id.get(u.line_id) if (u and u.line_id) else None)
+                 or (ln.did if ln else None) or getattr(d, "msisdn", None))
+        items.append({
+            "device_id": d.device_id, "model": d.model, "device_type": d.device_type,
+            "manufacturer": getattr(d, "manufacturer", None), "carrier": getattr(d, "carrier", None),
+            "notes": getattr(d, "notes", None),
+            "line_label": (f"{ln.provider} {ln.did or ''}".strip() if ln else None),
+            "unit_type": u.unit_type if u else None, "unit_name": u.unit_name if u else None,
+            "where": (u.location_description if u else None), "floor": (u.floor if u else None),
+            "phone_number": phone, "_device": d, "_da": device_by_id.get(d.device_id), "_unit": u,
+        })
+    empty_units = [{"unit_type": u.unit_type, "unit_name": u.unit_name,
+                    "where": u.location_description, "floor": u.floor}
+                   for u in units if (not u.device_id or u.device_id not in present)]
+
+    inferred = si.infer_services(items, overrides=overrides, empty_units=empty_units)
+
+    out = []
+    for svc in inferred:
+        status = _service_status(svc, preview, now)
+        equip_cards = []
+        for it in svc["equipment"]:
+            dstatus = preview_protection(now) if preview else _protection_from_device_assurance(it.get("_da"), now)
+            equip_cards.append(cs.location_device(
+                it["_device"], protection=dstatus, preview=preview, identifier=it.get("phone_number")))
+        anchor = next((it["_unit"] for it in svc["equipment"] if it.get("_unit")), None)
+        carrier = next((it.get("carrier") for it in svc["equipment"] if it.get("carrier")), None)
+        ref = cs.encode_ref("svc", anchor.id) if anchor is not None else cs.encode_ref("svc", "i:" + svc["key"])
+        attention = [status["reason"]] if (status.get("status") not in ("Protected", "Inactive")
+                                           and status.get("reason")) else []
+        out.append(cs.service_card(
+            service_ref=ref, service_type=svc["service_type"], status=status,
+            name=(anchor.unit_name if anchor is not None else None),
+            where=svc["where"], floor=svc["floor"], equipment=equip_cards,
+            confidence=svc["confidence"], carrier=carrier, phone_numbers=svc["phone_numbers"],
+            attention_items=attention))
+    return out
+
+
+async def load_location_services(db: AsyncSession, tenant_id: str, location_ref: str, now):
+    """Life-Safety Services for a location — inferred from equipment, each with
+    the equipment that supports it grouped beneath (service-first, Phase 6/7).
+    Returns None when the location is unknown/cross-tenant."""
+    site = await resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None
+    return {"location": site.site_name, "services": await _build_location_services(db, tenant_id, site, now)}
 
 
 # ── Digital Twin location sub-resources (Phase 3/5/7) ────────────────
@@ -192,29 +291,18 @@ async def load_location_health(db: AsyncSession, tenant_id: str, location_ref: s
     site = await resolve_site(db, tenant_id, location_ref)
     if site is None:
         return None
-    preview = preview_enabled(tenant_id)
 
-    units = (await db.execute(
-        select(ServiceUnit).where(
-            ServiceUnit.tenant_id == tenant_id, ServiceUnit.site_id == site.site_id))).scalars().all()
-    devices = (await db.execute(
-        select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site.site_id))).scalars().all()
-
-    # Operational services: protected share of this site's services.
-    if units:
-        if preview:
-            protected_services = len(units)
-        else:
-            signals = await load_site_assurance_signals(db, tenant_id, site.site_id)
-            device_by_id = ({d.device_id: d for d in compute_site_assurance(signals, now=now).devices}
-                            if signals is not None else {})
-            protected_services = sum(
-                1 for u in units
-                if _service_protection(u, device_by_id.get(u.device_id) if u.device_id else None, now)
-                .get("status") == "Protected")
-        operational = cs._pct(protected_services, len(units))
+    # Location health derives from SERVICE health (Phase 4), NOT raw equipment
+    # health: protected share of the location's inferred Life-Safety services.
+    services = await _build_location_services(db, tenant_id, site, now)
+    if services:
+        protected = sum(1 for s in services if s["status"]["status"] == "Protected")
+        operational = cs._pct(protected, len(services))
     else:
         operational = None
+
+    devices = (await db.execute(
+        select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site.site_id))).scalars().all()
 
     verified = (site.e911_status or "").lower() in cs._E911_VERIFIED
     address_present = all([site.e911_street, site.e911_city, site.e911_state, site.e911_zip])

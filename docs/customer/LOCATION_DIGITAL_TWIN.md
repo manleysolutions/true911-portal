@@ -110,6 +110,18 @@ only from stored records and is never fabricated.
 - **Frontend test runner** (Vitest) — no runner exists yet; backend carries the
   tested logic today.
 
+## 7a. Life Safety Service Intelligence (services are now inferred)
+
+The Twin's Life-Safety Services are no longer limited to explicit `ServiceUnit`
+rows — a **service inference engine** classifies equipment (device model/type/
+notes/manufacturer/carrier + line label + ServiceUnit) into first-class services
+(Fire Alarm, Elevator, Area of Refuge, Emergency Phone, BDA/DAS, Generator
+Monitoring, Mass Notification, Burglar Alarm), groups multiple devices under one
+service, and attaches a **confidence**. Location health now derives from **service**
+health. Operations can approve/override/merge/split classifications (logged as
+append-only audit). The "No life-safety services" empty state now appears only when
+a building truly has no equipment. Full spec: `LIFE_SAFETY_SERVICE_MODEL.md`.
+
 ## 8. Files
 
 - Backend: `services/customer/command_center.py` (+5 loaders), `serialize.py`

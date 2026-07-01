@@ -57,7 +57,13 @@ built additively on `/api/customer/*`. Spec: `docs/customer/CUSTOMER_COMMAND_CEN
 The Location tier has since deepened into a **Location Digital Twin** — each
 building a complete operational record (services + equipment, E911, documents,
 inspections, timeline, contacts, per-location health, shareable deep-links). Spec:
-`docs/customer/LOCATION_DIGITAL_TWIN.md`.
+`docs/customer/LOCATION_DIGITAL_TWIN.md`. The backend now models **Life Safety
+Service Intelligence**: equipment is inferred into first-class services (Fire
+Alarm/Elevator/Area of Refuge/Emergency Phone/BDA·DAS/Generator/Mass Notification/
+Burglar Alarm) with confidence; location & portfolio health derive from *service*
+health (not device counts); Operations approve/override/merge/split classifications
+(append-only audit, CUSTOMER_* isolated). Spec:
+`docs/customer/LIFE_SAFETY_SERVICE_MODEL.md`.
 
 **Design status recorded:** customer boundary architecture complete · tenant isolation
 audited (no CRITICAL) · customer RBAC design complete · customer API contract design

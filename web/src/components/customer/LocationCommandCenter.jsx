@@ -176,6 +176,9 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
                           {(svc.phone_numbers || []).length > 0 && <span className="inline-flex items-center gap-1"><PhoneCall className="w-3 h-3" />{svc.phone_numbers.join(", ")}</span>}
                           <span>Last test: {svc.last_test || "—"}</span>
                           <span>Last inspection: {svc.last_inspection || "—"}</span>
+                          {svc.confidence && svc.confidence !== "Confirmed" && (
+                            <span className="text-slate-400" title="Classified from equipment signals">Inferred · {svc.confidence}</span>
+                          )}
                         </div>
                         {(svc.attention_items || []).length > 0 && (
                           <div className="px-3 py-1.5 text-[11px] text-amber-700 bg-amber-50/50">{svc.attention_items.join(" · ")}</div>

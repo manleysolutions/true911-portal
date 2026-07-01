@@ -140,8 +140,11 @@ def test_load_location_health_preview_real_signals(monkeypatch):
                            e911_street="1 Main", e911_city="Yountville", e911_state="CA",
                            e911_zip="94599", e911_status="validated")
     unit = _unit()
-    device = SimpleNamespace(device_id="DEV-1", last_heartbeat=None)  # no telemetry
-    db = _FakeDB([_Res([site]), _Res([unit]), _Res([device])])  # resolve_site, units, devices
+    device = SimpleNamespace(device_id="DEV-1", device_type="fire_alarm", model="SLE",
+                             status="active", activated_at=None, msisdn=None, last_heartbeat=None,
+                             manufacturer=None, carrier=None, notes=None)  # no telemetry
+    # sequence: resolve_site, units, devices, lines, overrides (service build); devices (telemetry)
+    db = _FakeDB([_Res([site]), _Res([unit]), _Res([device]), _Res([]), _Res([]), _Res([device])])
     out = asyncio.run(cc.load_location_health(db, RH, cs.encode_ref("loc", 5), NOW))
     h = out["health"]
     # E911 verified (100) + operational services (preview 100) are known;

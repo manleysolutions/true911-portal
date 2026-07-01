@@ -225,6 +225,20 @@ async def customer_portfolio_health(
 
 
 @router.get(
+    "/portfolio/services",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_SERVICES"))],
+)
+async def customer_services_summary(
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Portfolio Life-Safety service inventory — totals, protected/attention, and
+    a by-type breakdown (Phase 6).  Service-derived, not a raw device count."""
+    now = datetime.now(timezone.utc)
+    return {"as_of": now.isoformat(), "data": await cc.load_services_summary(db, current_user.tenant_id, now)}
+
+
+@router.get(
     "/search",
     dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))],
 )

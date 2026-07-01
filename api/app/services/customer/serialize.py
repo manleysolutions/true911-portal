@@ -108,6 +108,34 @@ def enterprise_service_label(unit_type) -> str:
     return SERVICE_CATALOG.get((unit_type or "").lower(), "Life Safety Service")
 
 
+def service_card(*, service_ref, service_type: str, status: dict, name=None,
+                 where=None, floor=None, equipment=None, confidence: str = "Low",
+                 carrier=None, phone_numbers=None, last_test=None,
+                 last_inspection=None, attention_items=None) -> dict:
+    """A Life-Safety Service card sourced from the inference engine (Phase 6/7) —
+    a first-class service that may or may not have an explicit ServiceUnit.  Same
+    customer-safe shape as ``service_with_equipment`` plus a ``confidence`` (how
+    sure we are of the classification) and the ``service`` type.  Additive; no
+    device jargon; nothing fabricated (last_test/inspection null until real)."""
+    equip = equipment or []
+    return {
+        "service_ref": service_ref,
+        "service": service_type,
+        "name": name,
+        "where": where,
+        "floor": floor,
+        "status": status,
+        "confidence": confidence,
+        "equipment": equip,
+        "equipment_count": len(equip),
+        "carrier": carrier_label(carrier),
+        "phone_numbers": phone_numbers or [],
+        "last_test": _iso(last_test) if hasattr(last_test, "isoformat") else last_test,
+        "last_inspection": _iso(last_inspection) if hasattr(last_inspection, "isoformat") else last_inspection,
+        "attention_items": attention_items or [],
+    }
+
+
 def _iso(dt):
     return dt.isoformat() if dt is not None else None
 
