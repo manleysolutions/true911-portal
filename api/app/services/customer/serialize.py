@@ -111,12 +111,19 @@ def location_summary(site, *, protection: dict) -> dict:
     }
 
 
-def equipment_from_device(device, *, protection: dict) -> dict:
+def equipment_from_device(device, *, protection: dict, preview: bool = False) -> dict:
     """Device -> 'equipment health'.  Reads NO identifier/telecom/firmware
-    field — those are never customer-visible (§7)."""
+    field — those are never customer-visible (§7).
+
+    ``preview`` (RH go-live login preview) presents health as "Online" before
+    live telemetry is connected.  It does NOT read or mutate ``device.status``;
+    the raw row is untouched and internal views still see the real state.
+    ``last_seen`` is NOT fabricated — it stays null until a real heartbeat
+    exists.  See ``services.customer.preview``."""
+    online = preview or (device.status or "").lower() == "active"
     return {
         "equipment": _EQUIPMENT_LABELS.get((device.device_type or "").lower(), "Monitored device"),
-        "health": "Online" if (device.status or "").lower() == "active" else "Offline",
+        "health": "Online" if online else "Offline",
         "last_seen": _iso(device.last_heartbeat),
         "in_service_since": _iso(device.activated_at),
         "protection": protection,
@@ -150,8 +157,37 @@ def service_from_unit(unit, *, protection: dict, equipment: Optional[dict] = Non
     return out
 
 
-def e911_summary(site, *, history: Optional[list] = None) -> dict:
-    """Emergency-address axis ONLY — never returns device/operational health."""
+def e911_endpoint_item(unit, *, callback_number: Optional[str] = None) -> dict:
+    """One emergency endpoint (per ServiceUnit) for the E911 record — the
+    life-safety detail a customer must be able to verify: where it is
+    (unit/suite/floor), what kind of line it is (service type), and the
+    callback number / BTN / elevator/FACP line identifier.
+
+    Every value comes from REAL stored data (never fabricated).  Fields are
+    emitted "where applicable" — a null/absent value is dropped so the customer
+    never sees a fabricated placeholder.  ``callback_number`` is resolved by the
+    caller from the linked device/line (real stored number)."""
+    out: dict = {
+        "service_type": _SERVICE_LABELS.get((unit.unit_type or "").lower(), "Emergency service"),
+    }
+    where = unit.location_description or None
+    if where:
+        out["where"] = where
+    if unit.floor:
+        out["floor"] = unit.floor
+    if callback_number:
+        out["callback_number"] = callback_number
+    return out
+
+
+def e911_summary(site, *, history: Optional[list] = None,
+                 endpoints: Optional[list] = None) -> dict:
+    """Emergency-address axis ONLY — never returns device/operational health.
+
+    ``endpoints`` is the per-service emergency-line detail (where / service type
+    / callback number), built from real stored data by the composition layer.
+    The ``verified`` flag is derived strictly from the stored ``e911_status``
+    and is true ONLY when the underlying record is actually verified."""
     verified = (site.e911_status or "").lower() in _E911_VERIFIED
     active = (site.status or "").lower() == "active"
     return {
@@ -159,9 +195,11 @@ def e911_summary(site, *, history: Optional[list] = None) -> dict:
         "emergency_dispatch_address": _address(site),
         "verification": {
             "state": e911_state_label(site),
+            "verified": verified,
             "is_critical": active and not verified,
         },
         "confirmation_required": bool(site.e911_confirmation_required),
+        "emergency_endpoints": endpoints or [],
         "address_history": history or [],
         "customer_actions": ["Request an address correction"],
     }

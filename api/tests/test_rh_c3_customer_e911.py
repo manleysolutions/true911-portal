@@ -57,14 +57,18 @@ def _log(status="validated", **kw):
     return SimpleNamespace(**base)
 
 
-def _patch(monkeypatch, site, logs):
+def _patch(monkeypatch, site, logs, endpoints=None):
     async def _rsite(db, t, ref):
         return site
 
     async def _rhist(db, t, sid):
         return list(logs)
+
+    async def _reps(db, t, sid):
+        return list(endpoints or [])
     monkeypatch.setattr(cportfolio, "resolve_site", _rsite)
     monkeypatch.setattr(cportfolio, "load_e911_history", _rhist)
+    monkeypatch.setattr(cportfolio, "load_e911_endpoints", _reps)
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────

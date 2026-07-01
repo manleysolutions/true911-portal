@@ -93,6 +93,15 @@ ROLE_NORMALIZE = {
     "customer_readonly": "CUSTOMER_READONLY",
     "customer readonly": "CUSTOMER_READONLY",
     "customer read only": "CUSTOMER_READONLY",
+    # RH go-live customer role family (ADMIN/MANAGER/VIEWER/SUPPORT).  MANAGER,
+    # VIEWER, SUPPORT are first-class customer-plane roles with their own grants
+    # in permissions.json; none hold INTERNAL_OPS/COMMAND_* (isolation invariant).
+    "customer_manager": "CUSTOMER_MANAGER",
+    "customer manager": "CUSTOMER_MANAGER",
+    "customer_viewer": "CUSTOMER_VIEWER",
+    "customer viewer": "CUSTOMER_VIEWER",
+    "customer_support": "CUSTOMER_SUPPORT",
+    "customer support": "CUSTOMER_SUPPORT",
 }
 
 

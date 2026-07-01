@@ -61,6 +61,45 @@
 - **RH-P3.6 — Billing visibility** (read-only MRR/MRC over existing data).
 - **RH-P3.7 — Reports** (portfolio JSON + PDF); + frontend PR-F1…F8 (customer nav + pages).
 
+### Phase 3.5 — RH Login Preview (IMPLEMENTED, flag-gated OFF; urgent go-live)
+- **RH-P3.5-PREVIEW — Active/Green operational preview.** ✅ *Implemented.* A
+  tenant-scoped **preview mode** presents the customer **operational axis**
+  (location · service · device protection + equipment health) as **Protected/Online**
+  so RH (Judy) can be given a login **before** carrier/vendor telemetry is live.
+  - Two-key gate: `FEATURE_CUSTOMER_PREVIEW` + `CUSTOMER_PREVIEW_TENANT_ALLOWLIST`
+    (default OFF; mirrors `FEATURE_CUSTOMER_API`). Set both on api **and** worker.
+  - **Presentation-only:** no raw `Device`/`Site`/vendor state overwritten;
+    internal/admin/assurance views unchanged. Green carries an honest
+    **operator-attestation** evidence signal (not fabricated telemetry); no
+    "API/telemetry pending" labels reach the customer.
+  - **E911 excluded (life-safety):** `verified` true only when stored `e911_status`
+    is verified; active+unverified = Critical. Customer E911 record enumerates real
+    per-endpoint detail (unit/floor, callback/BTN/line id, service type) from
+    `ServiceUnit` + linked `Line.did`/`Device.msisdn` — "where applicable", never faked.
+  - **Internal correction worklist:** `GET /api/e911-changes/gaps` (`UPDATE_E911`).
+  - **Rollback:** flip `FEATURE_CUSTOMER_PREVIEW=false` or drop RH from the allowlist
+    → instant, no deploy/migration; RH sees real assurance labels again.
+  - Code: `services/customer/preview.py`, `services/e911_gaps.py`,
+    `services/customer/{portfolio,serialize}.py`, `routers/{customer,e911}.py`,
+    `config.py`. Tests: `tests/test_rh_customer_preview.py`. Docs:
+    `CUSTOMER_EXPERIENCE_BOUNDARY.md` §F, `CUSTOMER_DATA_BOUNDARY.md` §6a.
+  - **Follow-up:** preview is a bridge — retire it per location as Track-A telemetry
+    lands and real assurance evidence supersedes the operator attestation.
+- **RH-P3.5-GOLIVE — Customer login wired to /api/customer (Judy = CUSTOMER_ADMIN).**
+  ✅ *Implemented 2026-07-01 (D-016).* The isolated customer plane is wired end-to-end:
+  - RBAC: `CUSTOMER_*` granted VIEW_SITES/DEVICES/ASSURANCE (customer pages) + new
+    roles `CUSTOMER_MANAGER/VIEWER/SUPPORT`; still no INTERNAL_OPS/COMMAND_*.
+  - Frontend: `UserDashboard` customer branch → `CustomerAssuranceView` reads
+    `/api/customer/dashboard|locations|…/e911` (preview-green + real E911, no
+    pending language); 8 internal pages gated behind INTERNAL_OPS.
+  - Provisioning: `admin.py` invite accepts `CUSTOMER_*`; script
+    `scripts/create_customer_user.py`. Readiness: `scripts/rh_customer_readiness_check.py`.
+  - Docs: `docs/customer/ASSURANCE_ENGINE.md`, `docs/customer/RH_GO_LIVE_RUNBOOK.md`,
+    DECISIONS D-016. Tests: `test_customer_rbac_posture.py`, `test_rh_readiness_check.py`
+    (full suite green, 3623; web build green).
+  - **Remaining ops step:** set the 4 env vars on api+worker, create Judy, run the
+    readiness check, verify login (runbook). E911 gaps stay blockers to clean READY.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in

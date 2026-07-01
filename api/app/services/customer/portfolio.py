@@ -22,14 +22,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.customer import Customer
 from app.models.device import Device
 from app.models.e911_change_log import E911ChangeLog
+from app.models.line import Line
 from app.models.service_unit import ServiceUnit
 from app.models.site import Site
 from app.models.tenant import Tenant
 from app.services.assurance import compute_site_assurance, reason_codes as rc
 from app.services.assurance.loader import load_site_assurance_signals
 from app.services.assurance.signals import AssuranceLabel
+from app.services.customer.preview import preview_enabled, preview_protection
 from app.services.customer.refs import decode_ref
 from app.services.customer.serialize import (
+    e911_endpoint_item,
     evidence_object,
     service_preview,
     status_object,
@@ -137,12 +140,21 @@ def _unknown(now) -> dict:
 
 
 async def load_portfolio(db: AsyncSession, tenant_id: str, now) -> list[tuple[Site, dict]]:
-    """Return (Site, protection StatusObject) for every site in the tenant."""
+    """Return (Site, protection StatusObject) for every site in the tenant.
+
+    When preview is enabled for the tenant (RH go-live login preview), the
+    operational protection is forced to Active/Protected — see
+    ``services.customer.preview``.  The E911 axis is untouched (its own
+    endpoint reads real stored data)."""
+    preview = preview_enabled(tenant_id)
     sites = (await db.execute(
         select(Site).where(Site.tenant_id == tenant_id)
     )).scalars().all()
     out: list[tuple[Site, dict]] = []
     for site in sites:
+        if preview:
+            out.append((site, preview_protection(now)))
+            continue
         signals = await load_site_assurance_signals(db, tenant_id, site.site_id)
         protection = protection_from_assurance(signals, now) if signals is not None else _unknown(now)
         out.append((site, protection))
@@ -166,14 +178,19 @@ async def resolve_location(db: AsyncSession, tenant_id: str, location_ref: str, 
     )).scalar_one_or_none()
     if site is None:
         return None
-    signals = await load_site_assurance_signals(db, tenant_id, site.site_id)
-    if signals is not None:
-        result = compute_site_assurance(signals, now=now)
-        site_protection = _protection_from_result(result, signals, now)
-        device_by_id = {d.device_id: d for d in result.devices}
-    else:
-        site_protection = _unknown(now)
+    preview = preview_enabled(tenant_id)
+    if preview:
+        site_protection = preview_protection(now)
         device_by_id = {}
+    else:
+        signals = await load_site_assurance_signals(db, tenant_id, site.site_id)
+        if signals is not None:
+            result = compute_site_assurance(signals, now=now)
+            site_protection = _protection_from_result(result, signals, now)
+            device_by_id = {d.device_id: d for d in result.devices}
+        else:
+            site_protection = _unknown(now)
+            device_by_id = {}
     units = (await db.execute(
         select(ServiceUnit).where(
             ServiceUnit.tenant_id == tenant_id, ServiceUnit.site_id == site.site_id
@@ -182,7 +199,7 @@ async def resolve_location(db: AsyncSession, tenant_id: str, location_ref: str, 
     previews = [
         service_preview(
             u,
-            protection=_service_protection(
+            protection=preview_protection(now) if preview else _service_protection(
                 u, device_by_id.get(u.device_id) if u.device_id else None, now
             ),
         )
@@ -207,17 +224,59 @@ async def resolve_service(db: AsyncSession, tenant_id: str, service_ref: str, no
     )).scalar_one_or_none()
     if unit is None:
         return None
+    preview = preview_enabled(tenant_id)
     da = None
     device_row = None
     if unit.site_id and unit.device_id:
-        signals = await load_site_assurance_signals(db, tenant_id, unit.site_id)
-        if signals is not None:
-            result = compute_site_assurance(signals, now=now)
-            da = next((d for d in result.devices if d.device_id == unit.device_id), None)
+        if not preview:
+            signals = await load_site_assurance_signals(db, tenant_id, unit.site_id)
+            if signals is not None:
+                result = compute_site_assurance(signals, now=now)
+                da = next((d for d in result.devices if d.device_id == unit.device_id), None)
         device_row = (await db.execute(
             select(Device).where(Device.device_id == unit.device_id, Device.tenant_id == tenant_id)
         )).scalar_one_or_none()
+    if preview:
+        # Preview forces both axes to Active/Protected; the raw device row is
+        # still returned unchanged so the serializer reads real (non-jargon)
+        # fields — only the derived health string is overridden downstream.
+        return unit, device_row, preview_protection(now), preview_protection(now)
     return unit, device_row, _service_protection(unit, da, now), _protection_from_device_assurance(da, now)
+
+
+async def load_e911_endpoints(db: AsyncSession, tenant_id: str, site_id: str) -> list[dict]:
+    """Per-service emergency-endpoint detail for a site's E911 record — real
+    stored data only.  Each entry carries the service type, where it is
+    (unit/suite/floor), and the callback number / BTN / line identifier
+    resolved from the linked line (``Line.did``) or device (``Device.msisdn``).
+
+    Tenant-scoped.  A unit with no linked, in-tenant line/device simply has no
+    callback number ("where applicable") — nothing is fabricated.  This is the
+    ONE customer surface where the emergency callback number is intentionally
+    shown (a life-safety field the customer must be able to verify), unlike the
+    equipment-health view where the raw number stays hidden (§7)."""
+    units = (await db.execute(
+        select(ServiceUnit).where(
+            ServiceUnit.tenant_id == tenant_id, ServiceUnit.site_id == site_id
+        )
+    )).scalars().all()
+    out: list[dict] = []
+    for unit in units:
+        callback = None
+        if unit.line_id:
+            callback = (await db.execute(
+                select(Line.did).where(
+                    Line.line_id == unit.line_id, Line.tenant_id == tenant_id
+                )
+            )).scalar_one_or_none()
+        if not callback and unit.device_id:
+            callback = (await db.execute(
+                select(Device.msisdn).where(
+                    Device.device_id == unit.device_id, Device.tenant_id == tenant_id
+                )
+            )).scalar_one_or_none()
+        out.append(e911_endpoint_item(unit, callback_number=callback))
+    return out
 
 
 async def resolve_site(db: AsyncSession, tenant_id: str, location_ref: str):

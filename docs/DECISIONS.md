@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-015 recorded; latest ID: D-015 |
+| **Status** | Active — D-001 … D-016 recorded; latest ID: D-016 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -165,3 +165,32 @@ Decision · Consequences.
   `SiteFacts.e911_present` maps to *address present* only (identity gap), while
   verification is reported as a data-quality metric by the audit, not an identity
   gate. See `TRUTH_ENGINE.md` and `api/app/services/identity/{loader,audit}.py`.
+
+### D-016 — Customer Assurance Mode may green operational status when tenant-scoped + evidence-backed; E911 excluded
+- **Date:** 2026-07-01 · **Status:** Accepted
+- **Context:** RH (Judy) must be able to log in and see a calm, Active/Green
+  portfolio before carrier/vendor telemetry is live, without weakening life-safety
+  truth or exposing internal surfaces.
+- **Decision:**
+  1. **Customer Assurance Mode** (the "preview") is allowed to present the
+     **operational axis** (location/service/device) as **Protected/Active** — but
+     ONLY when (a) tenant-scoped via a two-key gate
+     (`FEATURE_CUSTOMER_PREVIEW` + `CUSTOMER_PREVIEW_TENANT_ALLOWLIST`, default OFF)
+     AND (b) evidence-backed by an honest **operator attestation** (not fabricated
+     telemetry), satisfying the no-green-without-evidence rule (§4.6).
+  2. **E911 is excluded from the preview override** — verification derives only
+     from the stored record (`e911_status ∈ {validated, verified}`); active +
+     unverified stays **Critical** (D-006/D-015). Missing E911 is surfaced
+     internally (`/api/e911-changes/gaps`, readiness check) for correction.
+  3. **Raw/internal status is unchanged** — the override is presentation-only,
+     mutates nothing, and internal/operator views read the real state.
+  4. **Customer roles are `CUSTOMER_*` (never legacy `User`)** and are isolated
+     from `INTERNAL_OPS`/`COMMAND_*`; their dashboard reads `/api/customer/*`, not
+     `/command/summary`.
+- **Consequences:** `permissions.json` grants `CUSTOMER_*` the customer read perms
+  (VIEW_SITES/DEVICES/ASSURANCE) and adds `CUSTOMER_MANAGER/VIEWER/SUPPORT`; the
+  admin invite path accepts `CUSTOMER_*`; the customer dashboard branch is wired to
+  `/api/customer/*`; internal operator pages are gated behind `INTERNAL_OPS`. See
+  `docs/customer/ASSURANCE_ENGINE.md`, `docs/customer/RH_GO_LIVE_RUNBOOK.md`,
+  `api/app/services/customer/preview.py`. Preview is a bridge — retired per location
+  as real evidence supersedes attestation.

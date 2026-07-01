@@ -43,11 +43,13 @@ def test_customer_roles_lack_internal_ops(role):
 @pytest.mark.parametrize("role", CUSTOMER_ROLES)
 @pytest.mark.parametrize(
     "perm",
-    ["INTERNAL_OPS", "VIEW_ADMIN", "COMMAND_VIEW_OPERATOR", "MANAGE_USERS",
-     "VIEW_SITES", "VIEW_DEVICES", "VIEW_ASSURANCE"],
+    ["INTERNAL_OPS", "VIEW_ADMIN", "COMMAND_VIEW_OPERATOR", "MANAGE_USERS"],
 )
-def test_customer_roles_have_no_permissions_yet(role, perm):
-    # PR-B1 registers the roles but grants them nothing (no customer API yet).
+def test_customer_roles_isolated_from_internal(role, perm):
+    # At go-live the customer roles gained their own grants (CUSTOMER_VIEW_* +
+    # VIEW_SITES/DEVICES/ASSURANCE for the customer pages), but they remain
+    # ISOLATED from the internal plane — never INTERNAL_OPS / COMMAND_* / admin.
+    # (See test_customer_rbac_posture.py for the positive-grant assertions.)
     assert rbac.can(role, perm) is False
 
 

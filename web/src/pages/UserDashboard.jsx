@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import CustomerSiteDetailDrawer from "@/components/CustomerSiteDetailDrawer";
+import CustomerAssuranceView from "@/components/customer/CustomerAssuranceView";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import {
@@ -20,6 +21,7 @@ import {
   getCustomerCounts,
   toCustomerStatus,
   isCustomerRole,
+  isCustomerApiRole,
   CUSTOMER_STATUS,
 } from "@/lib/attention";
 
@@ -637,6 +639,20 @@ function SiteList({ siteSummaries = [], role, onSiteSelect }) {
 // ═══════════════════════════════════════════════════════════════════
 
 export default function UserDashboard() {
+  const { user } = useAuth();
+  // Isolated customer-plane roles (CUSTOMER_ADMIN / MANAGER / VIEWER / SUPPORT /
+  // …) hold no INTERNAL_OPS grant, so they cannot call /command/summary.  They
+  // get the dedicated, read-only /api/customer Assurance view instead (preview-
+  // greened operational status + real E911).  Legacy User/Manager customers are
+  // unchanged.  This wrapper only ever calls one hook (useAuth) before choosing
+  // a child, so hook order stays stable regardless of the branch.
+  if (isCustomerApiRole(user?.role)) {
+    return <CustomerAssuranceView />;
+  }
+  return <LegacyUserDashboard />;
+}
+
+function LegacyUserDashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);

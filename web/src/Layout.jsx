@@ -14,6 +14,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
 import { config } from "@/config";
+import { isCustomerApiRole } from "@/lib/attention";
 
 // ── Role hierarchy ──────────────────────────────────────────────
 const ROLE_LEVEL = { User: 1, DataEntry: 1.5, DataSteward: 1.7, Manager: 2, Admin: 3, SuperAdmin: 4 };
@@ -225,6 +226,17 @@ const USER_NAV = [
   { name: "Map",      page: "DeploymentMap",   icon: Map },
 ];
 
+// ── Isolated customer-plane portal (CUSTOMER_* roles) ────────────
+// These roles read the dedicated /api/customer Assurance surface only.  The
+// single "Home" item IS the whole read-only experience: portfolio status
+// (preview-greened), locations, and the E911 record.  Deliberately minimal so
+// a customer never lands on an internal or not-yet-customer-safe page.  Adding
+// customer Support/Reports/Billing items (wired to /api/customer/*) is the
+// documented next slice.
+const CUSTOMER_NAV = [
+  { name: "Home", page: "UserDashboard", icon: ShieldCheck },
+];
+
 
 // ── Data Entry / Import Operator portal ──────────────────────────
 const DATAENTRY_NAV = [
@@ -322,7 +334,10 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
 
   const isDataEntry = userRole === "DataEntry";
   const isDataSteward = userRole === "DataSteward";
-  const navSource = isSuperAdmin
+  const isCustomerApi = isCustomerApiRole(userRole);
+  const navSource = isCustomerApi
+    ? CUSTOMER_NAV
+    : isSuperAdmin
     ? NOC_NAV
     : isAdmin
     ? ADMIN_NAV

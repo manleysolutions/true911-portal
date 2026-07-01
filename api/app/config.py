@@ -180,6 +180,21 @@ class Settings(BaseSettings):
     FEATURE_CUSTOMER_API: str = "false"
     CUSTOMER_API_TENANT_ALLOWLIST: str = ""
 
+    # ── Customer preview mode (RH urgent go-live login preview) ────
+    # Two-key gate, mirroring the customer API.  When ON for a tenant, the
+    # customer OPERATIONAL axis (location / service / equipment protection +
+    # equipment health) is presented as Active/Protected — so a customer can be
+    # given a login immediately, before live carrier/vendor telemetry is
+    # connected.  It is PRESENTATION-ONLY: it never writes or mutates any raw
+    # Device/Site/API state, and internal / admin / assurance views read the
+    # real state and are unaffected.  The E911 axis is EXCLUDED — emergency
+    # addresses stay derived from real stored data (never forced "Verified").
+    # Default OFF everywhere.  Rollback: flip FEATURE_CUSTOMER_PREVIEW=false or
+    # drop the tenant from CUSTOMER_PREVIEW_TENANT_ALLOWLIST — instant, no
+    # deploy, no data change.  See docs/CUSTOMER_EXPERIENCE_BOUNDARY.md.
+    FEATURE_CUSTOMER_PREVIEW: str = "false"
+    CUSTOMER_PREVIEW_TENANT_ALLOWLIST: str = ""
+
     # ── AI Customer Operations Center / Support Center ─────────────
     # Caller-facing Tier-1 support workflow: identifier lookup → SMS-OTP
     # caller verification → temporary support session → triage → human
@@ -441,6 +456,18 @@ class Settings(BaseSettings):
         return {
             t.strip()
             for t in self.CUSTOMER_API_TENANT_ALLOWLIST.split(",")
+            if t.strip()
+        }
+
+    @property
+    def customer_preview_tenant_id_set(self) -> set[str]:
+        """Tenants for which the customer OPERATIONAL axis is shown as
+        Active/Protected in preview (when FEATURE_CUSTOMER_PREVIEW is on).
+        Plain @property (not cached) so a flag/allowlist change takes effect
+        without a process restart."""
+        return {
+            t.strip()
+            for t in self.CUSTOMER_PREVIEW_TENANT_ALLOWLIST.split(",")
             if t.strip()
         }
 

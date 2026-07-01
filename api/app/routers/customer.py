@@ -21,6 +21,7 @@ from app.models.user import User
 from app.services.customer import portfolio as cportfolio
 from app.services.customer import serialize as cs
 from app.services.customer.gate import require_customer_api
+from app.services.customer.preview import preview_enabled
 
 router = APIRouter()
 
@@ -139,7 +140,8 @@ async def customer_service_detail(
     if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
     unit, device, service_protection, equipment_protection = resolved
-    equipment = cs.equipment_from_device(device, protection=equipment_protection) if device is not None else None
+    preview = preview_enabled(current_user.tenant_id)
+    equipment = cs.equipment_from_device(device, protection=equipment_protection, preview=preview) if device is not None else None
     return {
         "as_of": now.isoformat(),
         "data": cs.service_from_unit(unit, protection=service_protection, equipment=equipment),
@@ -163,7 +165,8 @@ async def customer_service_equipment(
     _unit, device, _service_protection, equipment_protection = resolved
     if device is None:
         return {"as_of": now.isoformat(), "data": {"equipment": None, "protection": equipment_protection}}
-    return {"as_of": now.isoformat(), "data": cs.equipment_from_device(device, protection=equipment_protection)}
+    preview = preview_enabled(current_user.tenant_id)
+    return {"as_of": now.isoformat(), "data": cs.equipment_from_device(device, protection=equipment_protection, preview=preview)}
 
 
 @router.get(
@@ -183,4 +186,5 @@ async def customer_location_e911(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
     logs = await cportfolio.load_e911_history(db, current_user.tenant_id, site.site_id)
     history = [cs.e911_history_item(log) for log in logs]
-    return {"as_of": now.isoformat(), "data": cs.e911_summary(site, history=history)}
+    endpoints = await cportfolio.load_e911_endpoints(db, current_user.tenant_id, site.site_id)
+    return {"as_of": now.isoformat(), "data": cs.e911_summary(site, history=history, endpoints=endpoints)}
