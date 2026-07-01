@@ -158,6 +158,20 @@ def test_portfolio_summary_404_flag_off(monkeypatch):
     assert _client().get("/api/customer/portfolio/summary").status_code == 404
 
 
+def test_services_summary_endpoint(monkeypatch):
+    _enable(monkeypatch)
+
+    async def _ss(db, tenant, now):
+        return {"total_services": 51, "protected_services": 48, "attention_services": 3,
+                "inventory": [{"service": "Fire Alarm", "count": 20}, {"service": "Elevator", "count": 25}]}
+    monkeypatch.setattr(cc, "load_services_summary", _ss)
+    r = _client().get("/api/customer/portfolio/services")
+    assert r.status_code == 200
+    d = r.json()["data"]
+    assert d["total_services"] == 51 and d["attention_services"] == 3
+    assert {"service": "Elevator", "count": 25} in d["inventory"]
+
+
 def test_health_endpoint(monkeypatch):
     _enable(monkeypatch)
 
@@ -277,12 +291,14 @@ def test_load_location_services_groups_equipment_preview(monkeypatch):
         _Res([site]),          # resolve_site
         _Res([unit]),          # service units
         _Res([device]),        # devices for site
-        _Res([SimpleNamespace(line_id="LN-1", did="6175559999")]),  # lines for site
+        _Res([SimpleNamespace(line_id="LN-1", did="6175559999", device_id="DEV-1", provider="telnyx")]),  # lines
+        _Res([]),              # classification overrides (ActionAudit)
     ])
     out = asyncio.run(cc.load_location_services(db, RH, cs.encode_ref("loc", 5), NOW))
     assert out["location"] == "RH Yountville"
     svc = out["services"][0]
     assert svc["service"] == "Fire Alarm"                  # enterprise, not model
+    assert svc["confidence"] == "Confirmed"                # anchored by a ServiceUnit
     assert svc["status"]["status"] == "Protected"          # preview greens the service
     eq = svc["equipment"][0]
     assert eq["health"] == "Online"                        # preview greens equipment

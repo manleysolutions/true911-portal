@@ -83,6 +83,7 @@
   "MANAGE_PROVISIONING": ["Admin"],
   "CREATE_SERVICE_UNITS": ["Admin", "Manager", "DataEntry", "DataSteward", "UX_QA_ANALYST"],
   "EDIT_SERVICE_UNITS": ["Admin", "Manager", "DataEntry", "DataSteward", "UX_QA_ANALYST"],
+  "MANAGE_SERVICE_CLASSIFICATION": ["Admin", "Manager", "DataSteward", "UX_QA_ANALYST"],
   "CREATE_SIMS": ["Admin", "DataEntry", "DataSteward", "UX_QA_ANALYST"],
   "EDIT_SIMS": ["Admin", "DataEntry", "DataSteward", "UX_QA_ANALYST"],
   "CREATE_LINES": ["Admin", "Manager", "DataEntry", "DataSteward", "UX_QA_ANALYST"],

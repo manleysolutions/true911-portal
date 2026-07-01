@@ -133,6 +133,22 @@
     real inspection ingest, health inputs (service requests/alarm tests/carrier/AI),
     Service Requests/Emergency Procedures/Billing integrations, Vitest runner.
 
+### Phase 3.8 — Life Safety Service Intelligence (IMPLEMENTED; additive)
+- **RH-P3.8-SVC — Equipment → Life Safety Services.** ✅ *Implemented 2026-07-01.*
+  Inference engine classifies equipment into first-class services (Fire Alarm,
+  Elevator, Area of Refuge, Emergency Phone, BDA/DAS, Generator Monitoring, Mass
+  Notification, Burglar Alarm) with confidence; groups multi-device services;
+  location & portfolio health derive from **service** health. New
+  `/customer/portfolio/services`; internal approve/override/merge/split
+  (`MANAGE_SERVICE_CLASSIFICATION`, append-only ActionAudit, CUSTOMER_* isolated).
+  Code: `services/customer/service_inference.py`, `services/service_classification.py`,
+  `routers/service_classification.py`, `command_center.py`, `serialize.service_card`.
+  Tests: `test_service_inference.py` (suite green 3690). Doc:
+  `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md`.
+  - **Roadmap:** override→ServiceUnit promotion, richer rules (vendor/customer
+    metadata), real last-test/inspection sources, per-service history, AI-assisted
+    confidence, merge/split UI in the internal console.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in

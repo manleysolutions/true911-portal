@@ -38,6 +38,32 @@ CSV/PDF, marker clustering, and a frontend Vitest runner (none exists yet).
 
 > Sections **0d–0** below are the per-PR change notes (now all merged), kept for detail.
 
+## 0e. Life Safety Service Intelligence [2026-07-01] (branch `feat/life-safety-service-model`)
+
+The backend now converts an equipment inventory into a **Life Safety Service**
+model — services are first-class; equipment supports them. Additive on the
+Command Center + Digital Twin; no UI redesign.
+- **Inference engine** `services/customer/service_inference.py` (pure): classifies
+  equipment (model/type/notes/manufacturer/carrier + line label + ServiceUnit) into
+  Fire Alarm/Elevator/Area of Refuge/Emergency Phone/BDA·DAS/Generator/Mass
+  Notification/Burglar Alarm, groups multi-device services, with **confidence**
+  (Confirmed/High/Medium/Low); unclassified → generic + Low (honest, never faked).
+- **Health from services:** `_build_location_services` sources
+  `/locations/{ref}/services` (inferred); **location health derives from service
+  health**; portfolio stays building/service-derived. New `/customer/portfolio/services`
+  (service inventory). `serialize.service_card` (additive; carries confidence).
+- **Internal ops (Phase 8):** `routers/service_classification.py` +
+  `services/service_classification.py` — approve/override/merge/split guarded by
+  new perm **`MANAGE_SERVICE_CLASSIFICATION`** (Admin/Manager/DataSteward/UX_QA;
+  **no `CUSTOMER_*`**). Overrides persist + log as append-only **`ActionAudit`**
+  records (no new table/migration); the inference engine applies the latest override
+  per device.
+- **Frontend:** minimal — the drawer already renders `services.services` (now
+  inferred); added a small "Inferred · <confidence>" hint. No redesign.
+- **Truth/isolation:** no fabricated E911/telemetry/last-test; carrier *name* only;
+  CUSTOMER_* isolation intact. Full suite green (**3690**); web build green. Doc:
+  `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md` (new). **PR pending review (not merged).**
+
 ## 0d. Location Digital Twin — MERGED (PR #144, `603ff19`) [2026-07-01]
 
 The Location tier of the Command Center is now a **Digital Twin** — each customer

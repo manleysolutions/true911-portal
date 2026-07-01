@@ -137,6 +137,15 @@ Service Requests · Billing). Additive endpoints (`/locations/{ref}/documents`,
 items), and permanent `?location=<ref>` deep-links. Full spec:
 `docs/customer/LOCATION_DIGITAL_TWIN.md`.
 
+## 8b. Life Safety Service Intelligence
+
+Services are now **inferred from equipment** (not just explicit ServiceUnits) by a
+rules engine, grouped multi-device, and carried with a **confidence**; location
+and portfolio health derive from **service** health, not raw device counts. Adds
+`/customer/portfolio/services` (service inventory) and an internal
+`MANAGE_SERVICE_CLASSIFICATION` approve/override/merge/split surface (append-only
+audit; `CUSTOMER_*`-isolated). Full spec: `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md`.
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),
