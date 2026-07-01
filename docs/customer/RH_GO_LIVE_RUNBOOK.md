@@ -139,21 +139,33 @@ gaps worklist (§4).
 The **RH Portfolio Certification Wizard** takes the latest Zoho subscription CSV
 export as the immediate source of truth and certifies that *every* RH location,
 subscription, line, and device is represented correctly in True911 **before Judy's
-invite is sent**. It parses the CSV, normalizes each RH row into a canonical
+invite is sent**. It ingests the Zoho data (CSV export or live Zoho CRM),
+normalizes each RH row into a canonical
 portfolio record, reads True911 production (sites/devices/service units/lines/E911),
 matches the two sides, classifies every result (A–L), and prints a go-live verdict
 (**PASS / CONDITIONAL / BLOCKED**).
 
+It reads from **either** an offline CSV export **or** live Zoho CRM (exactly one
+source required — both produce the same CSV/JSON/MD outputs):
+
 ```bash
+# offline CSV mode (backward compatible)
 cd api && python -m scripts.rh_portfolio_certification \
     --tenant restoration-hardware \
     --zoho-csv /path/to/Subscription_Mgmnt_2026_07_01.csv \
     --csv /tmp/rh_portfolio_certification.csv \
     --json /tmp/rh_portfolio_certification.json \
     --report /tmp/rh_portfolio_certification.md
+
+# live Zoho mode (reuses the existing OAuth client + pagination — needs ZOHO_CRM_* configured)
+cd api && python -m scripts.rh_portfolio_certification \
+    --tenant restoration-hardware --zoho-live --module Accounts \
+    --report /tmp/rh_portfolio_certification.md
+# override the live field set with --fields "Account_Name,Billing_Street,..." if needed
 ```
 
-Read-only (SELECTs only + reads the operator-supplied CSV — **never writes Zoho or
+Read-only (SELECTs only + reads the operator-supplied CSV **or** the authenticated
+Zoho GET layer — **never writes Zoho or
 True911, never marks E911 verified, never fabricates missing data**). It emits CSV +
 JSON + an **executive Markdown report** (portfolio at-a-glance, A–L sections, top-25
 issues, operator punch list) and prints a summary. Exit codes: **0** PASS · **1**
