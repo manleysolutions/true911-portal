@@ -104,6 +104,18 @@ def test_locations_pagination(monkeypatch):
     assert d["total"] == 30 and d["page"] == 2 and len(d["items"]) == 10
 
 
+def test_locations_page_size_capped_at_100(monkeypatch):
+    # Contract: page_size max is 100.  Requesting more is a 422 (the blank-
+    # dashboard bug: the frontend must page at <=100 and accumulate).  `total`
+    # is always returned so the client can page through the whole portfolio.
+    _enable(monkeypatch)
+    _patch_portfolio(monkeypatch, [(_site(i, f"S{i}"), _prot()) for i in range(1, 43)])  # RH: 42
+    ok = _client().get("/api/customer/locations?page=1&page_size=100")
+    assert ok.status_code == 200 and ok.json()["data"]["total"] == 42
+    assert len(ok.json()["data"]["items"]) == 42                # all 42 fit in one page of 100
+    assert _client().get("/api/customer/locations?page_size=101").status_code == 422
+
+
 def test_locations_404_when_flag_off(monkeypatch):
     _enable(monkeypatch, flag="false")
     _patch_portfolio(monkeypatch, [])

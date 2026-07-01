@@ -34,6 +34,29 @@ const styleFor = (s) => STATUS_STYLE[s] || STATUS_STYLE.Unknown;
 const e911Text = (state) => (state === "Verified" ? "text-emerald-600" : "text-amber-600");
 const MAP_LEGEND = ["Protected", "Attention Needed", "Critical", "Pending Install", "Unknown"];
 
+// Backend caps /customer/locations page_size at 100.  Fetch every page (100 at a
+// time) and accumulate, so portfolios larger than one page load fully — RH has
+// 42, but this stays correct for any size.  Requesting >100 returns a 422 and
+// blanks the dashboard (the bug this fixes).
+const LOCATIONS_PAGE_SIZE = 100;
+async function fetchAllLocations() {
+  const first = await apiFetch(`/customer/locations?page=1&page_size=${LOCATIONS_PAGE_SIZE}`);
+  const d = first.data || {};
+  let items = d.items || [];
+  const total = d.total ?? items.length;
+  const pages = Math.ceil(total / LOCATIONS_PAGE_SIZE);
+  if (pages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, i) =>
+        apiFetch(`/customer/locations?page=${i + 2}&page_size=${LOCATIONS_PAGE_SIZE}`)
+          .then((r) => r.data?.items || [])
+          .catch(() => [])),
+    );
+    items = items.concat(...rest);
+  }
+  return items;
+}
+
 function Metric({ label, value, sub, tone = "slate", icon: Icon }) {
   const toneMap = {
     slate: "border-slate-200 bg-white", emerald: "border-emerald-200 bg-emerald-50/50",
@@ -155,12 +178,12 @@ export default function CustomerAssuranceView() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const [s, l] = await Promise.all([
+      const [s, items] = await Promise.all([
         apiFetch("/customer/portfolio/summary"),
-        apiFetch("/customer/locations?page_size=200"),
+        fetchAllLocations(),
       ]);
       setSummary(s.data);
-      setLocations(l.data?.items || []);
+      setLocations(items);
     } catch (e) {
       setError(e.status === 404 ? "Your portal is being finalized. Please check back shortly." : (e.message || "Unable to load your dashboard right now."));
     } finally {
