@@ -8,10 +8,37 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — Building Workspace (branch `feat/building-workspace`, PR open, NOT merged) [2026-07-01]
+## 0·NEXT — RH Portfolio Certification Wizard (branch `feat/rh-portfolio-certification`, PR open, NOT merged) [2026-07-01]
 
-The Location Digital Twin is being refined into a **collaborative Building
-Workspace** — additive, same APIs, no architecture change. Landed on the branch:
+Read-only **go-live gate** for RH: certifies that every RH location / subscription /
+line / device in the latest Zoho subscription CSV export is represented correctly in
+True911 **before Judy's invite**.
+
+- Script `api/scripts/rh_portfolio_certification.py` — parses the Zoho CSV, detects
+  RH rows (aliases + weird labels), normalizes each into a **canonical portfolio
+  record** (store#, site_type, address, phones, device ids, confidence,
+  manual_review), groups device rows into canonical locations, reads True911 prod
+  (sites/devices/units/lines/E911), **matches** (store#/address/city-state-zip/phone/
+  device-id/name), and **classifies A–L**.
+- Executive report with **PASS / CONDITIONAL / BLOCKED** verdict + top-25 issues +
+  operator punch list; CSV + JSON + MD artifacts. Exit 0/1/2/3.
+- **Read-only** — SELECTs + the supplied CSV only; never writes Zoho/True911, never
+  marks E911 verified, never fabricates data. Blocking gates C/F/I/J/K must reach 0.
+- Tests: `test_rh_portfolio_certification.py` (19; normalization, store#, alias,
+  dedup, matching, missing-site/unit, E911-unverified, verdict, CSV/JSON/MD). Script
+  slice green (**295** in the reconciliation/readiness/zoho slice).
+- Docs: `customer/RH_PORTFOLIO_CERTIFICATION.md`; `RH_GO_LIVE_RUNBOOK.md` §4b.
+- **Dry run against the provided 2026-07-01 export:** 377 rows → 70 RH → **44
+  canonical locations** (20 need manual review). Live matching runs on Render (prod
+  DB). Judy's invite **remains blocked** pending a PASS/CONDITIONAL-with-sign-off run.
+
+**Guarantees held:** read-only · no E911 auto-verify · no fabrication · PR opened,
+**awaiting review** (do not auto-merge).
+
+## 0·PREV — Building Workspace (PR #154, MERGED to main `3747c69`) [2026-07-01]
+
+The Location Digital Twin was refined into a **collaborative Building
+Workspace** — additive, same APIs, no architecture change:
 
 - **Reorganised** the Location Workspace into four workspaces — *Building Summary ·
   Operations · Compliance · Administration*; **services are the primary objects**,
@@ -33,7 +60,7 @@ Workspace** — additive, same APIs, no architecture change. Landed on the branc
   updated `customer/LOCATION_DIGITAL_TWIN.md`.
 
 **Guarantees held:** additive · no internal-workflow exposure · RBAC unchanged/not
-weakened · no API redesign · PR opened, **awaiting review** (do not auto-merge).
+weakened · no API redesign. Merged as **PR #154**.
 
 ## 0. MERGED TO MAIN — the RH Customer Stack is live in `main` [2026-07-01]
 

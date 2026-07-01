@@ -134,6 +134,39 @@ credentials to be configured; run against the prod-read DB. Work the CSV to zero
 (or knowingly-accepted) findings — E911-unverified rows also appear on the internal
 gaps worklist (§4).
 
+## 4b. Portfolio certification (read-only — the go-live gate)
+
+The **RH Portfolio Certification Wizard** takes the latest Zoho subscription CSV
+export as the immediate source of truth and certifies that *every* RH location,
+subscription, line, and device is represented correctly in True911 **before Judy's
+invite is sent**. It parses the CSV, normalizes each RH row into a canonical
+portfolio record, reads True911 production (sites/devices/service units/lines/E911),
+matches the two sides, classifies every result (A–L), and prints a go-live verdict
+(**PASS / CONDITIONAL / BLOCKED**).
+
+```bash
+cd api && python -m scripts.rh_portfolio_certification \
+    --tenant restoration-hardware \
+    --zoho-csv /path/to/Subscription_Mgmnt_2026_07_01.csv \
+    --csv /tmp/rh_portfolio_certification.csv \
+    --json /tmp/rh_portfolio_certification.json \
+    --report /tmp/rh_portfolio_certification.md
+```
+
+Read-only (SELECTs only + reads the operator-supplied CSV — **never writes Zoho or
+True911, never marks E911 verified, never fabricates missing data**). It emits CSV +
+JSON + an **executive Markdown report** (portfolio at-a-glance, A–L sections, top-25
+issues, operator punch list) and prints a summary. Exit codes: **0** PASS · **1**
+CONDITIONAL · **2** BLOCKED · **3** error (e.g. CSV unreadable).
+
+Classes flagged: A matched · B possible/needs-review · C missing in True911 · D
+missing in Zoho · E duplicate Zoho · F duplicate True911 · G address mismatch · H
+phone/callback mismatch · I device mismatch · J missing service unit · K E911
+unverified · L weird RH label. **Blocking** gates (C/F/I/J/K) must reach zero;
+**conditional** items (B/D/E/G/H/L) need explicit operator sign-off. **Judy's invite
+stays blocked until this reads PASS** (or CONDITIONAL with sign-off). Full spec:
+`docs/customer/RH_PORTFOLIO_CERTIFICATION.md`.
+
 ## 5. Verify login
 
 - Judy accepts her invite, sets a password, signs in.
