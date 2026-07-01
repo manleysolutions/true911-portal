@@ -149,6 +149,22 @@
     metadata), real last-test/inspection sources, per-service history, AI-assisted
     confidence, merge/split UI in the internal console.
 
+### Phase 3.9 — Customer E911 confirmation & correction (IMPLEMENTED; additive)
+- **RH-P3.9-E911REVIEW — Customers validate E911 without owning it.** ✅ *Implemented 2026-07-01.*
+  CUSTOMER_* users **confirm** or **request a correction** to the emergency record;
+  Manley operators review/approve/reject. Never overwrites official E911; append-only
+  audited (ActionAudit; migration-free). Endpoints: `POST /customer/locations/{ref}/
+  e911/confirm|correction-request`, `GET …/e911/review-status`; internal
+  `GET /api/e911-changes/reviews`, `POST …/reviews/{id}/approve|reject`.
+  RBAC: submit = new `CUSTOMER_SUBMIT_E911_REVIEW` (ADMIN/MANAGER/SUPPORT/USER;
+  read-only roles view only); review = `UPDATE_E911` OR `MANAGE_SERVICE_CLASSIFICATION`.
+  Code: `services/e911_review.py`, `routers/customer.py`, `routers/e911.py`,
+  `dependencies.require_any_permission`, `LocationCommandCenter.jsx`. Tests:
+  `test_e911_review.py` (suite green 3716). Doc:
+  `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`.
+  - **Roadmap:** approved-correction → E911ChangeLog draft; decision notifications;
+    per-review internal detail view.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in

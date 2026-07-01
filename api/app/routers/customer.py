@@ -14,10 +14,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission
 from app.models.user import User
+from app.services import e911_review
 from app.services.customer import command_center as cc
 from app.services.customer import portfolio as cportfolio
 from app.services.customer import serialize as cs
@@ -189,6 +191,101 @@ async def customer_location_e911(
     history = [cs.e911_history_item(log) for log in logs]
     endpoints = await cportfolio.load_e911_endpoints(db, current_user.tenant_id, site.site_id)
     return {"as_of": now.isoformat(), "data": cs.e911_summary(site, history=history, endpoints=endpoints)}
+
+
+# ── Customer E911 confirmation + correction workflow (additive) ──────
+# Customers may CONFIRM the record or REQUEST a correction — they never overwrite
+# the official E911 record (data-safety §9).  Submit is gated on
+# CUSTOMER_SUBMIT_E911_REVIEW (ADMIN/MANAGER/SUPPORT/USER); read-only roles
+# (VIEWER/READONLY) can still VIEW review status but not submit.
+class _ConfirmBody(BaseModel):
+    note: str | None = None
+
+
+class _CorrectionBody(BaseModel):
+    corrected_address: str | None = None
+    suite: str | None = None
+    floor: str | None = None
+    unit: str | None = None
+    callback_number: str | None = None
+    service_identifier: str | None = None
+    note: str | None = None
+
+
+async def _e911_site_and_snapshot(db, tenant_id, location_ref):
+    """Resolve the site (tenant-scoped) + the exact E911 record the customer is
+    shown (server-authoritative snapshot), or (None, None) for unknown refs."""
+    site = await cportfolio.resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None, None
+    endpoints = await cportfolio.load_e911_endpoints(db, tenant_id, site.site_id)
+    return site, cs.e911_summary(site, endpoints=endpoints)
+
+
+@router.post(
+    "/locations/{location_ref}/e911/confirm",
+    dependencies=[Depends(require_permission("CUSTOMER_SUBMIT_E911_REVIEW"))],
+)
+async def customer_e911_confirm(
+    location_ref: str,
+    body: _ConfirmBody,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Confirm the emergency record is correct.  Records a customer confirmation
+    (append-only audit) — does NOT mark the official record verified."""
+    now = datetime.now(timezone.utc)
+    site, snapshot = await _e911_site_and_snapshot(db, current_user.tenant_id, location_ref)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    data = await e911_review.record_confirmation(db, current_user, site, snapshot=snapshot, note=body.note or "")
+    return {"as_of": now.isoformat(), "data": data}
+
+
+@router.post(
+    "/locations/{location_ref}/e911/correction-request",
+    dependencies=[Depends(require_permission("CUSTOMER_SUBMIT_E911_REVIEW"))],
+)
+async def customer_e911_correction(
+    location_ref: str,
+    body: _CorrectionBody,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Request an emergency-record correction.  Creates a PENDING correction
+    request (append-only) — never overwrites the official site/service-unit/line."""
+    now = datetime.now(timezone.utc)
+    site, snapshot = await _e911_site_and_snapshot(db, current_user.tenant_id, location_ref)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    corrected = {
+        "address": body.corrected_address, "suite": body.suite, "floor": body.floor,
+        "unit": body.unit, "callback_number": body.callback_number,
+        "service_identifier": body.service_identifier,
+    }
+    data = await e911_review.record_correction(db, current_user, site, corrected=corrected,
+                                               snapshot=snapshot, note=body.note or "")
+    return {"as_of": now.isoformat(), "data": data}
+
+
+@router.get(
+    "/locations/{location_ref}/e911/review-status",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_E911"))],
+)
+async def customer_e911_review_status(
+    location_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """The friendly review state for this location's emergency record (own tenant
+    only): Not yet verified / Customer confirmed / Correction requested / Under
+    Manley review / Verified."""
+    now = datetime.now(timezone.utc)
+    site = await cportfolio.resolve_site(db, current_user.tenant_id, location_ref)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return {"as_of": now.isoformat(),
+            "data": await e911_review.location_review_status(db, current_user.tenant_id, site)}
 
 
 # ══════════════════════════════════════════════════════════════════════

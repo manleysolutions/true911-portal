@@ -116,3 +116,8 @@ The same real-signal, unknown-lowers-confidence health model is applied
 **per-location** in the **Location Digital Twin** (`LOCATION_DIGITAL_TWIN.md`) —
 each building carries its own health score alongside its services, equipment,
 E911, inspections, and activity record.
+
+The E911 axis stays authoritative: customers may **confirm** or **request a
+correction** (`E911_CUSTOMER_REVIEW_WORKFLOW.md`) but never write the official
+record; `verified` remains a Manley-gated step. Customer participation feeds the
+review queue, never the truth directly.

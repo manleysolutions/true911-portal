@@ -173,7 +173,7 @@ Sources: `Site.e911_*` + `E911ChangeLog`.
 
 - **Internal:** PSAP/NG911 ids, address source, correlation ids, requester email.
 - **Customer-visible:** the dispatch address, its verified state + timestamp, and a plain-language change history (proof).
-- **Customer-editable:** **none directly.** A customer may **request a correction**, which creates a Manley-gated E911 change (never a customer write to a life-safety field). Verification is always an authoritative Manley step.
+- **Customer-editable:** **none directly.** A customer may **confirm** the record or **request a correction** (implemented — `customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`): both are append-only review records that NEVER write `Site.e911_*` / ServiceUnit / Line. Submit is gated on `CUSTOMER_SUBMIT_E911_REVIEW` (read-only customer roles view status only); verification/apply is always an authoritative Manley step (`UPDATE_E911`).
 - **Status mapping (D-015, three dimensions never collapsed):** address present + `e911_status` verified → **Verified ✓**; present + unverified → **Attention / "Not yet verified"**; missing → **Setup needed**; **active + unverified = Critical** (shown red with reason, never green).
 - **Recommended actions:** "Request an address correction" (customer); "We're verifying this address" (Manley) when unverified.
 
