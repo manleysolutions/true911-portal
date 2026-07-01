@@ -92,6 +92,62 @@ def test_fetch_zoho_uses_integration_read_only(monkeypatch):
     assert calls["n"] == 1 and out[0]["name"] == "RH Boston" and out[0]["city"] == "Boston"
 
 
+# ── --fields support (the hotfix) ────────────────────────────────────
+def test_resolve_fields_default_and_override():
+    # default Accounts field set when --fields omitted
+    assert rz.resolve_fields("Accounts", None) == rz.DEFAULT_ACCOUNT_FIELDS
+    assert "Billing_Street" in rz.DEFAULT_ACCOUNT_FIELDS and "Phone" in rz.DEFAULT_ACCOUNT_FIELDS
+    # explicit --fields overrides
+    assert rz.resolve_fields("Accounts", "Account_Name,Phone") == "Account_Name,Phone"
+    # non-Accounts module with no --fields -> None (Zoho default)
+    assert rz.resolve_fields("Custom_Module", None) is None
+
+
+def test_fetch_zoho_sends_fields_param(monkeypatch):
+    from app.services import zoho_crm
+    seen = {}
+
+    async def _fake_fetch(module="Accounts", *, fields=None, **kw):
+        seen["module"] = module
+        seen["fields"] = fields
+        return []
+    monkeypatch.setattr(zoho_crm, "fetch_records", _fake_fetch)
+
+    # default: safe Accounts fields are sent
+    asyncio.run(rz.fetch_zoho("Accounts"))
+    assert seen["fields"] == rz.DEFAULT_ACCOUNT_FIELDS
+    # override wins
+    asyncio.run(rz.fetch_zoho("Accounts", "Account_Name,Phone"))
+    assert seen["fields"] == "Account_Name,Phone"
+
+
+def test_zoho_crm_fetch_records_passes_fields_to_get(monkeypatch):
+    # zoho_crm.fetch_records must place `fields` into the Zoho GET params (read-only)
+    from app.services import zoho_crm
+    captured = {}
+
+    async def _fake_get(path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return {"data": [{"id": "1"}], "info": {"more_records": False}}
+    monkeypatch.setattr(zoho_crm, "is_configured", lambda: True)
+    monkeypatch.setattr(zoho_crm, "_zoho_get", _fake_get)
+    asyncio.run(zoho_crm.fetch_records("Accounts", fields="Account_Name,Phone"))
+    assert captured["params"]["fields"] == "Account_Name,Phone"
+    assert captured["path"] == "/Accounts"
+
+
+def test_write_markdown_report(tmp_path):
+    r = rz.reconcile(_fixture(), _zoho())
+    md = tmp_path / "report.md"
+    rz.write_markdown_report(str(md), r)
+    text = md.read_text(encoding="utf-8")
+    for header in ("## A. Matched locations", "## B. Inconsistencies",
+                   "## C. Needs investigation", "## D. True911 sync punch list"):
+        assert header in text
+    assert "READ-ONLY" in text and "never auto-verified" in text
+
+
 # ── output artifacts ─────────────────────────────────────────────────
 def test_write_csv_and_json(tmp_path):
     r = rz.reconcile(_fixture(), _zoho())

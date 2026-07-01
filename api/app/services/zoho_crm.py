@@ -119,17 +119,23 @@ def config_summary() -> dict:
     }
 
 
-async def fetch_records(module: str = "Accounts", *, per_page: int = 200,
-                        max_pages: int = 100) -> list[dict]:
+async def fetch_records(module: str = "Accounts", *, fields: str | None = None,
+                        per_page: int = 200, max_pages: int = 100) -> list[dict]:
     """READ-ONLY: pull all records from a Zoho CRM module (paginated).  Uses the
-    existing authenticated GET layer; never writes.  Returns the raw record
-    dicts.  Bounded by ``max_pages`` as a runaway guard."""
+    existing authenticated GET layer; never writes.  Returns the raw record dicts.
+
+    ``fields`` (a comma-separated Zoho field list) is passed straight through to
+    the Zoho ``fields`` query param — Zoho v5 requires it for some modules and it
+    keeps the payload lean.  Bounded by ``max_pages`` as a runaway guard."""
     if not is_configured():
         raise ZohoCRMError("Zoho CRM not configured")
     out: list[dict] = []
     page = 1
     while page <= max_pages:
-        data = await _zoho_get(f"/{module}", params={"page": page, "per_page": per_page})
+        params: dict = {"page": page, "per_page": per_page}
+        if fields:
+            params["fields"] = fields
+        data = await _zoho_get(f"/{module}", params=params)
         records = data.get("data") or []
         out.extend(records)
         if not records or not (data.get("info") or {}).get("more_records"):
