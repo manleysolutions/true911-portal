@@ -124,7 +124,7 @@ def test_location_detail_200(monkeypatch):
     prot = _prot("Protected")
 
     async def _rl(db, tenant, ref, now):
-        return (site, prot, [])  # PR-C3: (site, protection, services preview[])
+        return (site, prot, [], [])  # (site, protection, services[], devices[])
     monkeypatch.setattr(cportfolio, "resolve_location", _rl)
 
     ref = cs.encode_ref("loc", 5)

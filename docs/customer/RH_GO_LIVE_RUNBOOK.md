@@ -115,6 +115,47 @@ so ops can correct them **before** verification — E911 is never greened.
   `/SimManagement`, …) redirects (no `INTERNAL_OPS`); Judy → `/command/summary`
   or another tenant's data → 403/404.
 - Confirm no "API pending" / "telemetry pending" language and no raw jargon.
+- The Home view now offers **list + map** of all locations, **search/filter**
+  (name · city · state · status · E911), and a **location detail drawer** (service
+  address, operational status, E911 state, real emergency endpoints, and devices).
+
+## 5a. Judy pre-send checklist (final gate before you send the invite)
+
+Run through this immediately before delivering Judy's invite link. Do **not**
+send until every box is checked.
+
+**Config & isolation**
+- [ ] All four env vars set on **both** `true911-api` and `true911-worker` (§1),
+      services redeployed/restarted.
+- [ ] Readiness check (§4) run — verdict **READY** (or a knowingly-accepted
+      CONDITIONAL with E911 gaps shown honestly, never greened).
+- [ ] Judy exists as **`CUSTOMER_ADMIN`**, tenant `restoration-hardware`,
+      invite-pending (not the legacy `User` role).
+- [ ] Spot-check isolation: a `CUSTOMER_*` token → `/command/summary` and an
+      internal page URL both blocked (403 / redirect).
+
+**Dashboard usefulness (log in as a test `CUSTOMER_VIEWER` or via a staging user)**
+- [ ] **List view** shows all RH locations; **search** by name/city/state works;
+      **status** and **E911** filters work.
+- [ ] **Map view** plots locations with coordinates; the "N not shown (no
+      coordinates)" note appears if any lack lat/lng.
+- [ ] **Location drawer** (from list *and* map) shows: site name, full service
+      address, operational status, E911 state, emergency endpoints (where real),
+      and devices (equipment + model/identifier where real). Nothing fabricated.
+- [ ] Green banner reads **"All listed locations are currently protected."** (no
+      raw timestamp) when everything is Protected.
+- [ ] E911 **"Not yet verified"** is visible but calm (amber, not red), with the
+      "Manley Solutions is verifying" note.
+- [ ] No "API pending" / "telemetry pending" / raw jargon anywhere in the view.
+
+**Data truth**
+- [ ] Every location's E911 `verified` reflects the real stored status; any
+      unverified/missing addresses are on the internal worklist
+      (`GET /api/e911-changes/gaps`) with an owner.
+
+**Deliver**
+- [ ] Send Judy the invite link out-of-band; confirm she can set a password and
+      reach **Home**; brief her that any "being verified" address is in progress.
 
 ## 6. Rollback (immediate, data-safe)
 

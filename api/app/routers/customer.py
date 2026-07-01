@@ -117,10 +117,10 @@ async def customer_location_detail(
     resolved = await cportfolio.resolve_location(db, current_user.tenant_id, location_ref, now)
     if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
-    site, protection, services = resolved
+    site, protection, services, devices = resolved
     return {
         "as_of": now.isoformat(),
-        "data": cs.location_detail(site, protection=protection, services=services),
+        "data": cs.location_detail(site, protection=protection, services=services, devices=devices),
     }
 
 
