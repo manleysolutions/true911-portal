@@ -13,9 +13,15 @@
 
 ## 1. What it does
 
-`api/scripts/rh_portfolio_certification.py` (read-only):
+`api/scripts/rh_portfolio_certification.py` (read-only). It reads from **either**
+an offline CSV export **or** live Zoho CRM — the downstream pipeline is identical:
 
-1. **Parses** the operator-supplied Zoho subscription CSV export.
+1. **Ingests** the Zoho data from one of two sources (exactly one required):
+   - `--zoho-csv <path>` — an offline Zoho subscription CSV export, **or**
+   - `--zoho-live` — a live fetch from Zoho CRM that **reuses the existing
+     authenticated client** (`app.services.zoho_crm.fetch_records`): same OAuth
+     token refresh, same pagination, no duplicated auth. `--module` (default
+     `Accounts`) and `--fields` select what is read.
 2. **Detects** all RH-related rows (aliases: "Restoration Hardware", "RH", store
    codes, and weird labels — guest houses, warehouses, outlets, galleries,
    distribution centers, corporate/special locations).
@@ -37,12 +43,28 @@
 | Flag | Default | Meaning |
 |---|---|---|
 | `--tenant` | `restoration-hardware` | True911 tenant to certify |
-| `--zoho-csv` | *(required)* | path to the Zoho subscription CSV export |
+| `--zoho-csv` | *(optional)* | path to the Zoho subscription CSV export (offline mode) |
+| `--zoho-live` | *(off)* | fetch RH records live from Zoho CRM instead of a CSV |
+| `--module` | `Accounts` | Zoho CRM module to read in live mode |
+| `--fields` | *(safe Accounts default)* | comma-separated Zoho field list for live mode |
 | `--csv` | `/tmp/rh_portfolio_certification.csv` | findings CSV |
 | `--json` | `/tmp/rh_portfolio_certification.json` | full machine-readable report |
 | `--report` | `/tmp/rh_portfolio_certification.md` | executive Markdown report |
 
-**Exit codes:** `0` PASS · `1` CONDITIONAL · `2` BLOCKED · `3` error (e.g. CSV unreadable).
+Exactly **one** source is required: `--zoho-csv <path>` **or** `--zoho-live`
+(supplying both, or neither, is a usage error).
+
+Both modes emit the **identical** CSV, JSON, and Markdown report.
+
+**Live mode** reuses `zoho_crm.fetch_records(module, fields=…)` — the existing
+authenticated GET layer — which walks every page (`more_records`) and passes the
+`fields` param through. `--fields` defaults to a safe Accounts field set and can be
+overridden; non-Accounts modules fall back to Zoho's default field set.
+
+**Offline CSV mode is fully backward compatible** — the original
+`--zoho-csv <path>` invocation is unchanged.
+
+**Exit codes:** `0` PASS · `1` CONDITIONAL · `2` BLOCKED · `3` error (CSV unreadable / Zoho not configured).
 
 ## 3. Canonical record
 

@@ -8,9 +8,13 @@ BLOCKED verdict, and the CSV/JSON/MD artifacts.  Verifies the tool is read-only
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
 
+import pytest
+
+from app.services import zoho_crm
 from scripts import rh_portfolio_certification as cert
 
 
@@ -234,3 +238,141 @@ def test_outputs_csv_json_md(tmp_path):
     assert "Operator punch list" in md and "Top 25 issues" in md
     # never claims E911 is verified / never fabricates
     assert "never auto-verified" in md
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Live Zoho mode (reuses the existing authenticated client; read-only)
+# ══════════════════════════════════════════════════════════════════════
+def test_map_zoho_api_record_field_variants():
+    """Live Zoho records map to the SAME normalized shape as the CSV rows,
+    tolerant of Zoho API field names (Accounts billing / subscription device)."""
+    acct = cert.map_zoho_api_record({
+        "id": "z1", "Account_Name": "Restoration Hardware #642 Gilbert",
+        "Billing_Street": "3787 S Gilbert Rd", "Billing_City": "Gilbert",
+        "Billing_State": "az", "Billing_Code": "85297", "Phone": "480-555-0100"})
+    assert acct["account_name"] == "Restoration Hardware #642 Gilbert"
+    assert acct["street"] == "3787 S Gilbert Rd" and acct["state"] == "AZ"
+    assert acct["msisdn"] == "4805550100"
+    # a subscription-style record with device fields
+    sub = cert.map_zoho_api_record({
+        "Account_Name": "RH #169 Columbus", "Facility_Address": "3964 Townsfair Way",
+        "Facility_State": "OH", "Device_IMEI": "868105041862416", "SIM_Number": "8901260882237499857",
+        "Emergency_Line": "true", "Connection_Type": "Alarm Panel"})
+    assert sub["imei"] == "868105041862416" and sub["sim"] == "8901260882237499857"
+    assert sub["emergency_line"] is True and sub["connection_type"] == "Alarm Panel"
+    # ignores nested Zoho lookup objects (never crashes)
+    assert cert.map_zoho_api_record({"Account_Name": {"name": "x"}})["account_name"] is None
+
+
+def test_resolve_fields_default_and_override():
+    assert cert.resolve_fields("Accounts", None) == cert.DEFAULT_ACCOUNT_FIELDS
+    assert cert.resolve_fields("Accounts", "Account_Name,Phone") == "Account_Name,Phone"
+    assert cert.resolve_fields("Subscriptions", None) is None      # non-Accounts -> Zoho default
+
+
+def test_load_zoho_live_filters_rh_and_reuses_client(monkeypatch):
+    """Live mode must call the EXISTING zoho_crm.fetch_records (no new OAuth) and
+    keep only RH rows."""
+    captured = {}
+
+    async def _fake_fetch(module="Accounts", *, fields=None, **kw):
+        captured["module"] = module
+        captured["fields"] = fields
+        return [
+            {"Account_Name": "Restoration Hardware #177 Jacksonville", "Billing_State": "FL"},
+            {"Account_Name": "R&R Realty Group", "Billing_State": "IA"},        # not RH
+            {"Account_Name": "RH #506 Toronto", "Billing_State": "ON"},
+        ]
+    monkeypatch.setattr(zoho_crm, "fetch_records", _fake_fetch)
+    rows, total = asyncio.run(cert.load_zoho_live("Accounts", None))
+    assert total == 3 and len(rows) == 2                    # non-RH filtered out
+    assert captured["module"] == "Accounts"
+    assert captured["fields"] == cert.DEFAULT_ACCOUNT_FIELDS  # resolved default passed through
+
+
+def test_load_zoho_live_passes_custom_fields(monkeypatch):
+    captured = {}
+
+    async def _fake_fetch(module="Accounts", *, fields=None, **kw):
+        captured["fields"] = fields
+        return []
+    monkeypatch.setattr(zoho_crm, "fetch_records", _fake_fetch)
+    asyncio.run(cert.load_zoho_live("Accounts", "Account_Name,Phone"))
+    assert captured["fields"] == "Account_Name,Phone"
+
+
+def test_fetch_records_pagination_is_reused(monkeypatch):
+    """The pagination we depend on lives in the existing client — verify it walks
+    all pages and stops when more_records is false (read-only)."""
+    pages = {
+        1: {"data": [{"Account_Name": "RH #1"}], "info": {"more_records": True}},
+        2: {"data": [{"Account_Name": "RH #2"}], "info": {"more_records": False}},
+    }
+
+    async def _fake_get(path, params=None):
+        return pages[params["page"]]
+    monkeypatch.setattr(zoho_crm, "is_configured", lambda: True)
+    monkeypatch.setattr(zoho_crm, "_zoho_get", _fake_get)
+    out = asyncio.run(zoho_crm.fetch_records("Accounts", fields="Account_Name"))
+    assert [r["Account_Name"] for r in out] == ["RH #1", "RH #2"]   # both pages aggregated
+
+
+def test_live_mode_produces_same_pipeline_outputs(monkeypatch):
+    """A live fetch feeds the identical canonical → certify → report pipeline."""
+    async def _fake_fetch(module="Accounts", *, fields=None, **kw):
+        return [{"Account_Name": "Restoration Hardware #177 Jacksonville",
+                 "Billing_Street": "10300 Southside Blvd", "Billing_City": "Jacksonville",
+                 "Billing_State": "FL", "Billing_Code": "32256", "Phone": "904-555-0100"}]
+    monkeypatch.setattr(zoho_crm, "fetch_records", _fake_fetch)
+    rows, total = asyncio.run(cert.load_zoho_live("Accounts", None))
+    canon = cert.build_canonical_locations(rows)
+    assert len(canon) == 1 and canon[0]["store_number"] == "177"
+    rep = cert.certify(_t911(units=[]), canon)              # matched, but no unit -> BLOCKED
+    assert rep["summary"]["matched"] == 1 and rep["summary"]["verdict"] == "BLOCKED"
+
+
+# ── CLI source validation ────────────────────────────────────────────
+def test_cli_requires_a_source(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["rh_portfolio_certification"])
+    with pytest.raises(SystemExit) as e:
+        cert.main()
+    assert e.value.code == 2                                # argparse usage error
+
+
+def test_cli_rejects_both_sources(monkeypatch):
+    monkeypatch.setattr("sys.argv",
+                        ["rh_portfolio_certification", "--zoho-live", "--zoho-csv", "x.csv"])
+    with pytest.raises(SystemExit) as e:
+        cert.main()
+    assert e.value.code == 2
+
+
+def test_cli_csv_mode_still_supported(monkeypatch, tmp_path):
+    """Backward compatibility: --zoho-csv alone runs (offline) with no --zoho-live."""
+    src = tmp_path / "z.csv"
+    with open(src, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["Account Name", "FacilityAddress", "FacilityCity", "FacilityState", "FacilityZipCode"])
+        w.writerow(["Restoration Hardware #177 Jacksonville", "10300 Southside Blvd",
+                    "Jacksonville", "FL", "32256"])
+
+    async def _fake_run(tenant, *, zoho_csv, zoho_live, module, fields):
+        assert zoho_csv == str(src) and zoho_live is False   # CSV branch selected
+        return {"summary": {"tenant": tenant, "verdict": "PASS", "by_class": {},
+                            **{k: 0 for k in _SUMMARY_KEYS}},
+                "findings": [], "results": []}
+    monkeypatch.setattr(cert, "_run", lambda *a, **k: _fake_run(*a, **k))
+    monkeypatch.setattr("sys.argv",
+                        ["rh_portfolio_certification", "--zoho-csv", str(src),
+                         "--csv", str(tmp_path / "c.csv"), "--json", str(tmp_path / "j.json"),
+                         "--report", str(tmp_path / "r.md")])
+    with pytest.raises(SystemExit) as e:
+        cert.main()
+    assert e.value.code == 0                                # PASS -> exit 0
+
+
+_SUMMARY_KEYS = ("zoho_rows", "canonical_locations", "true911_sites", "true911_devices",
+                 "true911_service_units", "matched", "possible", "missing_in_true911",
+                 "missing_in_zoho", "duplicate_zoho", "duplicate_true911", "address_mismatch",
+                 "phone_mismatch", "device_mismatch", "missing_service_units", "e911_unverified",
+                 "weird_labels", "manual_review", "findings_total")

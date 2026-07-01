@@ -9,23 +9,35 @@ sides, classifies every result (A–L), and produces an executive certification
 report with a go-live verdict (PASS / CONDITIONAL / BLOCKED) plus an operator
 punch list.
 
+Two READ-ONLY sources (exactly one required):
+  * ``--zoho-csv <path>`` — an offline Zoho subscription CSV export.
+  * ``--zoho-live``       — fetch RH records live from Zoho CRM, reusing the
+    EXISTING authenticated client (``zoho_crm.fetch_records`` — same OAuth token
+    refresh + pagination; no duplicated auth logic).  ``--module`` (default
+    ``Accounts``) + ``--fields`` select what is read.
+
 Strictly READ-ONLY:
   * True911 side — only SELECTs; never writes sites/devices/units/lines/E911.
-  * Zoho side — reads the operator-supplied CSV export ONLY; never calls or
-    writes Zoho.
+  * Zoho side — reads the CSV export OR the authenticated Zoho GET layer ONLY;
+    never writes Zoho.
   * E911 is NEVER marked verified; missing data is NEVER fabricated.
   * ``--csv`` / ``--json`` / ``--report`` write operator-requested report
     artifacts only (never a production-data change).
 
 Usage (on Render, against production):
+    # offline CSV mode
     python -m scripts.rh_portfolio_certification \
         --tenant restoration-hardware \
         --zoho-csv /path/to/Subscription_Mgmnt_2026_07_01.csv \
         --csv /tmp/rh_portfolio_certification.csv \
         --json /tmp/rh_portfolio_certification.json \
         --report /tmp/rh_portfolio_certification.md
+    # live Zoho mode (reuses the existing OAuth client + pagination)
+    python -m scripts.rh_portfolio_certification \
+        --tenant restoration-hardware --zoho-live --module Accounts \
+        --report /tmp/rh_portfolio_certification.md
 
-Exit codes: 0 PASS · 1 CONDITIONAL · 2 BLOCKED · 3 error (e.g. CSV unreadable).
+Exit codes: 0 PASS · 1 CONDITIONAL · 2 BLOCKED · 3 error (CSV unreadable / Zoho not configured).
 """
 
 from __future__ import annotations
@@ -184,34 +196,75 @@ def detect_site_type(name) -> str:
     return "store"
 
 
-def map_zoho_row(row: dict) -> dict:
-    """Map one raw Zoho export row to a normalized device/subscription record."""
-    def g(*keys):
-        for k in keys:
-            v = row.get(k)
-            if v not in (None, ""):
-                return str(v).strip()
-        return None
+def _pick(rec: dict, *keys):
+    """First non-empty scalar value among ``keys`` (ignores dict/list Zoho lookups)."""
+    for k in keys:
+        v = rec.get(k)
+        if v in (None, "") or isinstance(v, (dict, list)):
+            continue
+        return str(v).strip()
+    return None
 
-    account = g(Z_ACCOUNT)
-    facility = g(Z_FACILITY)
+
+def _build_record(*, account, facility, street, city, state, zip_, facility_type,
+                  activation, msisdn, emergency, connection, imei, sim, starlink) -> dict:
+    """Assemble the canonical normalized row shared by CSV and live-Zoho sources."""
     return {
         "raw_zoho_name": account or facility,
         "account_name": account,
         "facility_name": facility,
-        "street": g(Z_STREET),
-        "city": g(Z_CITY),
-        "state": (g(Z_STATE) or "").upper() or None,
-        "zip": g(Z_ZIP),
-        "facility_type": g(Z_FTYPE),
-        "activation_status": g(Z_ACTIVATION),
-        "msisdn": norm_phone(g(Z_MSISDN)) or None,
-        "emergency_line": (g(Z_EMERGENCY) or "").lower() == "true",
-        "connection_type": g(Z_CONNECTION),
-        "imei": g(Z_IMEI),
-        "sim": g(Z_SIM),
-        "starlink_id": g(Z_STARLINK),
+        "street": street,
+        "city": city,
+        "state": (state or "").upper() or None,
+        "zip": zip_,
+        "facility_type": facility_type,
+        "activation_status": activation,
+        "msisdn": norm_phone(msisdn) or None,
+        "emergency_line": str(emergency or "").strip().lower() == "true",
+        "connection_type": connection,
+        "imei": imei,
+        "sim": sim,
+        "starlink_id": starlink,
     }
+
+
+def map_zoho_row(row: dict) -> dict:
+    """Map one raw Zoho CSV export row to a normalized device/subscription record."""
+    def g(*keys):
+        return _pick(row, *keys)
+
+    return _build_record(
+        account=g(Z_ACCOUNT), facility=g(Z_FACILITY),
+        street=g(Z_STREET), city=g(Z_CITY), state=g(Z_STATE), zip_=g(Z_ZIP),
+        facility_type=g(Z_FTYPE), activation=g(Z_ACTIVATION), msisdn=g(Z_MSISDN),
+        emergency=g(Z_EMERGENCY), connection=g(Z_CONNECTION),
+        imei=g(Z_IMEI), sim=g(Z_SIM), starlink=g(Z_STARLINK))
+
+
+def map_zoho_api_record(rec: dict) -> dict:
+    """Map one live Zoho CRM API record to the SAME normalized shape as
+    ``map_zoho_row``.  Tolerant of Zoho field API-name variants (Accounts billing/
+    shipping fields, or a subscription module's device fields) so the downstream
+    pipeline is identical whether the source is a CSV or the live API."""
+    def g(*keys):
+        return _pick(rec, *keys)
+
+    return _build_record(
+        account=g("Account_Name", "Account Name", "Name", "Store_Name", "Location_Name",
+                  "Subscription_Mgmnt_Name", Z_FACILITY),
+        facility=g(Z_FACILITY, "Facility_Name"),
+        street=g(Z_STREET, "Facility_Address", "Billing_Street", "Shipping_Street", "Street", "Address"),
+        city=g(Z_CITY, "Facility_City", "Billing_City", "Shipping_City", "City"),
+        state=g(Z_STATE, "Facility_State", "Billing_State", "Shipping_State", "State"),
+        zip_=g(Z_ZIP, "Facility_Zip_Code", "Billing_Code", "Shipping_Code", "Zip", "Zip_Code"),
+        facility_type=g(Z_FTYPE, "Facility_Type"),
+        activation=g(Z_ACTIVATION, "Device_Activation_Status"),
+        msisdn=g(Z_MSISDN, "Mobile_Number_MSISDN", "MSISDN", "Phone", "Callback_Number"),
+        emergency=g(Z_EMERGENCY, "Emergency_Line"),
+        connection=g(Z_CONNECTION, "Connection_Type"),
+        imei=g(Z_IMEI, "Device_IMEI", "IMEI"),
+        sim=g(Z_SIM, "SIM_Number", "ICCID"),
+        starlink=g(Z_STARLINK, "Starlink_ID"))
 
 
 def canonical_key(name, store_number) -> tuple:
@@ -549,8 +602,9 @@ async def load_true911(db, tenant_id: str) -> dict:
     return {"tenant": tenant_id, "sites": sites, "devices": devices, "units": units, "lines": lines}
 
 
-def load_zoho_csv(path: str) -> list[dict]:
-    """READ-ONLY parse of the operator-supplied Zoho export; keeps RH rows only."""
+def load_zoho_csv(path: str) -> tuple[list[dict], int]:
+    """READ-ONLY parse of the operator-supplied Zoho export; keeps RH rows only.
+    Returns (rh_rows, total_rows_scanned)."""
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     rh = []
@@ -558,6 +612,39 @@ def load_zoho_csv(path: str) -> list[dict]:
         if is_rh_label(r.get(Z_ACCOUNT), r.get(Z_FACILITY), r.get(Z_SUBSCRIPTION)):
             rh.append(map_zoho_row(r))
     return rh, len(rows)
+
+
+# Safe default Zoho field set for the Accounts module (billing + shipping address +
+# phone).  Zoho v5 requires an explicit field list for some modules; --fields
+# overrides.  Non-Accounts modules pass None -> Zoho returns its default fields.
+DEFAULT_ACCOUNT_FIELDS = (
+    "Account_Name,Billing_Street,Billing_City,Billing_State,Billing_Code,"
+    "Shipping_Street,Shipping_City,Shipping_State,Shipping_Code,Phone"
+)
+
+
+def resolve_fields(module: str, fields: str | None) -> str | None:
+    """Explicit --fields wins; else the safe default set for Accounts; else None."""
+    if fields:
+        return fields
+    if (module or "").strip().lower() == "accounts":
+        return DEFAULT_ACCOUNT_FIELDS
+    return None
+
+
+async def load_zoho_live(module: str, fields: str | None) -> tuple[list[dict], int]:
+    """READ-ONLY live fetch from Zoho CRM via the EXISTING authenticated client
+    (``zoho_crm.fetch_records`` — reuses the OAuth token refresh + pagination).
+    Never writes Zoho.  Keeps RH rows only; returns (rh_rows, total_records)."""
+    from app.services import zoho_crm
+    resolved = resolve_fields(module, fields)
+    records = await zoho_crm.fetch_records(module, fields=resolved)
+    rh = []
+    for r in records:
+        mapped = map_zoho_api_record(r)
+        if is_rh_label(mapped.get("account_name"), mapped.get("facility_name")):
+            rh.append(mapped)
+    return rh, len(records)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -707,9 +794,13 @@ def _print_summary(report: dict, paths: dict) -> None:
     print("  (Read-only — wrote nothing to True911 or Zoho; E911 never auto-verified.)")
 
 
-async def _run(tenant: str, zoho_csv: str) -> dict:
+async def _run(tenant: str, *, zoho_csv: str | None, zoho_live: bool,
+               module: str, fields: str | None) -> dict:
     from app.database import AsyncSessionLocal
-    zoho_rows, total_rows = load_zoho_csv(zoho_csv)
+    if zoho_live:
+        zoho_rows, total_rows = await load_zoho_live(module, fields)
+    else:
+        zoho_rows, total_rows = load_zoho_csv(zoho_csv)
     canon = build_canonical_locations(zoho_rows)
     async with AsyncSessionLocal() as db:
         true911 = await load_true911(db, tenant)
@@ -720,18 +811,33 @@ async def _run(tenant: str, zoho_csv: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description="RH Portfolio Certification Wizard (read-only).")
     ap.add_argument("--tenant", default=DEFAULT_TENANT)
-    ap.add_argument("--zoho-csv", required=True, help="path to the Zoho subscription CSV export")
+    ap.add_argument("--zoho-csv", default=None,
+                    help="path to the Zoho subscription CSV export (offline mode)")
+    ap.add_argument("--zoho-live", action="store_true",
+                    help="fetch RH records live from Zoho CRM instead of a CSV")
+    ap.add_argument("--module", default="Accounts",
+                    help="Zoho CRM module to read in live mode (default: Accounts)")
+    ap.add_argument("--fields", default=None,
+                    help="comma-separated Zoho field list for live mode "
+                         "(overrides the safe Accounts default)")
     ap.add_argument("--csv", default=DEFAULT_CSV)
     ap.add_argument("--json", default=DEFAULT_JSON)
     ap.add_argument("--report", default=DEFAULT_REPORT, help="Markdown certification report path")
     args = ap.parse_args()
 
+    # Exactly one source: --zoho-live or --zoho-csv.
+    if args.zoho_live and args.zoho_csv:
+        ap.error("choose one source: --zoho-live OR --zoho-csv (not both)")
+    if not args.zoho_live and not args.zoho_csv:
+        ap.error("a source is required: --zoho-live OR --zoho-csv <path>")
+
     try:
-        report = asyncio.run(_run(args.tenant, args.zoho_csv))
+        report = asyncio.run(_run(args.tenant, zoho_csv=args.zoho_csv, zoho_live=args.zoho_live,
+                                  module=args.module, fields=args.fields))
     except FileNotFoundError as exc:
         print(f"ERROR: Zoho CSV not found — {exc}")
         raise SystemExit(3)
-    except Exception as exc:  # DB connectivity / config edge
+    except Exception as exc:  # DB connectivity / Zoho-not-configured edge
         print(f"ERROR: certification failed — {type(exc).__name__}: {exc}")
         raise SystemExit(3)
 

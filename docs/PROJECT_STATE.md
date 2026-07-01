@@ -8,10 +8,31 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — RH Portfolio Certification Wizard (branch `feat/rh-portfolio-certification`, PR open, NOT merged) [2026-07-01]
+## 0·NEXT — RH Portfolio Certification: live Zoho mode (branch `feat/rh-cert-zoho-live`, PR open, NOT merged) [2026-07-01]
+
+Upgrades the certification wizard to read from **either** an offline CSV **or**
+**live Zoho CRM**, so it no longer requires a CSV export. Additive, read-only.
+
+- `--zoho-live` fetches RH records live via the **existing** authenticated client
+  (`zoho_crm.fetch_records`) — same OAuth token refresh + pagination, **no
+  duplicated auth**. `--module` (default `Accounts`) + `--fields` select what is
+  read; a live record maps to the SAME normalized shape as a CSV row, so the
+  canonical → match → classify → report pipeline is byte-identical.
+- `--zoho-csv` is now **optional**; **exactly one** of `--zoho-live` / `--zoho-csv`
+  is required (both, or neither → usage error). CSV mode is fully backward compatible.
+- Same CSV / JSON / Markdown outputs and PASS/CONDITIONAL/BLOCKED verdict in both modes.
+- Tests: `test_rh_portfolio_certification.py` now **28** (added live mapping,
+  pagination reuse, field selection, auth reuse, CLI source validation, CSV back-compat).
+  Reconciliation/readiness/zoho slice green (**304**).
+- Docs: `customer/RH_PORTFOLIO_CERTIFICATION.md`, `RH_GO_LIVE_RUNBOOK.md` §4b.
+
+**PR #155 (base wizard) is MERGED to main (`1712d17`).** This branch stacks the
+live-mode upgrade on top.
+
+## 0·PREV — RH Portfolio Certification Wizard (PR #155, MERGED to main `1712d17`) [2026-07-01]
 
 Read-only **go-live gate** for RH: certifies that every RH location / subscription /
-line / device in the latest Zoho subscription CSV export is represented correctly in
+line / device in a Zoho export is represented correctly in
 True911 **before Judy's invite**.
 
 - Script `api/scripts/rh_portfolio_certification.py` — parses the Zoho CSV, detects
