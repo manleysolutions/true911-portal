@@ -34,6 +34,7 @@ from app.services.customer.refs import decode_ref
 from app.services.customer.serialize import (
     e911_endpoint_item,
     evidence_object,
+    location_device,
     service_preview,
     status_object,
 )
@@ -205,7 +206,40 @@ async def resolve_location(db: AsyncSession, tenant_id: str, location_ref: str, 
         )
         for u in units
     ]
-    return site, site_protection, previews
+    devices = await _location_devices(db, tenant_id, site.site_id, units,
+                                      device_by_id, preview, now)
+    return site, site_protection, previews, devices
+
+
+async def _location_devices(db, tenant_id, site_id, units, device_by_id, preview, now):
+    """Customer-safe device list for a location.  Resolves each device's
+    line/callback identifier from a linked line (``Line.did``) else its own
+    number (``Device.msisdn``) — tenant-scoped, real data only."""
+    device_rows = (await db.execute(
+        select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site_id)
+    )).scalars().all()
+    if not device_rows:
+        return []
+    # line DID per device (one query for the site), falling back to msisdn.
+    line_did = {
+        line_id: did
+        for line_id, did, dev_id in (
+            (r.line_id, r.did, r.device_id) for r in (await db.execute(
+                select(Line).where(Line.tenant_id == tenant_id, Line.site_id == site_id)
+            )).scalars().all()
+        )
+    }
+    unit_line_by_device = {u.device_id: u.line_id for u in units if u.device_id and u.line_id}
+    out = []
+    for d in device_rows:
+        line_id = unit_line_by_device.get(d.device_id)
+        identifier = (line_did.get(line_id) if line_id else None) or getattr(d, "msisdn", None)
+        if preview:
+            protection = preview_protection(now)
+        else:
+            protection = _protection_from_device_assurance(device_by_id.get(d.device_id), now)
+        out.append(location_device(d, protection=protection, preview=preview, identifier=identifier))
+    return out
 
 
 async def resolve_service(db: AsyncSession, tenant_id: str, service_ref: str, now):

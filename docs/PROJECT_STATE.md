@@ -9,6 +9,30 @@
 > Last updated: 2026-07-01. Branch at time of writing:
 > `feat/ops-center-phase-1-6-resolution-intelligence`.
 
+## 0c. Latest change — Customer Command Center (Phase 1) [2026-07-01]
+
+The RH customer dashboard is now the first version of the **Customer Command
+Center** — an enterprise Life-Safety Operating System (service-first, understand
+the whole portfolio in <30s), built additively on `CUSTOMER_*` + `/api/customer/*`.
+- **Hierarchy:** Enterprise → Portfolio → Location → **Life Safety Service** →
+  Equipment → Carrier. Services (Fire Alarm, Elevator, Area of Refuge, …) are the
+  unit; equipment is grouped beneath them. Never device models.
+- **New APIs (additive, flag-gated, CUSTOMER_* guarded):**
+  `/customer/portfolio/summary` (exec metrics + health), `/customer/portfolio/health`,
+  `/customer/search`, `/customer/locations/{ref}/services`,
+  `/customer/locations/{ref}/timeline`. Aggregation in
+  `services/customer/command_center.py`; serializers in `serialize.py`
+  (service catalog, `health_score`, `portfolio_summary`, service grouping, timeline).
+- **Frontend:** `CustomerAssuranceView` (executive dashboard, zoom-to-fit map +
+  legend + list↔map sync, enterprise search) + new `LocationCommandCenter.jsx`
+  drawer (Overview/Services+Equipment/E911+history/Timeline/Documents·Billing·Notes
+  placeholders); service-first nav with "Soon" items.
+- **Truth held:** no fabricated E911/telemetry; health uses real signals only,
+  unknowns lower *confidence*; E911 "Not yet verified" is calm amber. CUSTOMER_*
+  isolation unchanged (no INTERNAL_OPS/COMMAND_*). Full suite green (3644); web build green.
+- **Docs:** `docs/customer/CUSTOMER_COMMAND_CENTER.md` (new). **Stubs/roadmap:**
+  marker clustering, Reports pages+export, Documents/Billing, timeline event types.
+
 ## 0b. Latest change — RH Login GO-LIVE wiring (Judy = CUSTOMER_ADMIN)
 
 **2026-07-01.** Finalized the path for Judy/RH to log in via the isolated

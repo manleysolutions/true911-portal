@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission
 from app.models.user import User
+from app.services.customer import command_center as cc
 from app.services.customer import portfolio as cportfolio
 from app.services.customer import serialize as cs
 from app.services.customer.gate import require_customer_api
@@ -117,10 +118,10 @@ async def customer_location_detail(
     resolved = await cportfolio.resolve_location(db, current_user.tenant_id, location_ref, now)
     if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
-    site, protection, services = resolved
+    site, protection, services, devices = resolved
     return {
         "as_of": now.isoformat(),
-        "data": cs.location_detail(site, protection=protection, services=services),
+        "data": cs.location_detail(site, protection=protection, services=services, devices=devices),
     }
 
 
@@ -188,3 +189,86 @@ async def customer_location_e911(
     history = [cs.e911_history_item(log) for log in logs]
     endpoints = await cportfolio.load_e911_endpoints(db, current_user.tenant_id, site.site_id)
     return {"as_of": now.isoformat(), "data": cs.e911_summary(site, history=history, endpoints=endpoints)}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Command Center endpoints (additive — Phase 1/3/4/6/8).  Each keeps the
+# two-key gate (require_customer_api) + a CUSTOMER_* permission; none reads
+# or exposes an internal operational field.
+# ══════════════════════════════════════════════════════════════════════
+@router.get(
+    "/portfolio/summary",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_DASHBOARD"))],
+)
+async def customer_portfolio_summary(
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Executive portfolio metrics (Command Center header) — aggregates over
+    customer-safe data + an evidence-graded health score."""
+    now = datetime.now(timezone.utc)
+    return {"as_of": now.isoformat(), "data": await cc.load_portfolio_summary(db, current_user.tenant_id, now)}
+
+
+@router.get(
+    "/portfolio/health",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_DASHBOARD"))],
+)
+async def customer_portfolio_health(
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Enterprise Portfolio Health score + component breakdown (Phase 6).
+    Unknown inputs lower confidence; nothing is fabricated."""
+    now = datetime.now(timezone.utc)
+    return {"as_of": now.isoformat(), "data": await cc.load_portfolio_health(db, current_user.tenant_id, now)}
+
+
+@router.get(
+    "/search",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))],
+)
+async def customer_search(
+    q: str = Query("", max_length=120),
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Enterprise search across store name/number, city, state, phone number,
+    and service/equipment type — returns matching locations (customer-safe)."""
+    now = datetime.now(timezone.utc)
+    return {"as_of": now.isoformat(), "data": await cc.search_portfolio(db, current_user.tenant_id, q, now)}
+
+
+@router.get(
+    "/locations/{location_ref}/services",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_SERVICES"))],
+)
+async def customer_location_services(
+    location_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Life-Safety Services for a location, each with the equipment that supports
+    it grouped beneath (service-first).  Unknown / cross-tenant -> 404."""
+    now = datetime.now(timezone.utc)
+    data = await cc.load_location_services(db, current_user.tenant_id, location_ref, now)
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return {"as_of": now.isoformat(), "data": data}
+
+
+@router.get(
+    "/locations/{location_ref}/timeline",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))],
+)
+async def customer_location_timeline(
+    location_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Customer-safe activity timeline for a location (real data only)."""
+    now = datetime.now(timezone.utc)
+    data = await cc.load_location_timeline(db, current_user.tenant_id, location_ref)
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return {"as_of": now.isoformat(), "data": data}

@@ -101,3 +101,13 @@ Instant, no deploy / migration / data change:
 
 Because the mode is presentation-only, rollback loses no data and corrupts no
 source-of-truth axis.
+
+---
+
+## 7. Where this is presented
+
+The Assurance label + evidence feed the **Customer Command Center** — the
+enterprise, service-first customer surface (executive metrics, portfolio health
+score, map, search, Location Command Center). The health score there uses real
+signals only (unknowns lower confidence), separate from the preview operational
+green. See `CUSTOMER_COMMAND_CENTER.md`.

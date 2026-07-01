@@ -233,8 +233,19 @@ const USER_NAV = [
 // a customer never lands on an internal or not-yet-customer-safe page.  Adding
 // customer Support/Reports/Billing items (wired to /api/customer/*) is the
 // documented next slice.
+// Service-first customer navigation (Phase 5).  Only "Portfolio" (Home) is live
+// today; the rest preview the roadmap as disabled "Soon" items so the customer
+// sees the enterprise structure without ever reaching a not-yet-safe page.
 const CUSTOMER_NAV = [
-  { name: "Home", page: "UserDashboard", icon: ShieldCheck },
+  { name: "Portfolio", page: "UserDashboard", icon: ShieldCheck },
+  { name: "Locations", page: "UserDashboard", icon: Building2, disabled: true },
+  { name: "Services", page: "UserDashboard", icon: ShieldCheck, disabled: true },
+  { name: "Devices", page: "UserDashboard", icon: Cpu, disabled: true },
+  { name: "Documents", page: "UserDashboard", icon: FileText, disabled: true },
+  { name: "Reports", page: "UserDashboard", icon: FileSpreadsheet, disabled: true },
+  { name: "Support", page: "UserDashboard", icon: HelpCircle, disabled: true },
+  { name: "Billing", page: "UserDashboard", icon: FileText, disabled: true },
+  { name: "Settings", page: "UserDashboard", icon: Settings, disabled: true },
 ];
 
 
@@ -434,9 +445,9 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
           if (!item.group) {
             return (
               <NavLink
-                key={item.page}
+                key={item.name || item.page}
                 item={item}
-                active={currentPageName === item.page}
+                active={!item.disabled && currentPageName === item.page}
                 accent={accentColor}
                 onClick={onClose}
               />
@@ -527,6 +538,17 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
 
 function NavLink({ item, active, accent, onClick, nested = false }) {
   const Icon = item.icon;
+  // Coming-soon items (service-first nav preview) render disabled with a badge —
+  // no route, no navigation.  Used by the customer portal's future sections.
+  if (item.disabled) {
+    return (
+      <div className={`flex items-center gap-2.5 rounded-md ${nested ? "px-2.5 py-1.5 text-[12.5px]" : "px-3 py-[7px] text-[13px]"} text-slate-600 cursor-default select-none`}>
+        <Icon className={`flex-shrink-0 ${nested ? "w-3.5 h-3.5" : "w-4 h-4"} text-slate-600`} />
+        <span className="truncate flex-1">{item.name}</span>
+        <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500 bg-slate-800/60 rounded px-1.5 py-0.5">Soon</span>
+      </div>
+    );
+  }
   const accentBar = accent === "red" ? "bg-red-500" : "bg-slate-300";
   const activeBg = accent === "red"
     ? "bg-red-600/10 text-red-300"

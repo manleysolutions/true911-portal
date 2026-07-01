@@ -1,7 +1,7 @@
 # True911+ — MASTER PLAN
 
 > Long-term roadmap. Living document; sequencing is guided by the **priority order
-> in `CONSTITUTION.md` §3**, not by feature excitement. Last reviewed: 2026-06-14.
+> in `CONSTITUTION.md` §3**, not by feature excitement. Last reviewed: 2026-06-22.
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`,
 > `PRODUCT_VISION.md`. Each roadmap item should name which **North Star** metric it
@@ -24,6 +24,43 @@ calm labels, never overwrite.*
 > `docs/IMPLEMENTATION_MASTER_PLAN.md`. The horizons below remain the strategic
 > framing; the two-track plan is their execution view. No Track-B customer surface
 > ships while a Track-A Critical foundation item is open.
+
+---
+
+## Current Primary Objective — RH Customer Go-Live (`EPIC-RH-GO-LIVE`)
+
+> **The roadmap now has a concrete commercial anchor:** make **Restoration Hardware
+> (Judy)** the first production customer **actively using True911 every week**
+> (assurance + support scope; billing/QuickBooks/invoicing deferred). This is the
+> current top execution objective — full four-phase epic in `BACKLOG.md`, design
+> complete across the customer-go-live doc set.
+
+RH go-live is not a detour from the horizons below — it is their **first real
+instantiation**, sequenced safety-first:
+- **Phase 1 (Foundation)** = Horizon-0 work made specific: tenant-isolation fixes,
+  the `INTERNAL_OPS` guard, and the scoped `CUSTOMER_*` roles
+  (`RH_SECURITY_READINESS.md`, `RH_ROLE_MATRIX.md`, `CUSTOMER_EXPERIENCE_BOUNDARY.md`).
+- **Phase 2 (Data)** = the Horizon-0 **E911 assurance/data sweep** applied to RH's 42
+  sites / 51 devices (E911 verify, device mapping, telemetry, service units).
+- **Phase 3 (Surface)** = Horizon-1/2 **Assurance spine + customer health surfaces**
+  graduated for the RH tenant via the read-only `/api/customer/*` contract layer
+  (`CUSTOMER_DATA_BOUNDARY.md`, `CUSTOMER_API_CONTRACTS.md`).
+- **Phase 4 (Launch)** = enable `FEATURE_CUSTOMER_API` for RH only, default-OFF
+  elsewhere, with instant flag rollback (`FEATURE_CUSTOMER_API_ROLLOUT.md`).
+
+**The surface has graduated into the Customer Command Center** (2026-07-01) — the
+enterprise, service-first Life-Safety Operating System (Enterprise→Portfolio→
+Location→Service→Equipment→Carrier): executive metrics, evidence-graded portfolio
+health, interactive map, enterprise search, and a Location Command Center. This is
+the concrete Horizon-2 "customer surface" + Horizon-4 "enterprise" instantiation,
+built additively on `/api/customer/*`. Spec: `docs/customer/CUSTOMER_COMMAND_CENTER.md`.
+
+**Design status recorded:** customer boundary architecture complete · tenant isolation
+audited (no CRITICAL) · customer RBAC design complete · customer API contract design
+complete · `FEATURE_CUSTOMER_API` rollout design complete. The horizons below remain the
+strategic frame; **the PE (Track-B) epics resume after RH launch** or where they are
+shared dependencies of the epic. **North Star moved:** RH go-live is the first proof that
+a customer can determine protection in ≤15s with evidence (`PRODUCT_VISION.md` §2).
 
 ---
 
