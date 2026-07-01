@@ -183,6 +183,24 @@
   - **Roadmap:** operator review queue for contributions; real blob storage for
     photo/document/procedure uploads; approved contribution → applied record.
 
+### Phase 3.11 — RH Portfolio Certification Wizard (IN PROGRESS; branch `feat/rh-portfolio-certification`, PR open, read-only)
+- **RH-P3.11-CERTIFY — Certify the full RH portfolio before Judy's invite.** 🔧 *PR open 2026-07-01, not merged.*
+  Read-only go-live gate. `api/scripts/rh_portfolio_certification.py` takes the latest
+  Zoho subscription CSV export as the immediate source of truth, detects all RH rows
+  (aliases + weird labels: guest houses, warehouses, outlets, galleries, MDC,
+  corporate/special), normalizes each into a **canonical portfolio record** (store#,
+  site_type, address, phones, device ids, confidence, manual_review), groups device
+  rows into canonical locations, reads True911 prod (sites/devices/units/lines/E911),
+  **matches** by store#/address/city-state-zip/phone/device-id/name, and **classifies
+  A–L**. Emits CSV+JSON+MD with a **PASS/CONDITIONAL/BLOCKED** verdict, top-25 issues,
+  and an operator punch list. Read-only (never writes Zoho/True911, never marks E911
+  verified, never fabricates). Blocking gates C/F/I/J/K must reach 0. Tests:
+  `test_rh_portfolio_certification.py`. Docs: `customer/RH_PORTFOLIO_CERTIFICATION.md`,
+  `RH_GO_LIVE_RUNBOOK.md` §4b. **Dry run (2026-07-01 export):** 377 rows → 70 RH → 44
+  canonical locations (20 manual-review). Live match runs on Render.
+  - **Roadmap:** approved punch-list items feed the existing controlled create/update
+    flows; re-run to confirm PASS before the invite is sent.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in
