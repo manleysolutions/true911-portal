@@ -205,6 +205,25 @@ def require_permission(action: str):
     return _check
 
 
+def require_any_permission(*actions: str):
+    """Dependency that admits a user holding ANY of the given permissions.
+
+    Used where two internal capabilities both grant an action (e.g. E911 review
+    is open to UPDATE_E911 *or* MANAGE_SERVICE_CLASSIFICATION holders).  Purely
+    additive — grants a superset; never weakens an existing single-permission guard.
+    """
+
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if not any(rbac_can(current_user.role, a) for a in actions):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"Requires one of {list(actions)} for role '{current_user.role}'",
+            )
+        return current_user
+
+    return _check
+
+
 def is_platform_user(user: User) -> bool:
     """Whether the underlying authenticated user is part of the True911
     platform/internal team.

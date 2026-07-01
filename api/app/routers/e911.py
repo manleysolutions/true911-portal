@@ -1,14 +1,66 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..dependencies import get_db, get_current_user, require_permission
+from ..dependencies import get_db, get_current_user, require_permission, require_any_permission
 from ..models.e911_change_log import E911ChangeLog
 from ..models.user import User
 from ..schemas.e911_change_log import E911ChangeLogOut, E911ChangeLogCreate
+from ..services import e911_review
 from ..services.e911_gaps import list_e911_gaps
 
 router = APIRouter(prefix="/e911-changes", tags=["e911"])
+
+# Internal E911 review queue is open to UPDATE_E911 or MANAGE_SERVICE_CLASSIFICATION
+# holders (never a customer role).
+_REVIEW_GUARD = [Depends(require_any_permission("UPDATE_E911", "MANAGE_SERVICE_CLASSIFICATION"))]
+
+
+class _DecisionBody(BaseModel):
+    note: str | None = None
+    apply: bool = False
+
+
+@router.get("/reviews", dependencies=_REVIEW_GUARD)
+async def list_e911_reviews(
+    status: str = "pending",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Pending (or all/approved/rejected) customer E911 confirmations + correction
+    requests for the operator's tenant."""
+    return await e911_review.list_reviews(db, current_user.tenant_id, status=status)
+
+
+@router.post("/reviews/{review_id}/approve", dependencies=_REVIEW_GUARD)
+async def approve_e911_review(
+    review_id: str,
+    body: _DecisionBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Approve a review (append-only audit).  Optionally mark applied — applying
+    to the OFFICIAL record stays the controlled UPDATE_E911 step, never automatic."""
+    out = await e911_review.decide(db, current_user, review_id, decision="approve",
+                                   note=body.note or "", apply=body.apply)
+    if out is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Review not found")
+    return out
+
+
+@router.post("/reviews/{review_id}/reject", dependencies=_REVIEW_GUARD)
+async def reject_e911_review(
+    review_id: str,
+    body: _DecisionBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Reject a review (append-only audit)."""
+    out = await e911_review.decide(db, current_user, review_id, decision="reject", note=body.note or "")
+    if out is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Review not found")
+    return out
 
 
 @router.get("/gaps", dependencies=[Depends(require_permission("UPDATE_E911"))])

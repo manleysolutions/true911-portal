@@ -146,6 +146,13 @@ and portfolio health derive from **service** health, not raw device counts. Adds
 `MANAGE_SERVICE_CLASSIFICATION` approve/override/merge/split surface (append-only
 audit; `CUSTOMER_*`-isolated). Full spec: `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md`.
 
+## 8c. Customer E911 confirmation & correction
+
+Customers can now **confirm** an emergency record or **request a correction** from
+the Location Workspace — never overwriting the official record (append-only
+audited; `CUSTOMER_SUBMIT_E911_REVIEW` for submit, internal review via
+`/api/e911-changes/reviews`). Spec: `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`.
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),

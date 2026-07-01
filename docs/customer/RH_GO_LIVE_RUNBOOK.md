@@ -115,6 +115,11 @@ so ops can correct them **before** verification — E911 is never greened.
   `/SimManagement`, …) redirects (no `INTERNAL_OPS`); Judy → `/command/summary`
   or another tenant's data → 403/404.
 - Confirm no "API pending" / "telemetry pending" language and no raw jargon.
+- **E911 review:** in a location's E911 section, a submitter role (ADMIN/MANAGER/
+  SUPPORT/USER) can **Confirm Emergency Record** or **Request Correction**; a
+  read-only role sees status only. Operators triage via `GET /api/e911-changes/reviews`
+  and approve/reject — customer submissions never change the official record. See
+  `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`.
 - The Home view is now the **Customer Command Center**: executive portfolio metrics
   + monthly health score, a zoom-to-fit **map** with legend and list↔map sync,
   **enterprise search** (name/#/city/state/phone/service), and a **Location Command

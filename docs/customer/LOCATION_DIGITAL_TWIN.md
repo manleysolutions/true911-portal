@@ -122,6 +122,16 @@ health. Operations can approve/override/merge/split classifications (logged as
 append-only audit). The "No life-safety services" empty state now appears only when
 a building truly has no equipment. Full spec: `LIFE_SAFETY_SERVICE_MODEL.md`.
 
+## 7b. Customer E911 confirmation & correction
+
+The E911 section of the Location Workspace now lets CUSTOMER_* users **Confirm
+Emergency Record** or **Request Correction** — participation without ever
+overwriting the official record. Status reads: *Not yet verified · Customer
+confirmed · Correction requested · Under Manley review · Verified*. Submit is
+gated on `CUSTOMER_SUBMIT_E911_REVIEW` (read-only roles view only); operators
+review via `/api/e911-changes/reviews`. Append-only audited; never fabricated.
+Full spec: `E911_CUSTOMER_REVIEW_WORKFLOW.md`.
+
 ## 8. Files
 
 - Backend: `services/customer/command_center.py` (+5 loaders), `serialize.py`

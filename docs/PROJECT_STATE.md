@@ -38,6 +38,27 @@ CSV/PDF, marker clustering, and a frontend Vitest runner (none exists yet).
 
 > Sections **0d–0** below are the per-PR change notes (now all merged), kept for detail.
 
+## 0f. Customer E911 confirmation & correction [2026-07-01] (branch `feat/e911-customer-review`)
+
+CUSTOMER_* users can now participate in E911 validation **without overwriting the
+official record**. Additive; append-only audited (ActionAudit; migration-free).
+- **Customer endpoints:** `POST /customer/locations/{ref}/e911/confirm`,
+  `POST …/e911/correction-request`, `GET …/e911/review-status`. **Internal:**
+  `GET /api/e911-changes/reviews`, `POST …/reviews/{id}/approve|reject`.
+- **Service** `services/e911_review.py`: confirm snapshots the server-shown record;
+  correction stores a *request* (never applied); status derives from the event
+  chain (Not yet verified / Customer confirmed / Correction requested / Under Manley
+  review / Verified). Applying to the official record stays the existing UPDATE_E911
+  flow.
+- **RBAC:** new `CUSTOMER_SUBMIT_E911_REVIEW` (ADMIN/MANAGER/SUPPORT/USER; read-only
+  roles view only). Internal guard = `require_any_permission("UPDATE_E911",
+  "MANAGE_SERVICE_CLASSIFICATION")`. CUSTOMER_* isolated from the internal queue.
+- **UI:** `LocationCommandCenter.jsx` E911 section — Confirm / Request Correction
+  (form) + friendly status; read-only roles see status only.
+- **Data safety:** never fabricates or overwrites official E911; opaque refs;
+  existing E911 APIs unchanged. Full suite green (**3716**); web build green.
+  Doc: `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`. **PR pending review (not merged).**
+
 ## 0e. Life Safety Service Intelligence [2026-07-01] (branch `feat/life-safety-service-model`)
 
 The backend now converts an equipment inventory into a **Life Safety Service**

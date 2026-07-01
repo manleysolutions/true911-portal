@@ -3,8 +3,10 @@ import {
   X, PhoneCall, CheckCircle2, AlertTriangle, MapPin, Cpu, Wifi, WifiOff,
   Clock, FileText, CreditCard, StickyNote, Image as ImageIcon, ShieldCheck,
   ClipboardCheck, LifeBuoy, Gauge, Link2, Check, Wrench, ChevronRight, Users,
+  Edit3, Send,
 } from "lucide-react";
 import { apiFetch } from "@/api/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 // ════════════════════════════════════════════════════════════════════
 // LocationCommandCenter — the Location Workspace (Digital Twin).
@@ -69,23 +71,31 @@ function HealthBar({ health }) {
 }
 
 export default function LocationCommandCenter({ locationRef, locationName, onClose }) {
-  const [d, setD] = useState({});   // { detail, services, e911, timeline, contacts, documents, photos, inspections, health }
+  const { can } = useAuth();
+  const canSubmit = typeof can === "function" && can("CUSTOMER_SUBMIT_E911_REVIEW");
+  const [d, setD] = useState({});   // { detail, services, e911, timeline, contacts, documents, photos, inspections, health, review }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState(null);
+
+  const enc = encodeURIComponent(locationRef);
+  const get = (p) => apiFetch(`/customer/locations/${enc}${p}`).then((r) => r.data).catch(() => null);
 
   useEffect(() => {
     let alive = true;
-    const enc = encodeURIComponent(locationRef);
-    const get = (p) => apiFetch(`/customer/locations/${enc}${p}`).then((r) => r.data).catch(() => null);
     (async () => {
       try {
         const detail = await apiFetch(`/customer/locations/${enc}`).then((r) => r.data);
-        const [services, e911, timeline, contacts, documents, photos, inspections, health] = await Promise.all([
+        const [services, e911, timeline, contacts, documents, photos, inspections, health, review] = await Promise.all([
           get("/services"), get("/e911"), get("/timeline"), get("/contacts"),
           get("/documents"), get("/photos"), get("/inspections"), get("/health"),
+          get("/e911/review-status"),
         ]);
-        if (alive) setD({ detail, services, e911, timeline, contacts, documents, photos, inspections, health });
+        if (alive) setD({ detail, services, e911, timeline, contacts, documents, photos, inspections, health, review });
       } catch (err) {
         if (alive) setError(err.message || "Unable to load this location");
       } finally {
@@ -95,7 +105,43 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
     return () => { alive = false; };
   }, [locationRef]);
 
-  const { detail, services, e911, timeline, contacts, documents, photos, inspections, health } = d;
+  const refreshReview = async () => {
+    const r = await get("/e911/review-status");
+    setD((prev) => ({ ...prev, review: r }));
+  };
+
+  const confirmRecord = async () => {
+    setBusy(true); setFlash(null);
+    try {
+      await apiFetch(`/customer/locations/${enc}/e911/confirm`, { method: "POST", body: JSON.stringify({}) });
+      setFlash({ ok: true, text: "Thank you — confirmed. Pending Manley verification." });
+      await refreshReview();
+    } catch (e) {
+      setFlash({ ok: false, text: e.message || "Could not submit — please try again." });
+    } finally { setBusy(false); }
+  };
+
+  const submitCorrection = async () => {
+    setBusy(true); setFlash(null);
+    try {
+      await apiFetch(`/customer/locations/${enc}/e911/correction-request`, {
+        method: "POST",
+        body: JSON.stringify({
+          corrected_address: form.address || null, suite: form.suite || null,
+          floor: form.floor || null, unit: form.unit || null,
+          callback_number: form.callback || null, service_identifier: form.identifier || null,
+          note: form.note || null,
+        }),
+      });
+      setShowForm(false); setForm({});
+      setFlash({ ok: true, text: "Correction submitted — under Manley review." });
+      await refreshReview();
+    } catch (e) {
+      setFlash({ ok: false, text: e.message || "Could not submit — please try again." });
+    } finally { setBusy(false); }
+  };
+
+  const { detail, services, e911, timeline, contacts, documents, photos, inspections, health, review } = d;
   const v = e911?.verification || {};
   const e911Verified = detail?.emergency_address_state === "Verified" || v.verified;
   const e911Tone = e911Verified
@@ -221,10 +267,52 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               {/* E911 */}
               <Section title="E911 — Emergency Record" icon={PhoneCall}>
                 <div className={`rounded-lg border p-3 ${e911Tone.chip}`}>
-                  <div className="flex items-center gap-2"><e911Tone.icon className={`w-4 h-4 ${e911Tone.text}`} /><p className={`text-[13px] font-medium ${e911Tone.text}`}>{e911Verified ? "Verified" : "Not yet verified"}</p></div>
+                  <div className="flex items-center gap-2"><e911Tone.icon className={`w-4 h-4 ${e911Tone.text}`} /><p className={`text-[13px] font-medium ${e911Tone.text}`}>{review?.state || (e911Verified ? "Verified" : "Not yet verified")}</p></div>
                   {e911?.emergency_dispatch_address && <p className="text-[12px] text-slate-600 mt-1">{e911.emergency_dispatch_address}</p>}
                   {!e911Verified && <p className="text-[11.5px] text-slate-500 mt-1">Manley Solutions is verifying this emergency record.</p>}
                 </div>
+
+                {/* Customer confirmation + correction (submitters only; read-only roles see status) */}
+                {flash && (
+                  <p className={`mt-2 text-[11.5px] ${flash.ok ? "text-emerald-700" : "text-red-600"}`}>{flash.text}</p>
+                )}
+                {canSubmit && !e911Verified && (
+                  <div className="mt-2">
+                    {!showForm ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={confirmRecord} disabled={busy}
+                          className="inline-flex items-center gap-1.5 text-[11.5px] px-2.5 py-1 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                          <CheckCircle2 className="w-3.5 h-3.5" />Confirm Emergency Record
+                        </button>
+                        <button onClick={() => { setShowForm(true); setFlash(null); }} disabled={busy}
+                          className="inline-flex items-center gap-1.5 text-[11.5px] px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                          <Edit3 className="w-3.5 h-3.5" />Request Correction
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+                        <p className="text-[11px] text-slate-500">Tell us what should change — Manley Solutions will review it. Nothing is changed automatically.</p>
+                        {[["address", "Corrected address"], ["suite", "Suite / unit"], ["floor", "Floor"],
+                          ["callback", "Callback number"], ["identifier", "Elevator / FACP identifier"]].map(([k, label]) => (
+                          <input key={k} type="text" placeholder={label} value={form[k] || ""}
+                            onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
+                            className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                        ))}
+                        <textarea placeholder="Note / reason" rows={2} value={form.note || ""}
+                          onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                        <div className="flex gap-2">
+                          <button onClick={submitCorrection} disabled={busy}
+                            className="inline-flex items-center gap-1.5 text-[11.5px] px-2.5 py-1 rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
+                            <Send className="w-3.5 h-3.5" />Submit correction
+                          </button>
+                          <button onClick={() => { setShowForm(false); setForm({}); }} disabled={busy}
+                            className="text-[11.5px] px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {(e911?.emergency_endpoints || []).length > 0 && (
                   <div className="mt-2 space-y-2">
                     {e911.emergency_endpoints.map((ep, i) => (
