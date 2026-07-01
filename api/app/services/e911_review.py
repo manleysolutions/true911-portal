@@ -10,7 +10,7 @@ the audit trail intrinsic.
 Data safety (hard rules):
   * Customer submissions NEVER write ``Site.e911_*`` / ServiceUnit / Line.  A
     correction is a *request*, stored as data — applying it stays a controlled,
-    Manley-gated step (the existing UPDATE_E911 `/api/e911-changes` flow).
+    operator-gated step (the existing UPDATE_E911 `/api/e911-changes` flow).
   * Confirm snapshots the record the SERVER currently shows (not client-supplied
     content), so we log exactly what was confirmed.
   * Tenant-scoped throughout; opaque refs only at the API edge.
@@ -68,7 +68,7 @@ async def record_confirmation(db, user, site, *, snapshot: dict, note: str = "")
         "user_id": str(getattr(user, "id", "") or ""), "note": note or "",
     })
     return {"review_id": review_id, "status": "pending",
-            "message": "Customer confirmed — pending Manley verification"}
+            "message": "Verification Requested — your confirmation was submitted"}
 
 
 async def record_correction(db, user, site, *, corrected: dict, snapshot: dict, note: str = "") -> dict:
@@ -80,7 +80,7 @@ async def record_correction(db, user, site, *, corrected: dict, snapshot: dict, 
         "user_id": str(getattr(user, "id", "") or ""), "note": note or "",
     })
     return {"review_id": review_id, "status": "pending",
-            "message": "Correction submitted — under Manley review"}
+            "message": "Awaiting Review — your correction was submitted"}
 
 
 # ── Event → review derivation ────────────────────────────────────────
@@ -126,15 +126,16 @@ def _build_reviews(events) -> list[dict]:
 
 # ── Customer-facing status (calm, customer-safe) ─────────────────────
 def _friendly_state(verified: bool, latest: dict | None) -> str:
+    """Neutral, company-agnostic status vocabulary (Phase 3):
+    Verification Pending · Verification Requested · Awaiting Review · Verified."""
     if verified:
         return "Verified"
-    if latest is None:
-        return "Not yet verified"
-    if latest["status"] == "rejected":
-        return "Not yet verified"
+    if latest is None or latest["status"] == "rejected":
+        return "Verification Pending"
     if latest["status"] in ("approved", "applied"):
-        return "Under Manley review"
-    return "Correction requested" if latest["type"] == "correction" else "Customer confirmed"
+        return "Awaiting Review"
+    # pending customer submission
+    return "Awaiting Review" if latest["type"] == "correction" else "Verification Requested"
 
 
 async def location_review_status(db, tenant_id: str, site) -> dict:

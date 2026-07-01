@@ -21,6 +21,7 @@ from app.models.service_unit import ServiceUnit
 from app.models.site import Site
 from app.services.assurance import compute_site_assurance
 from app.services.assurance.loader import load_site_assurance_signals
+from app.services.customer import contributions as contrib
 from app.services.customer import serialize as cs
 from app.services.customer import service_inference as si
 from app.services.customer.preview import preview_enabled, preview_protection
@@ -319,7 +320,34 @@ async def load_location_health(db: AsyncSession, tenant_id: str, location_ref: s
         "alarm_testing": None,             # inspection/alarm-test freshness -> unknown
         "carrier": None,                   # carrier health -> unknown
     })
-    return {"location": site.site_name, "as_of": now.isoformat(), "health": health}
+
+    # ── Building Workspace: separated health + Digital-Twin maturity (Phase 4/7).
+    # Customer-contributed signals raise Digital-Twin completeness / documentation
+    # and the maturity tier — the collaborative-workspace incentive.
+    counts = await contrib.contribution_counts(db, tenant_id, site.site_id)
+    has_docs = counts.get("document", 0) > 0
+    has_photos = counts.get("photo", 0) > 0
+    has_procedures = counts.get("procedure", 0) > 0
+    has_inspection = counts.get("inspection", 0) > 0
+    has_contacts = bool(getattr(site, "poc_name", None) or counts.get("contact", 0) > 0)
+
+    # Digital-Twin completeness: how much of the twin is populated (real signals).
+    completeness = cs._pct(
+        sum([bool(services), bool(devices), bool(address_present), bool(has_contacts)]), 4)
+    # Documentation: share of the three document artefact types present.
+    documentation = cs._pct(sum([has_docs, has_photos, has_procedures]), 3)
+
+    separated = cs.separated_health(
+        operational=operational, completeness=completeness,
+        compliance=None,               # no reliable per-site compliance signal yet -> unknown
+        documentation=documentation)
+    maturity = cs.building_maturity({
+        "documentation": has_docs, "contacts": has_contacts, "procedures": has_procedures,
+        "testing": has_inspection, "compliance": False, "photos": has_photos,
+        "e911": verified})
+
+    return {"location": site.site_name, "as_of": now.isoformat(), "health": health,
+            "building_health": separated, "maturity": maturity}
 
 
 async def load_location_timeline(db: AsyncSession, tenant_id: str, location_ref: str):

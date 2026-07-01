@@ -82,7 +82,7 @@ def test_confirmation_records_audit_only():
                                                        "emergency_endpoints": [], "verification": {"verified": False}},
                                              note="looks right"))
     assert out["status"] == "pending" and out["review_id"].startswith("REV-")
-    assert "pending Manley verification" in out["message"]
+    assert "Verification Requested" in out["message"]
     # ONLY an append-only audit row was written; the official site is untouched.
     assert len(db.added) == 1 and db.committed == 1
     a = db.added[0]
@@ -121,17 +121,17 @@ def test_location_review_status_friendly_states():
     # verified official record -> Verified regardless of reviews
     v = asyncio.run(er.location_review_status(_FakeDB([_Res([])]), RH, _site(e911_status="validated")))
     assert v["state"] == "Verified" and v["verified"] is True
-    # pending confirm -> Customer confirmed
+    # pending confirm -> Verification Requested
     c = asyncio.run(er.location_review_status(_FakeDB([_Res([_event(er.CONFIRM, "r1")])]), RH, _site()))
-    assert c["state"] == "Customer confirmed"
-    # pending correction -> Correction requested
+    assert c["state"] == "Verification Requested"
+    # pending correction -> Awaiting Review
     cr = asyncio.run(er.location_review_status(
         _FakeDB([_Res([_event(er.CORRECTION, "r2", rtype="correction")])]), RH, _site()))
-    assert cr["state"] == "Correction requested"
-    # approved -> Under Manley review
+    assert cr["state"] == "Awaiting Review"
+    # approved -> Awaiting Review
     ap = asyncio.run(er.location_review_status(
         _FakeDB([_Res([_event(er.CONFIRM, "r1"), _event(er.APPROVE, "r1")])]), RH, _site()))
-    assert ap["state"] == "Under Manley review"
+    assert ap["state"] == "Awaiting Review"
 
 
 def test_decide_approve_reject_apply():
@@ -180,7 +180,7 @@ def test_customer_confirm_submitter_ok(monkeypatch):
     _patch_site(monkeypatch, _site())
 
     async def _rc(db, user, site, *, snapshot, note=""):
-        return {"review_id": "REV-x", "status": "pending", "message": "Customer confirmed — pending Manley verification"}
+        return {"review_id": "REV-x", "status": "pending", "message": "Verification Requested — your confirmation was submitted"}
     monkeypatch.setattr(er, "record_confirmation", _rc)
     r = _cust_client(role="CUSTOMER_ADMIN").post(f"/api/customer/locations/{REF}/e911/confirm", json={"note": "ok"})
     assert r.status_code == 200 and r.json()["data"]["status"] == "pending"
@@ -192,7 +192,7 @@ def test_customer_correction_submitter_ok(monkeypatch):
 
     async def _rc(db, user, site, *, corrected, snapshot, note=""):
         assert corrected["address"] == "2 Berkeley"
-        return {"review_id": "REV-y", "status": "pending", "message": "Correction submitted — under Manley review"}
+        return {"review_id": "REV-y", "status": "pending", "message": "Awaiting Review — your correction was submitted"}
     monkeypatch.setattr(er, "record_correction", _rc)
     r = _cust_client().post(f"/api/customer/locations/{REF}/e911/correction-request",
                             json={"corrected_address": "2 Berkeley", "floor": "3", "note": "moved"})
@@ -204,7 +204,7 @@ def test_customer_viewer_cannot_submit_but_can_view(monkeypatch):
     _patch_site(monkeypatch, _site())
 
     async def _st(db, t, site):
-        return {"state": "Not yet verified", "verified": False, "review_count": 0, "latest_review": None}
+        return {"state": "Verification Pending", "verified": False, "review_count": 0, "latest_review": None}
     monkeypatch.setattr(er, "location_review_status", _st)
     # read-only role: submit 403, view 200
     assert _cust_client(role="CUSTOMER_VIEWER").post(

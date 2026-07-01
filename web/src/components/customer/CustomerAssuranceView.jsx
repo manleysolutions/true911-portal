@@ -295,7 +295,7 @@ export default function CustomerAssuranceView() {
                     <p className={`text-[15px] font-semibold ${allProtected ? "text-emerald-800" : "text-slate-800"}`}>
                       {allProtected ? "All listed locations are currently protected." : `${m.locations_protected || 0} of ${m.locations_total || 0} locations protected.`}
                     </p>
-                    <p className={`text-[13px] mt-0.5 ${allProtected ? "text-emerald-700" : "text-slate-500"}`}>Monitored by Manley Solutions.</p>
+                    <p className={`text-[13px] mt-0.5 ${allProtected ? "text-emerald-700" : "text-slate-500"}`}>Continuously monitored.</p>
                   </div>
                 </div>
               </div>

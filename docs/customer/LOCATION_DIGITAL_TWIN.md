@@ -36,11 +36,17 @@ The Command Center hierarchy, deepened at the Location tier into a full record:
 Enterprise → Portfolio → Location(=Digital Twin) → Life Safety Service → Equipment → Carrier
 ```
 
-**Location Workspace** (`web/src/components/customer/LocationCommandCenter.jsx`) —
-a single building record with sections: Overview · Digital Twin Health · Life
-Safety Services (equipment grouped) · Equipment · E911 · Documents · Photos ·
-Inspection History · Recent Activity · Site Contacts · Emergency Procedures ·
-Service Requests · Billing · Notes.
+**Building Workspace** (`web/src/components/customer/LocationCommandCenter.jsx`) —
+a single building record, reorganised into four workspaces (see §9):
+
+- **Building Summary** — Overview · Building Health (separated factors + maturity)
+- **Operations** — Life Safety Services (primary; equipment grouped & de-emphasised
+  under a collapsible) · Service Requests · Recent Activity
+- **Compliance** — E911 · Inspection History · Emergency Procedures
+- **Administration** — Site Contacts · Documents · Photos · Notes · Billing
+
+Life-safety **services are the primary objects**; supporting equipment is
+collapsed. Most sections carry a neutral `+ Add …` contribution control (§9).
 
 **Service model** (Phase 2) — each Life-Safety Service is modeled independently of
 hardware and carries: protection status, equipment count, carrier (network *name*
@@ -127,7 +133,7 @@ a building truly has no equipment. Full spec: `LIFE_SAFETY_SERVICE_MODEL.md`.
 The E911 section of the Location Workspace now lets CUSTOMER_* users **Confirm
 Emergency Record** or **Request Correction** — participation without ever
 overwriting the official record. Status reads: *Not yet verified · Customer
-confirmed · Correction requested · Under Manley review · Verified*. Submit is
+confirmed · Correction requested · Awaiting Review · Verified*. Submit is
 gated on `CUSTOMER_SUBMIT_E911_REVIEW` (read-only roles view only); operators
 review via `/api/e911-changes/reviews`. Append-only audited; never fabricated.
 Full spec: `E911_CUSTOMER_REVIEW_WORKFLOW.md`.
@@ -141,3 +147,32 @@ Full spec: `E911_CUSTOMER_REVIEW_WORKFLOW.md`.
 - Frontend: `components/customer/LocationCommandCenter.jsx` (Workspace),
   `CustomerAssuranceView.jsx` (deep-link).
 - Tests: `api/tests/test_location_digital_twin.py`.
+
+## 9. Building Workspace (collaborative Digital Twin)
+
+The Location Workspace becomes a **collaborative Building Workspace** — same APIs,
+refined experience. Additive across the whole stack:
+
+- **Reorganised** into four workspaces — *Building Summary · Operations ·
+  Compliance · Administration* (§2). Life-safety **services are primary**;
+  supporting equipment is de-emphasised under a collapsible.
+- **Contributions** — customers enrich their twin (contacts, inspections, photos,
+  documents, procedures, notes, service requests) through the **submission →
+  review** workflow. A contribution is a request stored as an append-only audit
+  event; it never writes a protected record. Gated on `CUSTOMER_CONTRIBUTE`
+  (ADMIN/MANAGER/SUPPORT/USER). Full spec: `WORKFLOW_ENGINE.md`.
+- **Separated health** — building health is split into four factors (Operational
+  40% · Completeness 25% · Compliance 20% · Documentation 15%); the composite is
+  shown **after** the factors (Constitution §4.5). Unknown factors lower
+  confidence, never the score.
+- **Maturity tier** — Bronze / Silver / Gold / Platinum over seven dimensions,
+  with concrete next steps. Full spec: `DIGITAL_TWIN_MATURITY_MODEL.md`.
+- **Neutral wording** — no operating-company references anywhere in the customer
+  UI; statuses read *Verification Pending · Verification Requested · Awaiting
+  Review · Verified*; actor labels are *Verification team* / *Support team*.
+
+**Added files:** `services/customer/contributions.py`, `serialize.separated_health`
++ `serialize.building_maturity`, two `/contributions` endpoints,
+`permissions.json` (`CUSTOMER_CONTRIBUTE`),
+`api/tests/test_customer_contributions.py`. Docs:
+`WORKFLOW_ENGINE.md`, `DIGITAL_TWIN_MATURITY_MODEL.md`.

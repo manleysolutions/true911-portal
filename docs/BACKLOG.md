@@ -165,6 +165,24 @@
   - **Roadmap:** approved-correction → E911ChangeLog draft; decision notifications;
     per-review internal detail view.
 
+### Phase 3.10 — Collaborative Building Workspace (IN PROGRESS; branch `feat/building-workspace`, PR open, additive)
+- **RH-P3.10-WORKSPACE — Location Digital Twin → collaborative Building Workspace.** 🔧 *PR open 2026-07-01, not merged.*
+  Refines the customer experience (no architecture/API redesign). Reorganised into
+  four workspaces (Building Summary · Operations · Compliance · Administration);
+  **services primary**, equipment de-emphasised. New **contribution workflow**
+  (append-only `customer_contribution` ActionAudit; contact/inspection/photo/
+  document/procedure/note/service_request) — never writes protected data; endpoints
+  `POST|GET /customer/locations/{ref}/contributions`; new perm `CUSTOMER_CONTRIBUTE`
+  (ADMIN/MANAGER/SUPPORT/USER). **Separated health** (4 factors, composite after) +
+  **maturity tier** (Bronze/Silver/Gold/Platinum, 7 dimensions). Full **de-branding**
+  of the customer plane (neutral status vocabulary). Code: `services/customer/
+  contributions.py`, `serialize.{separated_health,building_maturity}`,
+  `command_center.load_location_health`, `routers/customer.py`, `permissions.json`,
+  `LocationCommandCenter.jsx`. Tests: `test_customer_contributions.py`. Docs:
+  `customer/{WORKFLOW_ENGINE,DIGITAL_TWIN_MATURITY_MODEL,LOCATION_DIGITAL_TWIN}.md`.
+  - **Roadmap:** operator review queue for contributions; real blob storage for
+    photo/document/procedure uploads; approved contribution → applied record.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in

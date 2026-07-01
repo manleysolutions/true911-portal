@@ -8,6 +8,33 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
+## 0·NEXT — Building Workspace (branch `feat/building-workspace`, PR open, NOT merged) [2026-07-01]
+
+The Location Digital Twin is being refined into a **collaborative Building
+Workspace** — additive, same APIs, no architecture change. Landed on the branch:
+
+- **Reorganised** the Location Workspace into four workspaces — *Building Summary ·
+  Operations · Compliance · Administration*; **services are the primary objects**,
+  supporting equipment de-emphasised under a collapsible.
+- **Contribution workflow** (`services/customer/contributions.py`) — append-only
+  `customer_contribution` audit events (contact/inspection/photo/document/
+  procedure/note/service_request); **never writes protected data**. New endpoints
+  `POST|GET /api/customer/locations/{ref}/contributions`, new permission
+  `CUSTOMER_CONTRIBUTE` (ADMIN/MANAGER/SUPPORT/USER).
+- **Separated health** (`serialize.separated_health`) — 4 factors (Operational 40 ·
+  Completeness 25 · Compliance 20 · Documentation 15), composite shown *after* the
+  factors; unknowns lower confidence. **Maturity tier**
+  (`serialize.building_maturity`) — Bronze/Silver/Gold/Platinum over 7 dimensions.
+- **De-branding** — no operating-company references in the customer plane; neutral
+  status vocabulary (Verification Pending/Requested · Awaiting Review · Verified).
+- **Tests** — `test_customer_contributions.py` (+ updated twin/e911 tests); full
+  customer suite green (**1421** in the customer/e911/twin slice); web build green.
+- Docs: `customer/WORKFLOW_ENGINE.md`, `customer/DIGITAL_TWIN_MATURITY_MODEL.md`,
+  updated `customer/LOCATION_DIGITAL_TWIN.md`.
+
+**Guarantees held:** additive · no internal-workflow exposure · RBAC unchanged/not
+weakened · no API redesign · PR opened, **awaiting review** (do not auto-merge).
+
 ## 0. MERGED TO MAIN — the RH Customer Stack is live in `main` [2026-07-01]
 
 The full customer surface has landed on `main` across these merged PRs (in order):
