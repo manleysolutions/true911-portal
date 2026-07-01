@@ -89,8 +89,11 @@ lives in `services/customer/command_center.py`; allow-list shaping in `serialize
 - **Location Command Center drawer** — Overview · Life Safety Services (equipment
   grouped beneath) · E911 (record + verification history) · Timeline · Documents
   (placeholder) · Billing (placeholder) · Notes.
-- **Service-first navigation** — Portfolio (live) + Locations/Services/Devices/
-  Documents/Reports/Support/Billing/Settings as "Soon".
+- **Customer navigation** — deliberately minimal: **Portfolio** (the only real
+  page today) + account controls (name/email user card, Change Password, Sign Out)
+  + a "Need help? — support@manleysolutions.com" block. Future sections (Locations/
+  Services/Devices/Documents/Reports/Support/Billing) are **hidden until they have a
+  real customer-safe page** — no disabled "Soon" clutter.
 
 ## 6. Portfolio Health (Phase 6)
 

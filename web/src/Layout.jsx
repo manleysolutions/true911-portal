@@ -230,22 +230,14 @@ const USER_NAV = [
 // These roles read the dedicated /api/customer Assurance surface only.  The
 // single "Home" item IS the whole read-only experience: portfolio status
 // (preview-greened), locations, and the E911 record.  Deliberately minimal so
-// a customer never lands on an internal or not-yet-customer-safe page.  Adding
-// customer Support/Reports/Billing items (wired to /api/customer/*) is the
-// documented next slice.
-// Service-first customer navigation (Phase 5).  Only "Portfolio" (Home) is live
-// today; the rest preview the roadmap as disabled "Soon" items so the customer
-// sees the enterprise structure without ever reaching a not-yet-safe page.
+// a customer never lands on an internal or not-yet-customer-safe page.
+// Customer navigation — kept deliberately minimal.  Only Portfolio is a real
+// page today; account controls (name/email in the user card, Change Password,
+// Sign Out) live in the header + footer.  Future sections (Locations, Services,
+// Devices, Documents, Reports, Support, Billing) are HIDDEN until they have a
+// real, customer-safe page — no disabled "Soon" clutter.
 const CUSTOMER_NAV = [
   { name: "Portfolio", page: "UserDashboard", icon: ShieldCheck },
-  { name: "Locations", page: "UserDashboard", icon: Building2, disabled: true },
-  { name: "Services", page: "UserDashboard", icon: ShieldCheck, disabled: true },
-  { name: "Devices", page: "UserDashboard", icon: Cpu, disabled: true },
-  { name: "Documents", page: "UserDashboard", icon: FileText, disabled: true },
-  { name: "Reports", page: "UserDashboard", icon: FileSpreadsheet, disabled: true },
-  { name: "Support", page: "UserDashboard", icon: HelpCircle, disabled: true },
-  { name: "Billing", page: "UserDashboard", icon: FileText, disabled: true },
-  { name: "Settings", page: "UserDashboard", icon: Settings, disabled: true },
 ];
 
 
@@ -498,6 +490,18 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
           );
         })}
       </nav>
+
+      {/* ── Customer help block (customer roles only) ── */}
+      {isCustomerApi && (
+        <div className="mx-3 mb-3 rounded-lg bg-slate-900/60 border border-slate-800/60 px-3 py-2.5">
+          <p className="text-[11px] font-medium text-slate-300">Need help?</p>
+          <p className="text-[10.5px] text-slate-500 mt-0.5">Contact Manley Solutions</p>
+          <a href="mailto:support@manleysolutions.com"
+             className="text-[10.5px] text-slate-400 hover:text-slate-200 break-all">
+            support@manleysolutions.com
+          </a>
+        </div>
+      )}
 
       {/* ── Footer ── */}
       <div className="px-3 pt-3 pb-4 border-t border-slate-900">
