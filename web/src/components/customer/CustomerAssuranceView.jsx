@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import {
   Shield, Building2, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck,
@@ -133,6 +134,23 @@ export default function CustomerAssuranceView() {
   const [highlightRef, setHighlightRef] = useState(null);
   const [searchResults, setSearchResults] = useState(null);
   const searchAbort = useRef(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Permanent, shareable, customer-safe deep-link: ?location=<ref> opens the
+  // Location Workspace; the ref is opaque (HMAC-signed, no raw ids).
+  const openLocation = useCallback((loc) => {
+    setDrawer(loc);
+    const next = new URLSearchParams(searchParams);
+    next.set("location", loc.ref);
+    setSearchParams(next, { replace: false });
+  }, [searchParams, setSearchParams]);
+
+  const closeLocation = useCallback(() => {
+    setDrawer(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("location");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -155,6 +173,16 @@ export default function CustomerAssuranceView() {
     const t = setInterval(fetchData, 60000);
     return () => clearInterval(t);
   }, [fetchData]);
+
+  // Open the workspace from a shared/deep-linked ?location=<ref> URL.
+  useEffect(() => {
+    const ref = searchParams.get("location");
+    if (ref) {
+      setDrawer((cur) => (cur && cur.ref === ref) ? cur : { ref, name: locations.find((l) => l.location_ref === ref)?.location });
+    } else {
+      setDrawer((cur) => (cur ? null : cur));
+    }
+  }, [searchParams, locations]);
 
   // Enterprise search (debounced) — server-side across name/city/state/phone/service.
   useEffect(() => {
@@ -217,7 +245,7 @@ export default function CustomerAssuranceView() {
                     {searchResults.length === 0 ? (
                       <p className="px-3 py-2.5 text-[12px] text-slate-400">No matches.</p>
                     ) : searchResults.map((r) => (
-                      <button key={r.location_ref} type="button" onClick={() => { setDrawer({ ref: r.location_ref, name: r.location }); setSearch(""); setSearchResults(null); }}
+                      <button key={r.location_ref} type="button" onClick={() => { openLocation({ ref: r.location_ref, name: r.location }); setSearch(""); setSearchResults(null); }}
                         className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2">
                         <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                         <span className="min-w-0"><span className="text-[12.5px] text-slate-800 block truncate">{r.location}</span><span className="text-[11px] text-slate-400">{[r.city, r.state].filter(Boolean).join(", ")}</span></span>
@@ -299,12 +327,12 @@ export default function CustomerAssuranceView() {
                 </div>
 
                 {view === "map" ? (
-                  <div className="p-4"><PortfolioMap locations={filtered} highlightRef={highlightRef} onSelect={setDrawer} onHover={setHighlightRef} /></div>
+                  <div className="p-4"><PortfolioMap locations={filtered} highlightRef={highlightRef} onSelect={openLocation} onHover={setHighlightRef} /></div>
                 ) : (
                   <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
                     {filtered.length === 0 && <div className="px-5 py-10 text-center text-xs text-slate-400">No locations match your filters.</div>}
                     {filtered.map((loc) => (
-                      <button key={loc.location_ref} type="button" onClick={() => setDrawer({ ref: loc.location_ref, name: loc.location })}
+                      <button key={loc.location_ref} type="button" onClick={() => openLocation({ ref: loc.location_ref, name: loc.location })}
                         onMouseEnter={() => setHighlightRef(loc.location_ref)} onMouseLeave={() => setHighlightRef(null)}
                         className={`w-full flex items-center gap-3 px-5 py-3.5 transition-colors text-left ${highlightRef === loc.location_ref ? "bg-slate-50" : "hover:bg-slate-50"}`}>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${styleFor(loc.protection?.status).dot}`} />
@@ -327,7 +355,7 @@ export default function CustomerAssuranceView() {
         </div>
       </div>
 
-      {drawer && <LocationCommandCenter locationRef={drawer.ref} locationName={drawer.name} onClose={() => setDrawer(null)} />}
+      {drawer && <LocationCommandCenter locationRef={drawer.ref} locationName={drawer.name} onClose={closeLocation} />}
     </PageWrapper>
   );
 }

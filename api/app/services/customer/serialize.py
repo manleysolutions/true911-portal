@@ -454,10 +454,34 @@ def us_region(state) -> Optional[str]:
     return None
 
 
-def service_with_equipment(unit, *, status: dict, equipment: Optional[list] = None) -> dict:
-    """A Life-Safety Service card (Command Center): the enterprise service name,
-    where it is, its customer-safe status, and the equipment that supports it
-    (grouped beneath the service — equipment exists to serve the service)."""
+# Customer-facing carrier/network name (a network provider name is customer-safe;
+# carrier *credentials* / account ids are NOT and are never emitted — §8).
+_CARRIER_LABELS = {
+    "tmobile": "T-Mobile", "t-mobile": "T-Mobile", "att": "AT&T", "at&t": "AT&T",
+    "verizon": "Verizon", "telnyx": "Telnyx", "bandwidth": "Bandwidth",
+    "inseego": "Inseego", "starlink": "Starlink",
+}
+
+
+def carrier_label(raw) -> Optional[str]:
+    """A friendly network/carrier NAME for display, or None. Never an account id."""
+    if not raw:
+        return None
+    return _CARRIER_LABELS.get(str(raw).strip().lower(), str(raw).strip())
+
+
+def service_with_equipment(unit, *, status: dict, equipment: Optional[list] = None,
+                           carrier: Optional[str] = None, phone_numbers: Optional[list] = None,
+                           last_test=None, last_inspection=None,
+                           attention_items: Optional[list] = None) -> dict:
+    """A Life-Safety Service card (Digital Twin): the enterprise service name, where
+    it is, its customer-safe status, the equipment that supports it (grouped
+    beneath), and service-level facts — equipment count, carrier (name only),
+    telephone numbers, last test / last inspection, and attention items.
+
+    All optional fields are additive and omitted-or-null when unknown; nothing is
+    fabricated (last_test / last_inspection are null until a real source exists)."""
+    equip = equipment or []
     return {
         "service_ref": encode_ref("svc", unit.id),
         "service": enterprise_service_label(unit.unit_type),
@@ -465,7 +489,13 @@ def service_with_equipment(unit, *, status: dict, equipment: Optional[list] = No
         "where": unit.location_description,
         "floor": unit.floor,
         "status": status,
-        "equipment": equipment or [],
+        "equipment": equip,
+        "equipment_count": len(equip),
+        "carrier": carrier_label(carrier),
+        "phone_numbers": phone_numbers or [],
+        "last_test": _iso(last_test) if hasattr(last_test, "isoformat") else last_test,
+        "last_inspection": _iso(last_inspection) if hasattr(last_inspection, "isoformat") else last_inspection,
+        "attention_items": attention_items or [],
     }
 
 
@@ -574,3 +604,67 @@ def portfolio_summary(*, company, counts, services, protected_services,
         "recent_activity": recent_activity or [],
         "upcoming_maintenance": upcoming_maintenance or [],
     }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Location Digital Twin serializers (additive — Phase 1/3/4/5/7).
+# Placeholders return honest empty sets with a category/type scaffold so the
+# UI + API are future-ready; real data (contacts, E911 activity) is emitted
+# as-is.  No fabrication, no internal/sensitive fields.
+# ══════════════════════════════════════════════════════════════════════
+
+# The vocabulary of activity a location timeline can carry.  Real events are
+# emitted only when a source exists; the schema is ready for the rest.
+TIMELINE_KINDS = (
+    "installation", "alarm_test", "carrier_migration", "firmware_update",
+    "technician_visit", "customer_note", "inspection", "e911_verified",
+    "e911_update", "ai_event",
+)
+
+# Document categories a location can hold (storage is future — see Phase 3).
+DOCUMENT_CATEGORIES = (
+    "permit", "floor_plan", "inspection_report", "photo", "carrier_paperwork",
+    "service_contract", "e911_documentation",
+)
+
+# Inspection kinds a location record can carry (real data only when present).
+INSPECTION_KINDS = ("fire_alarm", "elevator", "sprinkler", "generator", "annual", "other")
+
+
+def timeline_entry(*, kind: str, when=None, title: str, by: str = "Manley Solutions",
+                   detail: Optional[str] = None) -> dict:
+    """Generic customer-safe timeline entry for any real event source (additive).
+    ``kind`` outside TIMELINE_KINDS is coerced to a neutral 'activity'."""
+    k = kind if kind in TIMELINE_KINDS else "activity"
+    when_out = when.isoformat()[:10] if hasattr(when, "isoformat") else when
+    out = {"kind": k, "when": when_out, "title": title, "by": by}
+    if detail:
+        out["detail"] = detail
+    return out
+
+
+def location_contacts(site) -> dict:
+    """Customer-safe site contacts (their own contact info).  No internal owners."""
+    contacts = []
+    if site.poc_name or site.poc_phone or site.poc_email:
+        contacts.append({
+            "role": "Site contact", "name": site.poc_name,
+            "phone": site.poc_phone, "email": site.poc_email,
+        })
+    return {"contacts": contacts, "support": "Manley Solutions"}
+
+
+def documents_placeholder() -> dict:
+    """Location documents — future storage (Phase 3).  Honest empty set + the
+    categories the record will hold."""
+    return {"categories": list(DOCUMENT_CATEGORIES), "items": [], "available": False}
+
+
+def photos_placeholder() -> dict:
+    return {"items": [], "available": False}
+
+
+def inspections_placeholder(items: Optional[list] = None) -> dict:
+    """Inspection history — real entries only (none today -> empty), plus the
+    inspection kinds the record supports."""
+    return {"kinds": list(INSPECTION_KINDS), "items": items or [], "available": bool(items)}

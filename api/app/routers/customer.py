@@ -272,3 +272,68 @@ async def customer_location_timeline(
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
     return {"as_of": now.isoformat(), "data": data}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Location Digital Twin sub-resources (additive — Phase 3/5/7).  Each is a
+# location sub-resource: two-key gate + `CUSTOMER_VIEW_LOCATIONS`, tenant-scoped,
+# 404 on unknown/cross-tenant ref.  Documents/Photos/Inspections are honest
+# future-ready placeholders; Contacts + Health return real customer-safe data.
+# ══════════════════════════════════════════════════════════════════════
+async def _twin_subresource(loader, db, tenant_id, location_ref, now, *, pass_now=False):
+    data = await (loader(db, tenant_id, location_ref, now) if pass_now
+                  else loader(db, tenant_id, location_ref))
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return {"as_of": now.isoformat(), "data": data}
+
+
+@router.get("/locations/{location_ref}/documents",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_documents(location_ref: str,
+                                      current_user: User = Depends(require_customer_api),
+                                      db: AsyncSession = Depends(get_db)) -> dict:
+    """Location documents (future storage — permits/floor plans/inspection reports/…)."""
+    return await _twin_subresource(cc.load_location_documents, db, current_user.tenant_id,
+                                   location_ref, datetime.now(timezone.utc))
+
+
+@router.get("/locations/{location_ref}/photos",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_photos(location_ref: str,
+                                   current_user: User = Depends(require_customer_api),
+                                   db: AsyncSession = Depends(get_db)) -> dict:
+    """Location photos (future storage)."""
+    return await _twin_subresource(cc.load_location_photos, db, current_user.tenant_id,
+                                   location_ref, datetime.now(timezone.utc))
+
+
+@router.get("/locations/{location_ref}/contacts",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_contacts(location_ref: str,
+                                     current_user: User = Depends(require_customer_api),
+                                     db: AsyncSession = Depends(get_db)) -> dict:
+    """Customer-safe site contacts for a location."""
+    return await _twin_subresource(cc.load_location_contacts, db, current_user.tenant_id,
+                                   location_ref, datetime.now(timezone.utc))
+
+
+@router.get("/locations/{location_ref}/inspections",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_inspections(location_ref: str,
+                                        current_user: User = Depends(require_customer_api),
+                                        db: AsyncSession = Depends(get_db)) -> dict:
+    """Inspection history (real entries only; empty until a source exists)."""
+    return await _twin_subresource(cc.load_location_inspections, db, current_user.tenant_id,
+                                   location_ref, datetime.now(timezone.utc))
+
+
+@router.get("/locations/{location_ref}/health",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_health(location_ref: str,
+                                   current_user: User = Depends(require_customer_api),
+                                   db: AsyncSession = Depends(get_db)) -> dict:
+    """Digital Twin building health for one location (real signals; unknown lowers
+    confidence, never fabricated)."""
+    return await _twin_subresource(cc.load_location_health, db, current_user.tenant_id,
+                                   location_ref, datetime.now(timezone.utc), pass_now=True)

@@ -117,6 +117,22 @@
     export, Documents/Billing integrations, timeline event types (install/service/
     inspection/carrier), store#/per-location health, AI confidence scoring.
 
+### Phase 3.7 — Location Digital Twin (IMPLEMENTED; additive)
+- **RH-P3.7-DT — Every location a complete operational record.** ✅ *Implemented 2026-07-01.*
+  Location Workspace (Overview · Digital Twin Health · Life Safety Services w/ grouped
+  equipment + service facts · Equipment · E911 · Documents · Photos · Inspection History ·
+  Recent Activity · Site Contacts · Emergency Procedures · Service Requests · Billing ·
+  Notes) with breadcrumb + permanent `?location=<ref>` shareable deep-link.
+  - New APIs (CUSTOMER_VIEW_LOCATIONS, additive): `/locations/{ref}/documents|photos|
+    contacts|inspections|health`; enriched service model (carrier name, phone numbers,
+    equipment count, last test/inspection, attention items). Code:
+    `command_center.py`, `serialize.py`, `components/customer/{LocationCommandCenter,
+    CustomerAssuranceView}.jsx`. Tests: `test_location_digital_twin.py` (suite green 3656).
+  - Doc: `docs/customer/LOCATION_DIGITAL_TWIN.md`.
+  - **Roadmap:** documents/photos storage (signed URLs), timeline event sources,
+    real inspection ingest, health inputs (service requests/alarm tests/carrier/AI),
+    Service Requests/Emergency Procedures/Billing integrations, Vitest runner.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in

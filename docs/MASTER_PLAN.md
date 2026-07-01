@@ -54,6 +54,10 @@ Location→Service→Equipment→Carrier): executive metrics, evidence-graded po
 health, interactive map, enterprise search, and a Location Command Center. This is
 the concrete Horizon-2 "customer surface" + Horizon-4 "enterprise" instantiation,
 built additively on `/api/customer/*`. Spec: `docs/customer/CUSTOMER_COMMAND_CENTER.md`.
+The Location tier has since deepened into a **Location Digital Twin** — each
+building a complete operational record (services + equipment, E911, documents,
+inspections, timeline, contacts, per-location health, shareable deep-links). Spec:
+`docs/customer/LOCATION_DIGITAL_TWIN.md`.
 
 **Design status recorded:** customer boundary architecture complete · tenant isolation
 audited (no CRITICAL) · customer RBAC design complete · customer API contract design

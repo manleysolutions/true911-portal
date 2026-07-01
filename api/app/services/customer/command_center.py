@@ -136,13 +136,102 @@ async def load_location_services(db: AsyncSession, tenant_id: str, location_ref:
         da = device_by_id.get(u.device_id) if u.device_id else None
         status = preview_protection(now) if preview else _service_protection(u, da, now)
         equip = []
+        phone_numbers = []
+        carrier = None
         dev = device_rows.get(u.device_id) if u.device_id else None
         if dev is not None:
             identifier = (line_did.get(u.line_id) if u.line_id else None) or getattr(dev, "msisdn", None)
+            if identifier:
+                phone_numbers.append(identifier)
+            carrier = getattr(dev, "carrier", None)
             dev_status = preview_protection(now) if preview else _protection_from_device_assurance(da, now)
             equip.append(cs.location_device(dev, protection=dev_status, preview=preview, identifier=identifier))
-        services.append(cs.service_with_equipment(u, status=status, equipment=equip))
+        # attention items = the service's own reason when not Protected (real).
+        attention = []
+        if status.get("status") not in ("Protected", "Inactive") and status.get("reason"):
+            attention.append(status["reason"])
+        services.append(cs.service_with_equipment(
+            u, status=status, equipment=equip, carrier=carrier, phone_numbers=phone_numbers,
+            last_test=None, last_inspection=None, attention_items=attention))
     return {"location": site.site_name, "services": services}
+
+
+# ── Digital Twin location sub-resources (Phase 3/5/7) ────────────────
+async def load_location_documents(db: AsyncSession, tenant_id: str, location_ref: str):
+    site = await resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None
+    return {"location": site.site_name, **cs.documents_placeholder()}
+
+
+async def load_location_photos(db: AsyncSession, tenant_id: str, location_ref: str):
+    site = await resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None
+    return {"location": site.site_name, **cs.photos_placeholder()}
+
+
+async def load_location_contacts(db: AsyncSession, tenant_id: str, location_ref: str):
+    site = await resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None
+    return {"location": site.site_name, **cs.location_contacts(site)}
+
+
+async def load_location_inspections(db: AsyncSession, tenant_id: str, location_ref: str):
+    site = await resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None
+    # No inspection data source yet -> honest empty (real-only).
+    return {"location": site.site_name, **cs.inspections_placeholder(items=[])}
+
+
+async def load_location_health(db: AsyncSession, tenant_id: str, location_ref: str, now):
+    """Digital Twin building health for ONE location — real signals only; unknown
+    inputs lower confidence (never fabricated).  Reuses ``serialize.health_score``."""
+    site = await resolve_site(db, tenant_id, location_ref)
+    if site is None:
+        return None
+    preview = preview_enabled(tenant_id)
+
+    units = (await db.execute(
+        select(ServiceUnit).where(
+            ServiceUnit.tenant_id == tenant_id, ServiceUnit.site_id == site.site_id))).scalars().all()
+    devices = (await db.execute(
+        select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site.site_id))).scalars().all()
+
+    # Operational services: protected share of this site's services.
+    if units:
+        if preview:
+            protected_services = len(units)
+        else:
+            signals = await load_site_assurance_signals(db, tenant_id, site.site_id)
+            device_by_id = ({d.device_id: d for d in compute_site_assurance(signals, now=now).devices}
+                            if signals is not None else {})
+            protected_services = sum(
+                1 for u in units
+                if _service_protection(u, device_by_id.get(u.device_id) if u.device_id else None, now)
+                .get("status") == "Protected")
+        operational = cs._pct(protected_services, len(units))
+    else:
+        operational = None
+
+    verified = (site.e911_status or "").lower() in cs._E911_VERIFIED
+    address_present = all([site.e911_street, site.e911_city, site.e911_state, site.e911_zip])
+    e911_val = (100.0 if verified else 0.0) if address_present else None
+
+    reporting = sum(1 for d in devices if getattr(d, "last_heartbeat", None) is not None)
+    # offline-equipment signal: share of devices reporting (unknown if none report).
+    offline_val = cs._pct(reporting, len(devices)) if reporting else None
+
+    health = cs.health_score({
+        "e911_verified": e911_val,
+        "service_coverage": operational,   # operational services
+        "telemetry": offline_val,          # offline equipment inverse (reporting share)
+        "alarm_testing": None,             # inspection/alarm-test freshness -> unknown
+        "carrier": None,                   # carrier health -> unknown
+    })
+    return {"location": site.site_name, "as_of": now.isoformat(), "health": health}
 
 
 async def load_location_timeline(db: AsyncSession, tenant_id: str, location_ref: str):

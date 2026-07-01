@@ -111,3 +111,8 @@ enterprise, service-first customer surface (executive metrics, portfolio health
 score, map, search, Location Command Center). The health score there uses real
 signals only (unknowns lower confidence), separate from the preview operational
 green. See `CUSTOMER_COMMAND_CENTER.md`.
+
+The same real-signal, unknown-lowers-confidence health model is applied
+**per-location** in the **Location Digital Twin** (`LOCATION_DIGITAL_TWIN.md`) —
+each building carries its own health score alongside its services, equipment,
+E911, inspections, and activity record.

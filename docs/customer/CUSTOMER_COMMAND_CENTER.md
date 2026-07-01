@@ -126,6 +126,17 @@ or audit APIs (enforced by `require_permission` + the frontend `INTERNAL_OPS` pa
 gate; verified by `test_customer_rbac_posture.py`). Every new endpoint is
 tenant-scoped and flag-gated. See `../CUSTOMER_EXPERIENCE_BOUNDARY.md`.
 
+## 8a. Location Digital Twin (deepening — additive)
+
+The Location tier has graduated into a **Digital Twin** — each building is a
+complete operational record (Overview · Health · Services+Equipment · E911 ·
+Documents · Photos · Inspections · Timeline · Contacts · Emergency Procedures ·
+Service Requests · Billing). Additive endpoints (`/locations/{ref}/documents`,
+`/photos`, `/contacts`, `/inspections`, `/health`), an enriched service model
+(carrier name, phone numbers, equipment count, last test/inspection, attention
+items), and permanent `?location=<ref>` deep-links. Full spec:
+`docs/customer/LOCATION_DIGITAL_TWIN.md`.
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),
