@@ -6,7 +6,64 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-06-23. Branch at time of writing: `main` (in sync with origin).
+> Last updated: 2026-07-01. Branch at time of writing:
+> `feat/ops-center-phase-1-6-resolution-intelligence`.
+
+## 0b. Latest change — RH Login GO-LIVE wiring (Judy = CUSTOMER_ADMIN)
+
+**2026-07-01.** Finalized the path for Judy/RH to log in via the isolated
+customer plane (Option 1). Key facts a resumer must know:
+- **Two parallel customer surfaces existed:** the legacy `User`-role dashboard
+  (`/command/summary`, needs `INTERNAL_OPS`) and the new isolated `CUSTOMER_*` +
+  `/api/customer/*` API. Judy is **`CUSTOMER_ADMIN` (never `User`)**, so her
+  dashboard is now **wired to `/api/customer/dashboard` + `/api/customer/locations`
+  + `/api/customer/.../e911`** via a contained customer branch in
+  `web/src/pages/UserDashboard.jsx` → `web/src/components/customer/CustomerAssuranceView.jsx`.
+- **RBAC (additive):** `permissions.json` grants `CUSTOMER_*` the customer-page
+  read perms (`VIEW_SITES/VIEW_DEVICES/VIEW_ASSURANCE`) and adds three roles
+  `CUSTOMER_MANAGER/VIEWER/SUPPORT`; `admin.py ALLOWED_ROLES` now accepts
+  `CUSTOMER_*` (invite/create). `CUSTOMER_*` still hold **no `INTERNAL_OPS`/
+  `COMMAND_*`** (verified by `test_customer_rbac_posture.py`).
+- **Isolation:** 8 unguarded internal operator pages (Command, CommandSite,
+  OperatorView, Overview, NetworkDashboard, AutoOps, SimManagement, Containers)
+  are now gated behind `INTERNAL_OPS` in `web/src/App.jsx` (blocks `CUSTOMER_*`,
+  zero regression for internal roles); Layout shows a minimal `CUSTOMER_NAV`.
+- **Provisioning:** `api/scripts/create_customer_user.py` (dry-run-first,
+  invite-token, no hardcoded creds) or `POST /api/admin/users/invite`.
+- **Readiness:** `api/scripts/rh_customer_readiness_check.py` (`--json`; exit
+  0/1/2) verifies flags/allowlists, customer users, counts, and the E911 posture.
+- **Docs:** `docs/customer/ASSURANCE_ENGINE.md`, `docs/customer/RH_GO_LIVE_RUNBOOK.md`,
+  `DECISIONS.md` D-016. Full backend suite green (3623); web build green.
+- **Remaining before Judy logs in:** set the 4 env vars on api+worker (see runbook
+  §1), create Judy, run the readiness check, verify login. E911 gaps (unverified
+  addresses) remain BLOCKERS to a clean READY and are worked via `/api/e911-changes/gaps`.
+
+## 0. Earlier change — RH Login Preview (IMPLEMENTED, flag-gated OFF)
+
+**Urgent RH go-live enabler.** A tenant-scoped **customer preview mode** lets RH
+(Judy) log in *now* and see all locations/services/devices as **Active/Green**
+before carrier/vendor telemetry is live — while **E911 stays truthful** (never
+fabricated). Presentation-only in the customer composition layer; **no raw
+device/API state is overwritten and internal/admin views are unchanged.**
+
+- Flags: `FEATURE_CUSTOMER_PREVIEW` + `CUSTOMER_PREVIEW_TENANT_ALLOWLIST`
+  (default OFF; two-key gate mirroring the customer API). Enable for RH:
+  `FEATURE_CUSTOMER_PREVIEW=true` + `CUSTOMER_PREVIEW_TENANT_ALLOWLIST=restoration-hardware`
+  on **both** `true911-api` and `true911-worker`.
+- Green is **evidenced by operator attestation** (not fabricated telemetry) so the
+  no-false-green invariant holds; **no "API/telemetry pending" labels** reach RH.
+- **E911 excluded from preview:** `verified` true only when stored `e911_status`
+  is verified; active+unverified = Critical. Customer E911 record now enumerates
+  real per-endpoint detail (unit/floor, callback/BTN/line id, service type) from
+  `ServiceUnit` + linked `Line.did`/`Device.msisdn`.
+- **Internal correction worklist:** `GET /api/e911-changes/gaps` (`UPDATE_E911`)
+  lists every location with missing/unverified E911 data to fix before verification.
+- Code: `api/app/services/customer/preview.py`, `services/e911_gaps.py`, updates to
+  `services/customer/{portfolio,serialize}.py`, `routers/{customer,e911}.py`,
+  `config.py`. Tests: `api/tests/test_rh_customer_preview.py` (full suite green, 3282).
+- **Rollback:** flip `FEATURE_CUSTOMER_PREVIEW=false` or drop RH from the allowlist —
+  instant, no deploy/migration; RH then sees the real assurance labels again.
+- Docs: `CUSTOMER_EXPERIENCE_BOUNDARY.md` §F, `CUSTOMER_DATA_BOUNDARY.md` §6a.
 
 ## 1. Current Objective
 

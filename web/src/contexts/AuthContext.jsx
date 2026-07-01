@@ -54,6 +54,14 @@ const ROLE_MAP = {
   customer_readonly: "CUSTOMER_READONLY",
   "customer readonly": "CUSTOMER_READONLY",
   "customer read only": "CUSTOMER_READONLY",
+  // RH go-live customer role family (ADMIN/MANAGER/VIEWER/SUPPORT). Mirrors the
+  // backend ROLE_NORMALIZE map; grants live in the shared permissions.json.
+  customer_manager: "CUSTOMER_MANAGER",
+  "customer manager": "CUSTOMER_MANAGER",
+  customer_viewer: "CUSTOMER_VIEWER",
+  "customer viewer": "CUSTOMER_VIEWER",
+  customer_support: "CUSTOMER_SUPPORT",
+  "customer support": "CUSTOMER_SUPPORT",
 };
 function normalizeRole(role) {
   if (!role) return "User";

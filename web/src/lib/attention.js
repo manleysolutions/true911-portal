@@ -282,12 +282,26 @@ const CUSTOMER_COLORS = {
 // Roles that see the customer presentation layer.  Internal /
 // operations roles fall through to the existing raw labels so admin
 // troubleshooting workflows are not degraded.
+//
+// Two families:
+//   * legacy customer proxies (User / Manager) — drive the /command/summary
+//     presentation path (unchanged), and
+//   * the isolated customer-plane roles (CUSTOMER_*) — which CANNOT reach
+//     /command/summary (no INTERNAL_OPS) and instead read the dedicated
+//     /api/customer/* Assurance API.  See isCustomerApiRole below.
 const CUSTOMER_ROLES = new Set(["User", "Manager"]);
+
+/** True for the isolated customer-plane roles (CUSTOMER_ADMIN / MANAGER /
+ *  VIEWER / SUPPORT / USER / BILLING / READONLY).  These roles hold no
+ *  INTERNAL_OPS grant, so their dashboard is sourced from /api/customer/*. */
+export function isCustomerApiRole(role) {
+  return !!role && String(role).toUpperCase().startsWith("CUSTOMER_");
+}
 
 /** True when the given role should see the customer presentation. */
 export function isCustomerRole(role) {
   if (!role) return false;
-  return CUSTOMER_ROLES.has(role);
+  return CUSTOMER_ROLES.has(role) || isCustomerApiRole(role);
 }
 
 /**

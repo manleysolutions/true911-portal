@@ -6,8 +6,22 @@ from ..dependencies import get_db, get_current_user, require_permission
 from ..models.e911_change_log import E911ChangeLog
 from ..models.user import User
 from ..schemas.e911_change_log import E911ChangeLogOut, E911ChangeLogCreate
+from ..services.e911_gaps import list_e911_gaps
 
 router = APIRouter(prefix="/e911-changes", tags=["e911"])
+
+
+@router.get("/gaps", dependencies=[Depends(require_permission("UPDATE_E911"))])
+async def e911_gaps(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Internal E911 correction worklist — every location in the caller's tenant
+    whose emergency record is incomplete or not yet verified.  Read-only; drives
+    the fix-before-verify loop so the customer E911 axis stays honest even while
+    the operational axis is shown green in preview."""
+    gaps = await list_e911_gaps(db, current_user.tenant_id)
+    return {"tenant_id": current_user.tenant_id, "gap_count": len(gaps), "gaps": gaps}
 
 
 @router.get("", response_model=list[E911ChangeLogOut])

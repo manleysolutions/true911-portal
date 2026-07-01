@@ -81,6 +81,20 @@ const PAGE_PERMISSIONS = {
 
   // Phase A — Data Steward onboarding review queue
   OnboardingReview:    "VIEW_ONBOARDING_REVIEW",
+
+  // Internal operator consoles — gated behind INTERNAL_OPS so the isolated
+  // customer-plane roles (CUSTOMER_*, which lack INTERNAL_OPS) cannot reach
+  // them by typing the URL.  Every existing internal role (Admin, Manager,
+  // User, DataEntry, DataSteward, UX_QA_ANALYST) holds INTERNAL_OPS, so this
+  // adds NO regression for internal users — it only closes the customer hole.
+  Command:             "INTERNAL_OPS",
+  CommandSite:         "INTERNAL_OPS",
+  OperatorView:        "INTERNAL_OPS",
+  Overview:            "INTERNAL_OPS",
+  NetworkDashboard:    "INTERNAL_OPS",
+  AutoOps:             "INTERNAL_OPS",
+  SimManagement:       "INTERNAL_OPS",
+  Containers:          "INTERNAL_OPS",
 };
 
 function getLandingPage(role) {

@@ -25,9 +25,12 @@ _PERMISSIONS_PATH = Path(__file__).resolve().parents[2] / "permissions.json"
 
 ALL_ROLES = [
     "SuperAdmin", "Admin", "Manager", "User", "DataEntry", "DataSteward", "UX_QA_ANALYST",
-    # Customer-plane roles (RH Go-Live Phase 1/3). They appear only in CUSTOMER_*
-    # actions; the cell-by-cell matrix below verifies they hold no operator grant.
-    "CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_BILLING", "CUSTOMER_READONLY",
+    # Customer-plane roles (RH Go-Live). They appear in CUSTOMER_* actions plus
+    # the customer-page read grants (VIEW_SITES/DEVICES/ASSURANCE); they never
+    # hold an operator grant (INTERNAL_OPS/COMMAND_*/admin) — see the isolation
+    # tests in test_customer_rbac_posture.py.
+    "CUSTOMER_ADMIN", "CUSTOMER_MANAGER", "CUSTOMER_SUPPORT", "CUSTOMER_VIEWER",
+    "CUSTOMER_USER", "CUSTOMER_BILLING", "CUSTOMER_READONLY",
 ]
 
 

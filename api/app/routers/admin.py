@@ -18,7 +18,13 @@ from app.services.auth import generate_invite_token, hash_password, validate_pas
 
 router = APIRouter()
 
-ALLOWED_ROLES = {"SuperAdmin", "Admin", "Manager", "User", "DataEntry", "UX_QA_ANALYST"}
+ALLOWED_ROLES = {
+    "SuperAdmin", "Admin", "Manager", "User", "DataEntry", "UX_QA_ANALYST",
+    # Customer-plane roles (RH go-live).  Safe to invite/create: they hold only
+    # CUSTOMER_* + read grants and NEVER INTERNAL_OPS/COMMAND_* (see permissions.json).
+    "CUSTOMER_ADMIN", "CUSTOMER_MANAGER", "CUSTOMER_SUPPORT", "CUSTOMER_VIEWER",
+    "CUSTOMER_USER", "CUSTOMER_BILLING", "CUSTOMER_READONLY",
+}
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
