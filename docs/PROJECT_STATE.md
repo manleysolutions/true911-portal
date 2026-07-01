@@ -6,10 +6,39 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-07-01. Branch at time of writing:
-> `feat/ops-center-phase-1-6-resolution-intelligence`.
+> Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0d. Latest change — Location Digital Twin [2026-07-01]
+## 0. MERGED TO MAIN — the RH Customer Stack is live in `main` [2026-07-01]
+
+The full customer surface has landed on `main` across four merged PRs (in order):
+
+| PR | Merge | What |
+|---|---|---|
+| **#142** | `8af5c29` (login layer) | RH customer login wired to `/api/customer` — **Judy = `CUSTOMER_ADMIN`** (isolated `CUSTOMER_*` plane, not legacy `User`); Customer Assurance/Preview Mode. |
+| **#143** | `8597d97` | Customer Command Center — service-first executive dashboard (metrics + evidence-graded portfolio health, map w/ legend + list↔map sync, enterprise search) **+ the map/search/richer-drawer polish that #142's merge had dropped** (recovered here). |
+| **#144** | `603ff19` | Location Digital Twin — each building a complete operational record (14-section Location Workspace; enriched service model; `/locations/{ref}/documents\|photos\|contacts\|inspections\|health`; permanent `?location=<ref>` deep-link). |
+
+**Net state on `main`:** the isolated `CUSTOMER_*` roles (ADMIN/MANAGER/VIEWER/
+SUPPORT/USER/BILLING/READONLY) reach a read-only, flag-gated, service-first
+Life-Safety Command Center + per-building Digital Twin via `/api/customer/*`;
+`CUSTOMER_*` hold **no** `INTERNAL_OPS`/`COMMAND_*` (isolation enforced by
+`test_customer_rbac_posture.py`). E911 is never fabricated; operational green is
+Preview-Mode operator-attestation; health scores use real signals only (unknowns
+lower confidence). Full backend suite green (**3656**); web build green; all CI checks
+green on each PR. Detail docs: `docs/customer/{CUSTOMER_COMMAND_CENTER,
+LOCATION_DIGITAL_TWIN,ASSURANCE_ENGINE,RH_GO_LIVE_RUNBOOK}.md`; `DECISIONS.md` D-016.
+
+**Remaining before Judy logs in (ops action, not code):** set the 4 env vars on
+`true911-api` + `true911-worker` (`FEATURE_CUSTOMER_API`, `CUSTOMER_API_TENANT_ALLOWLIST`,
+`FEATURE_CUSTOMER_PREVIEW`, `CUSTOMER_PREVIEW_TENANT_ALLOWLIST=restoration-hardware`),
+create Judy as `CUSTOMER_ADMIN`, run `python -m scripts.rh_customer_readiness_check`,
+verify login — per `docs/customer/RH_GO_LIVE_RUNBOOK.md`. **Top roadmap:** documents/
+photos storage, real timeline/inspection ingest, added health inputs, Reports pages +
+CSV/PDF, marker clustering, and a frontend Vitest runner (none exists yet).
+
+> Sections **0d–0** below are the per-PR change notes (now all merged), kept for detail.
+
+## 0d. Location Digital Twin — MERGED (PR #144, `603ff19`) [2026-07-01]
 
 The Location tier of the Command Center is now a **Digital Twin** — each customer
 building is a complete operational record. Additive on `/api/customer/*`:
@@ -30,7 +59,7 @@ building is a complete operational record. Additive on `/api/customer/*`:
   credentials/IMEI/ICCID/firmware/SIM); CUSTOMER_* isolation unchanged. Full suite
   green (3656); web build green. Docs: `docs/customer/LOCATION_DIGITAL_TWIN.md` (new).
 
-## 0c. Latest change — Customer Command Center (Phase 1) [2026-07-01]
+## 0c. Customer Command Center (Phase 1) — MERGED (PR #143, `8597d97`) [2026-07-01]
 
 The RH customer dashboard is now the first version of the **Customer Command
 Center** — an enterprise Life-Safety Operating System (service-first, understand
@@ -54,7 +83,7 @@ the whole portfolio in <30s), built additively on `CUSTOMER_*` + `/api/customer/
 - **Docs:** `docs/customer/CUSTOMER_COMMAND_CENTER.md` (new). **Stubs/roadmap:**
   marker clustering, Reports pages+export, Documents/Billing, timeline event types.
 
-## 0b. Latest change — RH Login GO-LIVE wiring (Judy = CUSTOMER_ADMIN)
+## 0b. RH Login GO-LIVE wiring (Judy = CUSTOMER_ADMIN) — MERGED (PR #142, `8af5c29`)
 
 **2026-07-01.** Finalized the path for Judy/RH to log in via the isolated
 customer plane (Option 1). Key facts a resumer must know:
