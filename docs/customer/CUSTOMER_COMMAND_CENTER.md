@@ -156,6 +156,17 @@ the Location Workspace — never overwriting the official record (append-only
 audited; `CUSTOMER_SUBMIT_E911_REVIEW` for submit, internal review via
 `/api/e911-changes/reviews`). Spec: `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`.
 
+## 8d. Collaborative Building Workspace (additive)
+
+The Location Workspace becomes a **collaborative Building Workspace**: four
+workspaces (Building Summary · Operations · Compliance · Administration), services
+as the primary objects, a **contribution workflow** (append-only; contacts,
+inspections, photos, documents, procedures, notes, service requests — never writes
+protected data; `CUSTOMER_CONTRIBUTE`), **separated health** (4 factors, composite
+after) and a **maturity tier** (Bronze/Silver/Gold/Platinum). No operating-company
+references in the customer plane. Specs: `docs/customer/WORKFLOW_ENGINE.md`,
+`docs/customer/DIGITAL_TWIN_MATURITY_MODEL.md`, `docs/customer/LOCATION_DIGITAL_TWIN.md`.
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),

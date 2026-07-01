@@ -21,6 +21,7 @@ from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.services import e911_review
 from app.services.customer import command_center as cc
+from app.services.customer import contributions as contrib
 from app.services.customer import portfolio as cportfolio
 from app.services.customer import serialize as cs
 from app.services.customer.gate import require_customer_api
@@ -212,6 +213,15 @@ class _CorrectionBody(BaseModel):
     note: str | None = None
 
 
+class _ContributionBody(BaseModel):
+    """A customer Building-Workspace contribution.  ``payload`` carries the
+    type-specific fields (e.g. contact name/phone, photo filename/caption); it is
+    stored as data and NEVER written to protected records — an operator reviews it."""
+    type: str
+    payload: dict = {}
+    note: str | None = None
+
+
 async def _e911_site_and_snapshot(db, tenant_id, location_ref):
     """Resolve the site (tenant-scoped) + the exact E911 record the customer is
     shown (server-authoritative snapshot), or (None, None) for unknown refs."""
@@ -278,14 +288,64 @@ async def customer_e911_review_status(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """The friendly review state for this location's emergency record (own tenant
-    only): Not yet verified / Customer confirmed / Correction requested / Under
-    Manley review / Verified."""
+    only): Verification Pending / Verification Requested / Awaiting Review /
+    Verified."""
     now = datetime.now(timezone.utc)
     site = await cportfolio.resolve_site(db, current_user.tenant_id, location_ref)
     if site is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
     return {"as_of": now.isoformat(),
             "data": await e911_review.location_review_status(db, current_user.tenant_id, site)}
+
+
+# ── Building-Workspace contributions (Phase 2/6) ──────────────────────
+# Collaborative Digital-Twin improvement.  A contribution is a REQUEST stored as
+# an append-only workflow event — it never writes protected data (Site /
+# ServiceUnit / Line / E911).  Submit is gated on CUSTOMER_CONTRIBUTE
+# (ADMIN/MANAGER/SUPPORT/USER); read-only roles can still VIEW the log.
+@router.post(
+    "/locations/{location_ref}/contributions",
+    dependencies=[Depends(require_permission("CUSTOMER_CONTRIBUTE"))],
+)
+async def customer_add_contribution(
+    location_ref: str,
+    body: _ContributionBody,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Submit a Building-Workspace contribution (contact / inspection / photo /
+    document / procedure / note / service_request).  Recorded as an append-only
+    submission for operator review — never writes the protected record."""
+    now = datetime.now(timezone.utc)
+    site = await cportfolio.resolve_site(db, current_user.tenant_id, location_ref)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    try:
+        data = await contrib.record_contribution(
+            db, current_user, site, ctype=body.type, payload=body.payload or {},
+            note=body.note or "")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+    return {"as_of": now.isoformat(), "data": data}
+
+
+@router.get(
+    "/locations/{location_ref}/contributions",
+    dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))],
+)
+async def customer_list_contributions(
+    location_ref: str,
+    current_user: User = Depends(require_customer_api),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """This location's contribution log (own tenant only), newest first, with
+    by-type counts — the collaborative Building-Workspace history."""
+    now = datetime.now(timezone.utc)
+    site = await cportfolio.resolve_site(db, current_user.tenant_id, location_ref)
+    if site is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return {"as_of": now.isoformat(),
+            "data": await contrib.list_contributions(db, current_user.tenant_id, site.site_id)}
 
 
 # ══════════════════════════════════════════════════════════════════════

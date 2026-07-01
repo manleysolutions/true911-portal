@@ -341,11 +341,11 @@ def support_case_summary(session, *, messages=None, diagnostics=None) -> dict:
 # ── PR-C2: dashboard + location-detail composition (allow-list) ──────
 _CUSTOMER_ACTION = {
     "Protected": "No action needed.",
-    "Attention Needed": "Manley Solutions is reviewing this location.",
-    "Critical": "Manley Solutions has been alerted and is addressing this.",
+    "Attention Needed": "This location is under review.",
+    "Critical": "This location has been flagged and is being addressed.",
     "Pending Install": "Installation and testing are in progress.",
     "Inactive": "No action needed — service is inactive.",
-    "Unknown": "Manley Solutions is confirming this location's status.",
+    "Unknown": "This location's status is being confirmed.",
 }
 _CUSTOMER_SUMMARY = {
     "Attention Needed": "We're reviewing an item at this location.",
@@ -421,7 +421,7 @@ def e911_history_item(log) -> dict:
     return {
         "when": when.date().isoformat() if when else None,
         "change": "Address verified" if verified else "Address updated",
-        "by": getattr(log, "requester_name", None) or "Manley",
+        "by": getattr(log, "requester_name", None) or "Verification team",
         "state": log.status,
     }
 
@@ -545,7 +545,7 @@ def timeline_item(log) -> dict:
         "when": when.date().isoformat() if when else None,
         "kind": "e911_verified" if verified else "e911_update",
         "title": _TIMELINE_LABEL.get(st, "Emergency address updated"),
-        "by": getattr(log, "requester_name", None) or "Manley Solutions",
+        "by": getattr(log, "requester_name", None) or "Verification team",
     }
 
 
@@ -659,7 +659,7 @@ DOCUMENT_CATEGORIES = (
 INSPECTION_KINDS = ("fire_alarm", "elevator", "sprinkler", "generator", "annual", "other")
 
 
-def timeline_entry(*, kind: str, when=None, title: str, by: str = "Manley Solutions",
+def timeline_entry(*, kind: str, when=None, title: str, by: str = "Verification team",
                    detail: Optional[str] = None) -> dict:
     """Generic customer-safe timeline entry for any real event source (additive).
     ``kind`` outside TIMELINE_KINDS is coerced to a neutral 'activity'."""
@@ -679,7 +679,7 @@ def location_contacts(site) -> dict:
             "role": "Site contact", "name": site.poc_name,
             "phone": site.poc_phone, "email": site.poc_email,
         })
-    return {"contacts": contacts, "support": "Manley Solutions"}
+    return {"contacts": contacts, "support": "Support team"}
 
 
 def documents_placeholder() -> dict:
@@ -696,3 +696,72 @@ def inspections_placeholder(items: Optional[list] = None) -> dict:
     """Inspection history — real entries only (none today -> empty), plus the
     inspection kinds the record supports."""
     return {"kinds": list(INSPECTION_KINDS), "items": items or [], "available": bool(items)}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Building Workspace: separated health + Digital Twin maturity (Phase 4/7).
+# All additive, pure, no fabrication.  Unknown factors lower confidence.
+# ══════════════════════════════════════════════════════════════════════
+_HEALTH_FACTOR_WEIGHTS = {
+    "operational_health": 40,
+    "digital_twin_completeness": 25,
+    "compliance": 20,
+    "documentation": 15,
+}
+_HEALTH_FACTOR_LABELS = {
+    "operational_health": "Operational Health",
+    "digital_twin_completeness": "Digital Twin Completeness",
+    "compliance": "Compliance",
+    "documentation": "Documentation",
+}
+
+
+def separated_health(*, operational=None, completeness=None, compliance=None,
+                     documentation=None) -> dict:
+    """Building health split into its contributing factors, with the composite
+    shown alongside — the UI explains the factors BEFORE the composite (Phase 4).
+    Each factor is 0-100 or None (unknown); unknown lowers confidence, never
+    fabricated."""
+    values = {"operational_health": operational, "digital_twin_completeness": completeness,
+              "compliance": compliance, "documentation": documentation}
+    known_w = sum(_HEALTH_FACTOR_WEIGHTS[k] for k, v in values.items() if v is not None)
+    total_w = sum(_HEALTH_FACTOR_WEIGHTS.values())
+    composite = (round(sum(_HEALTH_FACTOR_WEIGHTS[k] * float(v)
+                           for k, v in values.items() if v is not None) / known_w, 1)
+                 if known_w else None)
+    return {
+        "composite": composite,
+        "confidence": round(100.0 * known_w / total_w, 1) if total_w else 0.0,
+        "factors": [{
+            "key": k, "label": _HEALTH_FACTOR_LABELS[k], "weight": _HEALTH_FACTOR_WEIGHTS[k],
+            "value": (round(float(values[k]), 1) if values[k] is not None else None),
+            "known": values[k] is not None,
+        } for k in _HEALTH_FACTOR_WEIGHTS],
+    }
+
+
+MATURITY_DIMENSIONS = (
+    "documentation", "contacts", "procedures", "testing", "compliance", "photos", "e911",
+)
+_MATURITY_LABELS = {
+    "documentation": "Documentation", "contacts": "Site contacts",
+    "procedures": "Emergency procedures", "testing": "Testing records",
+    "compliance": "Compliance", "photos": "Photos", "e911": "E911 verified",
+}
+_MATURITY_TIERS = ((7, "Platinum"), (5, "Gold"), (3, "Silver"), (1, "Bronze"), (0, "Bronze"))
+
+
+def building_maturity(signals: dict) -> dict:
+    """Digital Twin maturity — Bronze / Silver / Gold / Platinum — from how many of
+    the seven dimensions are present.  Signals are booleans; missing = not met
+    (honest — nothing fabricated).  A customer improves their tier by contributing."""
+    dims = [{"key": d, "label": _MATURITY_LABELS[d], "met": bool(signals.get(d))}
+            for d in MATURITY_DIMENSIONS]
+    met = sum(1 for d in dims if d["met"])
+    tier = next(t for threshold, t in _MATURITY_TIERS if met >= threshold)
+    return {
+        "tier": tier, "met": met, "total": len(MATURITY_DIMENSIONS),
+        "score": round(100.0 * met / len(MATURITY_DIMENSIONS), 1),
+        "dimensions": dims,
+        "next_steps": [d["label"] for d in dims if not d["met"]][:4],
+    }

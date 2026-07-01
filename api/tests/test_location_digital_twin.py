@@ -96,7 +96,7 @@ def test_location_contacts_customer_safe():
     site = SimpleNamespace(poc_name="Gallery Ops", poc_phone="707-555-0142",
                            poc_email="ops@rh.example", notes="LEAK-INTERNAL", customer_id=99)
     c = cs.location_contacts(site)
-    assert c["contacts"][0]["name"] == "Gallery Ops" and c["support"] == "Manley Solutions"
+    assert c["contacts"][0]["name"] == "Gallery Ops" and c["support"] == "Support team"
     assert "LEAK-INTERNAL" not in json.dumps(c) and "99" not in json.dumps(c["contacts"])
 
 
@@ -143,8 +143,10 @@ def test_load_location_health_preview_real_signals(monkeypatch):
     device = SimpleNamespace(device_id="DEV-1", device_type="fire_alarm", model="SLE",
                              status="active", activated_at=None, msisdn=None, last_heartbeat=None,
                              manufacturer=None, carrier=None, notes=None)  # no telemetry
-    # sequence: resolve_site, units, devices, lines, overrides (service build); devices (telemetry)
-    db = _FakeDB([_Res([site]), _Res([unit]), _Res([device]), _Res([]), _Res([]), _Res([device])])
+    # sequence: resolve_site, units, devices, lines, overrides (service build);
+    # devices (telemetry); contributions events (Building Workspace signals)
+    db = _FakeDB([_Res([site]), _Res([unit]), _Res([device]), _Res([]), _Res([]),
+                  _Res([device]), _Res([])])
     out = asyncio.run(cc.load_location_health(db, RH, cs.encode_ref("loc", 5), NOW))
     h = out["health"]
     # E911 verified (100) + operational services (preview 100) are known;
@@ -152,6 +154,14 @@ def test_load_location_health_preview_real_signals(monkeypatch):
     assert h["score"] is not None and 0 <= h["confidence"] < 100
     tel = next(c for c in h["components"] if c["key"] == "telemetry")
     assert tel["known"] is False
+    # Building Workspace additions (Phase 4/7): separated health (composite after
+    # factors) + Digital-Twin maturity tier, all additive.
+    bh = out["building_health"]
+    assert len(bh["factors"]) == 4 and bh["composite"] is not None
+    doc = next(f for f in bh["factors"] if f["key"] == "documentation")
+    assert doc["value"] == 0.0 and doc["known"] is True     # no documents contributed yet
+    assert out["maturity"]["tier"] in ("Bronze", "Silver", "Gold", "Platinum")
+    assert out["maturity"]["dimensions"]                    # 7 dimensions present
 
 
 # ── Endpoints: gate + RBAC + 404 (loaders monkeypatched) ─────────────

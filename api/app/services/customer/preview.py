@@ -12,7 +12,7 @@ Strict boundaries (why this does not violate the no-false-green contract):
     composition layer (``services.customer.portfolio`` + ``serialize``).
     Internal / admin / assurance views read the real state and are unaffected.
   * EVIDENCED, not fabricated.  A preview "Protected" carries an honest operator
-    attestation (``PREVIEW_SIGNAL``) — Manley confirms the service is active /
+    attestation (``PREVIEW_SIGNAL``) — the operator confirms the service is active /
     being onboarded — NOT a fabricated live-telemetry claim ("N devices
     reporting").  It is deliberately free of "API pending" / "telemetry pending"
     language: the customer sees a plain Active state.
@@ -38,7 +38,7 @@ from app.services.customer.serialize import evidence_object, status_object
 # Honest operator-attestation evidence for a preview-Protected status.  NOT a
 # fabricated telemetry claim, and free of "pending" language (the customer must
 # see a calm Active state — see the preview requirement).
-PREVIEW_SIGNAL = "Service active — confirmed by Manley Solutions"
+PREVIEW_SIGNAL = "Service active — operator-confirmed"
 PREVIEW_SOURCE = "operator"
 
 
