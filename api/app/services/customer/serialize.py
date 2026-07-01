@@ -75,6 +75,38 @@ _SERVICE_LABELS = {
     "other": "Emergency service",
 }
 
+# Enterprise Life-Safety service catalog — the customer-facing SERVICE the
+# equipment supports (Command Center vocabulary).  Kept SEPARATE from the legacy
+# _SERVICE_LABELS (whose exact strings existing tests/clients depend on) so this
+# is purely additive.  Customers reason about services, never device models.
+SERVICE_CATALOG = {
+    "fire_alarm": "Fire Alarm",
+    "fire_alarm_line": "Fire Alarm",
+    "elevator_phone": "Elevator",
+    "elevator": "Elevator",
+    "area_of_refuge": "Area of Refuge",
+    "refuge": "Area of Refuge",
+    "burglar_alarm": "Burglar Alarm",
+    "intrusion": "Burglar Alarm",
+    "emergency_call_station": "Emergency Phone",
+    "emergency_phone": "Emergency Phone",
+    "emergency_voice_line": "Emergency Phone",
+    "voice_line": "Emergency Phone Line",
+    "bda_das": "BDA/DAS",
+    "das": "BDA/DAS",
+    "bda": "BDA/DAS",
+    "generator": "Generator Monitoring",
+    "generator_monitoring": "Generator Monitoring",
+    "fax_line": "Fax Line",
+    "other": "Life Safety Service",
+}
+
+
+def enterprise_service_label(unit_type) -> str:
+    """Customer-facing Life-Safety service name (Command Center catalog).
+    Falls back to a generic, non-jargon label — never a raw device model."""
+    return SERVICE_CATALOG.get((unit_type or "").lower(), "Life Safety Service")
+
 
 def _iso(dt):
     return dt.isoformat() if dt is not None else None
@@ -395,3 +427,150 @@ def headline(counts: dict, as_of: Optional[str] = None) -> str:
         return "No locations yet — setup in progress"
     base = f"{counts.get('protected', 0)} of {total} locations Protected"
     return f"{base} (as of {as_of})" if as_of else base
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Customer Command Center serializers (additive — Phase 1/4/6/8).
+# Pure allow-list mappers: they read ONLY customer-safe fields and never
+# fabricate.  Aggregation/DB loading lives in command_center.py.
+# ══════════════════════════════════════════════════════════════════════
+
+# Coarse US region from a two-letter state — a DERIVED grouping (not a raw
+# field), used for the location Overview "Region".  Unknown state -> None.
+_US_REGIONS = {
+    "Northeast": {"CT", "ME", "MA", "NH", "RI", "VT", "NJ", "NY", "PA"},
+    "Midwest": {"IL", "IN", "MI", "OH", "WI", "IA", "KS", "MN", "MO", "NE", "ND", "SD"},
+    "South": {"DE", "FL", "GA", "MD", "NC", "SC", "VA", "DC", "WV", "AL", "KY", "MS",
+              "TN", "AR", "LA", "OK", "TX"},
+    "West": {"AZ", "CO", "ID", "MT", "NV", "NM", "UT", "WY", "AK", "CA", "HI", "OR", "WA"},
+}
+
+
+def us_region(state) -> Optional[str]:
+    st = (state or "").strip().upper()
+    for region, members in _US_REGIONS.items():
+        if st in members:
+            return region
+    return None
+
+
+def service_with_equipment(unit, *, status: dict, equipment: Optional[list] = None) -> dict:
+    """A Life-Safety Service card (Command Center): the enterprise service name,
+    where it is, its customer-safe status, and the equipment that supports it
+    (grouped beneath the service — equipment exists to serve the service)."""
+    return {
+        "service_ref": encode_ref("svc", unit.id),
+        "service": enterprise_service_label(unit.unit_type),
+        "name": unit.unit_name,
+        "where": unit.location_description,
+        "floor": unit.floor,
+        "status": status,
+        "equipment": equipment or [],
+    }
+
+
+_TIMELINE_LABEL = {
+    "validated": "Emergency address verified",
+    "verified": "Emergency address verified",
+    "applied": "Emergency address updated",
+    "pending": "Emergency address submitted",
+}
+
+
+def timeline_item(log) -> dict:
+    """Customer-safe activity entry (real data only — no fabricated events).
+    Sourced from the E911 change log; the ``kind`` lets the UI theme it."""
+    when = getattr(log, "applied_at", None) or getattr(log, "requested_at", None)
+    st = (log.status or "").lower()
+    verified = st in {"validated", "verified"}
+    return {
+        "when": when.date().isoformat() if when else None,
+        "kind": "e911_verified" if verified else "e911_update",
+        "title": _TIMELINE_LABEL.get(st, "Emergency address updated"),
+        "by": getattr(log, "requester_name", None) or "Manley Solutions",
+    }
+
+
+def _pct(part, whole) -> Optional[float]:
+    """Percentage 0-100, or None (unknown) when there is nothing to measure."""
+    if not whole:
+        return None
+    return round(100.0 * part / whole, 1)
+
+
+# Health-score component weights (sum need not be 100; normalized over KNOWN
+# components).  Unknown components lower CONFIDENCE, never the score.
+_HEALTH_WEIGHTS = {
+    "e911_verified": 30,
+    "service_coverage": 25,
+    "telemetry": 20,
+    "alarm_testing": 15,
+    "carrier": 10,
+}
+_HEALTH_LABELS = {
+    "e911_verified": "E911 verification",
+    "service_coverage": "Service coverage",
+    "telemetry": "Live telemetry",
+    "alarm_testing": "Alarm testing",
+    "carrier": "Carrier health",
+}
+
+
+def health_score(components: dict) -> dict:
+    """Enterprise Portfolio Health.  ``components`` maps a component key to a
+    0-100 value OR None (unknown).  The score is the weighted average over the
+    KNOWN components; confidence is the share of total weight that is known.
+    Unknown inputs reduce confidence — nothing is fabricated (Phase 6)."""
+    known_weight = 0.0
+    weighted_sum = 0.0
+    out_components = []
+    for key, weight in _HEALTH_WEIGHTS.items():
+        value = components.get(key)
+        known = value is not None
+        if known:
+            known_weight += weight
+            weighted_sum += weight * float(value)
+        out_components.append({
+            "key": key, "label": _HEALTH_LABELS[key], "weight": weight,
+            "value": (round(float(value), 1) if known else None), "known": known,
+        })
+    score = round(weighted_sum / known_weight, 1) if known_weight else None
+    total_weight = sum(_HEALTH_WEIGHTS.values())
+    confidence = round(100.0 * known_weight / total_weight, 1) if total_weight else 0.0
+    if score is None:
+        grade = "Unknown"
+    elif score >= 90:
+        grade = "Excellent"
+    elif score >= 75:
+        grade = "Good"
+    elif score >= 50:
+        grade = "Fair"
+    else:
+        grade = "Needs attention"
+    return {"score": score, "confidence": confidence, "grade": grade,
+            "components": out_components}
+
+
+def portfolio_summary(*, company, counts, services, protected_services,
+                      devices, phone_numbers, e911_verified, e911_with_address,
+                      health, recent_activity, upcoming_maintenance, as_of) -> dict:
+    """Executive portfolio metrics (Command Center header).  All values are
+    aggregates over customer-safe data; no raw operational field is exposed."""
+    total = counts.get("total", 0)
+    return {
+        "portfolio_name": company,
+        "as_of": as_of,
+        "locations_total": total,
+        "locations_protected": counts.get("protected", 0),
+        "sites_requiring_attention": counts.get("attention_needed", 0),
+        "critical_sites": counts.get("critical", 0),
+        "life_safety_services": services,
+        "protected_services": protected_services,
+        "devices": devices,
+        "total_phone_numbers": phone_numbers,
+        "e911_verification_pct": _pct(e911_verified, e911_with_address or total),
+        "service_availability_pct": _pct(protected_services, services),
+        "monthly_health_score": health,
+        "recent_activity": recent_activity or [],
+        "upcoming_maintenance": upcoming_maintenance or [],
+    }

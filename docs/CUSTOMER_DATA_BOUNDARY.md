@@ -342,7 +342,10 @@ Missing/unverified E911 data is surfaced on the **internal** correction worklist
 
 The conceptual model (evidence sources, E911 exclusion, per-location retirement)
 is `docs/customer/ASSURANCE_ENGINE.md`; the operator steps are
-`docs/customer/RH_GO_LIVE_RUNBOOK.md` (D-016).
+`docs/customer/RH_GO_LIVE_RUNBOOK.md` (D-016). The enterprise, service-first
+presentation of this data (Enterprise→Portfolio→Location→Service→Equipment→Carrier;
+executive metrics, health score, map, search, Location Command Center) is
+`docs/customer/CUSTOMER_COMMAND_CENTER.md` — all additive and customer-safe.
 
 ## Cross-cutting rules
 1. **No green without evidence** (§4.6): every `status: Protected` carries `as_of` +

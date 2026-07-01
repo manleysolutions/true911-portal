@@ -100,6 +100,23 @@
   - **Remaining ops step:** set the 4 env vars on api+worker, create Judy, run the
     readiness check, verify login (runbook). E911 gaps stay blockers to clean READY.
 
+### Phase 3.6 — Customer Command Center (IMPLEMENTED, Phase 1; additive)
+- **RH-P3.6-CC — Enterprise Life-Safety command center.** ✅ *Implemented 2026-07-01.*
+  Service-first dashboard (Enterprise→Portfolio→Location→Service→Equipment→Carrier):
+  executive metrics + evidence-graded health, zoom-to-fit map w/ legend + list↔map
+  sync, enterprise search, and a Location Command Center drawer (Overview · Life
+  Safety Services w/ grouped equipment · E911 + history · Timeline · Documents/
+  Billing/Notes placeholders). Service-first nav with "Soon" items.
+  - New APIs: `/customer/portfolio/summary|health`, `/customer/search`,
+    `/customer/locations/{ref}/services|timeline` (additive, CUSTOMER_* guarded).
+    Code: `services/customer/command_center.py`, `serialize.py`,
+    `components/customer/{CustomerAssuranceView,LocationCommandCenter}.jsx`.
+    Tests: `test_customer_command_center.py` (suite green 3644; web build green).
+  - Doc: `docs/customer/CUSTOMER_COMMAND_CENTER.md`.
+  - **Roadmap:** marker clustering (`leaflet.markercluster`), Reports pages+CSV/PDF
+    export, Documents/Billing integrations, timeline event types (install/service/
+    inspection/carrier), store#/per-location health, AI confidence scoring.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in

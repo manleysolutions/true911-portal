@@ -115,9 +115,12 @@ so ops can correct them **before** verification — E911 is never greened.
   `/SimManagement`, …) redirects (no `INTERNAL_OPS`); Judy → `/command/summary`
   or another tenant's data → 403/404.
 - Confirm no "API pending" / "telemetry pending" language and no raw jargon.
-- The Home view now offers **list + map** of all locations, **search/filter**
-  (name · city · state · status · E911), and a **location detail drawer** (service
-  address, operational status, E911 state, real emergency endpoints, and devices).
+- The Home view is now the **Customer Command Center**: executive portfolio metrics
+  + monthly health score, a zoom-to-fit **map** with legend and list↔map sync,
+  **enterprise search** (name/#/city/state/phone/service), and a **Location Command
+  Center** drawer (Overview · Life Safety Services with grouped equipment · E911 +
+  history · Timeline · Documents/Billing/Notes placeholders). Service-first nav shows
+  future sections as "Soon". See `docs/customer/CUSTOMER_COMMAND_CENTER.md`.
 
 ## 5a. Judy pre-send checklist (final gate before you send the invite)
 

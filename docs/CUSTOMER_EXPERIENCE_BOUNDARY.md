@@ -363,5 +363,16 @@ never legacy `User`). Per D-016:
 
 ---
 
-*Sections 0–E are design/plan; §F–§G are implemented (flag-gated, default OFF).*
+## H. Customer Command Center (IMPLEMENTED 2026-07-01)
+
+The customer surface is now the first version of the **Customer Command Center** —
+an enterprise, service-first Life-Safety Operating System. It adds only read-only,
+`CUSTOMER_*`-guarded, flag-gated `/api/customer/*` endpoints (portfolio summary +
+health, search, location services/timeline) and two frontend components; it adds
+**no** internal surface and preserves `CUSTOMER_*` isolation from `INTERNAL_OPS`/
+`COMMAND_*`. Full spec: `docs/customer/CUSTOMER_COMMAND_CENTER.md`.
+
+---
+
+*Sections 0–E are design/plan; §F–§H are implemented (flag-gated, default OFF).*
 </content>
