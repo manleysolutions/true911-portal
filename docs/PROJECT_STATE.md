@@ -10,23 +10,31 @@
 
 ## 0. MERGED TO MAIN — the RH Customer Stack is live in `main` [2026-07-01]
 
-The full customer surface has landed on `main` across four merged PRs (in order):
+The full customer surface has landed on `main` across these merged PRs (in order):
 
 | PR | Merge | What |
 |---|---|---|
 | **#142** | `8af5c29` (login layer) | RH customer login wired to `/api/customer` — **Judy = `CUSTOMER_ADMIN`** (isolated `CUSTOMER_*` plane, not legacy `User`); Customer Assurance/Preview Mode. |
 | **#143** | `8597d97` | Customer Command Center — service-first executive dashboard (metrics + evidence-graded portfolio health, map w/ legend + list↔map sync, enterprise search) **+ the map/search/richer-drawer polish that #142's merge had dropped** (recovered here). |
 | **#144** | `603ff19` | Location Digital Twin — each building a complete operational record (14-section Location Workspace; enriched service model; `/locations/{ref}/documents\|photos\|contacts\|inspections\|health`; permanent `?location=<ref>` deep-link). |
+| **#146** | `4779bff` | Hotfix — blank Command Center: page `/customer/locations` at ≤100 and accumulate (backend caps `page_size` at 100). |
+| **#147** | `acccb24` | Life Safety Service Intelligence — equipment inferred into first-class services (8 types) with confidence; location/portfolio health from **service** health; internal approve/override/merge/split (`MANAGE_SERVICE_CLASSIFICATION`, append-only audit). |
+| **#148** | `5c143f3` | Customer E911 confirmation & correction — customers confirm/request-correction without overwriting official E911; internal review queue (`/api/e911-changes/reviews`); append-only audited. |
+
+*(Also #145 `366da5d` — docs-only PROJECT_STATE update.)*
 
 **Net state on `main`:** the isolated `CUSTOMER_*` roles (ADMIN/MANAGER/VIEWER/
 SUPPORT/USER/BILLING/READONLY) reach a read-only, flag-gated, service-first
-Life-Safety Command Center + per-building Digital Twin via `/api/customer/*`;
-`CUSTOMER_*` hold **no** `INTERNAL_OPS`/`COMMAND_*` (isolation enforced by
-`test_customer_rbac_posture.py`). E911 is never fabricated; operational green is
-Preview-Mode operator-attestation; health scores use real signals only (unknowns
-lower confidence). Full backend suite green (**3656**); web build green; all CI checks
-green on each PR. Detail docs: `docs/customer/{CUSTOMER_COMMAND_CENTER,
-LOCATION_DIGITAL_TWIN,ASSURANCE_ENGINE,RH_GO_LIVE_RUNBOOK}.md`; `DECISIONS.md` D-016.
+Life-Safety Command Center + per-building Digital Twin via `/api/customer/*`, with
+**equipment inferred into services** and a **customer E911 confirm/correction**
+workflow. `CUSTOMER_*` hold **no** `INTERNAL_OPS`/`COMMAND_*`/`MANAGE_SERVICE_CLASSIFICATION`
+(isolation enforced by `test_customer_rbac_posture.py`). E911 is never fabricated and
+never customer-overwritten (append-only reviews; `verified` stays Manley-gated);
+operational green is Preview-Mode operator-attestation; health scores use real signals
+only (unknowns lower confidence). Full backend suite green (**3716**); web build green;
+all CI checks green on each PR. Detail docs: `docs/customer/{CUSTOMER_COMMAND_CENTER,
+LOCATION_DIGITAL_TWIN,LIFE_SAFETY_SERVICE_MODEL,E911_CUSTOMER_REVIEW_WORKFLOW,
+ASSURANCE_ENGINE,RH_GO_LIVE_RUNBOOK}.md`; `DECISIONS.md` D-016.
 
 **Remaining before Judy logs in (ops action, not code):** set the 4 env vars on
 `true911-api` + `true911-worker` (`FEATURE_CUSTOMER_API`, `CUSTOMER_API_TENANT_ALLOWLIST`,
@@ -38,7 +46,7 @@ CSV/PDF, marker clustering, and a frontend Vitest runner (none exists yet).
 
 > Sections **0d–0** below are the per-PR change notes (now all merged), kept for detail.
 
-## 0f. Customer E911 confirmation & correction [2026-07-01] (branch `feat/e911-customer-review`)
+## 0f. Customer E911 confirmation & correction — MERGED (PR #148, `5c143f3`) [2026-07-01]
 
 CUSTOMER_* users can now participate in E911 validation **without overwriting the
 official record**. Additive; append-only audited (ActionAudit; migration-free).
@@ -57,9 +65,9 @@ official record**. Additive; append-only audited (ActionAudit; migration-free).
   (form) + friendly status; read-only roles see status only.
 - **Data safety:** never fabricates or overwrites official E911; opaque refs;
   existing E911 APIs unchanged. Full suite green (**3716**); web build green.
-  Doc: `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`. **PR pending review (not merged).**
+  Doc: `docs/customer/E911_CUSTOMER_REVIEW_WORKFLOW.md`. **MERGED (PR #148).**
 
-## 0e. Life Safety Service Intelligence [2026-07-01] (branch `feat/life-safety-service-model`)
+## 0e. Life Safety Service Intelligence — MERGED (PR #147, `acccb24`) [2026-07-01]
 
 The backend now converts an equipment inventory into a **Life Safety Service**
 model — services are first-class; equipment supports them. Additive on the
@@ -83,7 +91,7 @@ Command Center + Digital Twin; no UI redesign.
   inferred); added a small "Inferred · <confidence>" hint. No redesign.
 - **Truth/isolation:** no fabricated E911/telemetry/last-test; carrier *name* only;
   CUSTOMER_* isolation intact. Full suite green (**3690**); web build green. Doc:
-  `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md` (new). **PR pending review (not merged).**
+  `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md` (new). **MERGED (PR #147).**
 
 ## 0d. Location Digital Twin — MERGED (PR #144, `603ff19`) [2026-07-01]
 
