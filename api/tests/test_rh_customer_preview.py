@@ -259,6 +259,32 @@ def test_e911_endpoint_preview_does_not_verify(monkeypatch):
     assert d["emergency_endpoints"][0]["callback_number"] == "7075550142"
 
 
+# ── Dashboard polish: map points + location devices (customer-safe) ──
+def test_location_summary_map_point_only_when_valid():
+    prot = cs.status_object("Unknown", reason="x")
+    assert cs.location_summary(_site(1), protection=prot)["map_point"] is None  # no coords
+    valid = cs.location_summary(_site(1, lat=38.5, lng=-97.0), protection=prot)
+    assert valid["map_point"] == {"lat": 38.5, "lng": -97.0}
+    # 0,0 (null island) and out-of-range are rejected, never plotted
+    assert cs.location_summary(_site(1, lat=0.0, lng=0.0), protection=prot)["map_point"] is None
+    assert cs.location_summary(_site(1, lat=999.0, lng=1.0), protection=prot)["map_point"] is None
+
+
+def test_location_device_customer_safe_and_preview_online():
+    dev = _device(status="inactive", model="StarLink SLE", last_heartbeat=None)
+    prot = cs.status_object("Protected", as_of="t", evidence=cs.evidence_object("t", ["x"]))
+    on = cs.location_device(dev, protection=prot, preview=True, identifier="6175550100")
+    assert on["health"] == "Online"                      # preview greens health
+    assert on["model"] == "StarLink SLE"                  # model shown when present
+    assert on["identifier"] == "6175550100"
+    # No raw identifiers leak (serial/iccid/imei/firmware/carrier)
+    assert "LEAKICCID" not in json.dumps(on) and "LEAKIMEI" not in json.dumps(on)
+    # Absent model/identifier are omitted (never fabricated)
+    bare = cs.location_device(_device(model=None), protection=prot, preview=False, identifier=None)
+    assert "model" not in bare and "identifier" not in bare
+    assert bare["health"] == "Offline"                    # inactive + no preview
+
+
 # ── 3. Missing E911 surfaced internally for correction ──────────────
 def test_compute_site_e911_gaps_flags_missing_and_unverified():
     # complete + verified -> no gap

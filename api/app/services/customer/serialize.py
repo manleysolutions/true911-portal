@@ -98,6 +98,22 @@ def e911_state_label(site) -> str:
 
 
 # ── Entity mappers (allow-list) ──────────────────────────────────────
+def _map_point(site) -> Optional[dict]:
+    """A map pin {lat, lng} when the site has valid coordinates, else None.
+    Coordinates are exposed ONLY as an aggregate map pin (never a raw field) —
+    see CUSTOMER_DATA_BOUNDARY.md §2."""
+    lat, lng = getattr(site, "lat", None), getattr(site, "lng", None)
+    if lat is None or lng is None:
+        return None
+    try:
+        lat, lng = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0) or (lat == 0.0 and lng == 0.0):
+        return None
+    return {"lat": lat, "lng": lng}
+
+
 def location_summary(site, *, protection: dict) -> dict:
     """List-level Location (no street in list view)."""
     return {
@@ -108,6 +124,7 @@ def location_summary(site, *, protection: dict) -> dict:
         "state": site.e911_state,
         "protection": protection,
         "emergency_address_state": e911_state_label(site),
+        "map_point": _map_point(site),
     }
 
 
@@ -279,10 +296,34 @@ _CUSTOMER_SUMMARY = {
 }
 
 
-def location_detail(site, *, protection: dict, services: Optional[list] = None) -> dict:
+def location_device(device, *, protection: dict, preview: bool = False,
+                    identifier: Optional[str] = None) -> dict:
+    """A customer-safe device entry for the location detail: friendly equipment
+    label, optional model, health (preview-aware), in-service date, and an
+    optional line/callback/elevator/FACP identifier.  Reads NO serial / ICCID /
+    IMEI / firmware / carrier / IP (§7 jargon veto).  Nothing is fabricated —
+    optional fields are omitted when the underlying value is absent."""
+    online = preview or (device.status or "").lower() == "active"
+    out: dict = {
+        "equipment": _EQUIPMENT_LABELS.get((device.device_type or "").lower(), "Monitored device"),
+        "health": "Online" if online else "Offline",
+        "in_service_since": _iso(getattr(device, "activated_at", None)),
+        "protection": protection,
+    }
+    model = getattr(device, "model", None)
+    if model:
+        out["model"] = model
+    if identifier:
+        out["identifier"] = identifier
+    return out
+
+
+def location_detail(site, *, protection: dict, services: Optional[list] = None,
+                    devices: Optional[list] = None) -> dict:
     """Detail-level Location.  Adds service_address + site_contact to the
-    summary fields, plus a minimal services[] preview (PR-C3).  Still stops
-    short of the full E911 object (its own read-only endpoint)."""
+    summary fields, plus a minimal services[] preview (PR-C3) and a customer-safe
+    devices[] list.  Still stops short of the full E911 object (its own
+    read-only endpoint)."""
     return {
         "location_ref": encode_ref("loc", site.id),
         "location": site.site_name,
@@ -297,6 +338,7 @@ def location_detail(site, *, protection: dict, services: Optional[list] = None) 
             "editable": False,
         },
         "services": services or [],
+        "devices": devices or [],
     }
 
 
