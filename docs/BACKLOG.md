@@ -285,6 +285,20 @@
   - **Roadmap:** internal approval UI to materialize + approve the 56 candidates;
     registry-backed e911/timeline sub-resources; per-building contribution counts.
 
+### Phase 3.16 — RH registry approval operator script (IN PROGRESS; branch `feat/rh-registry-approve`, PR open)
+- **RH-P3.16-APPROVE — Approve reviewed candidates into buildings.** 🔧 *PR open 2026-07-02, not merged.*
+  `api/scripts/rh_registry_approve_from_review.py` converts pending `PortfolioReviewItem`
+  rows into approved `PortfolioBuilding` rows (flips RH from fallback_mode → registry_mode).
+  Applies the operator decision table (`--include-known-rh-decisions`): canonical
+  overrides + merges (Hollywood, Chicago #147, Beverly Modern, Austin #149, Princeton
+  #644, Linden/MDC/Patterson/RHNYC/Memphis…), parent-account exclusion, keep-separate
+  guard (Edina #159 / Raleigh #178). Creates aliases + device mappings (collision-safe)
+  and decides review items via `approve_new_building`. Flags: `--dry-run` (default) /
+  `--apply` / `--limit` / `--only-high-confidence`. Report: created/merged/excluded/
+  skipped/unresolved + before/after visible count. Writes ONLY the registry under
+  `--apply`; never Site/Device/E911/Zoho/Napco/Genesis; E911 never verified. Tests:
+  `test_rh_registry_approve_from_review.py` (13). Docs: `RH_GO_LIVE_RUNBOOK.md` §4e step 3.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in
