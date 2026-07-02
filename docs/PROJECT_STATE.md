@@ -8,7 +8,37 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — RH Certification v2: known special-location registry (branch `feat/rh-cert-known-locations`, PR open, NOT merged) [2026-07-01]
+## 0·NEXT — Portfolio Fusion Engine (branch `feat/portfolio-fusion-engine`, PR open, NOT merged) [2026-07-01]
+
+Extends the RH Certification Engine into a **multi-source Portfolio Fusion Engine**:
+fuses **Zoho CRM · Napco StarLink · T-Mobile Genesis (MS130v4) · True911** into one
+canonical **Building Digital Twin** per location. Additive, read-only, new script.
+
+- `api/scripts/rh_portfolio_fusion.py` — four read-only source adapters (Zoho reuses
+  the cert CSV/live loaders; Napco reuses `inventory_reconciliation.adapters.napco`;
+  Genesis = tolerant MS130 CSV + read-only API stub; True911 reuses
+  `cert.load_true911`). Each emits normalized SourceRecords (store#, canonical name,
+  address, site type, building category, devices, services).
+- **Entity resolution** clusters records into buildings by store# / address / device
+  identifier (radio# / IMEI / ICCID / MSISDN / StarLink / serial); within a building,
+  device rows merge by shared identifier into one unified device each.
+- **Building Digital Twin**: building · services · devices · E911 · **source
+  confidence** (True911 40 · Zoho 25 · Napco 20 · Genesis 15, capped 100) · **missing
+  assets** (device in vendor not in True911, no service unit, E911 unverified) ·
+  **duplicate assets** (dup True911 sites, shared address).
+- **Outputs**: CSV + JSON + Markdown Building Fusion Report + **executive dashboard**
+  (buildings, fully-fused-all-4, per-source coverage, category mix, gaps, avg confidence).
+- Read-only: never writes any source, never marks E911 verified, never fabricates;
+  Napco sensitive fields dropped by the existing adapter.
+- Tests: `test_rh_portfolio_fusion.py` (19) — adapters, cross-source matching by
+  every identifier, twin identity/category/confidence, missing/duplicate, outputs,
+  CLI validation. Full fusion/cert/reconciliation/zoho slice green (**412**).
+- Docs: `customer/PORTFOLIO_FUSION_ENGINE.md`, `RH_GO_LIVE_RUNBOOK.md` §4c.
+
+**Stacks on the certification engine** (PRs #155/#156/#157 merged; #158 known-alias
+registry open — this branch includes it and reuses `KNOWN_RH_LOCATIONS`).
+
+## 0·PREV — RH Certification v2: known special-location registry (PR #158, open) [2026-07-01]
 
 Teaches the certification engine that operator-confirmed RH special locations are
 legitimate (were previously flagged "weird RH label"). Additive, read-only.
