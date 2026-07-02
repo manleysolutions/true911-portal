@@ -172,6 +172,11 @@ Distribution, plus a review-queue section. Full spec: `PORTFOLIO_REGISTRY.md`.
 suggestion); `--sync-review-queue` persists new pending items to the queue (queue
 only, never the approved registry).
 
+**Customer rendering.** Once buildings are approved, the customer dashboard +
+Location/Building Workspace render from the registry (canonical buildings, not raw
+Site rows) behind `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY` — see
+`CUSTOMER_COMMAND_CENTER.md` §8e and `RH_GO_LIVE_RUNBOOK.md` §4e for the go-live gate.
+
 ## 8. Guarantees
 
 - **Read-only** — never writes Zoho, Napco, Genesis, True911, carrier APIs, or the

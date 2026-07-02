@@ -167,6 +167,32 @@ after) and a **maturity tier** (Bronze/Silver/Gold/Platinum). No operating-compa
 references in the customer plane. Specs: `docs/customer/WORKFLOW_ENGINE.md`,
 `docs/customer/DIGITAL_TWIN_MATURITY_MODEL.md`, `docs/customer/LOCATION_DIGITAL_TWIN.md`.
 
+## 8e. Portfolio-Registry-backed customer view (additive, flag-gated OFF)
+
+The dashboard + Location/Building Workspace can render from the approved **Portfolio
+Registry** (canonical `PortfolioBuilding` rows) instead of raw `Site` rows, so the
+customer sees **canonical buildings** (e.g. *Chicago Gallery #147*, *Beverly Modern
+Gallery*) with de-duplicated counts, and the KPI cards (Life Safety Services, Monthly
+Health) compute from fusion/registry-derived services rather than placeholder logic.
+
+- **Two-key gate:** `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY` +
+  `CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST` (default OFF). When off — or on but
+  the registry has no visible buildings — the endpoints keep the exact legacy Site
+  behavior (silent fallback; no fallback wording ever reaches the customer).
+- **Pending policy:** approved buildings are customer-visible; PENDING buildings are
+  hidden unless `CUSTOMER_SHOW_PENDING_PORTFOLIO_BUILDINGS=true`, or previewed by an
+  allowlisted internal test user via `CUSTOMER_PORTFOLIO_PREVIEW_PENDING=true` +
+  `CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST`. Pending buildings never say "pending
+  review" — the calm wording is *"Portfolio record being finalized"*.
+- **Redaction:** the serializer (`serialize.portfolio_building`) exposes only
+  customer-safe identity + derived operational / E911 / health facts; **never** Zoho /
+  Napco / Genesis ids, ICCID, IMEI, radio numbers, carrier creds, raw aliases, or
+  registry review payloads. Confidence is a coarse bucket (High / Medium / Needs review).
+- **Read-only:** no writes to the registry or any source; no auto-created Sites; E911
+  never marked verified. Full spec: `docs/customer/PORTFOLIO_REGISTRY.md`,
+  read model `services/customer/portfolio_registry_view.py`. Audit:
+  `python -m scripts.customer_registry_view_audit --tenant restoration-hardware`.
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),

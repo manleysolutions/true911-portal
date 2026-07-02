@@ -39,6 +39,20 @@ const MAP_LEGEND = ["Protected", "Attention Needed", "Critical", "Pending Instal
 // 42, but this stays correct for any size.  Requesting >100 returns a 422 and
 // blanks the dashboard (the bug this fixes).
 const LOCATIONS_PAGE_SIZE = 100;
+
+// Normalize a location/building item to one shape the UI reads, so the same
+// components render whether the backend is in legacy-Site mode (location_ref /
+// location) or registry-backed mode (building_ref / display_name).  Registry-backed
+// items already carry customer-safe names only — no source-system internals.
+function normLocation(it) {
+  return {
+    ...it,
+    location_ref: it.building_ref || it.location_ref,
+    location: it.display_name || it.canonical_name || it.location,
+    emergency_address_state: it.emergency_address_state,
+  };
+}
+
 async function fetchAllLocations() {
   const first = await apiFetch(`/customer/locations?page=1&page_size=${LOCATIONS_PAGE_SIZE}`);
   const d = first.data || {};
@@ -54,7 +68,7 @@ async function fetchAllLocations() {
     );
     items = items.concat(...rest);
   }
-  return items;
+  return items.map(normLocation);
 }
 
 function Metric({ label, value, sub, tone = "slate", icon: Icon }) {
@@ -215,7 +229,7 @@ export default function CustomerAssuranceView() {
     const timer = setTimeout(async () => {
       try {
         const r = await apiFetch(`/customer/search?q=${encodeURIComponent(q)}`);
-        if (id === searchAbort.current) setSearchResults(r.data?.results || []);
+        if (id === searchAbort.current) setSearchResults((r.data?.results || []).map(normLocation));
       } catch { if (id === searchAbort.current) setSearchResults([]); }
     }, 250);
     return () => clearTimeout(timer);

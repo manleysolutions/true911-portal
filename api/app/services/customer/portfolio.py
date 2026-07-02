@@ -314,17 +314,49 @@ async def load_e911_endpoints(db: AsyncSession, tenant_id: str, site_id: str) ->
 
 
 async def resolve_site(db: AsyncSession, tenant_id: str, location_ref: str):
-    """Lightweight loc-ref -> Site resolver (no assurance) for the E911 axis."""
+    """Lightweight loc-ref -> Site resolver (no assurance) for the E911 axis.
+
+    Also accepts a registry ``bldg`` ref (when registry mode is enabled): it
+    resolves the canonical building to its PRIMARY linked Site, so the secondary
+    site-based endpoints (E911 / timeline / contacts / contributions) keep working
+    with building refs.  Read-only; tenant-scoped."""
     raw = decode_ref("loc", location_ref)
+    if raw is not None:
+        try:
+            site_pk = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return (await db.execute(
+            select(Site).where(Site.id == site_pk, Site.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+    # registry building ref → primary linked site (only when registry mode is on)
+    return await _resolve_building_primary_site(db, tenant_id, location_ref)
+
+
+async def _resolve_building_primary_site(db: AsyncSession, tenant_id: str, building_ref: str):
+    from app.services.customer import portfolio_registry_view as prv
+    if not prv.registry_mode_enabled(tenant_id):
+        return None
+    raw = decode_ref("bldg", building_ref)
     if raw is None:
         return None
     try:
-        site_pk = int(raw)
+        bid = int(raw)
     except (TypeError, ValueError):
         return None
-    return (await db.execute(
-        select(Site).where(Site.id == site_pk, Site.tenant_id == tenant_id)
-    )).scalar_one_or_none()
+    from app.models.portfolio_registry import PortfolioBuilding
+    b = (await db.execute(select(PortfolioBuilding).where(
+        PortfolioBuilding.id == bid, PortfolioBuilding.tenant_id == tenant_id))).scalar_one_or_none()
+    if b is None or not (b.approved or prv._include_pending(tenant_id)):
+        return None
+    sites = (await db.execute(select(Site).where(Site.tenant_id == tenant_id))).scalars().all()
+    # reuse the read-model linkage (no assurance needed here — just identity)
+    _si, by_store, by_addr, dev_site = await prv._link_indexes(db, tenant_id, [(s, None) for s in sites])
+    site_ids = prv._resolve_building_site_ids(b, by_store, by_addr, dev_site)
+    for site in sites:
+        if site.site_id in site_ids:
+            return site
+    return None
 
 
 async def load_e911_history(db: AsyncSession, tenant_id: str, site_id: str):

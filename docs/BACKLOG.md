@@ -261,6 +261,29 @@
   `LOCATION_DIGITAL_TWIN.md` §10, `RH_GO_LIVE_RUNBOOK.md` §4d.
   - **Roadmap:** operator UI for the review queue; auto-suggest aliases/mappings with
     confidence; registry-backed customer Digital Twin read path.
+  - ✅ **Merged** (PR #162, `5638595`).
+
+### Phase 3.15 — Customer dashboard → Portfolio Registry integration (IN PROGRESS; branch `feat/customer-portfolio-registry-view`, PR open)
+- **RH-P3.15-CUSTVIEW — Render the customer view from canonical PortfolioBuildings.** 🔧 *PR open 2026-07-02, not merged.*
+  Moves the RH dashboard + Location/Building Workspace from raw `Site` rows to canonical
+  buildings (fixes stale 42/42 vs 56 canonical, and 0-services / 0-health KPIs).
+  Additive, read-only, flag-gated OFF. New flags: `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY`
+  + `CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST`, `CUSTOMER_SHOW_PENDING_PORTFOLIO_BUILDINGS`,
+  `CUSTOMER_PORTFOLIO_PREVIEW_PENDING` + `CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST`.
+  Customer-safe `serialize.portfolio_building` (confidence bucket; no Zoho/Napco/Genesis/
+  ICCID/IMEI/alias/review internals); read model `services/customer/portfolio_registry_view.py`
+  (approved+pending buildings → linked True911 sites → derived services/E911/health;
+  legacy fallback when off/empty). Endpoints (dashboard/summary/health/services/locations/
+  {ref}/services/health/search) render from the registry when enabled; `resolve_site`
+  accepts `bldg` refs. Pending policy (approved visible; pending behind flag; calm
+  "Portfolio record being finalized"). UI normalizes to building_ref/display_name; no
+  source terms leak; Vite build green. Audit `scripts/customer_registry_view_audit.py`.
+  Read-only — no registry/source writes, no auto-created Sites, no E911 auto-verify, no
+  Judy invite. Tests: `test_customer_portfolio_registry_view.py` (12); full suite 3880.
+  Docs: `CUSTOMER_COMMAND_CENTER.md` §8e, `LOCATION_DIGITAL_TWIN.md` §10,
+  `RH_GO_LIVE_RUNBOOK.md` §4e.
+  - **Roadmap:** internal approval UI to materialize + approve the 56 candidates;
+    registry-backed e911/timeline sub-resources; per-building contribution counts.
 
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.

@@ -8,9 +8,51 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — Portfolio Registry & Persistent Digital Twin (branch `feat/portfolio-registry`, PR open, NOT merged) [2026-07-02]
+## 0·NEXT — Customer Dashboard → Portfolio Registry integration (branch `feat/customer-portfolio-registry-view`, PR open, NOT merged) [2026-07-02]
 
-Evolves the Fusion Engine from a reconciliation tool into the permanent **Portfolio
+Moves the RH customer dashboard + Location/Building Workspace from raw `Site` rows to
+canonical **PortfolioBuildings** (fixes the stale 42/42 vs 56-canonical count and the
+0-services / 0-health KPIs). Additive, read-only, flag-gated **OFF** by default.
+
+- **Config flags** (default OFF): `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY` +
+  `CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST` (two-key), plus
+  `CUSTOMER_SHOW_PENDING_PORTFOLIO_BUILDINGS` and `CUSTOMER_PORTFOLIO_PREVIEW_PENDING` +
+  `CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST` (pending policy).
+- **Serializer** `serialize.portfolio_building` — customer-safe canonical building
+  (building_ref, canonical/display name, store#, category, status,
+  customer_visible_status, address, map_point, confidence bucket, protection,
+  services, equipment/phone counts, E911, separated health, maturity). Never exposes
+  Zoho/Napco/Genesis ids, ICCID, IMEI, radios, aliases, or review payloads.
+- **Read model** `services/customer/portfolio_registry_view.py` — loads approved
+  (+ pending under flag) buildings, links each to its True911 Site(s) via
+  device-mapping/store#/address, derives services/E911/health (reusing assurance +
+  service inference); returns `None` → **legacy fallback** when off or no visible
+  buildings (internal log only, no customer-facing fallback language).
+- **Endpoints** (registry mode): dashboard, /portfolio/summary, /portfolio/health,
+  /portfolio/services, /locations, /locations/{ref}, /locations/{ref}/services,
+  /locations/{ref}/health, /search render from the registry; `resolve_site` also
+  accepts a `bldg` ref so e911/timeline/contributions keep working. Pagination ≤100,
+  search by canonical name/store/city/state/phone.
+- **Pending policy**: approved visible; pending hidden by default; preview flag shows
+  all for the internal RH test user; calm wording "Portfolio record being finalized"
+  (never "pending review").
+- **UI**: `CustomerAssuranceView.jsx` + `LocationCommandCenter.jsx` normalize to
+  `building_ref`/`display_name` (works in both modes); canonical names; no source
+  terms in the customer surface. Vite build green.
+- **Audit script** `scripts/customer_registry_view_audit.py` — reports flag state,
+  approved/pending/legacy counts, and the effective mode (legacy_site/registry/fallback).
+- **Read-only**: no writes to registry or any source; no auto-created Sites; E911
+  never verified; no Judy invite.
+- Tests: `test_customer_portfolio_registry_view.py` (12) + full suite green (**3880**).
+  Docs: `CUSTOMER_COMMAND_CENTER.md` §8e, `LOCATION_DIGITAL_TWIN.md` §10,
+  `RH_GO_LIVE_RUNBOOK.md` §4e, `PORTFOLIO_REGISTRY.md`.
+
+**Judy invite remains BLOCKED** — pending fusion → sync → approve → enable flag →
+verify RH Test dashboard count (runbook §4e).
+
+## 0·PREV — Portfolio Registry & Persistent Digital Twin (PR #162, MERGED `5638595`) [2026-07-02]
+
+Evolved the Fusion Engine from a reconciliation tool into the permanent **Portfolio
 Registry** that powers every customer Digital Twin — it no longer rediscovers the RH
 portfolio each run; it reconciles against an operator-**approved** registry. Additive,
 read-only fusion; registry writes only via an explicit approval workflow.

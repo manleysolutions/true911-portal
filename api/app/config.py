@@ -195,6 +195,24 @@ class Settings(BaseSettings):
     FEATURE_CUSTOMER_PREVIEW: str = "false"
     CUSTOMER_PREVIEW_TENANT_ALLOWLIST: str = ""
 
+    # ── Customer Portfolio Registry read model ─────────────────────
+    # When enabled (two-key: FEATURE_CUSTOMER_PORTFOLIO_REGISTRY == "true" AND the
+    # caller's tenant in CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST), the customer
+    # dashboard + Location/Building Workspace render from the approved Portfolio
+    # Registry (canonical PortfolioBuildings) instead of raw Site rows.  READ-ONLY:
+    # it never writes the registry or any source, never auto-creates Sites, never
+    # marks E911 verified.  If the registry has no visible buildings yet it falls
+    # back to the legacy Site path (customer sees no fallback language).  Default OFF.
+    FEATURE_CUSTOMER_PORTFOLIO_REGISTRY: str = "false"
+    CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST: str = ""
+    # Show high-confidence, customer-safe PENDING (unapproved) buildings to the
+    # customer.  Default false — customers see approved buildings only.
+    CUSTOMER_SHOW_PENDING_PORTFOLIO_BUILDINGS: str = "false"
+    # Internal RH pre-go-live preview: an allowlisted tenant's test user previews ALL
+    # buildings (approved + pending) so operators can validate before approval.
+    CUSTOMER_PORTFOLIO_PREVIEW_PENDING: str = "false"
+    CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST: str = ""
+
     # ── AI Customer Operations Center / Support Center ─────────────
     # Caller-facing Tier-1 support workflow: identifier lookup → SMS-OTP
     # caller verification → temporary support session → triage → human
@@ -470,6 +488,19 @@ class Settings(BaseSettings):
             for t in self.CUSTOMER_PREVIEW_TENANT_ALLOWLIST.split(",")
             if t.strip()
         }
+
+    @property
+    def customer_portfolio_registry_tenant_id_set(self) -> set[str]:
+        """Tenants whose customer view renders from the Portfolio Registry (when
+        FEATURE_CUSTOMER_PORTFOLIO_REGISTRY is on)."""
+        return {t.strip() for t in self.CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST.split(",")
+                if t.strip()}
+
+    @property
+    def customer_portfolio_preview_tenant_id_set(self) -> set[str]:
+        """Tenants whose test user may preview ALL (approved + pending) buildings."""
+        return {t.strip() for t in self.CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST.split(",")
+                if t.strip()}
 
 
 settings = Settings()
