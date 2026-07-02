@@ -330,13 +330,13 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
           <div className="flex items-center justify-between">
             <nav className="flex items-center gap-1 text-[11px] text-slate-400 min-w-0">
               <span>Portfolio</span><ChevronRight className="w-3 h-3" />
-              <span className="text-slate-700 font-medium truncate">{detail?.location || locationName}</span>
+              <span className="text-slate-700 font-medium truncate">{detail?.display_name || detail?.location || locationName}</span>
             </nav>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="Close"><X className="w-4 h-4" /></button>
           </div>
           <div className="flex items-center gap-2 mt-2">
             <ShieldCheck className="w-4 h-4 text-slate-700 flex-shrink-0" />
-            <h2 className="text-[15px] font-semibold text-slate-900 truncate flex-1">{detail?.location || locationName}</h2>
+            <h2 className="text-[15px] font-semibold text-slate-900 truncate flex-1">{detail?.display_name || detail?.location || locationName}</h2>
             {health?.maturity && <MaturityBadge maturity={health.maturity} />}
             {detail && <StatusChip status={detail.protection?.status} />}
           </div>

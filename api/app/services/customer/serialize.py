@@ -14,6 +14,7 @@ Rules baked in here (not left to callers):
 
 from __future__ import annotations
 
+import re
 from typing import Iterable, Optional
 
 from app.services.customer.refs import encode_ref
@@ -765,3 +766,90 @@ def building_maturity(signals: dict) -> dict:
         "dimensions": dims,
         "next_steps": [d["label"] for d in dims if not d["met"]][:4],
     }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Portfolio-Registry customer serializer (canonical Building → customer-safe).
+# Renders a registry-backed Digital Twin.  NEVER exposes source-system internals
+# (Zoho/Napco/Genesis ids, ICCID, IMEI, radio numbers, carrier creds, raw aliases,
+# or registry review payloads).  ``b`` is the aggregated read-model record.
+# ══════════════════════════════════════════════════════════════════════
+_BUILDING_CATEGORY_LABEL = {
+    "store": "Gallery", "gallery": "Gallery", "outlet": "Outlet", "warehouse": "Warehouse",
+    "guest_house": "Guest House", "distribution_center": "Distribution Center",
+    "corporate": "Corporate Office", "special": "Gallery",
+}
+
+
+def confidence_bucket(conf) -> str:
+    """Coarse, customer-safe confidence — never a raw score/source detail."""
+    if conf is None:
+        return "Needs review"
+    return "High" if conf >= 80 else "Medium" if conf >= 50 else "Needs review"
+
+
+def building_display_name(canonical_name, store_number, city, site_type) -> str:
+    """A calm customer display name — e.g. 'Chicago Gallery #147', 'Linden House
+    Gallery' — with the operating company and store jargon stripped."""
+    label = _BUILDING_CATEGORY_LABEL.get((site_type or "").lower(), "Location")
+    base = re.sub(r"(?i)\brestoration hardware\b|\brh\b|#\s*\d+|\bstore\b|\(main account\)",
+                  " ", canonical_name or "")
+    base = re.sub(r"\s+", " ", base).strip(" -–,")
+    if city:
+        name = f"{city} {label}"
+    elif base:
+        name = base if label.lower() in base.lower() else f"{base} {label}"
+    else:
+        name = label
+    if store_number and str(store_number).isdigit():
+        name = f"{name} #{store_number}"
+    return name
+
+
+def portfolio_building(b: dict) -> dict:
+    """Customer-safe canonical Building (list + detail share this shape).  Only the
+    approved-registry identity + derived operational/E911/health facts; no
+    source-system internals ever."""
+    site_type = b.get("site_type")
+    store = b.get("store_number")
+    city = b.get("city")
+    display = b.get("display_name") or building_display_name(b.get("canonical_name"), store, city, site_type)
+    pending = bool(b.get("pending"))
+    protection = b.get("protection") or status_object("Unknown")
+    return {
+        "building_ref": b["building_ref"],
+        "canonical_name": b.get("canonical_name"),
+        "display_name": display,
+        "store_number": store,
+        "site_type": site_type,
+        "building_category": b.get("building_category"),
+        "status": b.get("status") or "active",
+        # calm customer wording; pending buildings never say "pending review"
+        "customer_visible_status": ("Portfolio record being finalized" if pending
+                                    else protection.get("status", "Unknown")),
+        "service_address": b.get("address") if not pending else None,
+        "city": city,
+        "state": b.get("state"),
+        "zip": b.get("zip"),
+        "map_point": b.get("map_point"),
+        "confidence": confidence_bucket(b.get("confidence")),
+        "protection": protection,
+        "life_safety_services": b.get("services") or [],
+        "life_safety_services_count": len(b.get("services") or []),
+        "equipment_count": b.get("equipment_count", 0),
+        "phone_number_count": b.get("phone_count", 0),
+        "emergency_address_state": b.get("e911_state") or "Verification Pending",
+        "building_health": b.get("separated_health"),
+        "maturity": b.get("maturity"),
+        "completeness": b.get("completeness"),
+    }
+
+
+def portfolio_building_summary(b: dict) -> dict:
+    """List-level canonical Building (omits street, mirrors ``location_summary``)."""
+    full = portfolio_building(b)
+    return {k: full[k] for k in (
+        "building_ref", "canonical_name", "display_name", "store_number", "site_type",
+        "building_category", "status", "customer_visible_status", "city", "state",
+        "map_point", "confidence", "protection", "life_safety_services_count",
+        "equipment_count", "phone_number_count", "emergency_address_state")}

@@ -23,6 +23,7 @@ from app.services import e911_review
 from app.services.customer import command_center as cc
 from app.services.customer import contributions as contrib
 from app.services.customer import portfolio as cportfolio
+from app.services.customer import portfolio_registry_view as prv
 from app.services.customer import serialize as cs
 from app.services.customer.gate import require_customer_api
 from app.services.customer.preview import preview_enabled
@@ -55,8 +56,12 @@ async def customer_dashboard(
     is computed by the Assurance engine per site; no false green (evidence
     enforced in the serializer).  ``recent_manley_activity`` is deferred (PR-C2)."""
     now = datetime.now(timezone.utc)
-    portfolio = await cportfolio.load_portfolio(db, current_user.tenant_id, now)
     company = await cportfolio.company_name(db, current_user.tenant_id)
+    # Registry-backed mode: canonical buildings instead of raw Site rows.
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        return {"as_of": now.isoformat(), "data": prv.dashboard(records, company, now)}
+    portfolio = await cportfolio.load_portfolio(db, current_user.tenant_id, now)
     counts = cs.portfolio_counts([p["status"] for _, p in portfolio])
     feed = [cs.attention_item(s, protection=p) for s, p in portfolio if p["status"] != "Protected"]
     feed.sort(key=lambda it: _ATTENTION_RANK.get(it["status"], 9))
@@ -86,6 +91,11 @@ async def customer_locations(
 ) -> dict:
     """Tenant-scoped, plain-language location list (assurance label per site)."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        return {"as_of": now.isoformat(),
+                "data": prv.locations_page(records, status_filter=status_filter, q=q,
+                                           page=page, page_size=page_size)}
     portfolio = await cportfolio.load_portfolio(db, current_user.tenant_id, now)
     if status_filter:
         portfolio = [(s, p) for s, p in portfolio if p["status"] == status_filter]
@@ -118,6 +128,12 @@ async def customer_location_detail(
     """Single location detail with a minimal services[] preview (PR-C3).  No
     full E911 object (its own endpoint).  Unknown / forged / cross-tenant -> 404."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        detail = prv.building_detail(records, location_ref)
+        if detail is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+        return {"as_of": now.isoformat(), "data": detail}
     resolved = await cportfolio.resolve_location(db, current_user.tenant_id, location_ref, now)
     if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
@@ -364,6 +380,10 @@ async def customer_portfolio_summary(
     """Executive portfolio metrics (Command Center header) — aggregates over
     customer-safe data + an evidence-graded health score."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        company = await cportfolio.company_name(db, current_user.tenant_id)
+        return {"as_of": now.isoformat(), "data": prv.summary(records, company, now)}
     return {"as_of": now.isoformat(), "data": await cc.load_portfolio_summary(db, current_user.tenant_id, now)}
 
 
@@ -378,6 +398,9 @@ async def customer_portfolio_health(
     """Enterprise Portfolio Health score + component breakdown (Phase 6).
     Unknown inputs lower confidence; nothing is fabricated."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        return {"as_of": now.isoformat(), "data": prv.health(records)}
     return {"as_of": now.isoformat(), "data": await cc.load_portfolio_health(db, current_user.tenant_id, now)}
 
 
@@ -392,6 +415,9 @@ async def customer_services_summary(
     """Portfolio Life-Safety service inventory — totals, protected/attention, and
     a by-type breakdown (Phase 6).  Service-derived, not a raw device count."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        return {"as_of": now.isoformat(), "data": prv.services_summary(records)}
     return {"as_of": now.isoformat(), "data": await cc.load_services_summary(db, current_user.tenant_id, now)}
 
 
@@ -407,6 +433,9 @@ async def customer_search(
     """Enterprise search across store name/number, city, state, phone number,
     and service/equipment type — returns matching locations (customer-safe)."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        return {"as_of": now.isoformat(), "data": prv.search(records, q)}
     return {"as_of": now.isoformat(), "data": await cc.search_portfolio(db, current_user.tenant_id, q, now)}
 
 
@@ -422,6 +451,13 @@ async def customer_location_services(
     """Life-Safety Services for a location, each with the equipment that supports
     it grouped beneath (service-first).  Unknown / cross-tenant -> 404."""
     now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        detail = prv.building_detail(records, location_ref)
+        if detail is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+        return {"as_of": now.isoformat(),
+                "data": {"location": detail["display_name"], "services": detail["services"]}}
     data = await cc.load_location_services(db, current_user.tenant_id, location_ref, now)
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
@@ -506,5 +542,12 @@ async def customer_location_health(location_ref: str,
                                    db: AsyncSession = Depends(get_db)) -> dict:
     """Digital Twin building health for one location (real signals; unknown lowers
     confidence, never fabricated)."""
+    now = datetime.now(timezone.utc)
+    records = await prv.load_customer_buildings(db, current_user.tenant_id, now)
+    if records is not None:
+        data = prv.location_health_detail(records, location_ref)
+        if data is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+        return {"as_of": now.isoformat(), "data": data}
     return await _twin_subresource(cc.load_location_health, db, current_user.tenant_id,
-                                   location_ref, datetime.now(timezone.utc), pass_now=True)
+                                   location_ref, now, pass_now=True)

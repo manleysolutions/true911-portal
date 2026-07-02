@@ -189,3 +189,13 @@ the portfolio. The registry is written **only** through an explicit approval
 workflow — a fusion run is read-only. This gives every customer Digital Twin a
 stable spine across data refreshes. Full spec: `PORTFOLIO_REGISTRY.md` (and
 `PORTFOLIO_FUSION_ENGINE.md` §7).
+
+**Customer rendering (flag-gated).** When `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY` is on
+for the tenant, the customer dashboard + this Workspace render from the approved
+registry (canonical `PortfolioBuilding` rows) via
+`services/customer/portfolio_registry_view.py` — canonical display names (*Chicago
+Gallery #147*), de-duplicated building counts, and KPIs derived from fusion services
+(no more "0 services" / placeholder health). Aliases and all source-system internals
+are hidden; pending buildings show only under a preview flag with calm wording. Off
+(or registry empty) → unchanged legacy Site behavior. See
+`CUSTOMER_COMMAND_CENTER.md` §8e.

@@ -245,6 +245,34 @@ resolve those buildings instantly and only surface genuinely new/ambiguous data.
 **Registry changes require explicit approval — nothing is applied automatically.**
 Full spec: `docs/customer/PORTFOLIO_REGISTRY.md`.
 
+## 4e. Registry-backed customer view — the go-live gate
+
+The RH dashboard reads legacy `Site` rows until the registry-backed view is enabled.
+Fusion discovered **56 canonical buildings** while the legacy view still shows 42, so
+the customer count must move to the registry. Gate sequence (do NOT send Judy's
+invite until step 6 is green):
+
+1. **Run fusion** — `python -m scripts.rh_portfolio_fusion --tenant restoration-hardware …`
+2. **Sync the review queue** — add `--sync-review-queue` (persists pending items only).
+3. **Approve registry mappings** — an operator approves each building
+   (`approve_new_building` / `approve_alias` / `approve_device_mapping`). Nothing is
+   auto-approved; E911 is never auto-verified.
+4. **Enable the registry-backed customer view** — set (per-service, api + worker):
+   - `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY=true`
+   - `CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST=restoration-hardware`
+   - (internal preview only) `CUSTOMER_PORTFOLIO_PREVIEW_PENDING=true` +
+     `CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST=restoration-hardware`
+5. **Verify the RH Test dashboard count** — run the audit and confirm the mode:
+   `python -m scripts.customer_registry_view_audit --tenant restoration-hardware`
+   (should read `registry_mode` with `customer_visible_count` = approved buildings).
+6. **Only then send Judy's invite** — once the RH Test dashboard shows canonical
+   buildings (not 42/42) and no raw source labels leak.
+
+Flags default OFF, so until step 4 the customer view is byte-for-byte the legacy
+behavior. Rollback: flip `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY=false` — instant, no
+deploy, no data change. Full spec: `docs/customer/PORTFOLIO_REGISTRY.md`,
+`docs/customer/CUSTOMER_COMMAND_CENTER.md` §8e.
+
 ## 5. Verify login
 
 - Judy accepts her invite, sets a password, signs in.
