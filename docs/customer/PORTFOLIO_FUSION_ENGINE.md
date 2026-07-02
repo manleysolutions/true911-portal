@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 1 | **Zoho CRM** | subscription / billing / location context, store #, address | reuses `rh_portfolio_certification` (CSV or live) |
 | 2 | **Napco StarLink** | alarm-radio inventory (RadioNumber / ICCID / SubscriberName) | reuses `inventory_reconciliation.adapters.napco` |
-| 3 | **T-Mobile Genesis** | MS130v4 cellular modems (MSISDN / ICCID / IMEI) | `load_genesis_csv` (tolerant columns); optional API stub |
+| 3 | **T-Mobile Genesis** | MS130v4 cellular modems (MSISDN / ICCID / IMEI) | `load_genesis_csv` (tolerant columns) + **RH row filter** (§3a); optional API stub |
 | 4 | **True911** | authoritative sites / devices / service units / lines / E911 | reuses `rh_portfolio_certification.load_true911` |
 
 `api/scripts/rh_portfolio_fusion.py`. Sources are individually optional, but at
@@ -51,6 +51,29 @@ Phone numbers are normalized to their last 10 digits and identifiers to
 alphanumerics, so `(614) 209-8841` and `6142098841`, or `89-0126:0882` and
 `8901260882`, still match.
 
+### 3a. Genesis RH filtering (before fusion)
+
+A raw Genesis export is the **whole Infatrac subscriber book**, not just RH — so
+the Genesis rows are filtered to RH **before** fusion (otherwise the engine invents
+thousands of non-RH buildings). Two stages:
+
+- **Stage A — direct RH label.** The row's label matches `Restoration Hardware`, a
+  `KNOWN_RH_LOCATIONS` alias, or a standalone `RH` token corroborated by a store
+  number (`RH 150`), a known RH store number, or a known RH **city** drawn from the
+  other sources (`RH Hollywood`, `RH San Francisco`). A bare "rh" **substring** in
+  an unrelated word (Overhead, Fairhaven, Marsh) never matches — only a standalone
+  `RH` token.
+- **Stage B — phone / identifier context.** A non-RH label is kept only when its
+  MSISDN / ICCID / IMEI is already known to belong to RH from Zoho, Napco, or
+  True911.
+
+Everything else is excluded. The RH footprint (store numbers, city tokens, device
+identifiers) is built from the already-RH sources, so filtering is contextual to the
+actual RH portfolio. The report records `genesis_rows_total`,
+`genesis_rows_rh_matched`, and `genesis_rows_excluded`, and a **"Genesis RH rows
+included"** section lists each kept row (MSISDN · status · label · match reason ·
+inferred canonical).
+
 ## 4. Building Digital Twin
 
 Each fused building produces a Digital Twin:
@@ -75,7 +98,10 @@ Each fused building produces a Digital Twin:
   Digital-Twin table, missing-assets and duplicate-assets sections.
 - **Executive dashboard summary** — buildings fused, fully-fused (all 4 sources),
   per-source coverage, by-category counts, buildings missing True911 / E911, device
-  gaps, duplicates, average source confidence.
+  gaps, duplicates, average source confidence, and Genesis rows total / RH-matched /
+  excluded.
+- **Genesis RH rows included** — every kept Genesis row with MSISDN, status, label,
+  match reason, and inferred canonical location.
 
 ## 6. Usage
 

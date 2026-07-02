@@ -264,3 +264,109 @@ def test_cli_requires_a_source(monkeypatch):
 def test_genesis_api_is_read_only_stub():
     with pytest.raises(RuntimeError):
         fz.load_genesis_api()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Genesis RH filtering — the raw export is the whole Infatrac book
+# ══════════════════════════════════════════════════════════════════════
+def _rh_context_true911():
+    """A True911 RH footprint that supplies store #s, cities, and one RH phone."""
+    return {"tenant": "restoration-hardware",
+            "sites": [{"site_id": f"RH-{n}", "name": f"Restoration Hardware #{n}", "street": None,
+                       "city": c, "state": st, "zip": None, "e911_status": "validated"}
+                      for n, c, st in [("150", "Leawood", "KS"), ("149", "Austin", "TX"),
+                                       ("140", "Houston", "TX"), ("187", "Cleveland", "OH"),
+                                       ("142", "Boston", "MA"), ("437", "New York", "NY"),
+                                       ("506", "Toronto", "ON"), ("146", "West Hollywood", "CA"),
+                                       ("161", "San Francisco", "CA")]],
+            "devices": [{"device_id": "D1", "site_id": "RH-140", "msisdn": "7135550140",
+                         "iccid": "ICRH140", "imei": None, "starlink_id": None,
+                         "serial_number": None, "identifier_type": "cellular",
+                         "model": "MS130v4", "device_type": "cellular"}],
+            "units": [], "lines": []}
+
+
+def _g(name, msisdn="9005550000", iccid=None, imei=None, status="active"):
+    return {"name": name, "label": name, "msisdn": msisdn, "iccid": iccid, "imei": imei,
+            "status": status, "street": None, "city": None, "state": None, "zip": None}
+
+
+def test_genesis_rh_label_rows_included():
+    ctx = fz._build_rh_context([], [], _rh_context_true911())
+    labels = ["Restoration hardware 140 Houston elevator", "RH 150 Leawood KS",
+              "RH 437 West 16th Street NYC - Elevator", "RH Hollywood CA - Elevator",
+              "RH San Francisco Pier 70", "RH Toronto Canada -506 Elevator 1"]
+    incl, excl = fz.genesis_rh_filter([_g(x) for x in labels], ctx)
+    assert len(incl) == len(labels) and excl == 0
+    assert all(r["_rh_reason"].startswith(("label:", "context:")) for r in incl)
+
+
+def test_genesis_known_alias_and_store_context():
+    ctx = fz._build_rh_context([], [], _rh_context_true911())
+    incl, _ = fz.genesis_rh_filter([_g("RH MDC Distribution"), _g("Restoration Hardware Beverly Modern")], ctx)
+    reasons = {r["_rh_reason"] for r in incl}
+    assert "label:known_alias" in reasons and any(r.startswith("label:") for r in reasons)
+    assert incl[0]["_rh_canonical"] == "RH MDC (Distribution Center)"
+
+
+def test_genesis_non_rh_and_infatrac_rows_excluded():
+    ctx = fz._build_rh_context([], [], _rh_context_true911())
+    noise = ["Infatrac Test Device", "Overhead Door Company Dallas", "Fairhaven Apartments",
+             "Marsh & McLennan", "Sherwin Williams Store 44", "March Networks Camera",
+             "Elevator Co of America", "Northrop Grumman"]
+    incl, excl = fz.genesis_rh_filter([_g(x, msisdn=f"20255510{i}") for i, x in enumerate(noise)], ctx)
+    assert incl == [] and excl == len(noise)
+
+
+def test_arbitrary_words_containing_rh_excluded():
+    ctx = fz._build_rh_context([], [], _rh_context_true911())
+    # "rh" only as a substring (overhead, fairhaven, marsh) — never a standalone token
+    incl, excl = fz.genesis_rh_filter(
+        [_g("Overhead Door"), _g("Fairhaven Center"), _g("Marsh Supermarket")], ctx)
+    assert incl == [] and excl == 3
+
+
+def test_genesis_rh_phone_context_included_without_label():
+    ctx = fz._build_rh_context([], [], _rh_context_true911())
+    # a non-RH label, but the MSISDN belongs to an RH True911 device -> kept (stage B)
+    incl, excl = fz.genesis_rh_filter([_g("Elevator Line 2", msisdn="713-555-0140")], ctx)
+    assert len(incl) == 1 and incl[0]["_rh_reason"] == "context:msisdn"
+
+
+def test_production_style_sample_matches_about_23_not_thousands():
+    true911 = _rh_context_true911()
+    rh_labels = ["RH Hollywood CA - Elevator", "Restoration hardware 147 Chicago", "RH 150 Leawood KS",
+                 "RH 149 Austin Elevator 2", "Restoration hardware 140 Houston elevator",
+                 "RH 187 Cleveland - Elevator", "RH 142 Boston - Elevator",
+                 "RH 437 West 16th Street NYC - Elevator", "RH Toronto Canada -506 Elevator 1",
+                 "Restoration Hardware - Lindern House", "Restoration Hardware 613 Long Beach - Actual",
+                 "RH San Francisco Pier 70", "RH MDC Distribution", "Restoration Hardware Beverly Modern",
+                 "RH 161 - Elevator", "RH 146 Melrose", "Restoration Hardware #001 Tracy",
+                 "RH 117 Tulsa", "RH 178 Raleigh", "RH 174 Charlotte", "RH 632 Vero Beach",
+                 "RH 652 Bloomfield", "RH 145 Atlanta"]
+    rows = [_g(l, msisdn=f"90055500{i:02d}") for i, l in enumerate(rh_labels)]
+    rows += [_g(f"Infatrac Subscriber {i}", msisdn=f"3035552{i:03d}") for i in range(1600)]  # the book
+    rep = fz.fuse_portfolio(genesis_rows=rows, true911=true911, tenant="restoration-hardware")
+    s = rep["summary"]
+    assert s["genesis_rows_total"] == len(rows)
+    assert 20 <= s["genesis_rows_rh_matched"] <= 26          # ~23, not 1618
+    assert s["genesis_rows_excluded"] == 1600
+    # Genesis coverage no longer explodes buildings
+    assert s["source_coverage"]["genesis"] <= 26
+    assert s["buildings"] < 60                               # not ~1744
+
+
+def test_report_has_genesis_section_and_fields(tmp_path):
+    true911 = _rh_context_true911()
+    rows = [_g("RH 150 Leawood KS"), _g("Infatrac Random", msisdn="3035550001")]
+    rep = fz.fuse_portfolio(genesis_rows=rows, true911=true911, tenant="restoration-hardware")
+    assert rep["summary"]["genesis_rows_rh_matched"] == 1
+    assert rep["summary"]["genesis_rows_excluded"] == 1
+    assert rep["genesis_included"][0]["label"] == "RH 150 Leawood KS"
+    assert rep["genesis_included"][0]["reason"].startswith("label:")
+
+    mpath = tmp_path / "r.md"
+    fz.write_markdown_report(str(mpath), rep)
+    md = mpath.read_text(encoding="utf-8")
+    assert "Genesis RH rows included" in md and "Match reason" in md
+    assert "RH matched" in md
