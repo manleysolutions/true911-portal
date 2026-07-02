@@ -8,7 +8,34 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — Customer Dashboard → Portfolio Registry integration (branch `feat/customer-portfolio-registry-view`, PR open, NOT merged) [2026-07-02]
+## 0·NEXT — RH registry approval operator script (branch `feat/rh-registry-approve`, PR open, NOT merged) [2026-07-02]
+
+Turns the 56 pending `PortfolioReviewItem` candidates into approved `PortfolioBuilding`
+rows so RH flips from `fallback_mode` → `registry_mode` (approved buildings 0 → N).
+New `api/scripts/rh_registry_approve_from_review.py`:
+
+- Reads pending review items, parses the fused candidate payloads, applies the operator
+  **decision table** (`--include-known-rh-decisions`): canonical-name overrides + merges
+  of duplicate candidates (Hollywood, Chicago #147, Beverly Modern, Austin #149,
+  Princeton #644, Linden/MDC/Patterson/RHNYC/Memphis…), and the parent-account exclusion.
+  **Edina #159 and Raleigh #178 stay separate** (keep-separate guard).
+- For each approved candidate it creates the building + aliases (from source names) +
+  device mappings (radio/ICCID/IMEI/MSISDN/true911_device/zoho_account), collision-safe
+  against the registry unique keys, and marks the review item(s) decided — via the
+  existing `approve_new_building` workflow.
+- Flags: `--tenant`, `--dry-run` (default; writes nothing), `--apply`, `--limit N`,
+  `--only-high-confidence`, `--include-known-rh-decisions`. Report: created / merged /
+  excluded / skipped / unresolved + **before/after visible count** (and mode flip).
+- **Scoped writes:** only the Portfolio Registry, only under `--apply`; NEVER Site /
+  Device / E911 / Zoho / Napco / Genesis; E911 never verified; no Judy invite.
+- Tests: `test_rh_registry_approve_from_review.py` (13); full suite green (**3893**).
+  Docs: `RH_GO_LIVE_RUNBOOK.md` §4e step 3.
+
+Go-live gate unchanged: run fusion → sync queue → **approve (this script)** → enable
+the registry-view flags → verify the RH Test dashboard → only then send Judy's invite.
+**Judy invite remains BLOCKED.**
+
+## 0·PREV — Customer Dashboard → Portfolio Registry integration (branch `feat/customer-portfolio-registry-view`, PR open, NOT merged) [2026-07-02]
 
 Moves the RH customer dashboard + Location/Building Workspace from raw `Site` rows to
 canonical **PortfolioBuildings** (fixes the stale 42/42 vs 56-canonical count and the

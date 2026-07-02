@@ -254,9 +254,23 @@ invite until step 6 is green):
 
 1. **Run fusion** — `python -m scripts.rh_portfolio_fusion --tenant restoration-hardware …`
 2. **Sync the review queue** — add `--sync-review-queue` (persists pending items only).
-3. **Approve registry mappings** — an operator approves each building
-   (`approve_new_building` / `approve_alias` / `approve_device_mapping`). Nothing is
-   auto-approved; E911 is never auto-verified.
+3. **Approve registry mappings** — turn the reviewed candidates into approved
+   buildings with the operator approval script (applies the human decisions —
+   merges of duplicate candidates, canonical names, and the parent-account
+   exclusion):
+   ```bash
+   # preview first (writes nothing)
+   python -m scripts.rh_registry_approve_from_review --tenant restoration-hardware \
+       --include-known-rh-decisions --dry-run
+   # then persist (creates PortfolioBuildings + aliases + device mappings; decides reviews)
+   python -m scripts.rh_registry_approve_from_review --tenant restoration-hardware \
+       --include-known-rh-decisions --apply
+   ```
+   It writes ONLY the Portfolio Registry (buildings / aliases / device mappings /
+   review items) and NEVER touches Site / Device / E911 / Zoho / Napco / Genesis;
+   E911 is never auto-verified. Edina #159 and Raleigh #178 stay separate; the
+   "Restoration Hardware" parent account is excluded. (`approve_new_building` /
+   `approve_alias` / `approve_device_mapping` remain available for ad-hoc edits.)
 4. **Enable the registry-backed customer view** — set (per-service, api + worker):
    - `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY=true`
    - `CUSTOMER_PORTFOLIO_REGISTRY_TENANT_ALLOWLIST=restoration-hardware`
