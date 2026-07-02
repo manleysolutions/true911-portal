@@ -86,6 +86,24 @@ def _norm_id(v) -> str:
     return re.sub(r"[^A-Za-z0-9]", "", str(v or "")).upper()
 
 
+def _fusion_store_number(name) -> str | None:
+    """Store number for fusion identity — the certification extractor PLUS bare
+    ``RH <n>`` / ``RH -506`` forms that vendor labels (Napco/Genesis) use without a
+    ``#``.  Leading zeros dropped."""
+    st = cert.extract_store_number(name)
+    if st:
+        return st
+    n = cert.norm_name(name)
+    if re.search(r"\brh\b", n):
+        m = re.search(r"\brh\b[\s\-#]*0*(\d{1,4})", n)          # "RH 149", "RH -506"
+        if m:
+            return m.group(1)
+        nums = re.findall(r"\b0*(\d{3,4})\b", n)                # RH + a store-sized number
+        if nums:
+            return nums[0]
+    return None
+
+
 # ══════════════════════════════════════════════════════════════════════
 # Source adapters — each returns a list of normalized SourceRecord dicts.
 # A SourceRecord carries building identity + the devices/services it contributes.
@@ -127,7 +145,7 @@ def adapt_zoho(rows: list[dict]) -> list[dict]:
     for r in rows:
         name = r.get("account_name") or r.get("facility_name")
         known = cert.match_known_location(name) if hasattr(cert, "match_known_location") else None
-        store = cert.extract_store_number(name)
+        store = _fusion_store_number(name)
         if known and known.get("code") and not (store and store.isdigit()):
             store = known["code"]
         site_type = known["site_type"] if known else cert.detect_site_type(name)
@@ -157,7 +175,7 @@ def adapt_napco(vendor_records: list) -> list[dict]:
     out = []
     for vr in vendor_records:
         label = getattr(vr, "subscriber_name", None) or getattr(vr, "site_hint", None)
-        store = cert.extract_store_number(label)
+        store = _fusion_store_number(label)
         known = cert.match_known_location(label) if hasattr(cert, "match_known_location") else None
         if known and known.get("code") and not (store and store.isdigit()):
             store = known["code"]
@@ -218,7 +236,7 @@ def adapt_genesis(rows: list[dict]) -> list[dict]:
         if not any((r.get("iccid"), r.get("msisdn"), r.get("imei"))):
             continue
         name = r.get("name")
-        store = cert.extract_store_number(name)
+        store = _fusion_store_number(name)
         site_type = cert.detect_site_type(name) if name else None
         dev = _device(kind="ms130", source=SOURCE_GENESIS, imei=r.get("imei"),
                       iccid=r.get("iccid"), msisdn=r.get("msisdn"),
@@ -291,36 +309,31 @@ def _build_rh_context(zoho_rows, napco_records, true911) -> dict:
     return {"stores": stores, "cities": cities, "idents": idents}
 
 
-def _genesis_rh_reason(row: dict, ctx: dict):
-    """Why (if at all) a Genesis row is RH.  None -> excluded."""
-    label = row.get("name") or row.get("label") or ""
+def _label_rh_reason(label, ctx: dict):
+    """Direct RH label match (shared by Napco + Genesis).  None -> no label match.
+    A bare, standalone "RH" only counts with corroboration (store #, known store #,
+    or a known RH city) so generic "Restoration Hardware" alone never overmatches."""
     n = cert.norm_name(label)
-    # ── Stage A: direct RH label ──
-    if n:
-        if "restoration hardware" in n or "restoration hdwr" in n:
-            return "label:restoration_hardware"
-        if hasattr(cert, "match_known_location") and cert.match_known_location(label):
-            return "label:known_alias"
-        if re.search(r"\brh\b", n):        # standalone RH token (never a stray "…rh…")
-            m = re.search(r"\brh\b[\s\-#]*(\d{1,4})", n)     # "RH 150", "RH -506"
-            if m:
-                return f"label:rh_store_{m.group(1)}"
-            if set(re.findall(r"\b(\d{3,4})\b", n)) & ctx["stores"]:  # RH + known store #
-                return "label:rh_store_context"
-            city_hit = sorted(set(n.split()) & ctx["cities"])          # "RH Hollywood" etc.
-            if city_hit:
-                return "label:rh_city_" + city_hit[0]
-    # ── Stage B: phone / identifier context (proves an RH device) ──
-    if _phone_key(row.get("msisdn")) and _phone_key(row.get("msisdn")) in ctx["idents"]:
-        return "context:msisdn"
-    for v in (row.get("iccid"), row.get("imei")):
-        nid = _norm_id(v)
-        if nid and nid in ctx["idents"]:
-            return "context:identifier"
+    if not n:
+        return None
+    if "restoration hardware" in n or "restoration hdwr" in n:
+        return "label:restoration_hardware"
+    if hasattr(cert, "match_known_location") and cert.match_known_location(label):
+        return "label:known_alias"
+    if re.search(r"\brh\b", n):            # standalone RH token (never a stray "…rh…")
+        m = re.search(r"\brh\b[\s\-#]*(\d{1,4})", n)          # "RH 150", "RH -506"
+        if m:
+            return f"label:rh_store_{m.group(1)}"
+        if set(re.findall(r"\b(\d{3,4})\b", n)) & ctx["stores"]:   # RH + known store #
+            return "label:rh_store_context"
+        city_hit = sorted(set(n.split()) & ctx["cities"])          # "RH Hollywood" etc.
+        if city_hit:
+            return "label:rh_city_" + city_hit[0]
     return None
 
 
-def _infer_genesis_canonical(label):
+def _infer_canonical(label):
+    """Best canonical building name for a bare vendor label (known alias / store #)."""
     known = cert.match_known_location(label) if hasattr(cert, "match_known_location") else None
     if known:
         return known["canonical_name"]
@@ -331,6 +344,24 @@ def _infer_genesis_canonical(label):
     return f"RH #{m.group(1)}" if m else None
 
 
+_infer_genesis_canonical = _infer_canonical      # back-compat alias
+
+
+def _genesis_rh_reason(row: dict, ctx: dict):
+    """Why (if at all) a Genesis row is RH.  None -> excluded."""
+    reason = _label_rh_reason(row.get("name") or row.get("label"), ctx)
+    if reason:
+        return reason
+    # Stage B: phone / identifier context (proves an RH device)
+    if _phone_key(row.get("msisdn")) and _phone_key(row.get("msisdn")) in ctx["idents"]:
+        return "context:msisdn"
+    for v in (row.get("iccid"), row.get("imei")):
+        nid = _norm_id(v)
+        if nid and nid in ctx["idents"]:
+            return "context:identifier"
+    return None
+
+
 def genesis_rh_filter(rows: list[dict], ctx: dict) -> tuple[list[dict], int]:
     """Keep only RH-related Genesis rows (two-stage).  Returns (rh_rows, excluded)."""
     included, excluded = [], 0
@@ -339,8 +370,40 @@ def genesis_rh_filter(rows: list[dict], ctx: dict) -> tuple[list[dict], int]:
         if reason:
             r2 = dict(r)
             r2["_rh_reason"] = reason
-            r2["_rh_canonical"] = _infer_genesis_canonical(r.get("name") or r.get("label"))
+            r2["_rh_canonical"] = _infer_canonical(r.get("name") or r.get("label"))
             included.append(r2)
+        else:
+            excluded += 1
+    return included, excluded
+
+
+# ── Napco RH filtering ───────────────────────────────────────────────
+# A Napco Radiolist is the dealer's WHOLE book (schools, apartments, other retailers,
+# individuals, municipalities) — filter to RH before fusing.  Stage A: the subscriber
+# label is RH.  Stage B: the radio number / ICCID is a known RH device (from Zoho /
+# True911).
+def _napco_rh_reason(vr, ctx: dict):
+    label = getattr(vr, "subscriber_name", None) or getattr(vr, "site_hint", None) or ""
+    reason = _label_rh_reason(label, ctx)
+    if reason:
+        return reason
+    for v, kind in ((getattr(vr, "radio_number", None), "radio"),
+                    (getattr(vr, "iccid", None), "iccid")):
+        nid = _norm_id(v)
+        if nid and nid in ctx["idents"]:
+            return f"context:{kind}"
+    return None
+
+
+def napco_rh_filter(vendor_records: list, ctx: dict) -> tuple[list[dict], int]:
+    """Keep only RH-related Napco VendorRecords.  Returns (list of
+    {record, reason, canonical}, excluded)."""
+    included, excluded = [], 0
+    for vr in vendor_records:
+        reason = _napco_rh_reason(vr, ctx)
+        if reason:
+            label = getattr(vr, "subscriber_name", None) or getattr(vr, "site_hint", None)
+            included.append({"record": vr, "reason": reason, "canonical": _infer_canonical(label)})
         else:
             excluded += 1
     return included, excluded
@@ -389,7 +452,7 @@ def adapt_true911(true911: dict) -> list[dict]:
     for s in sites:
         sid = s.get("site_id")
         name = s.get("name")
-        store = cert.extract_store_number(name)
+        store = _fusion_store_number(name)
         devs = []
         for d in by_site_dev.get(sid, []):
             devs.append(_device(kind=_t911_device_kind(d), source=SOURCE_TRUE911,
@@ -415,11 +478,33 @@ def adapt_true911(true911: dict) -> list[dict]:
 # Fusion — resolve source records into buildings + Building Digital Twins.
 # (pure; unit-tested)
 # ══════════════════════════════════════════════════════════════════════
-def _record_join_keys(r: dict) -> set:
-    keys = set()
+_GENERIC_RH_TOKENS = frozenset({"restoration", "hardware", "hdwr", "rh"})
+
+
+def _building_key(r: dict):
+    """The strongest *identity* join key for a record — numeric store #, alpha store
+    code, known alias, or a distinctive location-token set.  Bare "Restoration
+    Hardware" (no distinctive tokens) yields no key, so it never overmatches."""
+    name = r.get("name")
     store = r.get("store_number")
     if store and str(store).isdigit():
-        keys.add(("store", str(store)))
+        return ("store", str(store))
+    if store:
+        return ("code", str(store).upper())
+    known = cert.match_known_location(name) if hasattr(cert, "match_known_location") else None
+    if known:
+        return ("alias", known["canonical_name"])
+    # distinctive alpha tokens (>=4 chars, generic RH words stripped, digits dropped)
+    toks = sorted(t for t in (set(cert.norm_name(name).split()) - _GENERIC_RH_TOKENS)
+                  if len(t) >= 4 and not t.isdigit())
+    return ("name", " ".join(toks)) if toks else None
+
+
+def _record_join_keys(r: dict) -> set:
+    keys = set()
+    bk = _building_key(r)                 # store # / code / alias / distinctive name
+    if bk:
+        keys.add(bk)
     if r.get("street"):
         na = cert.norm_addr(r.get("street"), r.get("city"), r.get("state"))
         if na:
@@ -590,14 +675,22 @@ def fuse_portfolio(*, zoho_rows=None, napco_records=None, genesis_rows=None,
     genesis_rows = genesis_rows or []
     true911 = true911 or {}
 
-    # Genesis is the full Infatrac export -> keep only RH rows before fusing.
-    ctx = _build_rh_context(zoho_rows, napco_records, true911)
+    # Vendor exports (Napco Radiolist, Genesis book) contain the WHOLE dealer/carrier
+    # book — filter each to RH before fusing.  Build the RH context from the already-RH
+    # spine (Zoho + True911) first, then extend it with the RH-matched Napco devices so
+    # Genesis can also match on Napco-proven identifiers.
+    base_ctx = _build_rh_context(zoho_rows, [], true911)
+    napco_total = len(napco_records)
+    napco_incl, napco_excluded = napco_rh_filter(napco_records, base_ctx)
+    napco_rh = [d["record"] for d in napco_incl]
+
+    full_ctx = _build_rh_context(zoho_rows, napco_rh, true911)
     genesis_total = len(genesis_rows)
-    genesis_incl, genesis_excluded = genesis_rh_filter(genesis_rows, ctx)
+    genesis_incl, genesis_excluded = genesis_rh_filter(genesis_rows, full_ctx)
 
     records = []
     records += adapt_zoho(zoho_rows)
-    records += adapt_napco(napco_records)
+    records += adapt_napco(napco_rh)
     records += adapt_genesis(genesis_incl)
     records += adapt_true911(true911)
 
@@ -619,15 +712,30 @@ def fuse_portfolio(*, zoho_rows=None, napco_records=None, genesis_rows=None,
                 t["duplicate_assets"].append("Shares address with another building: " + names)
 
     summary = _dashboard(twins, tenant, records)
+    summary["source_rows"] = {
+        SOURCE_ZOHO: len(zoho_rows), SOURCE_NAPCO: napco_total,
+        SOURCE_GENESIS: genesis_total, SOURCE_TRUE911: len(true911.get("sites", [])),
+    }
+    summary["napco_rows_total"] = napco_total
+    summary["napco_rows_rh_matched"] = len(napco_incl)
+    summary["napco_rows_excluded"] = napco_excluded
     summary["genesis_rows_total"] = genesis_total
     summary["genesis_rows_rh_matched"] = len(genesis_incl)
     summary["genesis_rows_excluded"] = genesis_excluded
+
     genesis_included = [{
         "msisdn": _phone_key(r.get("msisdn")) or r.get("msisdn"),
         "status": r.get("status"), "label": r.get("name") or r.get("label"),
         "reason": r.get("_rh_reason"), "canonical": r.get("_rh_canonical"),
     } for r in genesis_incl]
-    return {"summary": summary, "buildings": twins, "genesis_included": genesis_included}
+    napco_included = [{
+        "radio_number": getattr(d["record"], "radio_number", None),
+        "subscriber_name": getattr(d["record"], "subscriber_name", None),
+        "iccid": getattr(d["record"], "iccid", None),
+        "canonical": d["canonical"], "reason": d["reason"],
+    } for d in napco_incl]
+    return {"summary": summary, "buildings": twins,
+            "napco_included": napco_included, "genesis_included": genesis_included}
 
 
 def _dashboard(twins: list[dict], tenant, records) -> dict:
@@ -636,12 +744,15 @@ def _dashboard(twins: list[dict], tenant, records) -> dict:
     fully_fused = sum(1 for t in twins if set(ALL_SOURCES) <= set(t["sources"]))
     total_devices = sum(len(t["devices"]) for t in twins)
     devices_missing_t911 = sum(1 for t in twins for d in t["devices"] if not d["in_true911"])
+    device_counts_by_source = {
+        s: sum(1 for t in twins for d in t["devices"] if s in d["sources"]) for s in ALL_SOURCES}
     return {
         "tenant": tenant,
         "source_records": len(records),
         "buildings": len(twins),
         "by_category": by_category,
         "source_coverage": src_coverage,
+        "device_counts_by_source": device_counts_by_source,
         "fully_fused_all_sources": fully_fused,
         "buildings_missing_true911": sum(1 for t in twins if SOURCE_TRUE911 not in t["sources"]),
         "buildings_e911_unverified": sum(1 for t in twins if not t["e911"]["verified"]),
@@ -685,11 +796,21 @@ def write_json(path: str, report: dict) -> None:
 
 def _dashboard_lines(s: dict) -> list[str]:
     L = ["## Executive dashboard", ""]
-    L.append(f"- Buildings fused: **{s['buildings']}** (from {s['source_records']} source records)")
+    # Source ROW counts are distinct from canonical BUILDING counts.
+    sr = s.get("source_rows", {})
+    if sr:
+        L.append(f"- Source rows in — Zoho {sr.get('zoho', 0)} · Napco {sr.get('napco', 0)} · "
+                 f"Genesis {sr.get('genesis', 0)} · True911 {sr.get('true911', 0)}")
+    L.append(f"- **Canonical buildings: {s['buildings']}** (fused from {s['source_records']} "
+             f"RH-matched source records)")
     L.append(f"- Fully fused (all 4 sources): **{s['fully_fused_all_sources']}**")
     cov = s["source_coverage"]
-    L.append(f"- Source coverage — Zoho {cov['zoho']} · Napco {cov['napco']} · "
+    L.append(f"- Building coverage — Zoho {cov['zoho']} · Napco {cov['napco']} · "
              f"Genesis {cov['genesis']} · True911 {cov['true911']}")
+    dc = s.get("device_counts_by_source", {})
+    if dc:
+        L.append(f"- Devices by source — Zoho {dc.get('zoho', 0)} · Napco {dc.get('napco', 0)} · "
+                 f"Genesis {dc.get('genesis', 0)} · True911 {dc.get('true911', 0)}")
     L.append("- By category — " + (", ".join(f"{k}: {v}" for k, v in sorted(s["by_category"].items()))
                                     or "—"))
     L.append(f"- Buildings missing a True911 site: **{s['buildings_missing_true911']}**")
@@ -698,6 +819,10 @@ def _dashboard_lines(s: dict) -> list[str]:
     L.append(f"- Buildings with missing assets: {s['buildings_with_missing_assets']} · "
              f"with duplicates: {s['buildings_with_duplicates']}")
     L.append(f"- Average source confidence: **{s['avg_source_confidence']}**")
+    if "napco_rows_total" in s:
+        L.append(f"- Napco rows — total {s['napco_rows_total']} · "
+                 f"RH matched **{s['napco_rows_rh_matched']}** · "
+                 f"excluded (non-RH) {s['napco_rows_excluded']}")
     if "genesis_rows_total" in s:
         L.append(f"- Genesis rows — total {s['genesis_rows_total']} · "
                  f"RH matched **{s['genesis_rows_rh_matched']}** · "
@@ -750,6 +875,41 @@ def write_markdown_report(path: str, report: dict) -> None:
         L.append("|---|---|")
         for t, d in dup:
             L.append(f"| {t['canonical_name']} | {d} |")
+    L.append("")
+
+    # Duplicate / ambiguous clusters — buildings fused from >1 True911 site or a
+    # shared address (candidates for de-duplication, not separate real buildings)
+    L.append("## Duplicate / ambiguous clusters")
+    ambiguous = [t for t in twins if t["duplicate_assets"]]
+    if not ambiguous:
+        L.append("_None._")
+    else:
+        L.append("| Building | Store # | Sources | Devices | Issue |")
+        L.append("|---|---|---|--:|---|")
+        for t in ambiguous:
+            L.append(f"| {t['canonical_name']} | {t['store_number'] or '—'} | "
+                     f"{','.join(t['sources'])} | {len(t['devices'])} | "
+                     f"{'; '.join(t['duplicate_assets'])} |")
+    L.append("")
+
+    # Napco RH rows included (why each Napco radio was kept)
+    L.append("## Napco RH rows included")
+    if "napco_rows_total" in s:
+        L.append(f"Napco rows total **{s['napco_rows_total']}** · RH matched "
+                 f"**{s['napco_rows_rh_matched']}** · excluded (non-RH) "
+                 f"**{s['napco_rows_excluded']}**.")
+        L.append("")
+    ni = report.get("napco_included", [])
+    if not ni:
+        L.append("_No Napco source provided, or no RH rows matched._")
+    else:
+        L.append("| Radio # | Subscriber name | ICCID | Canonical | Match reason |")
+        L.append("|---|---|---|---|---|")
+        for n_ in ni[:200]:
+            L.append(f"| {n_['radio_number'] or '—'} | {n_['subscriber_name'] or '—'} | "
+                     f"{n_['iccid'] or '—'} | {n_['canonical'] or '—'} | {n_['reason']} |")
+        if len(ni) > 200:
+            L.append(f"| … | | | | (+{len(ni) - 200} more — see JSON) |")
     L.append("")
 
     # Genesis RH rows included (why each Genesis row was kept)

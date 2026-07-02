@@ -370,3 +370,164 @@ def test_report_has_genesis_section_and_fields(tmp_path):
     md = mpath.read_text(encoding="utf-8")
     assert "Genesis RH rows included" in md and "Match reason" in md
     assert "RH matched" in md
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Napco RH filtering + over-splitting fixes
+# ══════════════════════════════════════════════════════════════════════
+def _napco(radio, iccid, subscriber):
+    return SimpleNamespace(vendor="napco", radio_number=radio, iccid=iccid,
+                           subscriber_name=subscriber, site_hint=subscriber)
+
+
+def _rh_true911():
+    return {"tenant": "restoration-hardware",
+            "sites": [{"site_id": f"RH-{n}", "name": f"Restoration Hardware #{n}", "street": None,
+                       "city": c, "state": st, "zip": None, "e911_status": "validated"}
+                      for n, c, st in [("177", "Jacksonville", "FL"), ("149", "Austin", "TX"),
+                                       ("140", "Houston", "TX")]],
+            "devices": [{"device_id": "D1", "site_id": "RH-177", "msisdn": "9045550177",
+                         "iccid": "ICRH177", "imei": None, "starlink_id": "RAD177",
+                         "serial_number": "RAD177", "identifier_type": "starlink", "model": "SLE",
+                         "device_type": "fire_alarm"}],
+            "units": [], "lines": []}
+
+
+def test_napco_non_rh_rows_excluded():
+    napco = [_napco("R1", "IC1", "Lincoln Elementary School"),
+             _napco("R2", "IC2", "Maple Grove Apartments"),
+             _napco("R3", "IC3", "Aritzia Boston"), _napco("R4", "IC4", "Louis Vuitton NYC"),
+             _napco("R5", "IC5", "City of Springfield"), _napco("R6", "IC6", "John Q Homeowner")]
+    ctx = fz._build_rh_context([], [], _rh_true911())
+    incl, excl = fz.napco_rh_filter(napco, ctx)
+    assert incl == [] and excl == 6
+
+
+def test_napco_rh_rows_included():
+    napco = [_napco("R1", "IC1", "Restoration Hardware #177 Jacksonville"),
+             _napco("R2", "IC2", "RH 149 Austin - Elevator"),
+             _napco("R3", "IC3", "Restoration Hardware - MDC")]
+    ctx = fz._build_rh_context([], [], _rh_true911())
+    incl, excl = fz.napco_rh_filter(napco, ctx)
+    assert len(incl) == 3 and excl == 0
+    assert incl[2]["canonical"] == "RH MDC (Distribution Center)"
+
+
+def test_napco_rh_row_included_by_radio_context():
+    # subscriber label is not RH, but the radio is a known RH True911 device
+    napco = [_napco("RAD177", None, "Some Alarm Account")]
+    ctx = fz._build_rh_context([], [], _rh_true911())
+    incl, excl = fz.napco_rh_filter(napco, ctx)
+    assert len(incl) == 1 and incl[0]["reason"] == "context:radio"
+
+
+def test_two_napco_radios_same_location_one_building_two_devices():
+    napco = [_napco("R1", "IC1", "Restoration Hardware #177 Jacksonville"),
+             _napco("R2", "IC2", "Restoration Hardware #177 Jacksonville")]
+    rep = fz.fuse_portfolio(napco_records=napco,
+                            true911={"tenant": "rh", "sites": [], "devices": [], "units": [], "lines": []},
+                            tenant="rh")
+    assert rep["summary"]["buildings"] == 1
+    assert len(rep["buildings"][0]["devices"]) == 2
+
+
+def test_two_napco_radios_same_known_alias_one_building():
+    napco = [_napco("R1", "IC1", "Restoration Hardware - MDC"),
+             _napco("R2", "IC2", "Restoration Hardware - MDC")]     # no store #, joins on alias
+    rep = fz.fuse_portfolio(napco_records=napco,
+                            true911={"tenant": "rh", "sites": [], "devices": [], "units": [], "lines": []},
+                            tenant="rh")
+    assert rep["summary"]["buildings"] == 1 and len(rep["buildings"][0]["devices"]) == 2
+
+
+def test_two_genesis_lines_same_store_one_building_two_devices():
+    genesis = [{"name": "RH 149 Austin Elevator 1", "label": "RH 149 Austin Elevator 1",
+                "msisdn": "5125550001", "iccid": "G1", "imei": None, "status": "active",
+                "street": None, "city": None, "state": None, "zip": None},
+               {"name": "RH 149 Austin Elevator 2", "label": "RH 149 Austin Elevator 2",
+                "msisdn": "5125550002", "iccid": "G2", "imei": None, "status": "active",
+                "street": None, "city": None, "state": None, "zip": None}]
+    rep = fz.fuse_portfolio(genesis_rows=genesis, true911=_rh_true911(), tenant="rh")
+    austin = [t for t in rep["buildings"] if t["store_number"] == "149"]
+    assert len(austin) == 1 and len(austin[0]["devices"]) == 2       # one building, two modems
+
+
+def test_four_sources_same_store_one_fully_fused_building():
+    zoho = [{"account_name": "Restoration Hardware #177 Jacksonville", "facility_name": None,
+             "street": "10300 Southside Blvd", "city": "Jacksonville", "state": "FL", "zip": "32256",
+             "connection_type": "Alarm Panel", "imei": None, "sim": "ICRH177", "msisdn": None,
+             "starlink_id": "RAD177"}]
+    napco = [_napco("RAD177", "ICRH177", "Restoration Hardware #177 Jacksonville")]
+    genesis = [{"name": "RH 177 Jacksonville", "label": "RH 177 Jacksonville", "msisdn": "9045550177",
+                "iccid": None, "imei": None, "status": "active", "street": None, "city": None,
+                "state": None, "zip": None}]
+    rep = fz.fuse_portfolio(zoho_rows=zoho, napco_records=napco, genesis_rows=genesis,
+                            true911=_rh_true911(), tenant="rh")
+    b177 = [t for t in rep["buildings"] if t["store_number"] == "177"]
+    assert len(b177) == 1
+    assert set(b177[0]["sources"]) == set(fz.ALL_SOURCES)           # fully fused
+    assert b177[0]["source_confidence"] == 100
+
+
+def test_duplicate_true911_sites_are_one_building_with_finding():
+    t911 = _rh_true911()
+    t911["sites"].append({"site_id": "RH-177b", "name": "Restoration Hardware #177 Jacksonville",
+                          "street": None, "city": "Jacksonville", "state": "FL", "zip": None,
+                          "e911_status": "validated"})
+    rep = fz.fuse_portfolio(true911=t911, zoho_rows=[{"account_name": "Restoration Hardware #177 Jacksonville",
+                            "facility_name": None, "street": None, "city": "Jacksonville", "state": "FL",
+                            "zip": None, "connection_type": None, "imei": None, "sim": None, "msisdn": None,
+                            "starlink_id": None}], tenant="rh")
+    b177 = [t for t in rep["buildings"] if t["store_number"] == "177"]
+    assert len(b177) == 1                                            # NOT two buildings
+    assert any("Multiple True911 sites" in d for d in b177[0]["duplicate_assets"])
+
+
+def test_generic_restoration_hardware_does_not_overmatch():
+    # two bare "Restoration Hardware" radios (no store #, no distinctive token, diff radios)
+    napco = [_napco("R1", "IC1", "Restoration Hardware"),
+             _napco("R2", "IC2", "Restoration Hardware")]
+    rep = fz.fuse_portfolio(napco_records=napco,
+                            true911={"tenant": "rh", "sites": [], "devices": [], "units": [], "lines": []},
+                            tenant="rh")
+    assert rep["summary"]["buildings"] == 2                          # not merged into one
+
+
+def test_production_style_portfolio_does_not_inflate():
+    stores = [("177", "Jacksonville", "FL"), ("149", "Austin", "TX"), ("140", "Houston", "TX"),
+              ("142", "Boston", "MA"), ("147", "Chicago", "IL"), ("150", "Leawood", "KS"),
+              ("161", "San Francisco", "CA"), ("174", "Charlotte", "NC"), ("178", "Raleigh", "NC"),
+              ("187", "Cleveland", "OH")]
+    true911 = {"tenant": "restoration-hardware",
+               "sites": [{"site_id": f"RH-{n}", "name": f"Restoration Hardware #{n}", "street": None,
+                          "city": c, "state": st, "zip": None, "e911_status": "validated"}
+                         for n, c, st in stores],
+               "devices": [{"device_id": f"D{n}", "site_id": f"RH-{n}", "msisdn": f"90055500{n}",
+                            "iccid": f"IC{n}", "imei": None, "starlink_id": f"RAD{n}",
+                            "serial_number": f"RAD{n}", "identifier_type": "starlink",
+                            "model": "SLE", "device_type": "fire_alarm"} for n, _, _ in stores],
+               "units": [], "lines": []}
+    zoho = [{"account_name": f"Restoration Hardware #{n} {c}", "facility_name": None, "street": None,
+             "city": c, "state": st, "zip": None, "connection_type": "Alarm Panel", "imei": None,
+             "sim": f"IC{n}", "msisdn": None, "starlink_id": f"RAD{n}"} for n, c, st in stores]
+    napco = []
+    for n, c, _ in stores:
+        napco.append(_napco(f"RAD{n}", f"IC{n}", f"Restoration Hardware #{n} {c}"))
+        napco.append(_napco(f"RAD{n}b", f"IC{n}b", f"Restoration Hardware #{n} {c}"))   # 2nd radio
+    for i in range(200):
+        napco.append(_napco(f"NX{i}", f"NIC{i}", f"Some Dealer Account {i} School"))
+    genesis = [{"name": f"RH {n} {c}", "label": f"RH {n} {c}", "msisdn": f"70055500{n}",
+                "iccid": None, "imei": None, "status": "active", "street": None, "city": None,
+                "state": None, "zip": None} for n, c, _ in stores]
+    genesis += [{"name": f"Infatrac Subscriber {i}", "label": f"Infatrac Subscriber {i}",
+                 "msisdn": f"3035552{i:03d}", "iccid": None, "imei": None, "status": "active",
+                 "street": None, "city": None, "state": None, "zip": None} for i in range(1600)]
+
+    rep = fz.fuse_portfolio(zoho_rows=zoho, napco_records=napco, genesis_rows=genesis,
+                            true911=true911, tenant="restoration-hardware")
+    s = rep["summary"]
+    assert s["napco_rows_excluded"] == 200 and s["genesis_rows_excluded"] == 1600
+    # ~10 stores -> ~10 buildings, NOT 145 (and definitely not thousands)
+    assert len(stores) <= s["buildings"] <= len(stores) + 3
+    assert s["source_rows"]["napco"] == len(napco)                  # rows != buildings
+    assert s["fully_fused_all_sources"] >= len(stores) - 1          # each store fully fused
