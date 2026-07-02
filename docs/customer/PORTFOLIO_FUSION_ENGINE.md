@@ -15,7 +15,7 @@
 | # | Source | Contributes | Adapter |
 |---|---|---|---|
 | 1 | **Zoho CRM** | subscription / billing / location context, store #, address | reuses `rh_portfolio_certification` (CSV or live) |
-| 2 | **Napco StarLink** | alarm-radio inventory (RadioNumber / ICCID / SubscriberName) | reuses `inventory_reconciliation.adapters.napco` |
+| 2 | **Napco StarLink** | alarm-radio inventory (RadioNumber / ICCID / SubscriberName) | reuses `inventory_reconciliation.adapters.napco` + **RH row filter** (§3b) |
 | 3 | **T-Mobile Genesis** | MS130v4 cellular modems (MSISDN / ICCID / IMEI) | `load_genesis_csv` (tolerant columns) + **RH row filter** (§3a); optional API stub |
 | 4 | **True911** | authoritative sites / devices / service units / lines / E911 | reuses `rh_portfolio_certification.load_true911` |
 
@@ -74,6 +74,30 @@ actual RH portfolio. The report records `genesis_rows_total`,
 included"** section lists each kept row (MSISDN · status · label · match reason ·
 inferred canonical).
 
+### 3b. Napco RH filtering (before fusion)
+
+A Napco Radiolist is the **dealer's whole book** (schools, apartments, other
+retailers, individuals, municipalities), so Napco rows are filtered to RH the same
+two ways: **Stage A** the subscriber label is RH (`Restoration Hardware`, a known
+alias, or a corroborated standalone `RH`), **Stage B** the radio number / ICCID is a
+known RH device from Zoho or True911. The context is built from the RH spine
+(Zoho + True911) first, then extended with the RH-matched Napco devices so Genesis
+can also match on Napco-proven identifiers. The report records `napco_rows_total`,
+`napco_rows_rh_matched`, `napco_rows_excluded`, and a **"Napco RH rows included"**
+section (radio number · subscriber name · ICCID · matched canonical · match reason).
+
+### 3c. Building identity keys (no over-splitting)
+
+Records cluster on the **strongest identity key** — numeric store #, alpha store
+code, known alias, or a distinctive location-token set (generic "Restoration
+Hardware" alone yields no key, so it never overmatches) — in addition to address and
+device identifiers. As a result **multiple radios / modems at one RH location fuse
+into a single building** (devices under it), rather than one building per device.
+Store numbers are recognized from both `#177` and bare `RH 177` / `RH -506` forms.
+Duplicate True911 sites collapse into **one** building carrying a duplicate finding
+(not separate canonical buildings), and *"Missing True911"* is measured per
+**building**, not per device row.
+
 ## 4. Building Digital Twin
 
 Each fused building produces a Digital Twin:
@@ -96,12 +120,15 @@ Each fused building produces a Digital Twin:
 - **JSON** — full report: `{summary, buildings[<twin>]}`.
 - **Markdown** — the **Building Fusion Report**: executive dashboard, per-building
   Digital-Twin table, missing-assets and duplicate-assets sections.
-- **Executive dashboard summary** — buildings fused, fully-fused (all 4 sources),
-  per-source coverage, by-category counts, buildings missing True911 / E911, device
-  gaps, duplicates, average source confidence, and Genesis rows total / RH-matched /
-  excluded.
-- **Genesis RH rows included** — every kept Genesis row with MSISDN, status, label,
-  match reason, and inferred canonical location.
+- **Executive dashboard summary** — **source row counts (separate from building
+  counts)**, canonical building count, fully-fused (all 4 sources), per-source
+  building coverage, **device counts by source**, by-category counts, buildings
+  missing True911 / E911, device gaps, duplicates, average source confidence, and
+  Napco / Genesis rows total / RH-matched / excluded.
+- **Duplicate / ambiguous clusters** — buildings fused from more than one True911
+  site or a shared address (de-duplication candidates).
+- **Napco RH rows included** / **Genesis RH rows included** — every kept vendor row
+  with its identifiers, match reason, and inferred canonical location.
 
 ## 6. Usage
 
