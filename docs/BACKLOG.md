@@ -239,6 +239,28 @@
   `customer/PORTFOLIO_FUSION_ENGINE.md`, `RH_GO_LIVE_RUNBOOK.md` §4c.
   - **Roadmap:** live Genesis pull from a seed ICCID list via TAAP; feed fused gaps
     into the operator punch list; graph view of source coverage per building.
+  - ✅ **Merged**: engine (#159), Genesis RH filter (#160), Napco RH filter + over-split (#161).
+
+### Phase 3.14 — Portfolio Registry & Persistent Digital Twin (IN PROGRESS; branch `feat/portfolio-registry`, PR open)
+- **RH-P3.14-REGISTRY — Persistent Portfolio Registry powering the Digital Twin.** 🔧 *PR open 2026-07-02, not merged.*
+  Evolves the Fusion Engine from rediscovery to reconciliation against an operator-
+  approved registry. New tables (migration 051): `portfolio_buildings`,
+  `portfolio_aliases`, `portfolio_device_mappings` (kind ∈ napco_radio/genesis_msisdn/
+  iccid/imei/phone/true911_device/zoho_account), `portfolio_review_items`. Service
+  `app/services/portfolio_registry.py`: read-only `load_registry`, pure `reconcile`
+  (approved mappings **before** heuristics: device → alias → store# → address; else a
+  review item — new_building/possible_merge/duplicate_building/address_conflict/
+  device_conflict/unknown_alias), and the approval workflow (approve_new_building/
+  approve_alias/approve_device_mapping/reject_review_item/sync_review_queue) as the ONLY
+  registry writers. `fuse_portfolio(registry=)` tags each building known/new/ambiguous
+  and reports Portfolio Buildings/Known Aliases/Pending Review/Approved Mappings/
+  Rejected Suggestions/Coverage by Source/Confidence Distribution + review-queue section.
+  Read-only (never writes sources or the registry; E911 never verified). Tests:
+  `test_portfolio_registry.py` (16) + fusion integration. Docs:
+  `customer/PORTFOLIO_REGISTRY.md`, `PORTFOLIO_FUSION_ENGINE.md` §7,
+  `LOCATION_DIGITAL_TWIN.md` §10, `RH_GO_LIVE_RUNBOOK.md` §4d.
+  - **Roadmap:** operator UI for the review queue; auto-suggest aliases/mappings with
+    confidence; registry-backed customer Digital Twin read path.
 
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.

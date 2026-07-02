@@ -219,6 +219,32 @@ see, at a glance, which buildings are fully corroborated across all four systems
 which have inventory/E911 gaps before go-live. Full spec:
 `docs/customer/PORTFOLIO_FUSION_ENGINE.md`.
 
+## 4d. Portfolio Registry (persistent Digital-Twin identity + approval workflow)
+
+The Fusion Engine reconciles each run against a permanent, operator-**approved**
+**Portfolio Registry** (`portfolio_buildings` + aliases + device mappings) instead of
+rediscovering the portfolio. Approved mappings resolve a building **before** any
+heuristic (device → alias → store # → address); anything unmapped becomes a **review
+item** (new building / possible merge / duplicate / address conflict / device
+conflict / unknown alias). The run is **read-only** and never writes the registry.
+
+```bash
+# read-only fusion, reconciled against the approved registry (report shows the queue)
+cd api && python -m scripts.rh_portfolio_fusion --tenant restoration-hardware \
+    --zoho-csv sub.csv --napco-csv napco.csv --genesis-csv genesis.csv \
+    --report /tmp/rh_fusion.md
+#   --no-registry         bootstrap/discovery (everything a new-building suggestion)
+#   --sync-review-queue   persist pending review items to the queue (queue only)
+```
+
+Bootstrapping RH: run once (registry empty → every building is a `new_building`
+suggestion), then an operator **approves** each building via the approval workflow
+(`app.services.portfolio_registry.approve_new_building`, which stamps
+`approved_by` / `approved_at` and records aliases + device mappings). Subsequent runs
+resolve those buildings instantly and only surface genuinely new/ambiguous data.
+**Registry changes require explicit approval — nothing is applied automatically.**
+Full spec: `docs/customer/PORTFOLIO_REGISTRY.md`.
+
 ## 5. Verify login
 
 - Judy accepts her invite, sets a password, signs in.
