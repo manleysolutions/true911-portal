@@ -6,7 +6,13 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`
 > (§4.6 no green without evidence), `../CUSTOMER_DATA_BOUNDARY.md`. Companions:
-> `RH_PORTFOLIO_CERTIFICATION.md`, `RH_GO_LIVE_RUNBOOK.md`. Prepared: 2026-07-01.
+> `RH_PORTFOLIO_CERTIFICATION.md`, `PORTFOLIO_REGISTRY.md`, `RH_GO_LIVE_RUNBOOK.md`.
+> Prepared: 2026-07-01.
+>
+> **Update (2026-07-02):** the engine is now backed by a persistent **Portfolio
+> Registry** — it reconciles each run against an operator-approved registry instead
+> of rediscovering the portfolio, and proposes review items for anything unmapped.
+> See `PORTFOLIO_REGISTRY.md` and §7 below.
 
 ---
 
@@ -148,17 +154,38 @@ Exit codes: `0` ok · `3` error (bad input / DB or Zoho not configured). `--gene
 is a read-only stub — T-Mobile TAAP is a per-ICCID inquiry, not a bulk list, so live
 Genesis needs a seed ICCID set; use `--genesis-csv` for the bulk MS130 export.
 
-## 7. Guarantees
+## 7. Portfolio Registry (persistent Digital Twin)
 
-- **Read-only** — never writes Zoho, Napco, Genesis, or True911 (parse / SELECT only).
+The engine reconciles each run against a permanent, operator-**approved** Portfolio
+Registry rather than rediscovering the portfolio. For every fused candidate it tries
+approved mappings **before** any heuristic — **device mapping → alias → store number
+→ address** — and resolves to a known building or proposes a **review item**
+(`new_building` · `possible_merge` · `duplicate_building` · `address_conflict` ·
+`device_conflict` · `unknown_alias`). The run is read-only and **never writes the
+registry**; changes happen only through the explicit approval workflow
+(`approve_new_building` / `approve_alias` / `approve_device_mapping` /
+`reject_review_item`). The report adds Portfolio Buildings · Known Aliases · Pending
+Review · Approved Mappings · Rejected Suggestions · Coverage by Source · Confidence
+Distribution, plus a review-queue section. Full spec: `PORTFOLIO_REGISTRY.md`.
+
+`--no-registry` runs in bootstrap/discovery mode (everything is a new-building
+suggestion); `--sync-review-queue` persists new pending items to the queue (queue
+only, never the approved registry).
+
+## 8. Guarantees
+
+- **Read-only** — never writes Zoho, Napco, Genesis, True911, carrier APIs, or the
+  Portfolio Registry (parse / SELECT only). Registry changes require explicit approval.
 - **No false green** — E911 is never marked verified; missing data is never
   fabricated; unknown sources lower confidence rather than inventing values.
 - Sensitive vendor data (dealer email, carrier account numbers) is dropped by the
   Napco adapter and never enters the fusion artifacts.
 
-## 8. Files
+## 9. Files
 
 - Engine: `api/scripts/rh_portfolio_fusion.py`.
-- Tests: `api/tests/test_rh_portfolio_fusion.py`.
+- Registry: `api/app/models/portfolio_registry.py`,
+  `api/app/services/portfolio_registry.py`, migration `051_portfolio_registry.py`.
+- Tests: `api/tests/test_rh_portfolio_fusion.py`, `api/tests/test_portfolio_registry.py`.
 - Reused: `api/scripts/rh_portfolio_certification.py`,
   `api/app/services/inventory_reconciliation/adapters/napco.py`.

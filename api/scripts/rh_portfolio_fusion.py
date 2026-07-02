@@ -52,6 +52,7 @@ from collections import Counter, defaultdict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from scripts import rh_portfolio_certification as cert  # noqa: E402  (reuse normalizers)
+from app.services import portfolio_registry as _registry  # noqa: E402  (load/reconcile)
 
 DEFAULT_TENANT = os.environ.get("RH_READINESS_TENANT", "restoration-hardware")
 DEFAULT_CSV = "/tmp/rh_portfolio_fusion.csv"
@@ -620,6 +621,10 @@ def build_twin(records: list[dict], index: int) -> dict:
 
     devices = _merge_devices(records)
     services = sorted({s for r in records for s in r.get("service_types", [])})
+    source_names = {}
+    for r in records:
+        if r.get("name"):
+            source_names.setdefault(r["source"], []).append(r["name"])
 
     # source confidence — corroboration across trusted sources (weighted, capped)
     confidence = min(100, sum(SOURCE_WEIGHT.get(s, 0) for s in sources))
@@ -656,6 +661,7 @@ def build_twin(records: list[dict], index: int) -> dict:
         "building_category": building_category(site_type),
         "address": {"street": street, "city": city, "state": state, "zip": zip_},
         "sources": sources,
+        "source_names": source_names,
         "source_confidence": confidence,
         "services": services,
         "devices": devices,
@@ -667,9 +673,15 @@ def build_twin(records: list[dict], index: int) -> dict:
 
 
 def fuse_portfolio(*, zoho_rows=None, napco_records=None, genesis_rows=None,
-                   true911=None, tenant=None) -> dict:
+                   true911=None, tenant=None, registry=None) -> dict:
     """Adapt all four sources, fuse into buildings, and build the fusion report.
-    Genesis rows are RH-filtered first (the raw export is the whole Infatrac book)."""
+    Genesis rows are RH-filtered first (the raw export is the whole Infatrac book).
+
+    ``registry`` is a READ-ONLY approved Portfolio Registry snapshot (see
+    ``app.services.portfolio_registry.load_registry``).  When supplied, each fused
+    candidate is reconciled against it — approved mappings resolve a building BEFORE
+    any heuristic, and unmapped candidates become review items.  This function never
+    writes the registry (or any source)."""
     zoho_rows = zoho_rows or []
     napco_records = napco_records or []
     genesis_rows = genesis_rows or []
@@ -734,8 +746,49 @@ def fuse_portfolio(*, zoho_rows=None, napco_records=None, genesis_rows=None,
         "iccid": getattr(d["record"], "iccid", None),
         "canonical": d["canonical"], "reason": d["reason"],
     } for d in napco_incl]
+
+    # ── Reconcile candidates against the approved Portfolio Registry (read-only) ──
+    registry = registry or _registry.empty_registry(tenant)
+    recon = _registry.reconcile(twins, registry)
+    for r in recon["resolved"]:
+        i = r.get("candidate_index")
+        if i is not None:
+            twins[i]["registry"] = {"building_id": r["building_id"], "method": r["method"],
+                                    "status": "ambiguous" if r["method"] == "ambiguous" else "known"}
+    for t in twins:
+        t.setdefault("registry", {"building_id": None, "method": None, "status": "new"})
+
+    summary.update(_registry_summary(twins, registry, recon))
+    summary["confidence_distribution"] = _confidence_distribution(twins)
+
     return {"summary": summary, "buildings": twins,
-            "napco_included": napco_included, "genesis_included": genesis_included}
+            "napco_included": napco_included, "genesis_included": genesis_included,
+            "review_items": recon["review_items"], "resolved": recon["resolved"]}
+
+
+def _confidence_distribution(twins: list[dict]) -> dict:
+    buckets = {"90-100": 0, "70-89": 0, "40-69": 0, "0-39": 0}
+    for t in twins:
+        c = t["source_confidence"]
+        key = "90-100" if c >= 90 else "70-89" if c >= 70 else "40-69" if c >= 40 else "0-39"
+        buckets[key] += 1
+    return buckets
+
+
+def _registry_summary(twins, registry, recon) -> dict:
+    st = recon["stats"]
+    return {
+        "portfolio_buildings": st["portfolio_buildings"],
+        "known_aliases": st["known_aliases"],
+        "approved_mappings": st["approved_mappings"],
+        "pending_review": st["pending_review_new"],
+        "review_by_type": st["review_by_type"],
+        "rejected_suggestions": st["rejected_suggestions"],
+        "buildings_known": sum(1 for t in twins if t["registry"]["status"] == "known"),
+        "buildings_new": sum(1 for t in twins if t["registry"]["status"] == "new"),
+        "buildings_ambiguous": sum(1 for t in twins if t["registry"]["status"] == "ambiguous"),
+        "coverage_by_source": {s: sum(1 for t in twins if s in t["sources"]) for s in ALL_SOURCES},
+    }
 
 
 def _dashboard(twins: list[dict], tenant, records) -> dict:
@@ -827,6 +880,15 @@ def _dashboard_lines(s: dict) -> list[str]:
         L.append(f"- Genesis rows — total {s['genesis_rows_total']} · "
                  f"RH matched **{s['genesis_rows_rh_matched']}** · "
                  f"excluded (non-RH) {s['genesis_rows_excluded']}")
+    if "portfolio_buildings" in s:
+        L.append(f"- **Portfolio Registry** — buildings {s['portfolio_buildings']} · "
+                 f"known aliases {s['known_aliases']} · approved mappings "
+                 f"{s['approved_mappings']} · rejected suggestions {s['rejected_suggestions']}")
+        L.append(f"- Reconciliation — known **{s['buildings_known']}** · "
+                 f"new **{s['buildings_new']}** · ambiguous {s['buildings_ambiguous']} · "
+                 f"pending review **{s['pending_review']}**")
+        cd = s.get("confidence_distribution", {})
+        L.append("- Confidence distribution — " + " · ".join(f"{k}: {v}" for k, v in cd.items()))
     L.append("")
     return L
 
@@ -931,8 +993,31 @@ def write_markdown_report(path: str, report: dict) -> None:
         if len(gi) > 200:
             L.append(f"| … | | | (+{len(gi) - 200} more — see JSON) | |")
     L.append("")
+
+    # Portfolio Registry review queue (proposed — NOT auto-applied)
+    L.append("## Portfolio Registry — review queue (pending)")
+    if "portfolio_buildings" in s:
+        L.append(f"Portfolio buildings **{s['portfolio_buildings']}** · reconciled known "
+                 f"**{s['buildings_known']}** · new **{s['buildings_new']}** · ambiguous "
+                 f"{s['buildings_ambiguous']}. Nothing below is applied automatically — an "
+                 f"operator must approve each item.")
+        L.append("")
+    ri = report.get("review_items", [])
+    if not ri:
+        L.append("_No review items — every candidate maps to the approved registry._")
+    else:
+        L.append("| Review type | Candidate | Store # | Suggested building | Detail |")
+        L.append("|---|---|---|---|---|")
+        for it in ri[:200]:
+            L.append(f"| {it['review_type']} | {it.get('candidate_name') or '—'} | "
+                     f"{it.get('store_number') or '—'} | {it.get('suggested_building_id') or '—'} | "
+                     f"{it['detail']} |")
+        if len(ri) > 200:
+            L.append(f"| … | | | | (+{len(ri) - 200} more — see JSON) |")
+    L.append("")
     L.append("---")
-    L.append("_Read-only fusion — wrote nothing to Zoho, Napco, Genesis, or True911._")
+    L.append("_Read-only fusion — wrote nothing to Zoho, Napco, Genesis, True911, or the "
+             "Portfolio Registry. Registry changes require the explicit approval workflow._")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
 
@@ -974,9 +1059,18 @@ async def _run(args) -> dict:
 
     async with AsyncSessionLocal() as db:
         true911 = await cert.load_true911(db, args.tenant)
-
-    return fuse_portfolio(zoho_rows=zoho_rows, napco_records=napco_records,
-                          genesis_rows=genesis_rows, true911=true911, tenant=args.tenant)
+        # READ-ONLY load of the approved Portfolio Registry (unless disabled).
+        registry = (_registry.empty_registry(args.tenant) if args.no_registry
+                    else await _registry.load_registry(db, args.tenant))
+        report = fuse_portfolio(zoho_rows=zoho_rows, napco_records=napco_records,
+                                genesis_rows=genesis_rows, true911=true911,
+                                tenant=args.tenant, registry=registry)
+        # Persist NEW pending review items ONLY on explicit opt-in (writes the review
+        # queue, never the approved registry).
+        if args.sync_review_queue and report.get("review_items"):
+            synced = await _registry.sync_review_queue(db, args.tenant, report["review_items"])
+            report["summary"]["review_queue_synced"] = synced
+    return report
 
 
 def main() -> None:
@@ -990,6 +1084,11 @@ def main() -> None:
     ap.add_argument("--genesis-csv", default=None, help="T-Mobile Genesis / MS130v4 export")
     ap.add_argument("--genesis-api", action="store_true",
                     help="live Genesis mode (needs a seed ICCID list + TAAP creds)")
+    ap.add_argument("--no-registry", action="store_true",
+                    help="ignore the approved Portfolio Registry (bootstrap / discovery mode)")
+    ap.add_argument("--sync-review-queue", action="store_true",
+                    help="persist NEW pending review items to the queue (writes the queue "
+                         "only, never the approved registry)")
     ap.add_argument("--csv", default=DEFAULT_CSV)
     ap.add_argument("--json", default=DEFAULT_JSON)
     ap.add_argument("--report", default=DEFAULT_REPORT, help="Markdown fusion report path")

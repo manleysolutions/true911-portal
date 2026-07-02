@@ -176,3 +176,16 @@ refined experience. Additive across the whole stack:
 `permissions.json` (`CUSTOMER_CONTRIBUTE`),
 `api/tests/test_customer_contributions.py`. Docs:
 `WORKFLOW_ENGINE.md`, `DIGITAL_TWIN_MATURITY_MODEL.md`.
+
+## 10. Persistent identity — the Portfolio Registry
+
+The Digital Twin's **identity** is now permanent, not rediscovered each run. The
+Portfolio Fusion Engine reconciles Zoho / Napco / Genesis / True911 against an
+operator-**approved Portfolio Registry** (`portfolio_buildings` + aliases + device
+mappings). Approved mappings resolve a building **before** any heuristic; anything
+unmapped becomes a **review item** (new building / possible merge / duplicate /
+address conflict / device conflict / unknown alias) rather than silently reshaping
+the portfolio. The registry is written **only** through an explicit approval
+workflow — a fusion run is read-only. This gives every customer Digital Twin a
+stable spine across data refreshes. Full spec: `PORTFOLIO_REGISTRY.md` (and
+`PORTFOLIO_FUSION_ENGINE.md` §7).

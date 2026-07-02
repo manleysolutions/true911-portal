@@ -531,3 +531,71 @@ def test_production_style_portfolio_does_not_inflate():
     assert len(stores) <= s["buildings"] <= len(stores) + 3
     assert s["source_rows"]["napco"] == len(napco)                  # rows != buildings
     assert s["fully_fused_all_sources"] >= len(stores) - 1          # each store fully fused
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Portfolio Registry integration (fusion reconciles against approved registry)
+# ══════════════════════════════════════════════════════════════════════
+from app.services import portfolio_registry as _reg  # noqa: E402
+
+
+def _reg_t911():
+    return {"tenant": "rh",
+            "sites": [{"site_id": "RH-177", "name": "Restoration Hardware #177 Jacksonville",
+                       "street": "10300 Southside Blvd", "city": "Jacksonville", "state": "FL",
+                       "zip": "32256", "e911_status": "validated"}],
+            "devices": [{"device_id": "D1", "site_id": "RH-177", "msisdn": None, "iccid": "ICRH177",
+                         "imei": None, "starlink_id": "RAD177", "serial_number": "RAD177",
+                         "identifier_type": "starlink", "model": "SLE", "device_type": "fire_alarm"}],
+            "units": [], "lines": []}
+
+
+def test_fusion_empty_registry_flags_new_building():
+    rep = fz.fuse_portfolio(true911=_reg_t911(), tenant="rh",
+                            registry=_reg.empty_registry("rh"),
+                            zoho_rows=[{"account_name": "Restoration Hardware #177 Jacksonville",
+                                        "facility_name": None, "street": None, "city": None,
+                                        "state": None, "zip": None, "connection_type": None,
+                                        "imei": None, "sim": None, "msisdn": None, "starlink_id": None}])
+    s = rep["summary"]
+    assert s["buildings_new"] == 1 and s["buildings_known"] == 0 and s["pending_review"] == 1
+    assert rep["review_items"][0]["review_type"] == "new_building"
+    assert rep["buildings"][0]["registry"]["status"] == "new"
+
+
+def test_fusion_approved_registry_resolves_known_before_heuristics():
+    registry = {"tenant": "rh",
+                "buildings": [{"id": 1, "canonical_name": "RH #177 Jacksonville",
+                               "store_number": "177", "site_type": "store", "status": "active",
+                               "address": "10300 Southside Blvd", "city": "Jacksonville",
+                               "state": "FL", "zip": "32256", "approved": True}],
+                "aliases": [], "review_items": [],
+                "device_mappings": [{"building_id": 1, "kind": "napco_radio", "value": "RAD177",
+                                     "value_normalized": _reg.norm_id("RAD177"), "source": "napco",
+                                     "confidence": 100, "active": True}]}
+    rep = fz.fuse_portfolio(true911=_reg_t911(), tenant="rh", registry=registry,
+                            zoho_rows=[{"account_name": "Restoration Hardware #177 Jacksonville",
+                                        "facility_name": None, "street": "10300 Southside Blvd",
+                                        "city": "Jacksonville", "state": "FL", "zip": "32256",
+                                        "connection_type": "Alarm Panel", "imei": None,
+                                        "sim": "ICRH177", "msisdn": None, "starlink_id": "RAD177"}])
+    s = rep["summary"]
+    assert s["buildings_known"] == 1 and s["buildings_new"] == 0
+    assert s["portfolio_buildings"] == 1 and s["approved_mappings"] == 1
+    assert rep["buildings"][0]["registry"]["building_id"] == 1
+    assert rep["buildings"][0]["registry"]["method"] == "device"       # approved mapping, not heuristic
+
+
+def test_fusion_report_has_registry_and_confidence_sections(tmp_path):
+    rep = fz.fuse_portfolio(true911=_reg_t911(), tenant="rh", registry=_reg.empty_registry("rh"),
+                            zoho_rows=[{"account_name": "Restoration Hardware #177 Jacksonville",
+                                        "facility_name": None, "street": None, "city": None,
+                                        "state": None, "zip": None, "connection_type": None,
+                                        "imei": None, "sim": None, "msisdn": None, "starlink_id": None}])
+    assert "confidence_distribution" in rep["summary"]
+    assert set(rep["summary"]["coverage_by_source"]) == set(fz.ALL_SOURCES)
+    mpath = tmp_path / "r.md"
+    fz.write_markdown_report(str(mpath), rep)
+    md = mpath.read_text(encoding="utf-8")
+    assert "Portfolio Registry" in md and "review queue" in md
+    assert "Confidence distribution" in md

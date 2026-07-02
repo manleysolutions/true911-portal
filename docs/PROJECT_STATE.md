@@ -8,9 +8,43 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
 
-## 0·NEXT — Portfolio Fusion Engine (branch `feat/portfolio-fusion-engine`, PR open, NOT merged) [2026-07-01]
+## 0·NEXT — Portfolio Registry & Persistent Digital Twin (branch `feat/portfolio-registry`, PR open, NOT merged) [2026-07-02]
 
-Extends the RH Certification Engine into a **multi-source Portfolio Fusion Engine**:
+Evolves the Fusion Engine from a reconciliation tool into the permanent **Portfolio
+Registry** that powers every customer Digital Twin — it no longer rediscovers the RH
+portfolio each run; it reconciles against an operator-**approved** registry. Additive,
+read-only fusion; registry writes only via an explicit approval workflow.
+
+- **Models + migration 051** (`app/models/portfolio_registry.py`): `PortfolioBuilding`
+  (canonical_name/store_number/site_type/status/address/city/state/zip/tenant_id/notes/
+  approved/approved_by/approved_at), `PortfolioAlias` (building_id/alias/source/
+  confidence/active), `PortfolioDeviceMapping` (kind ∈ napco_radio/genesis_msisdn/iccid/
+  imei/phone/true911_device/zoho_account → building), `PortfolioReviewItem` (queue).
+  Chains off committed head 049 (ops-center 050 is separate WIP).
+- **Service** (`app/services/portfolio_registry.py`): `load_registry` (read-only
+  snapshot), pure `reconcile` (approved mappings **before** heuristics: device → alias
+  → store# → address; else a review item), and the approval workflow
+  (`approve_new_building`/`approve_alias`/`approve_device_mapping`/`reject_review_item`
+  /`sync_review_queue`) — the ONLY registry writers.
+- **Review types**: new_building · possible_merge · duplicate_building · address_conflict
+  · device_conflict · unknown_alias.
+- **Fusion integration**: `fuse_portfolio(..., registry=)` reconciles each candidate,
+  tags it known/new/ambiguous, and reports Portfolio Buildings · Known Aliases · Pending
+  Review · Approved Mappings · Rejected Suggestions · Coverage by Source · Confidence
+  Distribution + a review-queue section. CLI `--no-registry` / `--sync-review-queue`.
+- **Read-only preserved**: never writes Zoho/Napco/Genesis/carrier APIs/True911 **or the
+  registry**; E911 never verified; nothing fabricated.
+- Tests: `test_portfolio_registry.py` (16) + `test_rh_portfolio_fusion.py` registry
+  integration (39). Full suite green (**3868**).
+- Docs: `customer/PORTFOLIO_REGISTRY.md` (new), `PORTFOLIO_FUSION_ENGINE.md` §7,
+  `LOCATION_DIGITAL_TWIN.md` §10, `RH_GO_LIVE_RUNBOOK.md` §4d.
+
+**Prior fusion PRs merged:** #159 (engine), #160 (Genesis filter), #161 (Napco filter +
+over-split). This branches off main with all three.
+
+## 0·PREV — Portfolio Fusion Engine (PRs #159/#160/#161, MERGED) [2026-07-01]
+
+Extended the RH Certification Engine into a **multi-source Portfolio Fusion Engine**:
 fuses **Zoho CRM · Napco StarLink · T-Mobile Genesis (MS130v4) · True911** into one
 canonical **Building Digital Twin** per location. Additive, read-only, new script.
 
