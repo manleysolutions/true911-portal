@@ -191,6 +191,34 @@ missing/address/duplicate/device/service-unit/E911. To confirm another special
 location, add it to `KNOWN_RH_LOCATIONS` in the script. Full spec:
 `docs/customer/RH_PORTFOLIO_CERTIFICATION.md`.
 
+## 4c. Portfolio Fusion Engine (read-only — multi-source Building Digital Twin)
+
+Where §4b certifies Zoho ↔ True911, the **Portfolio Fusion Engine** fuses **four**
+trusted sources — Zoho CRM, Napco StarLink (alarm radios), T-Mobile Genesis
+(MS130v4 modems), and True911 — into one canonical **Building Digital Twin** per
+location, resolved by store number, address, and device identifiers (radio # / IMEI
+/ ICCID / MSISDN).
+
+```bash
+cd api && python -m scripts.rh_portfolio_fusion \
+    --tenant restoration-hardware \
+    --zoho-csv /path/to/Subscription_Mgmnt.csv \
+    --napco-csv /path/to/napco_radiolist.csv \
+    --genesis-csv /path/to/genesis_ms130.csv \
+    --csv /tmp/rh_fusion.csv --json /tmp/rh_fusion.json --report /tmp/rh_fusion.md
+# --zoho-live works here too; True911 is always loaded from the tenant DB as the spine
+```
+
+Each Building Twin carries: building · services · devices (unified across sources) ·
+E911 · **source confidence** (True911 40 · Zoho 25 · Napco 20 · Genesis 15) ·
+**missing assets** (device in a vendor but not True911, no service unit, E911
+unverified) · **duplicate assets**. The report opens with an executive dashboard
+(buildings, fully-fused count, per-source coverage, category mix, gaps). Read-only —
+never writes any source, never marks E911 verified, never fabricates data. Use it to
+see, at a glance, which buildings are fully corroborated across all four systems and
+which have inventory/E911 gaps before go-live. Full spec:
+`docs/customer/PORTFOLIO_FUSION_ENGINE.md`.
+
 ## 5. Verify login
 
 - Judy accepts her invite, sets a password, signs in.

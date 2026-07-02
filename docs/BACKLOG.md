@@ -221,6 +221,25 @@
   - **Roadmap:** add further confirmed specials to the registry as the operator
     validates them.
 
+### Phase 3.13 — Portfolio Fusion Engine (IN PROGRESS; branch `feat/portfolio-fusion-engine`, PR open, read-only)
+- **RH-P3.13-FUSION — Fuse four sources into one Building Digital Twin.** 🔧 *PR open 2026-07-01, not merged.*
+  `api/scripts/rh_portfolio_fusion.py` extends the certification engine into a
+  multi-source fusion engine over **Zoho CRM · Napco StarLink · T-Mobile Genesis
+  (MS130v4) · True911**. Four read-only adapters (Zoho reuses cert CSV/live; Napco
+  reuses `inventory_reconciliation.adapters.napco`; Genesis = tolerant MS130 CSV +
+  read-only API stub; True911 reuses `cert.load_true911`) → normalized SourceRecords.
+  **Entity resolution** clusters records into buildings by store#/address/device-id
+  (radio#/IMEI/ICCID/MSISDN/StarLink/serial); device rows merge by shared identifier.
+  Emits a **Building Digital Twin** (building · services · devices · E911 · source
+  confidence [True911 40/Zoho 25/Napco 20/Genesis 15] · missing assets · duplicate
+  assets) and a **Building Fusion Report** in CSV/JSON/Markdown + an executive
+  dashboard (buildings, fully-fused-all-4, per-source coverage, category mix, gaps).
+  Read-only — never writes any source, E911 never verified, nothing fabricated;
+  Napco sensitive fields dropped. Tests: `test_rh_portfolio_fusion.py` (19). Docs:
+  `customer/PORTFOLIO_FUSION_ENGINE.md`, `RH_GO_LIVE_RUNBOOK.md` §4c.
+  - **Roadmap:** live Genesis pull from a seed ICCID list via TAAP; feed fused gaps
+    into the operator punch list; graph view of source coverage per building.
+
 ### Phase 4 — Launch
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in
