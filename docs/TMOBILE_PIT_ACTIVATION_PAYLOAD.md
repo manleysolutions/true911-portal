@@ -23,6 +23,67 @@ from an ICCID:
 }
 ```
 
+## 2026-07-07 — PIT retest failure: sender-id absent from PoP auth claims
+
+T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
+**sender-id was not present in the auth claims** — the implementation sent
+`partner-id` / `sender-id` only as HTTP headers, not inside the PoP token.
+
+**Live PIT failure (as reported by T-Mobile):**
+
+| Field | Value |
+| --- | --- |
+| UTC | `2026-07-07T14:59:50Z` |
+| Endpoint | `POST /wholesale/v1/subscriber/activation` |
+| ICCID | `8901260963132697538` |
+| partner-id | `128` |
+| sender-id | `128` |
+| HTTP status | `400` |
+| Code | `GENS-0003` |
+| Message | `Invalid partnerID` |
+| work-flow-id | `99a2b4f7-cdd3-499f-951b-915d98efe819_P` |
+| service-transaction-id | `9b8f65ad-48ac-973f-9687-cd5ed75ad991` |
+
+> T-Mobile note: *"I investigated the auth and don't see sender id was passed in
+> the claims. Please check the solution to see if it's being sent or not. Also,
+> the data/identifier sent has no logs."*
+
+### Fix (this change)
+
+For **resource calls** (`_request`), when `partner-id` / `sender-id` are
+configured they are now included in **both**:
+
+- the signed **ehts** set — `Authorization;uri;http-method;partner-id;sender-id`
+- the **PoP JWT claims** — `partner-id` / `sender-id`
+
+in addition to the existing HTTP headers (unchanged). `generate_pop_token()`
+gained an optional `extra_claims` argument to carry these; omitting it reproduces
+the previous token byte-for-byte. **The token-endpoint PoP is unchanged** — it
+still signs exactly `Content-Type;uri;http-method` with no partner/sender claims.
+
+Diagnostic logging on a `>= 400` response now also surfaces the response
+`work-flow-id` and `service-transaction-id` (alongside method/path/status/
+correlation_id/partner_transaction_id and a truncated, auth-redacted body) so a
+future PIT failure is self-correlating in our logs — never logging any token,
+`X-Authorization`, Basic auth, consumer secret, or private key.
+
+### Retest instructions (for Render, T-Mobile watching logs)
+
+1. **Confirm env** on the API service: `TMOBILE_ENV=pit`,
+   `TMOBILE_PARTNER_ID=128`, `TMOBILE_SENDER_ID=128`, `TMOBILE_CALLBACK_LOCATION`
+   set, private key present, `TMOBILE_PIT_LIVE_CALLS_ENABLED` still **false**.
+2. **Dry-run** (sends nothing) and confirm `pop_signed_ehts` now lists
+   `partner-id` / `sender-id`:
+   ```powershell
+   cd api
+   python ../scripts/tmobile_activation_dryrun.py --iccid 8901260963132697538 --market-zip 30346
+   ```
+3. **One live activation only**, while T-Mobile is watching logs: set
+   `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` for the single run, trigger exactly one
+   `activate_subscriber`, then set it back to `false`.
+4. **Capture** and send to Aman: UTC timestamp, ICCID, endpoint, `work-flow-id`,
+   `service-transaction-id`, and the HTTP response.
+
 ## Field mapping (env override → PIT-safe constant fallback)
 
 | Payload field                | Source (in order)                                              |

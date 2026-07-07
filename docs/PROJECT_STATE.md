@@ -6,7 +6,32 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-07-01. Branch at time of writing: `main` (in sync with origin).
+> Last updated: 2026-07-07. Branch at time of writing: `main` (in sync with origin).
+
+## 0·URGENT — T-Mobile PIT: partner-id/sender-id in PoP auth claims (branch `fix/tmobile-partner-sender-pop-claims`, PR open, NOT merged) [2026-07-07]
+
+T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
+**sender-id was absent from the PoP auth claims** — we were sending
+`partner-id` / `sender-id` only as HTTP headers. The activation failed
+`400 GENS-0003 "Invalid partnerID"` (UTC `2026-07-07T14:59:50Z`, ICCID
+`8901260963132697538`, work-flow-id `99a2b4f7-…_P`, service-transaction-id
+`9b8f65ad-…`).
+
+Fix (`api/app/integrations/tmobile_taap.py`): for **resource calls**, when
+configured, `partner-id` / `sender-id` are now in **both** the signed `ehts`
+(`Authorization;uri;http-method;partner-id;sender-id`) **and** the PoP JWT
+claims — plus the existing headers (unchanged). `generate_pop_token()` gained an
+optional `extra_claims`; omitting it is byte-for-byte identical to before. **The
+token-endpoint PoP is unchanged.** Failure logging now also surfaces the
+response `work-flow-id` / `service-transaction-id` (no secrets/tokens ever
+logged). Tests: new `test_tmobile_pop_partner_sender_claims.py` + a diagnostic
+case; full suite green (**3902**). Docs:
+`TMOBILE_PIT_ACTIVATION_PAYLOAD.md` (finding + retest), `tmobile_taap_setup.md`.
+
+**No live activation was run by Claude** — the fix ships behind
+`TMOBILE_PIT_LIVE_CALLS_ENABLED` (still false). Retest procedure (confirm env →
+dry-run → one live activation while T-Mobile watches → capture ids) is in
+`TMOBILE_PIT_ACTIVATION_PAYLOAD.md`. **PR NOT merged.**
 
 ## 0·NEXT — RH registry approval operator script (branch `feat/rh-registry-approve`, PR open, NOT merged) [2026-07-02]
 

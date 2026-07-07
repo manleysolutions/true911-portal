@@ -360,11 +360,18 @@ live T-Mobile activation enters RH's path.
   `sender-id` headers (PR #122) plus correlation-ID + partner-transaction-ID logging
   (PR #121). T-Mobile rejects `partnerID=128` with `400 GENS-0003`. **Done (True911
   side):** headers renamed to `partner-id`/`sender-id`; diagnostics in place; trace IDs
-  logged. **Open (T-Mobile side):** confirm the correct `partnerID` value/format and
-  that the headers are now read. **Follow-up (small, env or 1-line):** if T-Mobile
-  also requires lowercase `account-id` for post-activation ops, rename `X-Account-Id`
-  (currently unchanged). Do not re-fire live activations to guess the value. See
-  `PROJECT_STATE.md` §3/§4 for trace identifiers. *Revenue / Reliability.*
+  logged. **UPDATE 2026-07-07 (branch `fix/tmobile-partner-sender-pop-claims`, PR open,
+  NOT merged):** T-Mobile Engineering (Aman) reviewed the live retest
+  (UTC `2026-07-07T14:59:50Z`, work-flow-id `99a2b4f7-…_P`) and found **sender-id was
+  absent from the PoP auth claims** — we sent it only as an HTTP header. Fix: resource
+  PoP now signs `Authorization;uri;http-method;partner-id;sender-id` and carries
+  `partner-id`/`sender-id` as PoP JWT claims (token-endpoint PoP unchanged); failure
+  logs now surface `work-flow-id`/`service-transaction-id`. **Open (retest):** run one
+  live PIT activation with the fix while T-Mobile watches logs, capture the trace ids.
+  **Follow-up (small, env or 1-line):** if T-Mobile also requires lowercase `account-id`
+  for post-activation ops, rename `X-Account-Id` (currently unchanged). Do not re-fire
+  live activations to guess a value. See `TMOBILE_PIT_ACTIVATION_PAYLOAD.md` (finding +
+  retest) and `PROJECT_STATE.md` §0·URGENT. *Revenue / Reliability.*
 
 ---
 
