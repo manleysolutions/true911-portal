@@ -153,6 +153,7 @@ def _derive_public_key_jwk(private_key_pem: str) -> dict[str, str]:
 def generate_pop_token(
     *,
     ehts_headers: list[tuple[str, str]],
+    extra_claims: dict[str, Any] | None = None,
 ) -> str:
     """Generate a T-Mobile TAAP PoP (Proof of Possession) token.
 
@@ -173,6 +174,11 @@ def generate_pop_token(
         ehts_headers: ordered list of (ehts_key, value) tuples.  Keys appear
             in the `ehts` claim (";"-joined); the values are concatenated with
             NO separator and SHA-256-hashed into `edts`.
+        extra_claims: optional additional JWT claims merged into the payload
+            (e.g. ``partner-id`` / ``sender-id`` that T-Mobile's auth validator
+            inspects in the PoP claims — see the 2026-07-07 finding below).
+            Reserved claims (iss/iat/exp/jti/ehts/edts) are never overwritten.
+            When omitted, the token is byte-for-byte identical to before.
 
     Returns:
         Signed JWT string for the X-Authorization header.
@@ -213,6 +219,14 @@ def generate_pop_token(
         "edts": edts,
     }
 
+    # Merge caller-supplied extra claims (e.g. partner-id / sender-id). Reserved
+    # claims are protected so a caller can never clobber the standard PoP shape.
+    if extra_claims:
+        for claim_key, claim_value in extra_claims.items():
+            if claim_key in payload:
+                continue
+            payload[claim_key] = claim_value
+
     try:
         token = jose_jwt.encode(
             payload,
@@ -242,6 +256,15 @@ _PARTNER_TXN_HEADER_CANDIDATES = (
     "x-correlation-id", "correlation-id",
 )
 
+# T-Mobile error-response correlation ids (from the GENS-0003 PIT failures).
+# These let us tie a failed activation to T-Mobile's server-side logs.
+_WORKFLOW_ID_HEADER_CANDIDATES = (
+    "work-flow-id", "x-work-flow-id", "workflow-id", "x-workflow-id",
+)
+_SERVICE_TXN_HEADER_CANDIDATES = (
+    "service-transaction-id", "x-service-transaction-id",
+)
+
 
 def _redact_response_headers(headers: Any) -> dict[str, str]:
     """Return response headers safe to log — auth/cookie values masked.
@@ -261,16 +284,21 @@ def _redact_response_headers(headers: Any) -> dict[str, str]:
     return safe
 
 
-def _partner_transaction_id(headers: Any) -> str | None:
-    """Best-effort extraction of a T-Mobile partner / transaction id header."""
+def _first_response_header(headers: Any, candidates: tuple[str, ...]) -> str | None:
+    """Return the first present, non-empty value among ``candidates``."""
     getter = getattr(headers, "get", None)
     if getter is None:
         getter = dict(headers or {}).get
-    for name in _PARTNER_TXN_HEADER_CANDIDATES:
+    for name in candidates:
         val = getter(name)
         if val:
             return str(val)
     return None
+
+
+def _partner_transaction_id(headers: Any) -> str | None:
+    """Best-effort extraction of a T-Mobile partner / transaction id header."""
+    return _first_response_header(headers, _PARTNER_TXN_HEADER_CANDIDATES)
 
 
 # ── T-Mobile TAAP Client ───────────────────────────────────────────────────
@@ -544,12 +572,28 @@ class TMobileTAAPClient:
         authorization_value = f"Bearer {access_token}"
         # Resource calls sign "Authorization;uri;http-method" (uri = URL path,
         # http-method = the verb). Body is not signed here.
+        #
+        # T-Mobile Engineering (Aman, 2026-07-07) reviewed a live PIT activation
+        # (GENS-0003 "Invalid partnerID") and found sender-id was NOT present in
+        # the PoP auth claims — only in the HTTP headers. Fix: when configured,
+        # partner-id / sender-id are added to BOTH the signed ehts set AND the
+        # PoP JWT claims, in addition to the existing HTTP headers. The order is
+        # Authorization;uri;http-method;partner-id;sender-id.
+        pop_ehts: list[tuple[str, str]] = [
+            ("Authorization", authorization_value),
+            ("uri", urlsplit(url).path),
+            ("http-method", method.upper()),
+        ]
+        pop_extra_claims: dict[str, Any] = {}
+        if self.partner_id:
+            pop_ehts.append(("partner-id", self.partner_id))
+            pop_extra_claims["partner-id"] = self.partner_id
+        if self.sender_id:
+            pop_ehts.append(("sender-id", self.sender_id))
+            pop_extra_claims["sender-id"] = self.sender_id
         pop = generate_pop_token(
-            ehts_headers=[
-                ("Authorization", authorization_value),
-                ("uri", urlsplit(url).path),
-                ("http-method", method.upper()),
-            ],
+            ehts_headers=pop_ehts,
+            extra_claims=pop_extra_claims or None,
         )
 
         # Named so it can be logged + correlated with T-Mobile's server logs.
@@ -604,14 +648,24 @@ class TMobileTAAPClient:
             body = resp.text[:500]
             # Diagnostic detail for T-Mobile troubleshooting. Request auth
             # headers are never logged; response headers are redacted of any
-            # auth/cookie material; body is truncated to a safe length.
+            # auth/cookie material; body is truncated to a safe length. The
+            # work-flow-id / service-transaction-id are the ids T-Mobile asks
+            # for when correlating a failed activation to its server logs.
             partner_txn = _partner_transaction_id(resp.headers)
+            work_flow_id = _first_response_header(
+                resp.headers, _WORKFLOW_ID_HEADER_CANDIDATES
+            )
+            service_txn_id = _first_response_header(
+                resp.headers, _SERVICE_TXN_HEADER_CANDIDATES
+            )
             logger.warning(
                 "T-Mobile TAAP API error: method=%s path=%s status=%s "
                 "correlation_id=%s partner_transaction_id=%s "
+                "work_flow_id=%s service_transaction_id=%s "
                 "response_headers=%s body=%s",
                 method.upper(), path, resp.status_code, correlation_id,
-                partner_txn, _redact_response_headers(resp.headers), body,
+                partner_txn, work_flow_id, service_txn_id,
+                _redact_response_headers(resp.headers), body,
             )
             raise RuntimeError(
                 f"T-Mobile API error ({resp.status_code}): {body}"
@@ -923,6 +977,14 @@ class TMobileTAAPClient:
                 "<NOT SET — set TMOBILE_CALLBACK_LOCATION; live activation will refuse to send>"
             )
 
+        # ehts entries the PoP token signs for a resource call (see _request):
+        # Authorization;uri;http-method plus partner-id/sender-id when set.
+        pop_signed_ehts = ["Authorization", "uri", "http-method"]
+        if self.partner_id:
+            pop_signed_ehts.append("partner-id")
+        if self.sender_id:
+            pop_signed_ehts.append("sender-id")
+
         live_enabled = self.live_calls_enabled()
         notes = [
             "DRY RUN — nothing was sent to T-Mobile.",
@@ -950,8 +1012,7 @@ class TMobileTAAPClient:
             "headers": headers,
             "callback_location_configured": bool(callback_location),
             "live_calls_enabled": live_enabled,
-            # ehts entries the PoP token signs for a resource call (see _request).
-            "pop_signed_ehts": ["Authorization", "uri", "http-method"],
+            "pop_signed_ehts": pop_signed_ehts,
             "would_send": False,
             "notes": notes,
         }

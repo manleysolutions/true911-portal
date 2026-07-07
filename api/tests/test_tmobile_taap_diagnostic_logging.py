@@ -154,3 +154,32 @@ async def test_failure_logs_correlation_partner_txn_and_redacts(tmobile_env, cap
     # sensitive response headers redacted — secrets never logged
     assert "<redacted>" in warning
     assert "LEAK" not in warning
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_failure_logs_workflow_and_service_transaction_ids(tmobile_env, caplog):
+    """A GENS-0003-style failure surfaces the work-flow-id / service-transaction-id
+    T-Mobile asks for when correlating a failed activation to its server logs."""
+    _mock_token()
+    respx.post(TEST_URL).mock(return_value=httpx.Response(
+        400,
+        json={"code": "GENS-0003", "userMessage": "Invalid partnerID"},
+        headers={
+            "work-flow-id": "99a2b4f7-cdd3-499f-951b-915d98efe819_P",
+            "service-transaction-id": "9b8f65ad-48ac-973f-9687-cd5ed75ad991",
+        },
+    ))
+    client = taap.TMobileTAAPClient()
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        with pytest.raises(RuntimeError):
+            await client.post_json(TEST_PATH, {"hello": "world"})
+    await client.close()
+
+    warning = "\n".join(
+        r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+    )
+    assert "99a2b4f7-cdd3-499f-951b-915d98efe819_P" in warning
+    assert "9b8f65ad-48ac-973f-9687-cd5ed75ad991" in warning
+    assert "work_flow_id=" in warning
+    assert "service_transaction_id=" in warning
