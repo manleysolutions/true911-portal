@@ -200,13 +200,21 @@ Key details:
 - PoP includes: issuer (consumer key), URI hash, body hash, short expiry (~2 min)
 - A **new** PoP token is generated for **every** request (different URI = different PoP)
 - Access token is cached and reused until near expiry
-- **Resource calls (2026-07-07):** `partner-id` / `sender-id` are carried in the
-  PoP **auth claims** and the signed **ehts**
-  (`Authorization;uri;http-method;partner-id;sender-id`), **not only** in the
-  HTTP headers. T-Mobile rejected the header-only form with
-  `400 GENS-0003 Invalid partnerID` because the sender-id was absent from the
-  claims — see `TMOBILE_PIT_ACTIVATION_PAYLOAD.md` for the finding and the retest
-  procedure. The **token** request PoP is unchanged (`Content-Type;uri;http-method`).
+- **Resource calls (2026-07-09):** the PoP signs exactly `ehts="Authorization"`,
+  with `edts = base64url(SHA-256("Bearer " + access_token))`. This matches a
+  T-Mobile reference request bit-for-bit. `uri`, `http-method`, `partner-id` and
+  `sender-id` are **not** signed, and partner/sender identity is **not** carried
+  in the PoP at all — it reaches the gateway as the `senderId` / `channelId`
+  claims that T-Mobile's authorization server mints into the access token from
+  the consumer key's app registration. `partner-id` / `sender-id` still travel as
+  HTTP headers. See `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`.
+- **Token request (2026-07-09, per Aman):** the OAuth token request sends
+  `sender-id: <TMOBILE_SENDER_ID>` as an HTTP header and signs it as the trailing
+  entry of the PoP ehts set — `Content-Type;uri;http-method;sender-id`. This is
+  what lets T-Mobile's authorization server mint the `senderId` / `channelId`
+  claims into the access token. The token **URL is unchanged**; T-Mobile routes on
+  the header internally. `Authorization: Basic` remains an unsigned wire header.
+  With `TMOBILE_SENDER_ID` unset, the token request is unchanged.
 
 ## 5. PIT vs Production
 

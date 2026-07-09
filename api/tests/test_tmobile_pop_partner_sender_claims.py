@@ -1,22 +1,26 @@
-"""T-Mobile PoP partner-id / sender-id in signed claims + ehts (2026-07-07).
+"""T-Mobile resource-call PoP structure (2026-07-09).
 
-T-Mobile Engineering (Aman) reviewed the live PIT activation and reported that
-the sender-id was NOT present in the PoP auth claims — the implementation sent
-partner-id / sender-id only as HTTP headers. The activation failed with
-``400 GENS-0003 "Invalid partnerID"``.
+T-Mobile Engineering (Aman) supplied a reference request whose PoP token carried
+``ehts="Authorization"`` and nothing else.  Its ``edts`` reproduces exactly as
+``base64url(SHA-256("Bearer " + access_token))`` — verified against the paired
+access token from the same request.  Neither ``uri``, ``http-method``,
+``partner-id`` nor ``sender-id`` appear in T-Mobile's own signed set.
 
-Fix under test: for RESOURCE calls, partner-id / sender-id (when configured) are
-now included in BOTH:
-  * the signed ``ehts`` set — ``Authorization;uri;http-method;partner-id;sender-id``
-  * the PoP JWT claims — ``partner-id`` / ``sender-id``
-while the HTTP headers, the token-endpoint PoP, and the no-extra-claims PoP shape
-are all left unchanged.
+Partner / sender identity is NOT carried in the PoP.  It reaches the wholesale
+gateway as the ``senderId`` / ``channelId`` claims that T-Mobile's authorization
+server mints into the access token from the consumer key's app registration.
+The speculative ``partner-id`` / ``sender-id`` PoP claims and ehts entries added
+on 2026-07-07 are therefore removed here; the HTTP headers are kept, since
+T-Mobile asked for those explicitly.
 
-No real credentials: the RSA key is generated and HTTP is mocked. Uses the exact
+No real credentials: the RSA key is generated and HTTP is mocked.  Uses the exact
 PIT identifiers (128 / 128) from the failed activation.
 """
 
 from __future__ import annotations
+
+import base64
+import hashlib
 
 import httpx
 import pytest
@@ -32,6 +36,8 @@ TOKEN_PATH = "/oauth2/v2/tokens"
 BASE_URL = "https://pit-apis.t-mobile.com"
 ACTIVATE_PATH = "/wholesale/v1/subscriber/activate"
 ACTIVATE_URL = f"{BASE_URL}{ACTIVATE_PATH}"
+
+ACCESS_TOKEN = "tok"
 
 # The exact identifiers from the 2026-07-07 live PIT failure.
 PARTNER_ID = "128"
@@ -72,7 +78,7 @@ def _claims(pop: str) -> dict:
 
 def _mock_token():
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(
-        200, json={"access_token": "tok", "expires_in": 3600}))
+        200, json={"access_token": ACCESS_TOKEN, "expires_in": 3600}))
 
 
 async def _send_resource_request() -> httpx.Request:
@@ -88,87 +94,80 @@ async def _send_resource_request() -> httpx.Request:
     raise AssertionError("resource request was not sent")
 
 
-# ── generate_pop_token(extra_claims=...) ─────────────────────────────────────
-
-def test_generate_pop_token_includes_extra_claims(signing_key):
-    """extra_claims are merged into the signed PoP payload."""
-    pop = taap.generate_pop_token(
-        ehts_headers=[
-            ("Authorization", "Bearer x"),
-            ("uri", "/wholesale/v1/subscriber/activate"),
-            ("http-method", "POST"),
-        ],
-        extra_claims={"partner-id": PARTNER_ID, "sender-id": SENDER_ID},
+def _expected_edts(digest_input: str) -> str:
+    return (
+        base64.urlsafe_b64encode(hashlib.sha256(digest_input.encode()).digest())
+        .rstrip(b"=")
+        .decode("ascii")
     )
-    claims = _claims(pop)
-    assert claims["partner-id"] == PARTNER_ID
-    assert claims["sender-id"] == SENDER_ID
 
 
-def test_generate_pop_token_without_extra_claims_unchanged(signing_key):
-    """Omitting extra_claims yields exactly the standard claim set — the
-    pre-existing token-generation behavior is unchanged."""
-    pop = taap.generate_pop_token(
-        ehts_headers=[
-            ("Content-Type", "application/json"),
-            ("uri", TOKEN_PATH),
-            ("http-method", "POST"),
-        ],
-    )
-    claims = _claims(pop)
+# ── resource-call PoP matches T-Mobile's reference exactly ───────────────────
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_resource_pop_signs_only_authorization(tmobile_env):
+    """ehts is exactly "Authorization" — matching T-Mobile's reference PoP."""
+    req = await _send_resource_request()
+    assert _claims(req.headers["X-Authorization"])["ehts"] == "Authorization"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_resource_pop_edts_hashes_bearer_prefixed_access_token(tmobile_env):
+    """edts == base64url(SHA-256("Bearer " + access_token)).
+
+    The "Bearer " prefix (with its trailing space) is part of the digest input.
+    Derived by reproducing the edts of T-Mobile's reference PoP from the access
+    token issued for that same request.
+    """
+    req = await _send_resource_request()
+    edts = _claims(req.headers["X-Authorization"])["edts"]
+    assert edts == _expected_edts(f"Bearer {ACCESS_TOKEN}")
+    assert edts != _expected_edts(ACCESS_TOKEN)  # prefix is NOT omitted
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_resource_pop_carries_no_partner_or_sender_claims(tmobile_env):
+    """Partner/sender identity does not travel in the PoP — T-Mobile's
+    authorization server mints senderId/channelId into the access token."""
+    claims = _claims((await _send_resource_request()).headers["X-Authorization"])
     assert set(claims) == {"iss", "iat", "exp", "jti", "ehts", "edts"}
-    assert "partner-id" not in claims
-    assert "sender-id" not in claims
-
-
-def test_generate_pop_token_extra_claims_cannot_clobber_reserved(signing_key):
-    """Reserved claims are protected — extra_claims can never overwrite the
-    standard PoP shape (ehts/edts/iss/…)."""
-    pop = taap.generate_pop_token(
-        ehts_headers=[("Authorization", "Bearer x")],
-        extra_claims={"ehts": "HIJACKED", "edts": "HIJACKED", "partner-id": PARTNER_ID},
-    )
-    claims = _claims(pop)
-    assert claims["ehts"] == "Authorization"          # not overwritten
-    assert claims["edts"] != "HIJACKED"                # not overwritten
-    assert claims["partner-id"] == PARTNER_ID          # non-reserved merged
-
-
-# ── resource-call PoP (both identifiers configured) ──────────────────────────
-
-@respx.mock
-@pytest.mark.asyncio
-async def test_resource_pop_ehts_signs_partner_and_sender(tmobile_env):
-    req = await _send_resource_request()
-    ehts = _claims(req.headers["X-Authorization"])["ehts"]
-    assert ehts == "Authorization;uri;http-method;partner-id;sender-id"
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_resource_pop_claims_include_partner_and_sender(tmobile_env):
-    req = await _send_resource_request()
-    claims = _claims(req.headers["X-Authorization"])
-    assert claims["partner-id"] == PARTNER_ID
-    assert claims["sender-id"] == SENDER_ID
+async def test_resource_pop_does_not_sign_uri_or_method(tmobile_env):
+    """uri / http-method are absent from the signed set (reference has neither)."""
+    ehts = _claims((await _send_resource_request()).headers["X-Authorization"])["ehts"]
+    assert "uri" not in ehts
+    assert "http-method" not in ehts
 
+
+# ── HTTP headers still carry the identifiers ─────────────────────────────────
 
 @respx.mock
 @pytest.mark.asyncio
 async def test_resource_http_headers_still_carry_partner_and_sender(tmobile_env):
-    """The HTTP headers are unchanged — identifiers travel on the wire too."""
+    """The HTTP headers are unchanged — identifiers travel on the wire."""
     req = await _send_resource_request()
     assert req.headers["partner-id"] == PARTNER_ID
     assert req.headers["sender-id"] == SENDER_ID
 
 
-# ── token-endpoint PoP is UNCHANGED ──────────────────────────────────────────
+# ── token-endpoint PoP keeps its own (different) signed set ──────────────────
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_endpoint_pop_unchanged(tmobile_env):
-    """The token request PoP still signs exactly Content-Type;uri;http-method
-    and carries NO partner-id / sender-id claims — only resource calls changed."""
+async def test_token_endpoint_pop_signs_its_own_set(tmobile_env):
+    """The token request PoP signs Content-Type;uri;http-method;sender-id.
+
+    Distinct from the resource call's ehts="Authorization" — the two flows have
+    genuinely different signed sets and this pins that they stay separate.  The
+    trailing sender-id entry is covered in detail by
+    tests/test_tmobile_token_sender_id.py.
+    """
     _mock_token()
     client = taap.TMobileTAAPClient()
     await client.get_access_token()
@@ -177,33 +176,17 @@ async def test_token_endpoint_pop_unchanged(tmobile_env):
     token_req = next(
         c.request for c in respx.calls if c.request.url.path == TOKEN_PATH
     )
-    claims = _claims(token_req.headers["X-Authorization"])
-    assert claims["ehts"] == "Content-Type;uri;http-method"
-    assert "partner-id" not in claims
-    assert "sender-id" not in claims
+    assert _claims(token_req.headers["X-Authorization"])["ehts"] == (
+        "Content-Type;uri;http-method;sender-id"
+    )
 
 
-# ── partial / no configuration ───────────────────────────────────────────────
+# ── dry-run preview reflects the real signed set ─────────────────────────────
 
-@respx.mock
-@pytest.mark.asyncio
-async def test_resource_pop_omits_identifiers_when_unconfigured(monkeypatch, signing_key):
-    """With neither identifier configured, the signed ehts is unchanged from
-    the historical Authorization;uri;http-method set."""
-    for name, value in {
-        "TMOBILE_ENV": "pit",
-        "TMOBILE_BASE_URL": BASE_URL,
-        "TMOBILE_TOKEN_URL": TOKEN_URL,
-        "TMOBILE_CONSUMER_KEY": "ck",
-        "TMOBILE_CONSUMER_SECRET": "cs",
-        "TMOBILE_PARTNER_ID": "",
-        "TMOBILE_SENDER_ID": "",
-        "TMOBILE_ACCOUNT_ID": "",
-    }.items():
-        monkeypatch.setattr(f"app.config.settings.{name}", value)
-
-    req = await _send_resource_request()
-    claims = _claims(req.headers["X-Authorization"])
-    assert claims["ehts"] == "Authorization;uri;http-method"
-    assert "partner-id" not in claims
-    assert "sender-id" not in claims
+def test_preview_pop_signed_ehts_matches_request(tmobile_env):
+    """build_activation_preview() reports the ehts _request() actually signs."""
+    preview = taap.TMobileTAAPClient().build_activation_preview(
+        "8901260963132697538", market_zip="30346",
+        callback_location="https://example.invalid/cb",
+    )
+    assert preview["pop_signed_ehts"] == ["Authorization"]
