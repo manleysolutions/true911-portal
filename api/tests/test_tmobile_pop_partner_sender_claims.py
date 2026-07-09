@@ -156,14 +156,17 @@ async def test_resource_http_headers_still_carry_partner_and_sender(tmobile_env)
     assert req.headers["sender-id"] == SENDER_ID
 
 
-# ── token-endpoint PoP is UNCHANGED ──────────────────────────────────────────
+# ── token-endpoint PoP keeps its own (different) signed set ──────────────────
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_endpoint_pop_unchanged(tmobile_env):
-    """The token request PoP still signs exactly Content-Type;uri;http-method.
+async def test_token_endpoint_pop_signs_its_own_set(tmobile_env):
+    """The token request PoP signs Content-Type;uri;http-method;sender-id.
 
-    This call demonstrably succeeds against PIT, so its shape is left alone.
+    Distinct from the resource call's ehts="Authorization" — the two flows have
+    genuinely different signed sets and this pins that they stay separate.  The
+    trailing sender-id entry is covered in detail by
+    tests/test_tmobile_token_sender_id.py.
     """
     _mock_token()
     client = taap.TMobileTAAPClient()
@@ -174,7 +177,7 @@ async def test_token_endpoint_pop_unchanged(tmobile_env):
         c.request for c in respx.calls if c.request.url.path == TOKEN_PATH
     )
     assert _claims(token_req.headers["X-Authorization"])["ehts"] == (
-        "Content-Type;uri;http-method"
+        "Content-Type;uri;http-method;sender-id"
     )
 
 

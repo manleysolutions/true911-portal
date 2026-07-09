@@ -381,6 +381,8 @@ class TMobileTAAPClient:
         - grant_type=client_credentials
         - Basic auth with consumer key:secret
         - X-Authorization: PoP <pop_token> signed for the token URL
+        - sender-id: <TMOBILE_SENDER_ID> (when configured) — both as a wire
+          header and as the trailing entry of the signed PoP ehts set
         """
         now = time.time()
         if self._access_token and now < self._token_expires_at:
@@ -432,7 +434,7 @@ class TMobileTAAPClient:
         # See tests/test_tmobile_taap_no_secret_logging.py for the guard.
 
         # auth_header is the Basic credential sent on the wire.  Per the
-        # T-Mobile reference, the TOKEN request's PoP signs exactly
+        # T-Mobile reference, the TOKEN request's PoP signs
         # "Content-Type;uri;http-method" (Authorization is NOT part of the
         # PoP signature for this call) — it still travels as a wire header.
         headers = {
@@ -441,13 +443,29 @@ class TMobileTAAPClient:
             "Accept": "application/json",
         }
         token_uri_path = urlsplit(self.token_url).path
-        pop = generate_pop_token(
-            ehts_headers=[
-                ("Content-Type", token_content_type),
-                ("uri", token_uri_path),
-                ("http-method", "POST"),
-            ],
-        )
+        ehts_headers = [
+            ("Content-Type", token_content_type),
+            ("uri", token_uri_path),
+            ("http-method", "POST"),
+        ]
+
+        # T-Mobile Engineering (Aman, 2026-07-09): "Please pass the sender-id
+        # from your end.  You can continue to use the same token URL as DNS and
+        # we handle the backend routing internally."  The token endpoint routes
+        # on this header, and the authorization server mints the senderId /
+        # channelId claims into the access token from it.  It is appended to the
+        # signed ehts set so T-Mobile's PoP validator sees the same value it
+        # routes on.  sender-id is an opaque partner identifier (128 for
+        # Infatrac), not a secret.
+        #
+        # When TMOBILE_SENDER_ID is unset the header and the ehts entry are both
+        # omitted, leaving the token request byte-for-byte as it was before.
+        sender_id = (self.sender_id or "").strip()
+        if sender_id:
+            headers["sender-id"] = sender_id
+            ehts_headers.append(("sender-id", sender_id))
+
+        pop = generate_pop_token(ehts_headers=ehts_headers)
         # T-Mobile's TAAP validator parses the entire X-Authorization value
         # as a JWT — adding a "PoP " prefix breaks base64 decoding of the
         # header part and yields JWTDecodeException server-side. Send the

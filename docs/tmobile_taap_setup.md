@@ -207,8 +207,14 @@ Key details:
   in the PoP at all — it reaches the gateway as the `senderId` / `channelId`
   claims that T-Mobile's authorization server mints into the access token from
   the consumer key's app registration. `partner-id` / `sender-id` still travel as
-  HTTP headers. See `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`. The **token** request PoP
-  is unchanged (`Content-Type;uri;http-method`).
+  HTTP headers. See `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`.
+- **Token request (2026-07-09, per Aman):** the OAuth token request sends
+  `sender-id: <TMOBILE_SENDER_ID>` as an HTTP header and signs it as the trailing
+  entry of the PoP ehts set — `Content-Type;uri;http-method;sender-id`. This is
+  what lets T-Mobile's authorization server mint the `senderId` / `channelId`
+  claims into the access token. The token **URL is unchanged**; T-Mobile routes on
+  the header internally. `Authorization: Basic` remains an unsigned wire header.
+  With `TMOBILE_SENDER_ID` unset, the token request is unchanged.
 
 ## 5. PIT vs Production
 
