@@ -48,18 +48,52 @@ T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
 > the claims. Please check the solution to see if it's being sent or not. Also,
 > the data/identifier sent has no logs."*
 
+### Attempted fix (2026-07-07, superseded)
+
+Resource calls added `partner-id` / `sender-id` to the signed **ehts** set and to
+the **PoP JWT claims**. This did **not** resolve GENS-0003 — the retest returned
+`Empty/Invalid PartnerID/SenderID`. Reverted by the 2026-07-09 finding below.
+
+## 2026-07-09 — Reference-token forensics: identity lives in the access token
+
+T-Mobile supplied a known-good reference request (Bearer + `X-Authorization`).
+Decoding both locally established three facts:
+
+1. **The reference PoP signs only `Authorization`.** Its `ehts` is the single
+   value `Authorization`, and its `edts` reproduces exactly as
+   `base64url(SHA-256("Bearer " + access_token))` — confirmed by hashing the
+   paired access token from that same request (the `iat` values match). The
+   `"Bearer "` prefix, including its trailing space, is part of the digest input.
+   Neither `uri`, `http-method`, `partner-id` nor `sender-id` is signed.
+
+2. **The reference access token carries `senderId` and `channelId` claims.**
+   These are minted by T-Mobile's authorization server from the consumer key's
+   app registration and cannot be injected by anything we send. (Values withheld
+   here — they are in the reference token T-Mobile supplied out of band.)
+
+3. **Our access token has neither claim.** A token decoded from the same
+   authorization server for a different `sub` shows no `senderId` and no
+   `channelId`.
+
+**Conclusion:** the wholesale gateway reads PartnerID / SenderID from the
+**access token claims**, not from our HTTP headers or our PoP. No client-side
+change can populate them; T-Mobile must attach the `senderId` / `channelId` (and
+partner mapping) attributes to our consumer key's app registration.
+
 ### Fix (this change)
 
-For **resource calls** (`_request`), when `partner-id` / `sender-id` are
-configured they are now included in **both**:
+Resource calls now sign exactly what T-Mobile's reference signs:
 
-- the signed **ehts** set — `Authorization;uri;http-method;partner-id;sender-id`
-- the **PoP JWT claims** — `partner-id` / `sender-id`
+- the signed **ehts** set — `Authorization` (only)
+- the **PoP JWT claims** — no `partner-id` / `sender-id`
 
-in addition to the existing HTTP headers (unchanged). `generate_pop_token()`
-gained an optional `extra_claims` argument to carry these; omitting it reproduces
-the previous token byte-for-byte. **The token-endpoint PoP is unchanged** — it
-still signs exactly `Content-Type;uri;http-method` with no partner/sender claims.
+`partner-id` / `sender-id` remain as HTTP headers (T-Mobile asked for those
+explicitly). The now-unused `extra_claims` argument to `generate_pop_token()` is
+removed. **The token-endpoint PoP is unchanged** — it still signs exactly
+`Content-Type;uri;http-method`, and that call demonstrably succeeds against PIT.
+
+This alignment removes a PoP-validation confound; it is **not** expected to clear
+GENS-0003 on its own. That requires the T-Mobile-side registration change above.
 
 Diagnostic logging on a `>= 400` response now also surfaces the response
 `work-flow-id` and `service-transaction-id` (alongside method/path/status/

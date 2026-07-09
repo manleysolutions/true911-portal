@@ -150,11 +150,7 @@ def _derive_public_key_jwk(private_key_pem: str) -> dict[str, str]:
 
 # ── PoP Token Generation ───────────────────────────────────────────────────
 
-def generate_pop_token(
-    *,
-    ehts_headers: list[tuple[str, str]],
-    extra_claims: dict[str, Any] | None = None,
-) -> str:
+def generate_pop_token(*, ehts_headers: list[tuple[str, str]]) -> str:
     """Generate a T-Mobile TAAP PoP (Proof of Possession) token.
 
     T-Mobile TAAP uses the Apigee PoP format (not RFC 9449 DPoP).
@@ -174,11 +170,6 @@ def generate_pop_token(
         ehts_headers: ordered list of (ehts_key, value) tuples.  Keys appear
             in the `ehts` claim (";"-joined); the values are concatenated with
             NO separator and SHA-256-hashed into `edts`.
-        extra_claims: optional additional JWT claims merged into the payload
-            (e.g. ``partner-id`` / ``sender-id`` that T-Mobile's auth validator
-            inspects in the PoP claims — see the 2026-07-07 finding below).
-            Reserved claims (iss/iat/exp/jti/ehts/edts) are never overwritten.
-            When omitted, the token is byte-for-byte identical to before.
 
     Returns:
         Signed JWT string for the X-Authorization header.
@@ -218,14 +209,6 @@ def generate_pop_token(
         "ehts": ehts,
         "edts": edts,
     }
-
-    # Merge caller-supplied extra claims (e.g. partner-id / sender-id). Reserved
-    # claims are protected so a caller can never clobber the standard PoP shape.
-    if extra_claims:
-        for claim_key, claim_value in extra_claims.items():
-            if claim_key in payload:
-                continue
-            payload[claim_key] = claim_value
 
     try:
         token = jose_jwt.encode(
@@ -558,7 +541,7 @@ class TMobileTAAPClient:
 
         Every T-Mobile API call requires:
         - Authorization: Bearer <access_token>
-        - X-Authorization: PoP <pop_token>  (signed for this specific URL)
+        - X-Authorization: <pop_token>  (signs the Authorization header value)
         - sender-id, partner-id, X-Account-Id headers
         """
         access_token = await self.get_access_token()
@@ -570,30 +553,16 @@ class TMobileTAAPClient:
 
         req_content_type = "application/json"
         authorization_value = f"Bearer {access_token}"
-        # Resource calls sign "Authorization;uri;http-method" (uri = URL path,
-        # http-method = the verb). Body is not signed here.
-        #
-        # T-Mobile Engineering (Aman, 2026-07-07) reviewed a live PIT activation
-        # (GENS-0003 "Invalid partnerID") and found sender-id was NOT present in
-        # the PoP auth claims — only in the HTTP headers. Fix: when configured,
-        # partner-id / sender-id are added to BOTH the signed ehts set AND the
-        # PoP JWT claims, in addition to the existing HTTP headers. The order is
-        # Authorization;uri;http-method;partner-id;sender-id.
-        pop_ehts: list[tuple[str, str]] = [
-            ("Authorization", authorization_value),
-            ("uri", urlsplit(url).path),
-            ("http-method", method.upper()),
-        ]
-        pop_extra_claims: dict[str, Any] = {}
-        if self.partner_id:
-            pop_ehts.append(("partner-id", self.partner_id))
-            pop_extra_claims["partner-id"] = self.partner_id
-        if self.sender_id:
-            pop_ehts.append(("sender-id", self.sender_id))
-            pop_extra_claims["sender-id"] = self.sender_id
+        # Resource calls sign exactly "Authorization" — nothing else.  Verified
+        # against a T-Mobile reference request (Aman, 2026-07-09): its PoP
+        # carried ehts="Authorization" and an edts that reproduces bit-for-bit
+        # as base64url(SHA-256("Bearer " + access_token)).  Neither uri,
+        # http-method, partner-id nor sender-id appear in T-Mobile's own signed
+        # set, and partner/sender identity is not carried in the PoP at all —
+        # it arrives as the `senderId` / `channelId` claims that T-Mobile's
+        # authorization server mints into the access token.
         pop = generate_pop_token(
-            ehts_headers=pop_ehts,
-            extra_claims=pop_extra_claims or None,
+            ehts_headers=[("Authorization", authorization_value)],
         )
 
         # Named so it can be logged + correlated with T-Mobile's server logs.
@@ -977,13 +946,8 @@ class TMobileTAAPClient:
                 "<NOT SET — set TMOBILE_CALLBACK_LOCATION; live activation will refuse to send>"
             )
 
-        # ehts entries the PoP token signs for a resource call (see _request):
-        # Authorization;uri;http-method plus partner-id/sender-id when set.
-        pop_signed_ehts = ["Authorization", "uri", "http-method"]
-        if self.partner_id:
-            pop_signed_ehts.append("partner-id")
-        if self.sender_id:
-            pop_signed_ehts.append("sender-id")
+        # ehts entries the PoP token signs for a resource call (see _request).
+        pop_signed_ehts = ["Authorization"]
 
         live_enabled = self.live_calls_enabled()
         notes = [

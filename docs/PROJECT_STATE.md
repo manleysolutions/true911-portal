@@ -17,16 +17,20 @@ T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
 `8901260963132697538`, work-flow-id `99a2b4f7-…_P`, service-transaction-id
 `9b8f65ad-…`).
 
-Fix (`api/app/integrations/tmobile_taap.py`): for **resource calls**, when
-configured, `partner-id` / `sender-id` are now in **both** the signed `ehts`
-(`Authorization;uri;http-method;partner-id;sender-id`) **and** the PoP JWT
-claims — plus the existing headers (unchanged). `generate_pop_token()` gained an
-optional `extra_claims`; omitting it is byte-for-byte identical to before. **The
-token-endpoint PoP is unchanged.** Failure logging now also surfaces the
-response `work-flow-id` / `service-transaction-id` (no secrets/tokens ever
-logged). Tests: new `test_tmobile_pop_partner_sender_claims.py` + a diagnostic
-case; full suite green (**3902**). Docs:
-`TMOBILE_PIT_ACTIVATION_PAYLOAD.md` (finding + retest), `tmobile_taap_setup.md`.
+Fix (`api/app/integrations/tmobile_taap.py`): **resource calls** sign exactly
+`ehts="Authorization"` with `edts = base64url(SHA-256("Bearer " + access_token))`,
+matching a T-Mobile reference request bit-for-bit. Partner/sender identity is
+**not** carried in the PoP — it reaches the gateway as the `senderId` /
+`channelId` claims T-Mobile's authorization server mints into the access token
+from the consumer key's app registration. Our token has neither claim, which is
+the root cause of `GENS-0003 Empty/Invalid PartnerID/SenderID`; clearing it needs
+a **T-Mobile-side registration change**, not a client change. `partner-id` /
+`sender-id` remain HTTP headers; the now-unused `extra_claims` argument to
+`generate_pop_token()` is removed. **The token-endpoint PoP is unchanged.**
+Failure logging surfaces the response `work-flow-id` / `service-transaction-id`
+(no secrets/tokens ever logged). Tests: `test_tmobile_pop_partner_sender_claims.py`
+pins the reference PoP shape + the `"Bearer "`-prefixed digest input. Docs:
+`TMOBILE_PIT_ACTIVATION_PAYLOAD.md` (forensics), `tmobile_taap_setup.md`.
 
 **No live activation was run by Claude** — the fix ships behind
 `TMOBILE_PIT_LIVE_CALLS_ENABLED` (still false). Retest procedure (confirm env →
