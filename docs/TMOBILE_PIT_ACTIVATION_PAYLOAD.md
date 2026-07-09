@@ -48,18 +48,54 @@ T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
 > the claims. Please check the solution to see if it's being sent or not. Also,
 > the data/identifier sent has no logs."*
 
+### Attempted fix (2026-07-07, superseded)
+
+Resource calls added `partner-id` / `sender-id` to the signed **ehts** set and to
+the **PoP JWT claims**. This did **not** resolve GENS-0003 — the retest returned
+`Empty/Invalid PartnerID/SenderID`. Reverted by the 2026-07-09 finding below.
+
+## 2026-07-09 — Reference-token forensics: identity lives in the access token
+
+T-Mobile supplied a known-good reference request (Bearer + `X-Authorization`).
+Decoding both locally established three facts:
+
+1. **The reference PoP signs only `Authorization`.** Its `ehts` is the single
+   value `Authorization`, and its `edts` reproduces exactly as
+   `base64url(SHA-256("Bearer " + access_token))` — confirmed by hashing the
+   paired access token from that same request (the `iat` values match). The
+   `"Bearer "` prefix, including its trailing space, is part of the digest input.
+   Neither `uri`, `http-method`, `partner-id` nor `sender-id` is signed.
+
+2. **The reference access token carries `senderId` and `channelId` claims.**
+   These are minted by T-Mobile's authorization server from the consumer key's
+   app registration and cannot be injected by anything we send. (Values withheld
+   here — they are in the reference token T-Mobile supplied out of band.)
+
+3. **Our access token has neither claim.** A token decoded from the same
+   authorization server for a different `sub` shows no `senderId` and no
+   `channelId`.
+
+**Conclusion:** the wholesale gateway reads PartnerID / SenderID from the
+**access token claims**, not from our HTTP headers or our PoP. No client-side
+change can populate them; T-Mobile must attach the `senderId` / `channelId` (and
+partner mapping) attributes to our consumer key's app registration.
+
 ### Fix (this change)
 
-For **resource calls** (`_request`), when `partner-id` / `sender-id` are
-configured they are now included in **both**:
+Resource calls now sign exactly what T-Mobile's reference signs:
 
-- the signed **ehts** set — `Authorization;uri;http-method;partner-id;sender-id`
-- the **PoP JWT claims** — `partner-id` / `sender-id`
+- the signed **ehts** set — `Authorization` (only)
+- the **PoP JWT claims** — no `partner-id` / `sender-id`
 
-in addition to the existing HTTP headers (unchanged). `generate_pop_token()`
-gained an optional `extra_claims` argument to carry these; omitting it reproduces
-the previous token byte-for-byte. **The token-endpoint PoP is unchanged** — it
-still signs exactly `Content-Type;uri;http-method` with no partner/sender claims.
+`partner-id` / `sender-id` remain as HTTP headers (T-Mobile asked for those
+explicitly). The now-unused `extra_claims` argument to `generate_pop_token()` is
+removed. **The token-endpoint PoP is unchanged** — it still signs exactly
+`Content-Type;uri;http-method`, and that call demonstrably succeeds against PIT.
+*(Superseded later the same day — see "Token request must carry sender-id"
+below, which adds `sender-id` to the token-endpoint PoP.)*
+
+This alignment removes a PoP-validation confound; it is **not** expected to clear
+GENS-0003 on its own. That requires the T-Mobile-side registration change above.
 
 Diagnostic logging on a `>= 400` response now also surfaces the response
 `work-flow-id` and `service-transaction-id` (alongside method/path/status/
@@ -72,8 +108,8 @@ future PIT failure is self-correlating in our logs — never logging any token,
 1. **Confirm env** on the API service: `TMOBILE_ENV=pit`,
    `TMOBILE_PARTNER_ID=128`, `TMOBILE_SENDER_ID=128`, `TMOBILE_CALLBACK_LOCATION`
    set, private key present, `TMOBILE_PIT_LIVE_CALLS_ENABLED` still **false**.
-2. **Dry-run** (sends nothing) and confirm `pop_signed_ehts` now lists
-   `partner-id` / `sender-id`:
+2. **Dry-run** (sends nothing) and confirm `pop_signed_ehts` is exactly
+   `["Authorization"]`:
    ```powershell
    cd api
    python ../scripts/tmobile_activation_dryrun.py --iccid 8901260963132697538 --market-zip 30346
@@ -83,6 +119,52 @@ future PIT failure is self-correlating in our logs — never logging any token,
    `activate_subscriber`, then set it back to `false`.
 4. **Capture** and send to Aman: UTC timestamp, ICCID, endpoint, `work-flow-id`,
    `service-transaction-id`, and the HTTP response.
+
+## 2026-07-09 (later) — Token request must carry sender-id
+
+T-Mobile Engineering (Aman), responding to the reference-token forensics above:
+
+> Please pass the sender-id from your end.
+> You can continue to use `https://wholesaleapi-test.t-mobile.com/oauth2/v1/tokens`
+> as DNS and we handle the backend routing internally.
+
+This closes the gap the forensics opened. The `senderId` / `channelId` claims are
+minted by T-Mobile's **authorization server**, which needs the `sender-id` on the
+**token request** in order to mint them — we were only ever sending it on the
+resource call, where it is too late to influence the access token.
+
+### Fix (this change)
+
+`get_access_token()` now, **only when `TMOBILE_SENDER_ID` is set**:
+
+- sends `sender-id: <TMOBILE_SENDER_ID>` as an HTTP header on the token request;
+- appends `sender-id` to the signed PoP **ehts** set, so the signed set becomes
+  `Content-Type;uri;http-method;sender-id` and the `edts` digest input becomes
+  `"application/json" + <token-uri-path> + "POST" + <sender-id>`.
+
+Unchanged: the **token URL** (T-Mobile routes on the header, internally);
+`Authorization: Basic` stays a wire header and is **not** signed; the resource
+call keeps `ehts="Authorization"` and its `partner-id` / `sender-id` headers.
+When `TMOBILE_SENDER_ID` is unset or blank, the token request is byte-for-byte
+what it was before.
+
+Covered by `api/tests/test_tmobile_token_sender_id.py`.
+
+### Verification after deploy — token-only, no activation
+
+Run **before** any further live activation. This fetches a token and decodes it;
+it sends no activation and needs `TMOBILE_PIT_LIVE_CALLS_ENABLED=false`.
+
+```powershell
+cd api
+python ../scripts/get_tmobile_tokens.py --decode-claims
+```
+
+Confirm the Bearer claims now include **`senderId`** and **`channelId`**. If they
+are still absent, stop — the T-Mobile-side app registration is still missing the
+attributes, and another live activation will fail with GENS-0003 exactly as
+before. Report the decoded claim names (never the values, and never the token) to
+Aman.
 
 ## Field mapping (env override → PIT-safe constant fallback)
 
