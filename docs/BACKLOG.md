@@ -13,6 +13,36 @@
 
 ---
 
+## 🔴 URGENT — T-Mobile PIT: TAAP restored to the supplied reference contract [2026-07-16]
+
+**Status:** implemented on `fix/tmobile-taap-reference-contract`, **PR open, NOT
+merged**. No live activation run.
+
+T-Mobile Engineering supplied the complete **PoP Token Builder reference**; it is
+now the authoritative wire contract and supersedes PRs #165–#168. Full contract in
+`tmobile_taap_setup.md` § "Authoritative PoP contract"; root cause and retest in
+`PROJECT_STATE.md` §0.
+
+**Next actions (in order):**
+
+1. Merge the PR and confirm the deployed commit on Render.
+2. Token-only validation — `python ../scripts/get_tmobile_tokens.py --decode-claims`
+   (sends no activation; prints no token material). Confirm
+   `Content-Type;Authorization;uri;http-method;body`, `sender-id: '128'` present +
+   unsigned, `grant-type: client_credentials`, body properties `['cnf']`.
+3. **Needs Verification:** whether PIT returns an `id_token`. The client handles
+   both (`X-Auth-Originator` sent when present, omitted when not) — the retest
+   reports which, without printing it.
+4. **Needs Verification:** whether the `senderId` / `channelId` access-token claims
+   now appear. PRs #165–#168 concluded their absence required a T-Mobile-side
+   registration change; that conclusion rested on a PoP that did not match the
+   reference, so it must be re-tested before being believed.
+5. Only then: one activation while T-Mobile watches. Capture UTC timestamp, ICCID,
+   partner-transaction-id, X-Correlation-Id, work-flow-id, service-transaction-id.
+   **Do not retry automatically.**
+
+---
+
 ## ⭐ PRIMARY OBJECTIVE — EPIC-RH-GO-LIVE (RH Customer Go-Live)
 
 > **The current top business objective:** place **Restoration Hardware (Judy)** into

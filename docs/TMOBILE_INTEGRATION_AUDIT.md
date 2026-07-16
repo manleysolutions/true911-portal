@@ -146,37 +146,57 @@ Partially confirmed. The 200 status code + JSON body is sufficient for the callb
 
 ## 3. OAuth / PoP token status
 
+> **⚠️ This section described the implementation as of the original audit. Several
+> of its "✅ correct" verdicts were wrong** — they judged our reconstruction
+> against itself rather than against T-Mobile's contract. T-Mobile Engineering
+> supplied the authoritative PoP Token Builder reference on 2026-07-16; it now
+> governs. See `tmobile_taap_setup.md` § "Authoritative PoP contract".
+>
+> Corrections to what this section claimed:
+>
+> | Audit claimed ✅ | Actually |
+> |---|---|
+> | `grant_type` in the JSON body | unsigned `grant-type` **header**; body is `{"cnf":"..."}` only |
+> | `typ="pop"` | `typ="JWT"` |
+> | `iss` = consumer_key | **no `iss`** — it leaked the consumer key into a decodable JWT |
+> | ehts is comma-separated | **semicolon**-separated |
+> | edts joins values with `\n` | values concatenated with **no separator** |
+> | "Body is NEVER included (also correct for TAAP)" | body **is** signed, as exact wire bytes |
+> | `X-Authorization: PoP <jwt>` | raw JWT, no `PoP ` prefix |
+>
+> The lesson worth keeping: an audit that reads only our own code can confirm
+> internal consistency, never conformance to someone else's wire contract.
+
 ### Token exchange implemented?
 
-✅ **Yes — fully.** `tmobile_taap.py:255-389` (`get_access_token()`) implements the complete OAuth2 client-credentials flow:
+✅ **Yes — fully.** `get_access_token()` implements the client-credentials flow:
 
-- POST to `TMOBILE_TOKEN_URL` with `grant_type=client_credentials` body
+- POST to `TMOBILE_TOKEN_URL` with a compact `{"cnf":"..."}` body
 - `Authorization: Basic base64(consumer_key:consumer_secret)` header
-- `X-Authorization: PoP <jwt>` header signed for the token URL itself
-- `cnf` claim in the token request body with derived RSA public key
-- Caches the access token with `expires_in - 60s` safety margin
+- `grant-type: client_credentials` and `sender-id` unsigned headers
+- `X-Authorization: <jwt>` PoP signing `Content-Type;Authorization;uri;http-method;body`
+- Caches the access token (and any `id_token`) with `expires_in - 60s` margin
 - Raises `RuntimeError` with status code on failure
 
 ### PoP / Apigee-style signing?
 
-✅ **Yes — production-ready Apigee format** (NOT RFC 9449 DPoP, which is correct for T-Mobile TAAP).
+✅ **Yes** — the Apigee PoP family (NOT RFC 9449 DPoP), per T-Mobile's supplied builder.
 
-`tmobile_taap.py:130-193` (`generate_pop_token()`):
-- RS256 JWT with header `{"alg":"RS256","typ":"pop"}`
-- Claims: `iss` (consumer_key), `iat`, `exp` (+POP_TOKEN_EXPIRY_SECONDS), `jti` (uuid), `ehts` (comma-separated header NAMES being signed), `edts` (base64url-SHA256 of `\n`-joined header VALUES — Apigee PopTokenBuilder convention)
-- Test `test_pop_token_edts_canonicalization_is_values_only` pins this against the alternative `name=value&name=value` format to catch regressions
+`generate_pop_token()`:
+- RS256 JWT with header `{"alg":"RS256","typ":"JWT"}`
+- Claims exactly: `iat`, `exp` (= iat + 60), `ehts`, `edts`, `jti`, `v="1"` — no `iss`
 
 ### Canonicalization?
 
-✅ **Yes — correct.** `tmobile_taap.py:163-171`:
-
 ```python
-digest_input_str = "\n".join(value for _, value in ehts_headers)
-digest_input = digest_input_str.encode("utf-8")
+ehts = ";".join(name for name, _ in ehts_headers)
+digest_input = "".join(value for _, value in ehts_headers).encode("utf-8")
 edts = base64.urlsafe_b64encode(hashlib.sha256(digest_input).digest()).rstrip(b"=").decode("ascii")
 ```
 
-Header VALUES only (not names), joined by `\n`, SHA-256, base64url, strip `=`. Matches Apigee PopTokenBuilder reference. Body is NEVER included (also correct for TAAP).
+Values only (not names), **concatenated with no separator**, SHA-256 once,
+base64url, strip `=`. The body participates as its exact wire bytes and is not
+pre-hashed. Pinned by golden tests in `tests/test_tmobile_reference_contract.py`.
 
 ### Client credentials configured?
 
