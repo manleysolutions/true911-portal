@@ -36,6 +36,20 @@ regexes = [
   #   web/src/contexts/AuthContext.jsx  ->  IMPERSONATION_KEY = "t911_impersonation"
   # The default generic-api-key rule matches the `_KEY = "..."` shape.
   '''t911_impersonation''',
+
+  # Fabricated T-Mobile TAAP unit-test sentinels, e.g.
+  #   api/tests/test_tmobile_token_sender_id.py
+  #     CONSUMER_KEY    = "TM_TEST_CK_HG7XQ2"
+  #     CONSUMER_SECRET = "TM_TEST_CS_PL3JR9"
+  # These are invented strings that exist ONLY so a test can assert the value
+  # never reaches stdout or the logs; they authenticate nothing and have never
+  # been T-Mobile credentials. The default generic-api-key rule matches the
+  # `_KEY = "..."` / `_SECRET = "..."` shape on their entropy.
+  #
+  # Matched on the VALUE (the reserved TM_TEST_ prefix) rather than allowlisting
+  # the file, deliberately: this file is the guard proving credentials are not
+  # logged, so a REAL secret pasted into it must still fail the scan.
+  '''^TM_TEST_(CK|CS)_[A-Z0-9]+$''',
 ]
 
 # Path excludes. These keep local developer runs identical to CI (where these
