@@ -1,16 +1,15 @@
-"""T-Mobile OAuth token request carries sender-id (2026-07-09).
+"""T-Mobile OAuth token request carries sender-id as an UNSIGNED header.
 
-T-Mobile Engineering (Aman, 2026-07-09):
+T-Mobile Engineering (Aman, confirmed live 2026-07-16): ``sender-id`` is an
+**unsigned OAuth request HTTP header**.  It must travel on the token request as
+the exact lowercase header ``sender-id: 128``, and it must **not** appear in the
+token request's PoP ``ehts``, which stays exactly
+``Content-Type;uri;http-method``.  Including it in the signed set (the earlier
+behavior these tests previously asserted) makes T-Mobile's PoP validator reject
+the request.
 
-    "Please pass the sender-id from your end.  You can continue to use
-    https://wholesaleapi-test.t-mobile.com/oauth2/v1/tokens as DNS and we
-    handle the backend routing internally."
-
-So the token request now sends ``sender-id`` as a wire header AND appends it to
-the signed PoP ``ehts`` set (``Content-Type;uri;http-method;sender-id``), while
-the token URL is untouched and ``Authorization: Basic`` stays an unsigned wire
-header.  When ``TMOBILE_SENDER_ID`` is unset, the request is byte-for-byte what
-it was before this change.
+The token URL is untouched and ``Authorization: Basic`` stays an unsigned wire
+header.  When ``TMOBILE_SENDER_ID`` is unset, the header is omitted.
 
 No real credentials: the RSA key is generated per-test and HTTP is mocked.
 """
@@ -109,9 +108,22 @@ def _expected_edts(digest_input: str) -> str:
 @respx.mock
 @pytest.mark.asyncio
 async def test_token_request_sends_sender_id_header(tmobile_env):
-    """Aman's ask: the OAuth token request must carry sender-id."""
+    """Aman's ask: the OAuth token request must carry sender-id: 128."""
     req = await _send_token_request()
     assert req.headers["sender-id"] == SENDER_ID
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_sender_id_header_name_is_lowercase_on_the_wire(tmobile_env):
+    """T-Mobile spells the header lowercase — assert the raw wire bytes.
+
+    httpx header lookup is case-insensitive, so read raw_headers to prove the
+    literal name sent is b"sender-id".
+    """
+    req = await _send_token_request()
+    raw_names = [name for name, _ in req.headers.raw]
+    assert b"sender-id" in raw_names
 
 
 @respx.mock
@@ -130,33 +142,41 @@ async def test_token_request_still_sends_basic_authorization(tmobile_env):
     assert req.headers["Authorization"] == f"Basic {BASIC_B64}"
 
 
-# ── 2. sender-id is inside the signed PoP ehts ───────────────────────────────
+# ── 2. sender-id is UNSIGNED — it stays out of the token PoP ehts ────────────
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_pop_ehts_includes_sender_id(tmobile_env):
-    """ehts == "Content-Type;uri;http-method;sender-id" — sender-id last."""
+async def test_token_pop_ehts_excludes_sender_id(tmobile_env):
+    """sender-id is unsigned — it must not appear in the token PoP ehts."""
+    req = await _send_token_request()
+    assert "sender-id" not in _claims(req.headers["X-Authorization"])["ehts"]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_token_pop_ehts_is_exactly_content_type_uri_http_method(tmobile_env):
+    """The signed set is pinned — even with sender-id configured."""
     req = await _send_token_request()
     assert _claims(req.headers["X-Authorization"])["ehts"] == (
-        "Content-Type;uri;http-method;sender-id"
+        "Content-Type;uri;http-method"
     )
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_pop_edts_covers_sender_id_value(tmobile_env):
-    """edts hashes the ehts VALUES in order, with the sender-id value last.
+async def test_token_pop_edts_does_not_cover_sender_id_value(tmobile_env):
+    """edts hashes only the three signed values — the sender-id value is absent.
 
     Reproduced independently here so a silent change to either the ehts order
     or the digest canonicalization fails loudly.
     """
     req = await _send_token_request()
     edts = _claims(req.headers["X-Authorization"])["edts"]
-    assert edts == _expected_edts(
+    assert edts == _expected_edts("application/json" + TOKEN_PATH + "POST")
+    # The signed-sender-id digest (the bug this PR fixes) must NOT match.
+    assert edts != _expected_edts(
         "application/json" + TOKEN_PATH + "POST" + SENDER_ID
     )
-    # And the pre-change digest (no sender-id) must NOT still match.
-    assert edts != _expected_edts("application/json" + TOKEN_PATH + "POST")
 
 
 @respx.mock
@@ -167,12 +187,12 @@ async def test_token_pop_does_not_sign_authorization(tmobile_env):
     assert "Authorization" not in ehts
 
 
-# ── 3. behavior is unchanged when sender-id is not configured ────────────────
+# ── 3. empty / padded sender-id handling ─────────────────────────────────────
 
 @respx.mock
 @pytest.mark.asyncio
 async def test_token_request_omits_sender_id_when_unset(tmobile_env, monkeypatch):
-    """No sender-id configured -> no header, and the ehts set is the old one."""
+    """An empty sender id omits the HTTP header; the ehts set is unaffected."""
     monkeypatch.setattr("app.config.settings.TMOBILE_SENDER_ID", "")
     req = await _send_token_request()
 
@@ -185,7 +205,7 @@ async def test_token_request_omits_sender_id_when_unset(tmobile_env, monkeypatch
 @respx.mock
 @pytest.mark.asyncio
 async def test_whitespace_only_sender_id_is_treated_as_unset(tmobile_env, monkeypatch):
-    """A stray-whitespace env value must not sign an empty ehts entry."""
+    """A stray-whitespace env value must not send a blank header."""
     monkeypatch.setattr("app.config.settings.TMOBILE_SENDER_ID", "   ")
     req = await _send_token_request()
 
@@ -197,16 +217,17 @@ async def test_whitespace_only_sender_id_is_treated_as_unset(tmobile_env, monkey
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_sender_id_is_stripped_before_signing_and_sending(tmobile_env):
-    """The wire header and the edts digest use the SAME stripped value.
+async def test_sender_id_whitespace_is_stripped_before_sending(tmobile_env):
+    """A padded env value must reach the wire stripped — "128", not "  128  ".
 
-    A padded env var would otherwise sign one value and send another, which
-    T-Mobile's PoP validator rejects.
+    T-Mobile routes on the exact header value, so surrounding whitespace from a
+    .env file must never travel.
     """
     req = await _send_token_request(sender_id=f"  {SENDER_ID}  ")
     assert req.headers["sender-id"] == SENDER_ID
-    assert _claims(req.headers["X-Authorization"])["edts"] == _expected_edts(
-        "application/json" + TOKEN_PATH + "POST" + SENDER_ID
+    # Still unsigned regardless of the padding.
+    assert _claims(req.headers["X-Authorization"])["ehts"] == (
+        "Content-Type;uri;http-method"
     )
 
 

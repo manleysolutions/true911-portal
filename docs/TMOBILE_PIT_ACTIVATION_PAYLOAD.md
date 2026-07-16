@@ -135,18 +135,21 @@ resource call, where it is too late to influence the access token.
 
 ### Fix (this change)
 
-`get_access_token()` now, **only when `TMOBILE_SENDER_ID` is set**:
+`get_access_token()`, **only when `TMOBILE_SENDER_ID` is set**, sends
+`sender-id: <TMOBILE_SENDER_ID>` as an HTTP header on the token request.
 
-- sends `sender-id: <TMOBILE_SENDER_ID>` as an HTTP header on the token request;
-- appends `sender-id` to the signed PoP **ehts** set, so the signed set becomes
-  `Content-Type;uri;http-method;sender-id` and the `edts` digest input becomes
-  `"application/json" + <token-uri-path> + "POST" + <sender-id>`.
+> **Correction (2026-07-16, confirmed by Aman in a live working session):**
+> **`sender-id` is an unsigned OAuth request HTTP header.** An earlier revision of
+> this change also appended `sender-id` to the token-request PoP **ehts** —
+> that was wrong and T-Mobile's PoP validator rejects it. The token-request PoP
+> ehts is exactly `Content-Type;uri;http-method`, with the `edts` digest input
+> `"application/json" + <token-uri-path> + "POST"` — no sender-id. The header
+> name is lowercase exactly: `sender-id`.
 
 Unchanged: the **token URL** (T-Mobile routes on the header, internally);
-`Authorization: Basic` stays a wire header and is **not** signed; the resource
-call keeps `ehts="Authorization"` and its `partner-id` / `sender-id` headers.
-When `TMOBILE_SENDER_ID` is unset or blank, the token request is byte-for-byte
-what it was before.
+`Authorization: Basic` stays a wire header and is **not** signed; the `cnf` body;
+the resource call keeps `ehts="Authorization"` and its `partner-id` / `sender-id`
+headers. When `TMOBILE_SENDER_ID` is unset or blank, the header is omitted.
 
 Covered by `api/tests/test_tmobile_token_sender_id.py`.
 

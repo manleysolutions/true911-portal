@@ -208,13 +208,24 @@ Key details:
   claims that T-Mobile's authorization server mints into the access token from
   the consumer key's app registration. `partner-id` / `sender-id` still travel as
   HTTP headers. See `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`.
-- **Token request (2026-07-09, per Aman):** the OAuth token request sends
-  `sender-id: <TMOBILE_SENDER_ID>` as an HTTP header and signs it as the trailing
-  entry of the PoP ehts set — `Content-Type;uri;http-method;sender-id`. This is
-  what lets T-Mobile's authorization server mint the `senderId` / `channelId`
-  claims into the access token. The token **URL is unchanged**; T-Mobile routes on
-  the header internally. `Authorization: Basic` remains an unsigned wire header.
-  With `TMOBILE_SENDER_ID` unset, the token request is unchanged.
+- **Token request (2026-07-16, confirmed by Aman):** **`sender-id` is an unsigned
+  OAuth request HTTP header.** The OAuth token request sends
+  `sender-id: <TMOBILE_SENDER_ID>` (lowercase exactly, `128` for Infatrac) as a
+  normal HTTP header, and it is **not** included in the token-request PoP `ehts`.
+  The token-request PoP ehts is exactly `Content-Type;uri;http-method`. Signing
+  sender-id makes T-Mobile's PoP validator reject the request. The header is what
+  lets T-Mobile's authorization server mint the `senderId` / `channelId` claims
+  into the access token. The token **URL is unchanged**; T-Mobile routes on the
+  header internally. `Authorization: Basic` also remains an unsigned wire header.
+  With `TMOBILE_SENDER_ID` unset, the header is omitted.
+
+  Verify after deploy with `python scripts/get_tmobile_tokens.py --decode-claims`:
+
+  ```
+  signed_headers=['Content-Type', 'uri', 'http-method']
+  sender-id present: True
+  sender-id value: '128'
+  ```
 
 ## 5. PIT vs Production
 
