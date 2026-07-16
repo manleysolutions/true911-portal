@@ -381,8 +381,8 @@ class TMobileTAAPClient:
         - grant_type=client_credentials
         - Basic auth with consumer key:secret
         - X-Authorization: PoP <pop_token> signed for the token URL
-        - sender-id: <TMOBILE_SENDER_ID> (when configured) — both as a wire
-          header and as the trailing entry of the signed PoP ehts set
+        - sender-id: <TMOBILE_SENDER_ID> (when configured) — an UNSIGNED wire
+          header; it is deliberately NOT part of the PoP ehts set
         """
         now = time.time()
         if self._access_token and now < self._token_expires_at:
@@ -449,21 +449,17 @@ class TMobileTAAPClient:
             ("http-method", "POST"),
         ]
 
-        # T-Mobile Engineering (Aman, 2026-07-09): "Please pass the sender-id
-        # from your end.  You can continue to use the same token URL as DNS and
-        # we handle the backend routing internally."  The token endpoint routes
-        # on this header, and the authorization server mints the senderId /
-        # channelId claims into the access token from it.  It is appended to the
-        # signed ehts set so T-Mobile's PoP validator sees the same value it
-        # routes on.  sender-id is an opaque partner identifier (128 for
-        # Infatrac), not a secret.
-        #
-        # When TMOBILE_SENDER_ID is unset the header and the ehts entry are both
-        # omitted, leaving the token request byte-for-byte as it was before.
+        # T-Mobile Engineering (Aman, confirmed live 2026-07-16): sender-id is an
+        # UNSIGNED OAuth request HTTP header.  The token endpoint routes on it and
+        # the authorization server mints the senderId / channelId claims into the
+        # access token from it — but it must NOT appear in the token request's PoP
+        # ehts, which stays exactly "Content-Type;uri;http-method".  Adding it to
+        # the signed set makes T-Mobile's PoP validator reject the request.
+        # sender-id is an opaque partner identifier (128 for Infatrac), not a
+        # secret.  Header name is lowercase exactly as spelled here.
         sender_id = (self.sender_id or "").strip()
         if sender_id:
             headers["sender-id"] = sender_id
-            ehts_headers.append(("sender-id", sender_id))
 
         pop = generate_pop_token(ehts_headers=ehts_headers)
         # T-Mobile's TAAP validator parses the entire X-Authorization value
