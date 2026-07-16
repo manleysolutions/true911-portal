@@ -6,36 +6,51 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-07-07. Branch at time of writing: `main` (in sync with origin).
+> Last updated: 2026-07-16. Branch at time of writing: `main` (in sync with origin).
 
-## 0·URGENT — T-Mobile PIT: partner-id/sender-id in PoP auth claims (branch `fix/tmobile-partner-sender-pop-claims`, PR open, NOT merged) [2026-07-07]
+## 0·URGENT — T-Mobile TAAP restored to the supplied reference contract (branch `fix/tmobile-taap-reference-contract`, PR open, NOT merged) [2026-07-16]
 
-T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
-**sender-id was absent from the PoP auth claims** — we were sending
-`partner-id` / `sender-id` only as HTTP headers. The activation failed
-`400 GENS-0003 "Invalid partnerID"` (UTC `2026-07-07T14:59:50Z`, ICCID
-`8901260963132697538`, work-flow-id `99a2b4f7-…_P`, service-transaction-id
-`9b8f65ad-…`).
+**T-Mobile Engineering supplied the complete PoP Token Builder reference.** It is
+now the authoritative wire contract and supersedes PRs #165–#168, which were
+reconstructions from partial evidence during `400 GENS-0003 "Invalid partnerID /
+Empty PartnerID/SenderID"` debugging (UTC `2026-07-07T14:59:50Z`, work-flow-id
+`99a2b4f7-…_P`, service-transaction-id `9b8f65ad-…`).
 
-Fix (`api/app/integrations/tmobile_taap.py`): **resource calls** sign exactly
-`ehts="Authorization"` with `edts = base64url(SHA-256("Bearer " + access_token))`,
-matching a T-Mobile reference request bit-for-bit. Partner/sender identity is
-**not** carried in the PoP — it reaches the gateway as the `senderId` /
-`channelId` claims T-Mobile's authorization server mints into the access token
-from the consumer key's app registration. Our token has neither claim, which is
-the root cause of `GENS-0003 Empty/Invalid PartnerID/SenderID`; clearing it needs
-a **T-Mobile-side registration change**, not a client change. `partner-id` /
-`sender-id` remain HTTP headers; the now-unused `extra_claims` argument to
-`generate_pop_token()` is removed. **The token-endpoint PoP is unchanged.**
-Failure logging surfaces the response `work-flow-id` / `service-transaction-id`
-(no secrets/tokens ever logged). Tests: `test_tmobile_pop_partner_sender_claims.py`
-pins the reference PoP shape + the `"Bearer "`-prefixed digest input. Docs:
-`TMOBILE_PIT_ACTIVATION_PAYLOAD.md` (forensics), `tmobile_taap_setup.md`.
+**Root cause:** the OAuth endpoint worked and returned a token, so each failed
+activation was misread as a T-Mobile-side registration gap. The real defect was
+that our PoP had drifted from T-Mobile's builder on **six** axes at once, and we
+were verifying our reconstruction against itself.
 
-**No live activation was run by Claude** — the fix ships behind
-`TMOBILE_PIT_LIVE_CALLS_ENABLED` (still false). Retest procedure (confirm env →
-dry-run → one live activation while T-Mobile watches → capture ids) is in
-`TMOBILE_PIT_ACTIVATION_PAYLOAD.md`. **PR NOT merged.**
+Authoritative contract (see `tmobile_taap_setup.md` § "Authoritative PoP
+contract" for the full table):
+
+- JWT header `{"alg":"RS256","typ":"JWT"}` — **not** `typ="pop"`
+- Claims exactly `iat, exp (=iat+60), ehts, edts, jti, v="1"` — **no `iss`**
+- **Both** OAuth and resource PoPs sign
+  `Content-Type;Authorization;uri;http-method;body`
+- `edts` = base64url(SHA-256(values concatenated, **no separator**)), body **not**
+  pre-hashed and carried as its **exact wire bytes**
+- OAuth body compact `{"cnf":"..."}`; grant type moved to a `grant-type` header
+- `sender-id` stays an **unsigned** lowercase header (the one finding that
+  survived every revision)
+- `id_token`, when returned, is cached paired with the access token and replayed
+  as `X-Auth-Originator`
+
+`generate_pop_token()` now has `create_oauth_pop_token()` / `create_api_pop_token()`
+wrappers so the two flows cannot drift apart again. The body is serialized **once**
+(`separators=(',', ':')`) and that same string is signed and sent.
+
+Golden tests: `test_tmobile_reference_contract.py` pins the supplied vector
+(`SHA-256("application/json" + "Basic TEST" + "/oauth2/v1/tokens" + "POST" +
+'{"cnf":"TEST_PUBLIC_KEY"}')`), the JWT shape, id_token handling, and the
+no-secret guarantees. Removing `iss` also removed the consumer key from a
+decodable JWT.
+
+**No live activation was run by Claude** — still behind
+`TMOBILE_PIT_LIVE_CALLS_ENABLED` (false). Retest: confirm deployed commit → run
+`python ../scripts/get_tmobile_tokens.py --decode-claims` (token-only, reports the
+full contract, prints no token material) → one activation while T-Mobile watches →
+capture ids → **do not retry automatically**. **PR NOT merged.**
 
 ## 0·NEXT — RH registry approval operator script (branch `feat/rh-registry-approve`, PR open, NOT merged) [2026-07-02]
 

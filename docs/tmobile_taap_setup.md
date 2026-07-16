@@ -197,35 +197,119 @@ run automatically** — it requires explicit flags and valid credentials.
 
 Key details:
 - PoP token is a JWT signed with RS256 (your private key)
-- PoP includes: issuer (consumer key), URI hash, body hash, short expiry (~2 min)
-- A **new** PoP token is generated for **every** request (different URI = different PoP)
+- A **new** PoP token is generated for **every** request; it is **single-use**
+  with a **60-second** lifetime
 - Access token is cached and reused until near expiry
-- **Resource calls (2026-07-09):** the PoP signs exactly `ehts="Authorization"`,
-  with `edts = base64url(SHA-256("Bearer " + access_token))`. This matches a
-  T-Mobile reference request bit-for-bit. `uri`, `http-method`, `partner-id` and
-  `sender-id` are **not** signed, and partner/sender identity is **not** carried
-  in the PoP at all — it reaches the gateway as the `senderId` / `channelId`
-  claims that T-Mobile's authorization server mints into the access token from
-  the consumer key's app registration. `partner-id` / `sender-id` still travel as
-  HTTP headers. See `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`.
-- **Token request (2026-07-16, confirmed by Aman):** **`sender-id` is an unsigned
-  OAuth request HTTP header.** The OAuth token request sends
-  `sender-id: <TMOBILE_SENDER_ID>` (lowercase exactly, `128` for Infatrac) as a
-  normal HTTP header, and it is **not** included in the token-request PoP `ehts`.
-  The token-request PoP ehts is exactly `Content-Type;uri;http-method`. Signing
-  sender-id makes T-Mobile's PoP validator reject the request. The header is what
-  lets T-Mobile's authorization server mint the `senderId` / `channelId` claims
-  into the access token. The token **URL is unchanged**; T-Mobile routes on the
-  header internally. `Authorization: Basic` also remains an unsigned wire header.
-  With `TMOBILE_SENDER_ID` unset, the header is omitted.
 
-  Verify after deploy with `python scripts/get_tmobile_tokens.py --decode-claims`:
+### Authoritative PoP contract (supplied by T-Mobile Engineering)
 
-  ```
-  signed_headers=['Content-Type', 'uri', 'http-method']
-  sender-id present: True
-  sender-id value: '128'
-  ```
+This is T-Mobile's own PoP Token Builder contract. It supersedes every earlier
+reconstruction in this repo (see "Superseded decisions" below).
+
+JWT header — note `typ` is **`JWT`**, not `pop`:
+
+```json
+{"alg": "RS256", "typ": "JWT"}
+```
+
+JWT payload — exactly these six claims, and **no `iss`**:
+
+```json
+{"iat": 1700000000, "exp": 1700000060, "ehts": "...", "edts": "...",
+ "jti": "<uuid>", "v": "1"}
+```
+
+`edts` rules:
+- preserve the ehts key **insertion order**
+- concatenate the corresponding values **directly, with no separator**
+- hash the concatenated UTF-8 bytes **once** with SHA-256
+- base64url-encode, strip `=` padding
+- the body is **not** separately hashed first — its value is the **exact
+  request-body string sent on the wire**
+
+**Both** the OAuth PoP and the resource PoP sign the same key set, in this order:
+
+```
+Content-Type;Authorization;uri;http-method;body
+```
+
+| ehts key | OAuth PoP value | Resource PoP value |
+|---|---|---|
+| `Content-Type` | `application/json` | `application/json` |
+| `Authorization` | the **Basic** header value | `Bearer <access_token>` |
+| `uri` | token URL **path only** | resource URL **path only** (no query) |
+| `http-method` | `POST` | uppercase verb |
+| `body` | exact compact `{"cnf":"..."}` | exact compact JSON sent |
+
+**Exact-byte rule:** the body is serialized **once** with
+`json.dumps(..., separators=(',', ':'))` and that same string is both signed and
+transmitted. A whitespace difference between the signed and sent body invalidates
+the signature server-side.
+
+### OAuth token request
+
+Body — compact, `cnf` only, **no `grant_type` property**:
+
+```json
+{"cnf":"<single-line public key PEM>"}
+```
+
+Headers:
+
+| Header | Value | Signed? |
+|---|---|---|
+| `Content-Type` | `application/json` | ✅ |
+| `Authorization` | `Basic <base64(key:secret)>` | ✅ |
+| `X-Authorization` | the OAuth PoP JWT | — |
+| `grant-type` | `client_credentials` | ❌ unsigned |
+| `sender-id` | `<TMOBILE_SENDER_ID>` (e.g. `128`) | ❌ unsigned |
+
+**`sender-id` is an unsigned OAuth request HTTP header** (Aman, confirmed),
+spelled lowercase exactly. It must **not** appear in the PoP ehts — signing it
+makes T-Mobile's validator reject the request. It is what lets the authorization
+server mint the `senderId` / `channelId` claims into the access token; Channel ID
+needs no attribute of its own. The token **URL is unchanged** — T-Mobile routes on
+the header internally. With `TMOBILE_SENDER_ID` unset, the header is omitted.
+
+### Resource calls
+
+`partner-id` / `sender-id` travel as **unsigned** HTTP headers — do not add them
+to the resource PoP claims or ehts without new explicit instruction from T-Mobile.
+If the OAuth response returns an `id_token`, it is cached paired with the access
+token and replayed as the `X-Auth-Originator` header; when PIT returns none, the
+header is omitted. The ID token is credential material and is never logged.
+
+### Verify after deploy
+
+```powershell
+cd api
+python ../scripts/get_tmobile_tokens.py --decode-claims
+```
+
+```
+OAuth EHTS: Content-Type;Authorization;uri;http-method;body
+sender-id present: True
+sender-id value: '128'
+sender-id unsigned: True
+grant-type value: 'client_credentials'
+body properties: ['cnf']
+```
+
+### Superseded decisions (PRs #165–#168)
+
+These were reconstructed from partial evidence during GENS-0003 debugging and are
+**wrong**. They are recorded so the reasoning is not repeated:
+
+| Superseded claim | Authoritative contract |
+|---|---|
+| OAuth PoP signs `Content-Type;uri;http-method` | signs all five keys incl. `Authorization` + `body` |
+| Resource PoP signs `Authorization` only | signs all five keys |
+| Body is never part of ehts | body **is** signed, exact bytes |
+| `typ="pop"` | `typ="JWT"` |
+| 120-second lifetime | **60** seconds, single-use |
+| PoP carries `iss` (consumer key) | no `iss`; adds `v="1"` |
+
+Constant across all of them, and still true: **`sender-id` is unsigned.**
 
 ## 5. PIT vs Production
 

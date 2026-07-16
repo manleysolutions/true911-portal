@@ -122,17 +122,19 @@ def test_pop_token_structure():
     assert isinstance(pop, str)
     assert len(pop) > 100
 
-    # JWT header
+    # JWT header — T-Mobile's reference builder emits typ="JWT", not "pop".
     header = jose_jwt.get_unverified_header(pop)
     assert header["alg"] == "RS256"
-    assert header["typ"] == "pop"
+    assert header["typ"] == "JWT"
 
-    # Claims
+    # Claims — the reference builder emits no `iss`, adds v="1", and the PoP is
+    # single-use with a 60-second lifetime.
     claims = jose_jwt.get_unverified_claims(pop)
-    assert claims["iss"] == "test-consumer-key"
+    assert "iss" not in claims
     assert "iat" in claims
     assert "exp" in claims
-    assert claims["exp"] - claims["iat"] == 120  # 2 minute expiry
+    assert claims["exp"] - claims["iat"] == 60
+    assert claims["v"] == "1"
     assert "jti" in claims
     assert claims["ehts"] == "Authorization;Content-Type"
     assert claims["edts"] == _expected_edts(headers)

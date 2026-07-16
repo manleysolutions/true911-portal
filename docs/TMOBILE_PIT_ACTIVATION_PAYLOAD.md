@@ -136,19 +136,21 @@ resource call, where it is too late to influence the access token.
 ### Fix (this change)
 
 `get_access_token()`, **only when `TMOBILE_SENDER_ID` is set**, sends
-`sender-id: <TMOBILE_SENDER_ID>` as an HTTP header on the token request.
+`sender-id: <TMOBILE_SENDER_ID>` as an unsigned HTTP header on the token request.
 
-> **Correction (2026-07-16, confirmed by Aman in a live working session):**
-> **`sender-id` is an unsigned OAuth request HTTP header.** An earlier revision of
-> this change also appended `sender-id` to the token-request PoP **ehts** —
-> that was wrong and T-Mobile's PoP validator rejects it. The token-request PoP
-> ehts is exactly `Content-Type;uri;http-method`, with the `edts` digest input
-> `"application/json" + <token-uri-path> + "POST"` — no sender-id. The header
-> name is lowercase exactly: `sender-id`.
+> **SUPERSEDED (2026-07-16).** T-Mobile Engineering then supplied the complete
+> **PoP Token Builder reference**, which is now the authoritative contract — see
+> `tmobile_taap_setup.md` § "Authoritative PoP contract". Everything on this page
+> about the *signed sets* is obsolete: both the OAuth and resource PoP sign
+> `Content-Type;Authorization;uri;http-method;body`, with `typ="JWT"`, a
+> 60-second lifetime, `v="1"`, and no `iss`. The OAuth body is compact
+> `{"cnf":"..."}` and the grant type moved to a `grant-type` header.
+>
+> The one finding that survived every revision: **`sender-id` is an unsigned
+> OAuth request HTTP header**, lowercase exactly, never in the PoP ehts.
 
-Unchanged: the **token URL** (T-Mobile routes on the header, internally);
-`Authorization: Basic` stays a wire header and is **not** signed; the `cnf` body;
-the resource call keeps `ehts="Authorization"` and its `partner-id` / `sender-id`
+Unchanged by all of the above: the **token URL** (T-Mobile routes on the header,
+internally); the `cnf` body value itself; the `partner-id` / `sender-id` resource
 headers. When `TMOBILE_SENDER_ID` is unset or blank, the header is omitted.
 
 Covered by `api/tests/test_tmobile_token_sender_id.py`.

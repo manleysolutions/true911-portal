@@ -1,15 +1,19 @@
-"""T-Mobile OAuth token request carries sender-id as an UNSIGNED header.
+"""T-Mobile OAuth token request — sender-id, grant-type, and the signed set.
 
-T-Mobile Engineering (Aman, confirmed live 2026-07-16): ``sender-id`` is an
-**unsigned OAuth request HTTP header**.  It must travel on the token request as
-the exact lowercase header ``sender-id: 128``, and it must **not** appear in the
-token request's PoP ``ehts``, which stays exactly
-``Content-Type;uri;http-method``.  Including it in the signed set (the earlier
-behavior these tests previously asserted) makes T-Mobile's PoP validator reject
-the request.
+``sender-id`` is an **unsigned OAuth request HTTP header** (Aman, confirmed). It
+travels as the exact lowercase header ``sender-id: 128`` and must **not** appear
+in the PoP ``ehts``.
 
-The token URL is untouched and ``Authorization: Basic`` stays an unsigned wire
-header.  When ``TMOBILE_SENDER_ID`` is unset, the header is omitted.
+Per T-Mobile's supplied reference builder, the OAuth PoP signs::
+
+    Content-Type;Authorization;uri;http-method;body
+
+over the Basic Authorization value, the token URL PATH, "POST", and the exact
+compact body. The grant type is an unsigned ``grant-type`` header, NOT a body
+property.
+
+Supersedes PRs #165–#168, which pinned ``Content-Type;uri;http-method`` and
+asserted Authorization was excluded — both reconstructed from partial evidence.
 
 No real credentials: the RSA key is generated per-test and HTTP is mocked.
 """
@@ -18,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 
 import httpx
@@ -35,6 +40,9 @@ TOKEN_PATH = "/oauth2/v1/tokens"
 
 SENDER_ID = "128"
 PARTNER_ID = "128"
+
+# The reference OAuth PoP signed set, in exact order.
+EXPECTED_EHTS = "Content-Type;Authorization;uri;http-method;body"
 
 # Distinctive sentinels so a substring search over stdout/logs is unambiguous.
 CONSUMER_KEY = "TM_TEST_CK_HG7XQ2"
@@ -128,6 +136,30 @@ async def test_sender_id_header_name_is_lowercase_on_the_wire(tmobile_env):
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_grant_type_is_an_unsigned_wire_header(tmobile_env):
+    """The grant type moved from the JSON body to a `grant-type` HTTP header."""
+    req = await _send_token_request()
+    assert req.headers["grant-type"] == "client_credentials"
+    assert "grant-type" not in _claims(req.headers["X-Authorization"])["ehts"]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_oauth_body_is_compact_and_cnf_only(tmobile_env):
+    """Body is exactly {"cnf":"..."} — compact, and with no grant_type."""
+    req = await _send_token_request()
+    body = req.content.decode()
+
+    assert list(json.loads(body)) == ["cnf"], "body must carry cnf and nothing else"
+    assert "grant_type" not in body
+    # Compact separators: no ", " or ": " anywhere.
+    assert body.startswith('{"cnf":"')
+    assert body.endswith('"}')
+    assert ", " not in body and '": ' not in body
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_token_url_is_unchanged(tmobile_env):
     """DNS stays put — T-Mobile routes on the header, not a new hostname."""
     req = await _send_token_request()
@@ -154,37 +186,43 @@ async def test_token_pop_ehts_excludes_sender_id(tmobile_env):
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_pop_ehts_is_exactly_content_type_uri_http_method(tmobile_env):
+async def test_token_pop_ehts_is_the_reference_set(tmobile_env):
     """The signed set is pinned — even with sender-id configured."""
     req = await _send_token_request()
-    assert _claims(req.headers["X-Authorization"])["ehts"] == (
-        "Content-Type;uri;http-method"
-    )
+    assert _claims(req.headers["X-Authorization"])["ehts"] == EXPECTED_EHTS
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_pop_edts_does_not_cover_sender_id_value(tmobile_env):
-    """edts hashes only the three signed values — the sender-id value is absent.
+async def test_token_pop_edts_covers_reference_values_not_sender_id(tmobile_env):
+    """edts hashes the five reference values — the sender-id value is absent.
 
     Reproduced independently here so a silent change to either the ehts order
     or the digest canonicalization fails loudly.
     """
     req = await _send_token_request()
     edts = _claims(req.headers["X-Authorization"])["edts"]
-    assert edts == _expected_edts("application/json" + TOKEN_PATH + "POST")
-    # The signed-sender-id digest (the bug this PR fixes) must NOT match.
+    body = req.content.decode()
+    assert edts == _expected_edts(
+        "application/json" + f"Basic {BASIC_B64}" + TOKEN_PATH + "POST" + body
+    )
+    # A digest that appended the sender-id value must NOT match.
     assert edts != _expected_edts(
-        "application/json" + TOKEN_PATH + "POST" + SENDER_ID
+        "application/json" + f"Basic {BASIC_B64}" + TOKEN_PATH + "POST" + body
+        + SENDER_ID
     )
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_token_pop_does_not_sign_authorization(tmobile_env):
-    """Basic auth stays out of the signed set — matches T-Mobile's reference."""
+async def test_token_pop_signs_the_basic_authorization_value(tmobile_env):
+    """The reference OAuth PoP DOES sign Authorization (the Basic value).
+
+    This reverses the superseded PR #165–#168 finding that Authorization was
+    excluded from the token PoP.
+    """
     ehts = _claims((await _send_token_request()).headers["X-Authorization"])["ehts"]
-    assert "Authorization" not in ehts
+    assert "Authorization" in ehts.split(";")
 
 
 # ── 3. empty / padded sender-id handling ─────────────────────────────────────
@@ -198,8 +236,11 @@ async def test_token_request_omits_sender_id_when_unset(tmobile_env, monkeypatch
 
     assert "sender-id" not in req.headers
     claims = _claims(req.headers["X-Authorization"])
-    assert claims["ehts"] == "Content-Type;uri;http-method"
-    assert claims["edts"] == _expected_edts("application/json" + TOKEN_PATH + "POST")
+    assert claims["ehts"] == EXPECTED_EHTS
+    assert claims["edts"] == _expected_edts(
+        "application/json" + f"Basic {BASIC_B64}" + TOKEN_PATH + "POST"
+        + req.content.decode()
+    )
 
 
 @respx.mock
@@ -210,9 +251,7 @@ async def test_whitespace_only_sender_id_is_treated_as_unset(tmobile_env, monkey
     req = await _send_token_request()
 
     assert "sender-id" not in req.headers
-    assert _claims(req.headers["X-Authorization"])["ehts"] == (
-        "Content-Type;uri;http-method"
-    )
+    assert _claims(req.headers["X-Authorization"])["ehts"] == EXPECTED_EHTS
 
 
 @respx.mock
@@ -226,9 +265,7 @@ async def test_sender_id_whitespace_is_stripped_before_sending(tmobile_env):
     req = await _send_token_request(sender_id=f"  {SENDER_ID}  ")
     assert req.headers["sender-id"] == SENDER_ID
     # Still unsigned regardless of the padding.
-    assert _claims(req.headers["X-Authorization"])["ehts"] == (
-        "Content-Type;uri;http-method"
-    )
+    assert _claims(req.headers["X-Authorization"])["ehts"] == EXPECTED_EHTS
 
 
 # ── 4. no secrets or tokens leak to stdout / logs ────────────────────────────

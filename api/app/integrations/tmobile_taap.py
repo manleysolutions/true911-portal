@@ -50,8 +50,9 @@ PROD_TOKEN_URL = "https://oauth.t-mobile.com/oauth2/v2/tokens"
 # never needs a code edit.
 DEFAULT_SUBSCRIBER_BASE_PATH = "/wholesale/v1/subscriber"
 
-# PoP token lifetime (T-Mobile expects short-lived — 2 minutes)
-POP_TOKEN_EXPIRY_SECONDS = 120
+# PoP token lifetime. T-Mobile's supplied PoP Token Builder emits exp = iat + 60
+# and treats each PoP as single-use — do not lengthen this.
+POP_TOKEN_EXPIRY_SECONDS = 60
 
 # Access token cache buffer — refresh 60s before expiry
 ACCESS_TOKEN_REFRESH_BUFFER = 60
@@ -153,18 +154,33 @@ def _derive_public_key_jwk(private_key_pem: str) -> dict[str, str]:
 def generate_pop_token(*, ehts_headers: list[tuple[str, str]]) -> str:
     """Generate a T-Mobile TAAP PoP (Proof of Possession) token.
 
-    T-Mobile TAAP uses the Apigee PoP format (not RFC 9449 DPoP).
-    Claims:
-      iss  — consumer key
-      iat / exp / jti — standard
-      ehts — the signed keys joined by a SEMICOLON (";").  Each key is a
-             header name (e.g. "Content-Type", "Authorization") or a special
-             token ("uri", "http-method").
-      edts — base64url(SHA-256( value1 + value2 + ... )) over the ehts entry
-             VALUES concatenated in order with NO separator, per the T-Mobile
-             pop-token-builder reference (e.g. "application/json" +
-             "/oauth2/v2/tokens" + "POST" -> "application/json/oauth2/v2/tokensPOST").
-             The request body is NOT hashed here.
+    Implements T-Mobile's supplied PoP Token Builder contract exactly (this is
+    the Apigee PoP family, NOT RFC 9449 DPoP).
+
+    JWT header::
+
+        {"alg": "RS256", "typ": "JWT"}
+
+    Claims — exactly these six, no more::
+
+        iat  — integer epoch seconds
+        exp  — iat + 60 (single-use; do not lengthen)
+        ehts — the signed keys joined by a SEMICOLON (";"), in insertion order
+        edts — base64url-unpadded( SHA-256( value1 + value2 + ... ) )
+        jti  — UUID
+        v    — "1"
+
+    ``iss`` is deliberately NOT emitted: the reference builder does not send it,
+    and it previously carried the consumer key into a decodable JWT.
+
+    edts rules (per the reference): preserve ehts insertion order, concatenate
+    the corresponding values directly with NO separator, hash the concatenated
+    UTF-8 bytes ONCE with SHA-256, base64url-encode, strip "=" padding.  A body
+    is NOT separately hashed before concatenation — its ehts value is the exact
+    request-body string sent on the wire.
+
+    Prefer the ``create_oauth_pop_token`` / ``create_api_pop_token`` helpers over
+    calling this directly, so the two flows' signed sets cannot drift apart.
 
     Args:
         ehts_headers: ordered list of (ehts_key, value) tuples.  Keys appear
@@ -201,13 +217,14 @@ def generate_pop_token(*, ehts_headers: list[tuple[str, str]]) -> str:
         .decode("ascii")
     )
 
+    # Exactly the reference builder's claim set — no iss, and v="1" present.
     payload: dict[str, Any] = {
-        "iss": settings.TMOBILE_CONSUMER_KEY,
         "iat": now,
         "exp": now + POP_TOKEN_EXPIRY_SECONDS,
-        "jti": str(uuid.uuid4()),
         "ehts": ehts,
         "edts": edts,
+        "jti": str(uuid.uuid4()),
+        "v": "1",
     }
 
     try:
@@ -215,13 +232,90 @@ def generate_pop_token(*, ehts_headers: list[tuple[str, str]]) -> str:
             payload,
             private_key_pem,
             algorithm="RS256",
-            headers={"alg": "RS256", "typ": "pop"},
+            headers={"alg": "RS256", "typ": "JWT"},
         )
     except Exception as exc:
         logger.error("Failed to sign PoP token: %s", exc)
         raise RuntimeError(f"PoP token signing failed: {exc}") from exc
 
     return token
+
+
+# The signed key set — identical for BOTH the OAuth and the resource PoP, per
+# T-Mobile's reference builder.  Order is load-bearing: it drives both the
+# ";"-joined ehts claim and the order the values are concatenated for edts.
+POP_EHTS_KEYS = ("Content-Type", "Authorization", "uri", "http-method", "body")
+
+
+def _create_pop_token(
+    *,
+    content_type: str,
+    authorization: str,
+    uri: str,
+    http_method: str,
+    body: str,
+) -> str:
+    """Build a PoP over the reference ehts set, in the reference order.
+
+    Shared by both flows so the OAuth and resource PoPs cannot drift apart —
+    the drift between them is what produced the GENS-0003 debugging cycle.
+    """
+    return generate_pop_token(ehts_headers=[
+        ("Content-Type", content_type),
+        ("Authorization", authorization),
+        ("uri", uri),
+        ("http-method", http_method),
+        ("body", body),
+    ])
+
+
+def create_oauth_pop_token(
+    *,
+    content_type: str,
+    authorization: str,
+    uri: str,
+    http_method: str,
+    body: str,
+) -> str:
+    """PoP for the OAuth token request.
+
+    Signs ``Content-Type;Authorization;uri;http-method;body`` where
+    ``authorization`` is the **Basic** header value, ``uri`` is the token URL's
+    PATH ONLY, and ``body`` is the exact compact ``{"cnf":"..."}`` string sent
+    on the wire.
+
+    ``sender-id`` and ``grant-type`` are UNSIGNED wire headers and are
+    deliberately absent from this set (Aman, confirmed).
+    """
+    return _create_pop_token(
+        content_type=content_type, authorization=authorization,
+        uri=uri, http_method=http_method, body=body,
+    )
+
+
+def create_api_pop_token(
+    *,
+    content_type: str,
+    authorization: str,
+    uri: str,
+    http_method: str,
+    body: str,
+) -> str:
+    """PoP for an authenticated API resource request.
+
+    Signs ``Content-Type;Authorization;uri;http-method;body`` where
+    ``authorization`` is the ``Bearer <access_token>`` header value, ``uri`` is
+    the resource URL's PATH ONLY (no query string), ``http_method`` is the
+    uppercase verb, and ``body`` is the exact string transmitted (``""`` when
+    there is no body).
+
+    ``partner-id`` / ``sender-id`` travel as HTTP headers and are NOT signed —
+    do not add them here without new explicit instruction from T-Mobile.
+    """
+    return _create_pop_token(
+        content_type=content_type, authorization=authorization,
+        uri=uri, http_method=http_method, body=body,
+    )
 
 
 # ── Outbound diagnostic logging helpers ─────────────────────────────────────
@@ -334,8 +428,11 @@ class TMobileTAAPClient:
             else settings.TMOBILE_ACTIVATION_PATH
         ).strip()
 
-        # Access token cache
+        # Access token cache. _id_token is captured from the same OAuth response
+        # and MUST stay paired with _access_token — both are replaced together on
+        # every refresh so a stale id_token can never ride along with a new token.
         self._access_token: str | None = None
+        self._id_token: str | None = None
         self._token_expires_at: float = 0.0
 
         # Shared HTTP client
@@ -377,12 +474,18 @@ class TMobileTAAPClient:
     async def get_access_token(self) -> str:
         """Get a cached or fresh OAuth2 access token.
 
-        T-Mobile's token endpoint requires:
-        - grant_type=client_credentials
-        - Basic auth with consumer key:secret
-        - X-Authorization: PoP <pop_token> signed for the token URL
-        - sender-id: <TMOBILE_SENDER_ID> (when configured) — an UNSIGNED wire
-          header; it is deliberately NOT part of the PoP ehts set
+        Per T-Mobile's supplied reference, the token request carries:
+        - body: compact ``{"cnf":"<single-line public key PEM>"}`` — the grant
+          type is NOT a body property
+        - Authorization: Basic <base64(key:secret)>  (standard base64, padded)
+        - X-Authorization: the OAuth PoP, signing
+          ``Content-Type;Authorization;uri;http-method;body``
+        - grant-type: client_credentials   — UNSIGNED wire header
+        - sender-id: <TMOBILE_SENDER_ID>   — UNSIGNED wire header, when
+          configured; deliberately NOT part of the PoP ehts set
+
+        Any ``id_token`` in the response is cached alongside the access token and
+        replayed as ``X-Auth-Originator`` on resource calls.
         """
         now = time.time()
         if self._access_token and now < self._token_expires_at:
@@ -398,13 +501,13 @@ class TMobileTAAPClient:
         # JWK form returned Security-1018; T-Mobile's validator wants PEM,
         # but as a single-line string (BEGIN/END markers preserved, all
         # newlines stripped) so JSON-escaped \n sequences don't break parsing.
+        # Body is EXACTLY {"cnf":"..."} — compact separators, no spaces, and no
+        # grant_type property (the grant type moved to the `grant-type` header
+        # per the reference).  This exact string is both signed into the PoP edts
+        # and sent as the request content — one serialization, never two.
         import json as _json
         cnf_string = _derive_public_key_pem(_load_private_key()).replace("\n", "")
-        body_obj = {
-            "grant_type": "client_credentials",
-            "cnf": cnf_string,
-        }
-        body_str = _json.dumps(body_obj)
+        body_str = _json.dumps({"cnf": cnf_string}, separators=(",", ":"))
 
         # Generate PoP token for the token endpoint. Per T-Mobile TAAP
         # guidance, Authorization is the mandatory header in the signed
@@ -433,35 +536,34 @@ class TMobileTAAPClient:
         # in a REPL with throwaway credentials — never re-add prints here.
         # See tests/test_tmobile_taap_no_secret_logging.py for the guard.
 
-        # auth_header is the Basic credential sent on the wire.  Per the
-        # T-Mobile reference, the TOKEN request's PoP signs
-        # "Content-Type;uri;http-method" (Authorization is NOT part of the
-        # PoP signature for this call) — it still travels as a wire header.
+        # Per the reference, the OAuth PoP SIGNS the Basic Authorization value
+        # (along with Content-Type, the URI path, the method, and the exact body).
+        # grant-type and sender-id are UNSIGNED wire headers.
         headers = {
             "Authorization": auth_header,
             "Content-Type": token_content_type,
             "Accept": "application/json",
+            "grant-type": "client_credentials",
         }
         token_uri_path = urlsplit(self.token_url).path
-        ehts_headers = [
-            ("Content-Type", token_content_type),
-            ("uri", token_uri_path),
-            ("http-method", "POST"),
-        ]
 
-        # T-Mobile Engineering (Aman, confirmed live 2026-07-16): sender-id is an
-        # UNSIGNED OAuth request HTTP header.  The token endpoint routes on it and
-        # the authorization server mints the senderId / channelId claims into the
-        # access token from it — but it must NOT appear in the token request's PoP
-        # ehts, which stays exactly "Content-Type;uri;http-method".  Adding it to
-        # the signed set makes T-Mobile's PoP validator reject the request.
-        # sender-id is an opaque partner identifier (128 for Infatrac), not a
-        # secret.  Header name is lowercase exactly as spelled here.
+        # T-Mobile Engineering (Aman, confirmed): sender-id is an UNSIGNED OAuth
+        # request HTTP header, spelled lowercase exactly as here.  The token
+        # endpoint routes on it and the authorization server mints the senderId /
+        # channelId claims into the access token from it — but it must NOT appear
+        # in the PoP ehts.  It is an opaque partner identifier (128 for Infatrac),
+        # not a secret.  Channel ID needs no attribute of its own.
         sender_id = (self.sender_id or "").strip()
         if sender_id:
             headers["sender-id"] = sender_id
 
-        pop = generate_pop_token(ehts_headers=ehts_headers)
+        pop = create_oauth_pop_token(
+            content_type=token_content_type,
+            authorization=auth_header,
+            uri=token_uri_path,
+            http_method="POST",
+            body=body_str,
+        )
         # T-Mobile's TAAP validator parses the entire X-Authorization value
         # as a JWT — adding a "PoP " prefix breaks base64 decoding of the
         # header part and yields JWTDecodeException server-side. Send the
@@ -486,7 +588,8 @@ class TMobileTAAPClient:
             print(f"[TAAP-DEBUG] cnf length: {len(cnf_string)}")
             print(f"[TAAP-DEBUG] Body bytes len: {len(body_str.encode('utf-8'))}")
             print(f"[TAAP-DEBUG] Body SHA-256 (hex): {body_hash_hex}")
-            print(f"[TAAP-DEBUG] Body JSON (exact wire bytes): {body_str}")
+            # The body carries the cnf public key — print its length + digest
+            # (above) for signature debugging, never the bytes themselves.
             print(f"[TAAP-DEBUG] X-Authorization format: "
                   + ("(raw JWT, no prefix)" if not headers["X-Authorization"].startswith("PoP ")
                      else "'PoP ' (with space) — UNEXPECTED, T-Mobile expects raw JWT"))
@@ -532,11 +635,19 @@ class TMobileTAAPClient:
 
         token_data = resp.json()
         self._access_token = token_data["access_token"]
+        # The reference OAuth response may carry an id_token alongside the access
+        # token. Capture it PAIRED with this access token (replaced on every
+        # refresh, so a stale one can never ride along with a new access token)
+        # and replay it as X-Auth-Originator on resource calls. When PIT does not
+        # return one this stays None and the header is simply omitted.
+        # SECURITY: the id_token is credential material — never log its value.
+        self._id_token = token_data.get("id_token") or None
         expires_in = int(token_data.get("expires_in", 3600))
         self._token_expires_at = now + expires_in - ACCESS_TOKEN_REFRESH_BUFFER
 
         logger.info(
-            "T-Mobile TAAP: access token obtained, expires_in=%ds", expires_in
+            "T-Mobile TAAP: access token obtained, expires_in=%ds id_token=%s",
+            expires_in, "present" if self._id_token else "absent",
         )
         return self._access_token
 
@@ -555,28 +666,38 @@ class TMobileTAAPClient:
 
         Every T-Mobile API call requires:
         - Authorization: Bearer <access_token>
-        - X-Authorization: <pop_token>  (signs the Authorization header value)
-        - sender-id, partner-id, X-Account-Id headers
+        - X-Authorization: the resource PoP, signing
+          ``Content-Type;Authorization;uri;http-method;body``
+        - sender-id, partner-id, X-Account-Id headers (unsigned)
+        - X-Auth-Originator: <id_token>, when the OAuth response returned one
         """
         access_token = await self.get_access_token()
         url = f"{self.base_url}/{path.lstrip('/')}"
 
-        # Serialize body once — the exact same bytes are both hashed and sent.
+        # Serialize the body ONCE, compactly. The exact same string is signed
+        # into the PoP edts and sent as the request content — a whitespace
+        # difference between the two would invalidate the signature server-side.
         import json as _json
-        body_str = _json.dumps(json_body) if json_body is not None else None
+        body_str = (
+            _json.dumps(json_body, separators=(",", ":"))
+            if json_body is not None else None
+        )
 
         req_content_type = "application/json"
         authorization_value = f"Bearer {access_token}"
-        # Resource calls sign exactly "Authorization" — nothing else.  Verified
-        # against a T-Mobile reference request (Aman, 2026-07-09): its PoP
-        # carried ehts="Authorization" and an edts that reproduces bit-for-bit
-        # as base64url(SHA-256("Bearer " + access_token)).  Neither uri,
-        # http-method, partner-id nor sender-id appear in T-Mobile's own signed
-        # set, and partner/sender identity is not carried in the PoP at all —
-        # it arrives as the `senderId` / `channelId` claims that T-Mobile's
-        # authorization server mints into the access token.
-        pop = generate_pop_token(
-            ehts_headers=[("Authorization", authorization_value)],
+        # Path only — the query string is never part of the signed uri value.
+        resource_uri_path = urlsplit(url).path
+        # partner-id / sender-id are NOT signed: they travel as HTTP headers and
+        # partner/sender identity reaches the gateway as the senderId / channelId
+        # claims T-Mobile's authorization server mints into the access token. Do
+        # not add them here without new explicit instruction from T-Mobile.
+        pop = create_api_pop_token(
+            content_type=req_content_type,
+            authorization=authorization_value,
+            uri=resource_uri_path,
+            http_method=method.upper(),
+            # A bodyless call (e.g. GET) signs the empty string.
+            body=body_str if body_str is not None else "",
         )
 
         # Named so it can be logged + correlated with T-Mobile's server logs.
@@ -602,6 +723,11 @@ class TMobileTAAPClient:
             headers["sender-id"] = self.sender_id
         if self.account_id:
             headers["X-Account-Id"] = self.account_id
+        # Replay the OAuth id_token as the originator when one was issued; PIT
+        # may not return one, in which case the header is omitted entirely.
+        # SECURITY: credential material — set on the wire, never logged.
+        if self._id_token:
+            headers["X-Auth-Originator"] = self._id_token
 
         if extra_headers:
             headers.update(extra_headers)
@@ -961,7 +1087,7 @@ class TMobileTAAPClient:
             )
 
         # ehts entries the PoP token signs for a resource call (see _request).
-        pop_signed_ehts = ["Authorization"]
+        pop_signed_ehts = list(POP_EHTS_KEYS)
 
         live_enabled = self.live_calls_enabled()
         notes = [

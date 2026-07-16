@@ -159,10 +159,19 @@ async def test_no_credentials_in_stdout_or_logs_debug_on(
     assert "[TAAP-DEBUG]" in haystack, (
         "debug mode produced no diagnostics — the gate may be broken"
     )
-    # And confirm the documented redaction shape made it out.
-    assert "<redacted>" in haystack, (
-        "expected '<redacted>' marker in PoP claims output not found"
+    # The PoP no longer carries an `iss` claim at all (T-Mobile's reference
+    # builder does not emit one), so there is nothing left to redact in the
+    # claims dump. Previously `iss` held the consumer key and debug printed
+    # "<redacted>" in its place; assert the claim is simply GONE, which is the
+    # stronger guarantee — a value that is never put in a decodable JWT cannot
+    # leak from one.
+    assert "'iss'" not in haystack and '"iss"' not in haystack, (
+        "PoP must not carry an iss claim — it previously held the consumer key"
     )
+    # The body carries the cnf PUBLIC key; debug prints its length + digest for
+    # signature troubleshooting, never the bytes themselves.
+    assert "BEGIN PUBLIC KEY" not in haystack, "cnf public key leaked to debug output"
+    assert "BEGIN PRIVATE KEY" not in haystack, "private key leaked to debug output"
 
 
 def test_unused_re_import_removed():
