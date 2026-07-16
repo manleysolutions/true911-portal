@@ -295,6 +295,41 @@ grant-type value: 'client_credentials'
 body properties: ['cnf']
 ```
 
+### Partner Foundation ID — configured, NOT sent
+
+T-Mobile mentioned a "Partner Foundation ID" while diagnosing the 2026-07-16
+`GENS-0003` failure but has not supplied the value, header name, or semantics.
+
+| Env var | Default | Behavior today |
+|---|---|---|
+| `TMOBILE_PARTNER_FOUNDATION_ID` | empty | stored (stripped), **never sent** |
+| `TMOBILE_PARTNER_FOUNDATION_HEADER` | empty | stored (stripped), **never sent** |
+
+Setting these changes **nothing** on the wire. The client does not read them when
+building requests, emits no header, and never maps the value onto `partner-id`.
+They exist so the answer can be wired in and tested in minutes once Aman confirms
+the six open questions in `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`. Enforced by
+`test_tmobile_pit_evidence.py::TestPartnerFoundationIsInert`.
+
+The value is an opaque partner identifier (like `partner-id: 128`), not a
+credential, so the evidence bundle echoes it back — that is the point: Aman can
+confirm whether the value we hold is the right one.
+
+### Evidence runner
+
+```powershell
+cd api
+python ../scripts/tmobile_pit_evidence.py --token-only
+python ../scripts/tmobile_pit_evidence.py --activation-preview --iccid <ICCID> --market-zip 30346
+python ../scripts/tmobile_pit_evidence.py --activate --confirm-live --iccid <ICCID> --market-zip 30346
+python ../scripts/compare_tmobile_request_contract.py --ours <bundle.json>
+```
+
+Writes `/tmp/tmobile-pit-evidence-<UTC>.{json,txt}`. Header values are captured by
+**allowlist** — an unknown header is redacted by default rather than leaking until
+someone remembers to block it. Body content is never captured (length + SHA-256
+only, which is what proves signed bytes == sent bytes).
+
 ### Superseded decisions (PRs #165–#168)
 
 These were reconstructed from partial evidence during GENS-0003 debugging and are

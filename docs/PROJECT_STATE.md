@@ -8,7 +8,42 @@
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-16. Branch at time of writing: `main` (in sync with origin).
 
-## 0·URGENT — T-Mobile TAAP restored to the supplied reference contract (branch `fix/tmobile-taap-reference-contract`, PR open, NOT merged) [2026-07-16]
+## 0·URGENT — T-Mobile PIT: reference contract deployed, STILL GENS-0003; awaiting Partner Foundation ID (branch `chore/tmobile-pit-evidence-and-foundation-prep`, PR open, NOT merged) [2026-07-16]
+
+The reference-contract fix is **merged and deployed** (commit `1766f51`). The
+first activation on it **failed identically**: `HTTP 400 GENS-0003 Invalid
+partnerID` (UTC `2026-07-16T20:39:07.197374Z`, ICCID `8901260963132697538`,
+work-flow-id `8e5f9dcb-…_P`, service-transaction-id `f7542c0d-…`, full table in
+`TMOBILE_PIT_ACTIVATION_PAYLOAD.md`).
+
+**That is the finding: the PoP was never the cause of GENS-0003.** Our PoP now
+matches T-Mobile's builder byte-for-byte and the error is unchanged, so the
+remaining variable is partner identity itself — which is what "Partner Foundation
+ID" points at.
+
+**BLOCKED on T-Mobile.** Aman mentioned a "Partner Foundation ID" but supplied no
+value, header name, or semantics. **Do not guess** — every guess so far
+(`partner-id` in PoP claims #165, signed `sender-id` #167,
+`Content-Type;uri;http-method` #168) was plausible and cost a live PIT cycle. The
+six required answers are listed in `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`
+§ "Partner Foundation ID".
+
+This PR ships **preparation only, zero wire change**:
+
+- `TMOBILE_PARTNER_FOUNDATION_ID` / `_HEADER` config — **deliberately inert**;
+  stored + stripped, never sent, never mapped onto `partner-id`
+- `app/integrations/tmobile_evidence.py` — sanitized capture (allowlist, so an
+  unknown header redacts by default; body = length + SHA-256 only)
+- `scripts/tmobile_pit_evidence.py` — `--token-only` / `--activation-preview` /
+  `--activate` (needs **both** `--confirm-live` and
+  `TMOBILE_PIT_LIVE_CALLS_ENABLED=true`; one request, never retries)
+- `scripts/compare_tmobile_request_contract.py` — diffs our request against a
+  reference T-Mobile supplies later
+
+**Next session checklist** is in `BACKLOG.md` §URGENT. **No live activation was
+run by Claude. PR NOT merged.**
+
+## 0·DONE — T-Mobile TAAP restored to the supplied reference contract (PR #170, MERGED as `1766f51`) [2026-07-16]
 
 **T-Mobile Engineering supplied the complete PoP Token Builder reference.** It is
 now the authoritative wire contract and supersedes PRs #165–#168, which were
@@ -46,11 +81,8 @@ Golden tests: `test_tmobile_reference_contract.py` pins the supplied vector
 no-secret guarantees. Removing `iss` also removed the consumer key from a
 decodable JWT.
 
-**No live activation was run by Claude** — still behind
-`TMOBILE_PIT_LIVE_CALLS_ENABLED` (false). Retest: confirm deployed commit → run
-`python ../scripts/get_tmobile_tokens.py --decode-claims` (token-only, reports the
-full contract, prints no token material) → one activation while T-Mobile watches →
-capture ids → **do not retry automatically**. **PR NOT merged.**
+Retest outcome: **still GENS-0003** — see §0 above. The contract is correct; the
+failure is elsewhere. **Merged as `1766f51`.**
 
 ## 0·NEXT — RH registry approval operator script (branch `feat/rh-registry-approve`, PR open, NOT merged) [2026-07-02]
 

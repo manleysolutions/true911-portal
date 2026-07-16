@@ -13,33 +13,52 @@
 
 ---
 
-## 🔴 URGENT — T-Mobile PIT: TAAP restored to the supplied reference contract [2026-07-16]
+## 🔴 URGENT — T-Mobile PIT: BLOCKED on Partner Foundation ID [2026-07-16]
 
-**Status:** implemented on `fix/tmobile-taap-reference-contract`, **PR open, NOT
-merged**. No live activation run.
+**Status:** reference contract **merged + deployed** (`1766f51`). Retest on it
+**still failed** `HTTP 400 GENS-0003 Invalid partnerID` (evidence table in
+`TMOBILE_PIT_ACTIVATION_PAYLOAD.md`). **The PoP was never the cause.**
 
-T-Mobile Engineering supplied the complete **PoP Token Builder reference**; it is
-now the authoritative wire contract and supersedes PRs #165–#168. Full contract in
-`tmobile_taap_setup.md` § "Authoritative PoP contract"; root cause and retest in
-`PROJECT_STATE.md` §0.
+Preparation work is on `chore/tmobile-pit-evidence-and-foundation-prep` — **PR
+open, NOT merged**, zero wire change. No live activation run by Claude.
 
-**Next actions (in order):**
+### ⛔ Blocked — awaiting T-Mobile. Do NOT guess.
 
-1. Merge the PR and confirm the deployed commit on Render.
-2. Token-only validation — `python ../scripts/get_tmobile_tokens.py --decode-claims`
-   (sends no activation; prints no token material). Confirm
-   `Content-Type;Authorization;uri;http-method;body`, `sender-id: '128'` present +
-   unsigned, `grant-type: client_credentials`, body properties `['cnf']`.
-3. **Needs Verification:** whether PIT returns an `id_token`. The client handles
-   both (`X-Auth-Originator` sent when present, omitted when not) — the retest
-   reports which, without printing it.
-4. **Needs Verification:** whether the `senderId` / `channelId` access-token claims
-   now appear. PRs #165–#168 concluded their absence required a T-Mobile-side
-   registration change; that conclusion rested on a PoP that did not match the
-   reference, so it must be re-tested before being believed.
-5. Only then: one activation while T-Mobile watches. Capture UTC timestamp, ICCID,
-   partner-transaction-id, X-Correlation-Id, work-flow-id, service-transaction-id.
-   **Do not retry automatically.**
+`TMOBILE_PARTNER_FOUNDATION_ID` / `_HEADER` exist but are **inert by design**.
+Every guess so far was plausible and cost a live PIT cycle (#165 PoP claims, #167
+signed sender-id, #168 `Content-Type;uri;http-method`). A header name is a coin
+flip we do not need to take.
+
+**Required from Aman — all six before the next attempt:**
+
+1. Partner Foundation ID **value**
+2. **Exact header name** (and case)
+3. **Replaces** `partner-id` or **supplements** it?
+4. Applies to **OAuth**, **resource** calls, or **both**?
+5. **Signed** (in PoP ehts) or **unsigned**?
+6. Does `partner-id: 128` **remain required**?
+
+### Next-session checklist
+
+1. Merge this PR; confirm the deployed commit on Render.
+2. Send Aman the evidence bundle:
+   `python ../scripts/tmobile_pit_evidence.py --token-only` → paste the `.txt`.
+3. When the six answers arrive: wire the header in `tmobile_taap.py`, add a golden
+   test pinning name + scope + signed/unsigned, run the full suite. **~1 hour.**
+4. Dry run first: `--activation-preview --iccid <ICCID> --market-zip 30346`.
+5. Then exactly one activation while T-Mobile watches:
+   `--activate --confirm-live --iccid <ICCID> --market-zip 30346`.
+   Capture the bundle. **Do not retry automatically.**
+6. `compare_tmobile_request_contract.py --ours <bundle> --reference <aman.json>` if
+   Aman supplies a sanitized known-good capture.
+
+### Still Needs Verification (carried forward)
+
+- Whether PIT returns an `id_token` (client handles both; `--token-only` reports it).
+- Whether `senderId` / `channelId` appear in the access token. PRs #165–#168
+  concluded their absence needed a T-Mobile-side registration change — that rested
+  on a non-conforming PoP, so it is **unproven**, and may well be the same root
+  cause as the Partner Foundation question.
 
 ---
 

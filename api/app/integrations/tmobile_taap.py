@@ -403,6 +403,8 @@ class TMobileTAAPClient:
         account_id: str | None = None,
         subscriber_base_path: str | None = None,
         activation_path: str | None = None,
+        partner_foundation_id: str | None = None,
+        partner_foundation_header: str | None = None,
     ):
         env = settings.TMOBILE_ENV.lower()
         self.base_url = (base_url or settings.TMOBILE_BASE_URL or
@@ -426,6 +428,26 @@ class TMobileTAAPClient:
             activation_path
             if activation_path is not None
             else settings.TMOBILE_ACTIVATION_PATH
+        ).strip()
+
+        # ── Partner Foundation ID — CONFIGURATION ONLY, DELIBERATELY INERT ──
+        # T-Mobile mentioned a "Partner Foundation ID" while diagnosing the
+        # 2026-07-16 GENS-0003 failure but has not supplied the value, the exact
+        # header name, whether it replaces or supplements partner-id, its scope,
+        # or whether it is signed. Until Aman confirms, these are stored (stripped)
+        # for the evidence bundle and NOTHING is emitted: no header is added in
+        # _request()/get_access_token(), and this is NOT mapped onto partner-id.
+        # Wiring it in is a deliberate, tested code change — not a config toggle.
+        # Guessing the name would burn a live PIT activation on a coin flip.
+        self.partner_foundation_id = (
+            partner_foundation_id
+            if partner_foundation_id is not None
+            else settings.TMOBILE_PARTNER_FOUNDATION_ID
+        ).strip()
+        self.partner_foundation_header = (
+            partner_foundation_header
+            if partner_foundation_header is not None
+            else settings.TMOBILE_PARTNER_FOUNDATION_HEADER
         ).strip()
 
         # Access token cache. _id_token is captured from the same OAuth response

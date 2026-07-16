@@ -166,6 +166,14 @@ Partially confirmed. The 200 status code + JSON body is sufficient for the callb
 >
 > The lesson worth keeping: an audit that reads only our own code can confirm
 > internal consistency, never conformance to someone else's wire contract.
+>
+> **2026-07-16 follow-up:** the reference contract is now deployed (`1766f51`) and
+> the PIT activation **still returns `GENS-0003 Invalid partnerID`** — so the PoP
+> was never the cause. Blocked on T-Mobile's "Partner Foundation ID" contract; see
+> `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`. Conformance is now checked by an evidence
+> runner that captures what was **actually sent**
+> (`scripts/tmobile_pit_evidence.py`) rather than by reading our own code — which
+> is the only way this section's original mistake gets caught early.
 
 ### Token exchange implemented?
 
