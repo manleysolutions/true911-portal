@@ -377,6 +377,25 @@ class Settings(BaseSettings):
     # a route that is NOT derivable from the subscriber base. Blank => the client
     # derives "{TMOBILE_SUBSCRIBER_BASE_PATH}/activate".
     TMOBILE_ACTIVATION_PATH: str = ""
+    # ── Partner Foundation ID — CONFIGURATION ONLY, NOT SENT ────────────
+    # T-Mobile mentioned a "Partner Foundation ID" while diagnosing the
+    # 2026-07-16 GENS-0003 "Invalid partnerID" failure, but has NOT supplied:
+    #   1. the value             2. the exact HTTP header name
+    #   3. whether it REPLACES partner-id or supplements it
+    #   4. whether it applies to OAuth, resource calls, or both
+    #   5. whether it is signed (in the PoP ehts) or unsigned
+    #   6. whether partner-id=128 remains required alongside it
+    #
+    # These fields exist so the answer can be wired in and tested in minutes once
+    # Aman confirms it. Setting them changes NOTHING today: the client never reads
+    # them, and no header is emitted. Guessing the header name or mapping this
+    # onto partner-id would burn another live PIT activation on a coin flip —
+    # every previous guess in this integration cost a full test cycle.
+    # See docs/TMOBILE_PIT_ACTIVATION_PAYLOAD.md § "Partner Foundation ID".
+    TMOBILE_PARTNER_FOUNDATION_ID: str = ""
+    # The header NAME T-Mobile assigns this value. Blank until confirmed — the
+    # client must never invent one.
+    TMOBILE_PARTNER_FOUNDATION_HEADER: str = ""
 
     # ── Verizon ThingSpace ─────────────────────────────────────────────
     VERIZON_THINGSPACE_AUTH_MODE: str = ""  # oauth_client_credentials | api_key_secret_token | legacy_short_key_secret | username_password_session

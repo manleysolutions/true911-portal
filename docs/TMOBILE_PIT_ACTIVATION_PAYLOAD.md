@@ -23,6 +23,83 @@ from an ICCID:
 }
 ```
 
+## 2026-07-16 — PIT retest on the reference contract: still GENS-0003 ⬅ CURRENT
+
+First activation run with the **supplied T-Mobile reference contract** deployed
+(commit `1766f51`). The PoP now matches the reference builder exactly — OAuth and
+resource both sign `Content-Type;Authorization;uri;http-method;body`, `typ=JWT`,
+`exp=iat+60`, `v="1"`, no `iss`, exact compact body bytes in the edts, `sender-id`
+and `grant-type` unsigned headers.
+
+**It still failed identically.** That is itself the finding: the PoP was never the
+cause of GENS-0003.
+
+| Field | Value |
+|---|---|
+| UTC | `2026-07-16T20:39:07.197374Z` |
+| Endpoint | `POST /wholesale/v1/subscriber/activation` |
+| ICCID | `8901260963132697538` |
+| partner-id | `128` |
+| sender-id | `128` |
+| partner-transaction-id | `true911-pit-bc2f03cb-cfa2-484c-b9c6-ce48c903bb95` |
+| X-Correlation-Id | `1e2362d0-f962-49d9-af79-0132222107cd` |
+| work-flow-id | `8e5f9dcb-c62c-443c-8f7b-1d45eb0d691e_P` |
+| service-transaction-id | `f7542c0d-8eaf-9d43-a826-4a4b757b3977` |
+| Response | `HTTP 400` · `GENS-0003` · `Invalid partnerID` |
+
+### Partner Foundation ID — OPEN QUESTION, DO NOT GUESS
+
+T-Mobile mentioned a **"Partner Foundation ID"** but has **not** supplied the
+value, the header name, or the semantics.
+
+**Rule: nothing is sent until Aman confirms it.** `TMOBILE_PARTNER_FOUNDATION_ID`
+and `TMOBILE_PARTNER_FOUNDATION_HEADER` exist in config and are **deliberately
+inert** — the client never reads them, no header is emitted, and the value is
+**not** mapped onto `partner-id`. Setting them changes nothing on the wire; wiring
+it up is a deliberate, tested code change. This is enforced by
+`test_tmobile_pit_evidence.py::TestPartnerFoundationIsInert`.
+
+Why the rule exists: every guess in this integration has cost a full live PIT
+cycle. `partner-id`/`sender-id` in the PoP claims (#165) — wrong. Signed
+`sender-id` (#167) — wrong. `Content-Type;uri;http-method` (#168) — wrong. Each
+was plausible; each burned a test. A header name is a coin flip we do not need to
+take.
+
+**Required answers from T-Mobile — all six before the next attempt:**
+
+1. The Partner Foundation ID **value**.
+2. The **exact HTTP header name** (and its case).
+3. Does it **replace** `partner-id` or **supplement** it?
+4. Does it apply to the **OAuth** call, **resource** calls, or **both**?
+5. Is it **signed** (in the PoP ehts) or **unsigned**?
+6. Does `partner-id: 128` **remain required** alongside it?
+
+### Evidence runner
+
+Produces a sanitized bundle safe to paste into an email to Aman:
+
+```powershell
+cd api
+python ../scripts/tmobile_pit_evidence.py --token-only                    # no activation
+python ../scripts/tmobile_pit_evidence.py --activation-preview --iccid <ICCID> --market-zip 30346
+python ../scripts/tmobile_pit_evidence.py --activate --confirm-live --iccid <ICCID> --market-zip 30346
+```
+
+`--activate` requires **both** `--confirm-live` **and**
+`TMOBILE_PIT_LIVE_CALLS_ENABLED=true`, sends exactly one request, and **never
+retries**. Writes `/tmp/tmobile-pit-evidence-<UTC>.{json,txt}` — the `.txt` is the
+paste-into-email report. A 400 still writes a full bundle (that IS the
+deliverable) and exits non-zero.
+
+Compare a bundle against a reference T-Mobile supplies later:
+
+```powershell
+python ../scripts/compare_tmobile_request_contract.py --ours <bundle.json> [--reference <tmobile.json>]
+```
+
+No tokens, keys, Basic values, or body content ever enter either output — header
+values are captured by **allowlist**, so an unknown header is redacted by default.
+
 ## 2026-07-07 — PIT retest failure: sender-id absent from PoP auth claims
 
 T-Mobile Engineering (Aman) reviewed a **live** PIT activation and found the
