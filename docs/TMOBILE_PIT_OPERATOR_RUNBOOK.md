@@ -12,6 +12,11 @@
 
 ---
 
+> **Update 2026-07-21.** Requests are now validated as typed models before OAuth,
+> so a malformed command fails locally with identifiers masked. The refusal you
+> see may now come from request validation, the lifecycle precondition policy, or
+> the operation registry — all three fail closed and all say *nothing was sent*.
+
 ## 1. The rule
 
 **Preview everything. Send nothing you have not previewed.** `preview` opens no

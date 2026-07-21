@@ -14,6 +14,14 @@
 
 ---
 
+> **Update 2026-07-21.** The typed lifecycle layer now implements exact-correlation
+> callback application, duplicate idempotency, replay-after-completion refusal,
+> conflicting-identifier and conflicting-operation quarantine, and manual-review
+> routing for results that are not understood — closing gaps #3, #4, #6 and #7 at
+> the model level. These are **not yet wired into the live ingest path**; that is
+> part of the read-only PIT certification work that follows. The checklist below
+> still describes the deployed ingest path.
+
 ## Checklist
 
 | # | Property | State | Evidence |

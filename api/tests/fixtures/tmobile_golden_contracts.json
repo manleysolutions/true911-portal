@@ -1,0 +1,489 @@
+{
+  "_README": "ENTIRELY FABRICATED golden fixtures for T-Mobile contract tests. No vendor sample body, no real subscriber identifier, and no vendor prose appears here. Shapes mirror the implemented wire contract; all content is invented. Identifiers are reserved/test-range values.",
+  "_identifiers": {
+    "account": "99900011122",
+    "iccid_current": "8901260963132600001",
+    "iccid_replacement": "8901260963132600002",
+    "imsi": "310260000000001",
+    "msisdn": "5550001234",
+    "partner_transaction_id": "true911-pit-00000000-0000-4000-8000-000000000001",
+    "service_transaction_id": "00000000-0000-4000-8000-0000000000bb",
+    "workflow_id": "00000000-0000-4000-8000-0000000000aa_P"
+  },
+  "fixtures": {
+    "activation_async_success": {
+      "body": {
+        "accountId": "99900011122",
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS",
+        "workFlowId": "00000000-0000-4000-8000-0000000000aa_P"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "activate_subscriber"
+    },
+    "activation_sync_acceptance": {
+      "body": {
+        "accountId": "99900011122",
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {
+        "partner-transaction-id": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "service-transaction-id": "00000000-0000-4000-8000-0000000000bb",
+        "work-flow-id": "00000000-0000-4000-8000-0000000000aa_P"
+      },
+      "http_status": 201,
+      "kind": "synchronous",
+      "operation": "activate_subscriber"
+    },
+    "change_sim_async_success": {
+      "body": {
+        "iccid": "8901260963132600002",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "change_sim"
+    },
+    "change_sim_sync_acceptance": {
+      "body": {
+        "iccid": "8901260963132600002",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {
+        "partner-transaction-id": "true911-pit-00000000-0000-4000-8000-000000000001"
+      },
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "change_sim"
+    },
+    "conflicting_identifier_callback": {
+      "body": {
+        "iccid": "8901260963132600002",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "suspend_subscriber"
+    },
+    "deactivate_async_success": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "deactivate_subscriber"
+    },
+    "deactivate_sync_acceptance": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {
+        "partner-transaction-id": "true911-pit-00000000-0000-4000-8000-000000000001"
+      },
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "deactivate_subscriber"
+    },
+    "duplicate_callback": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "suspend_subscriber"
+    },
+    "generic_failure": {
+      "body": {
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "GENS-0012",
+            "status": "FAILURE"
+          }
+        ],
+        "status": "FAILURE"
+      },
+      "headers": {},
+      "http_status": 400,
+      "kind": "synchronous",
+      "operation": "suspend_subscriber"
+    },
+    "generic_warning": {
+      "body": {
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "GENS-0506",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_network"
+    },
+    "out_of_order_callback": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "restore_subscriber"
+    },
+    "query_network_with_sim_network_type": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "imsi": "310260000000001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "simNetworkType": "FABRICATED_NET_A",
+        "status": "SUCCESS",
+        "subscriberStatus": "ACTIVE"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_network"
+    },
+    "query_network_without_sim_network_type": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "imsi": "310260000000001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS",
+        "subscriberStatus": "ACTIVE"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_network"
+    },
+    "query_usage": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "isMultiline": false,
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "simNetworkType": "FABRICATED_NET_A",
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_usage"
+    },
+    "replayed_callback_after_completion": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "suspend_subscriber"
+    },
+    "restore_async_success": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "restore_subscriber"
+    },
+    "restore_sync_acceptance": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {
+        "partner-transaction-id": "true911-pit-00000000-0000-4000-8000-000000000001"
+      },
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "restore_subscriber"
+    },
+    "subscriber_inquiry_active": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "isMultiline": false,
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS",
+        "subscriberStatus": "ACTIVE"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "subscriber_inquiry"
+    },
+    "subscriber_inquiry_suspended": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS",
+        "subscriberStatus": "SUSPENDED"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "subscriber_inquiry"
+    },
+    "suspend_async_success": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "suspend_subscriber"
+    },
+    "suspend_sync_acceptance": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {
+        "partner-transaction-id": "true911-pit-00000000-0000-4000-8000-000000000001"
+      },
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "suspend_subscriber"
+    },
+    "transaction_status_completed": {
+      "body": {
+        "action": "SuspendSubscriber",
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_transaction_status"
+    },
+    "transaction_status_pending": {
+      "body": {
+        "action": "SuspendSubscriber",
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "status": "PENDING"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_transaction_status"
+    },
+    "uncorrelatable_callback": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "suspend_subscriber"
+    },
+    "unknown_added_response_field": {
+      "body": {
+        "anotherNewBlock": {
+          "nested": true
+        },
+        "iccid": "8901260963132600001",
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "someFutureAttribute": "fabricated-value",
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": 200,
+      "kind": "synchronous",
+      "operation": "query_network"
+    },
+    "unknown_vendor_code": {
+      "body": {
+        "msisdn": "5550001234",
+        "partnerTransactionId": "true911-pit-00000000-0000-4000-8000-000000000001",
+        "result": [
+          {
+            "result": "GENS-9999",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS"
+      },
+      "headers": {},
+      "http_status": null,
+      "kind": "asynchronous",
+      "operation": "suspend_subscriber"
+    }
+  }
+}

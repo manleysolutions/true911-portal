@@ -13,6 +13,24 @@
 
 ---
 
+## ⭐ NEXT — T-Mobile read-only PIT certification [2026-07-21]
+
+The typed contract and lifecycle foundation is merged-ready. The next task is
+the first supervised live read.
+
+**Scope:** `SubscriberInquiry` only, against one explicitly nominated subscriber,
+operator-approved, preview first, single request, no bulk mode, no scheduler.
+Advance its readiness only on real evidence.
+
+**Prerequisites:** confirm the read-only allowlist tier names the target SIM;
+confirm the operator gates; keep `TMOBILE_PIT_LIVE_CALLS_ENABLED` closed except
+for the single supervised run.
+
+**Also open:** durable persistence for lifecycle transactions is deferred until
+the alembic chain is un-branched (two revisions currently share a parent, one
+uncommitted). Callback correlation gaps from the earlier review are now addressed
+in the typed layer but not yet wired into the live ingest path.
+
 ## ✅ RESOLVED — T-Mobile contract obtained and reconciled [2026-07-21]
 
 Authorized vendor documentation obtained and reviewed privately

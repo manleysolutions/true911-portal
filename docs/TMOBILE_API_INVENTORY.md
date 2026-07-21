@@ -1,6 +1,8 @@
 # T-Mobile Wholesale — API operation inventory
 
-> **SUPERSEDED IN PART — 2026-07-21.** The "no vendor contract exists" premise
+> **SUPERSEDED IN PART — 2026-07-21.** Typed contracts now live in
+> `app/integrations/tmobile_contracts.py`; lifecycle in `tmobile_state.py`.
+> The "no vendor contract exists" premise
 > below is no longer true: authorized vendor documentation has since been
 > obtained and the implementation reconciled against it (evidence reference
 > `TMO-REST-RECON-001`). The reconciliation found the previously derived paths
