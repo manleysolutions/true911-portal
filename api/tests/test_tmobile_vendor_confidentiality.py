@@ -41,9 +41,17 @@ def _tracked_files() -> list[str]:
     return [line for line in out.stdout.splitlines() if line.strip()]
 
 
+#: This guard module necessarily contains the very patterns it hunts for — the
+#: hash prefixes, the citation shapes, the identifier constants. Scanning itself
+#: would be a guaranteed false positive, so it is the single excluded file.
+_SELF = "api/tests/test_tmobile_vendor_confidentiality.py"
+
+
 def _tracked_text(paths: list[str]) -> list[tuple[str, str]]:
     documents = []
     for rel in paths:
+        if rel.replace("\\", "/") == _SELF:
+            continue
         p = REPO / rel
         if not p.is_file() or p.suffix.lower() in VENDOR_BINARY_SUFFIXES:
             continue
