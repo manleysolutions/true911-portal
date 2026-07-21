@@ -293,6 +293,24 @@ class TestReconciledWireContract:
                      "change_sim", "deactivate_subscriber"):
             assert ops.get_operation(name).http_method == "PUT", name
 
+    def test_activation_fallback_never_derives_a_path(self, tmobile_env, monkeypatch):
+        """With the env override unset the client must still use the real path.
+
+        This is the original defect in its purest form: activation only ever
+        worked because TMOBILE_ACTIVATION_PATH happened to be set. The derived
+        fallback pointed at a route that does not exist, and a derived path also
+        fails to match the operation registry, so the client boundary would not
+        recognise the call.
+        """
+        monkeypatch.setattr("app.config.settings.TMOBILE_ACTIVATION_PATH", "")
+        client = taap.TMobileTAAPClient()
+
+        endpoint = client.activation_endpoint()
+
+        assert endpoint == "/wholesale/v1/subscriber/activation"
+        assert not endpoint.endswith("/activate")
+        assert ops.operation_for_request("POST", endpoint) == "activate_subscriber"
+
     def test_path_lookup_recognises_an_outbound_request(self):
         assert ops.operation_for_request(
             "PUT", "/wholesale/v1/subscriber/suspension") == "suspend_subscriber"

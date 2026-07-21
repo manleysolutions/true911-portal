@@ -40,7 +40,7 @@ import app.integrations.tmobile_taap as taap
 TOKEN_URL = "https://pit-oauth.t-mobile.com/oauth2/v2/tokens"
 TOKEN_PATH = "/oauth2/v2/tokens"
 BASE_URL = "https://pit-apis.t-mobile.com"
-ACTIVATE_PATH = "/wholesale/v1/subscriber/activate"
+ACTIVATE_PATH = "/wholesale/v1/subscriber/activation"
 ACTIVATE_URL = f"{BASE_URL}{ACTIVATE_PATH}"
 
 ACCESS_TOKEN = "tok"

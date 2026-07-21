@@ -410,10 +410,10 @@ class TMobileTAAPClient:
     Usage::
 
         client = TMobileTAAPClient()
-        subs = await client.post_json(
-            client._subscriber_path("inquiry"),  # /wholesale/v1/subscriber/inquiry
-            {"msisdn": "12125551234"},
-        )
+        subs = await client.subscriber_inquiry(msisdn="5550001234")
+
+    Resource paths come from the operation registry, never from a naming
+    convention — see ``app.integrations.tmobile_operations``.
     """
 
     def __init__(
@@ -498,12 +498,15 @@ class TMobileTAAPClient:
     def activation_endpoint(self) -> str:
         """Resolve the activation route.
 
-        Uses the explicit ``TMOBILE_ACTIVATION_PATH`` override when set, else
-        derives ``{subscriber_base_path}/activate``.  Kept env-driven because
-        T-Mobile may assign an activation route that is not derivable from the
-        subscriber base.
+        The ``TMOBILE_ACTIVATION_PATH`` override still wins, so a gateway
+        routing change stays a config edit. What changed is the fallback: it is
+        now the registry's exact vendor-confirmed path rather than a derived
+        one. The old fallback derived ``{base}/activate``, which is **wrong** —
+        activation only ever worked because the override happened to be set. A
+        derived path would also fail to match the operation registry, so the
+        client-boundary guard would not recognise the call at all.
         """
-        return self.activation_path or self._subscriber_path("activate")
+        return self.activation_path or OPS.get_operation("activate_subscriber").path
 
     async def _client(self) -> httpx.AsyncClient:
         if self._http is None or self._http.is_closed:

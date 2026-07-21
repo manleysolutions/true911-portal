@@ -157,16 +157,23 @@ class TestNoVendorContentIsPublished:
                 "that is a catalogue, not a reviewed subset."
             )
 
-    def test_no_vendor_document_hash_is_committed(self):
-        """Document hashes identify confidential artifacts; they stay private."""
-        known_hashes = (
-            "b3a2c7cc", "3d4fd290", "24f4ef03", "56080d11",  # the four PDFs
-            "bd7517a6", "6d48c86b", "b170b486",              # response-code set
-        )
-        for rel, text in _tracked_text(_tracked_files()):
-            lowered = text.lower()
-            for h in known_hashes:
-                assert h not in lowered, f"vendor document hash in {rel}"
+    def test_no_document_hash_is_committed(self):
+        """Document fingerprints identify confidential artifacts; they stay private.
+
+        Checked STRUCTURALLY — by the shape of a SHA-256, not by comparing
+        against the real hashes. Listing even truncated fingerprints here would
+        itself publish identifying material about the confidential documents,
+        which is the thing this test exists to prevent. A content-free check is
+        also broader: it catches a hash of any document, not just the ones we
+        happen to know about.
+
+        Note 40-hex git commit SHAs are deliberately NOT matched — those are our
+        own revisions and are legitimately referenced.
+        """
+        sha256_like = re.compile(r"\b[0-9a-f]{64}\b", re.IGNORECASE)
+        offenders = [rel for rel, text in _tracked_text(_tracked_files())
+                     if sha256_like.search(text)]
+        assert offenders == [], f"SHA-256-shaped digest committed in: {offenders}"
 
     def test_no_page_or_section_citation_into_the_vendor_guide(self):
         """Citations that reconstruct the source document are not published."""
