@@ -10,6 +10,30 @@
 > `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
 > `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
 
+## 0·DONE — Typed callback rules wired in shadow mode [2026-07-21]
+
+The typed callback rules now run **alongside** the deployed ingest path behind
+`FEATURE_TMOBILE_CALLBACK_TYPED_SHADOW` (default **off**). When enabled they
+record what they would have decided and whether that agrees with what actually
+happened. They change nothing.
+
+**Why shadow and not authoritative.** Nothing creates lifecycle transactions —
+there is no persistence for them and every mutation is blocked — so the
+correlation set is always empty and every callback resolves to
+`quarantined_no_correlation`. Making that authoritative would stop device
+liveness promotion, which feeds the health surfaces. Today's callbacks are also
+network liveness, not results of mutations we initiated, which is what the
+correlation rules are built for.
+
+**Safety.** Flag off costs nothing, not even an extra read. Evaluation gets a
+throwaway state object and no session, so it is structurally incapable of side
+effects. Two layers of exception absorption keep a broken shadow from ever
+failing ingest. Identifiers are masked in the observation and in logs.
+
+**To promote to authority**, in order: un-branch the Alembic chain → persist
+lifecycle transactions → have the operator path create them → review the
+recorded agreement rate → then flip the rules to authoritative.
+
 ## 0·BLOCKED — Read-only PIT certification prepared, NOT executed [2026-07-21]
 
 The tooling to certify `SubscriberInquiry` in PIT is complete and tested. **The

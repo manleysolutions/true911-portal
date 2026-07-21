@@ -65,7 +65,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -78,6 +78,11 @@ from app.models.integration_payload import IntegrationPayload
 from app.models.sim import Sim
 from app.services.carrier_adapter import CarrierTelemetry, ingest_carrier_telemetry
 from app.services import tmobile_activation as activation
+
+from app.services.tmobile_callback_shadow import (  # noqa: E402
+    evaluate as shadow_evaluate,
+    shadow_enabled,
+)
 
 logger = logging.getLogger("true911.tmobile.callback_processor")
 
@@ -166,6 +171,9 @@ class ProcessResult:
     # Outcome of activation account-ID capture on the device-fallback path:
     # "updated_sim" | "created_sim" | "skipped:no_iccid" | None (no capture needed).
     account_capture: Optional[str] = None
+    # What the typed callback rules WOULD have decided, when the shadow flag is
+    # on.  Observation only — it never influences `status` or any DB write.
+    shadow: Optional[dict] = None
 
 
 # ─── Extraction ────────────────────────────────────────────────────
@@ -559,7 +567,7 @@ async def match_device_fallback(
 # ─── Orchestrator ──────────────────────────────────────────────────
 
 
-async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
+async def _process_payload_core(db: AsyncSession, payload_id: str) -> ProcessResult:
     """Drive the full archive → extract → match → promote flow.
 
     Never raises an upstream error — every failure path returns a
@@ -796,3 +804,56 @@ def _redact_identifier(value: Optional[str]) -> str:
     if len(value) <= 8:
         return value[0] + "***"
     return f"{value[:6]}...{value[-2:]}"
+
+
+async def process_payload(db: AsyncSession, payload_id: str) -> ProcessResult:
+    """Process one callback, optionally recording what the typed rules think.
+
+    The deployed behaviour is entirely unchanged: ``_process_payload_core`` does
+    all the work and its result is what callers act on. When
+    ``FEATURE_TMOBILE_CALLBACK_TYPED_SHADOW`` is on, the typed rules are ALSO
+    evaluated and their verdict is attached for observation.
+
+    Structured as a wrapper rather than edits to the core's eight return paths
+    so that the live path is untouched, and so the whole shadow costs nothing —
+    not even the extra read — when the flag is off.
+    """
+    if not shadow_enabled():
+        return await _process_payload_core(db, payload_id)
+
+    # Capture the inputs BEFORE processing: the core marks the row processed
+    # and commits, and we want the body exactly as it arrived.
+    captured = await _load_payload(db, payload_id)
+    body = getattr(captured, "body", None)
+    headers = getattr(captured, "headers", None) or {}
+    event_type = str(headers.get(EVENT_TYPE_HEADER) or "unknown")
+
+    result = await _process_payload_core(db, payload_id)
+
+    try:
+        observation = shadow_evaluate(
+            body=body,
+            headers=headers,
+            # The event type is the closest thing a callback carries to an
+            # operation name. Correlation is not yet meaningful either way —
+            # there are no transactions to correlate against — so this is a
+            # label for the observation record, not a claim about which
+            # operation it belongs to.
+            operation=event_type,
+            payload_id=payload_id,
+            live_status=result.status,
+        )
+    except Exception:  # noqa: BLE001
+        # Belt and braces. shadow_evaluate already absorbs its own failures, so
+        # reaching here means the shadow module itself is broken — a signature
+        # drift, a bad import. Ingest still must not fail: an observation is a
+        # nice-to-have, and this path feeds device liveness.
+        logger.exception(
+            "T-Mobile callback %s: shadow layer raised — ingest result "
+            "preserved unchanged", payload_id,
+        )
+        return result
+
+    if observation is None:
+        return result
+    return replace(result, shadow=observation.as_dict())

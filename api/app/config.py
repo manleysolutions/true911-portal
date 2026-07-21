@@ -81,6 +81,18 @@ class Settings(BaseSettings):
     # timestamp is older than this many seconds.  Defends against
     # replayed callbacks marking long-offline devices as fresh.
     TMOBILE_CALLBACK_MAX_AGE_SECONDS: int = 600
+    # Run the typed callback rules (app.integrations.tmobile_transactions)
+    # alongside the deployed processor for OBSERVATION ONLY.  When "true", each
+    # processed callback additionally records what the typed rules would have
+    # decided and whether that agrees with what actually happened.  It cannot
+    # change state: the rules are evaluated against a throwaway state object and
+    # every failure is swallowed.  Default off.
+    #
+    # The typed rules are NOT ready to be authoritative: nothing creates
+    # lifecycle transactions yet, so their correlation set is always empty and
+    # every callback would quarantine.  See
+    # app/services/tmobile_callback_shadow.py.
+    FEATURE_TMOBILE_CALLBACK_TYPED_SHADOW: str = "false"
 
     # ── T-Mobile Callback IP Audit (passive, log-only) ────────────
     # Defense-in-depth for the T-Mobile PIT callback URLs.  When
