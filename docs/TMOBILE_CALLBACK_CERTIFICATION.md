@@ -18,7 +18,18 @@
 > callback application, duplicate idempotency, replay-after-completion refusal,
 > conflicting-identifier and conflicting-operation quarantine, and manual-review
 > routing for results that are not understood — closing gaps #3, #4, #6 and #7 at
-> the model level. These are **not yet wired into the live ingest path**; that is
+> the model level. They are now wired into the deployed processor in
+> **shadow mode** (`FEATURE_TMOBILE_CALLBACK_TYPED_SHADOW`, default **off**):
+> when enabled, each processed callback additionally records what the typed
+> rules would have decided and whether that agrees with what actually happened.
+> **They are still not authoritative** and change no state.
+>
+> They cannot yet become authoritative for a concrete reason: nothing creates
+> lifecycle transactions (no persistence, and every mutation is blocked), so the
+> correlation set is always empty and every callback resolves to
+> `quarantined_no_correlation`. Promoting that to authority today would stop
+> device-liveness promotion. The recorded agreement/disagreement is the evidence
+> that will justify promotion once transactions exist. Previously this was
 > part of the read-only PIT certification work that follows. The checklist below
 > still describes the deployed ingest path.
 

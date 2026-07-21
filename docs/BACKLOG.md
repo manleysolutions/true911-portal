@@ -13,6 +13,20 @@
 
 ---
 
+## 🔗 BLOCKED — Promote typed callback rules to authoritative
+
+Wired in shadow mode (default off). Cannot become authoritative until, in order:
+
+1. **Un-branch the Alembic chain** — two heads currently share `049`
+   (`050` untracked Ops Center work, `051` committed). Needs an owner decision.
+2. **Persist lifecycle transactions** (`LifecycleTransaction` has no ORM model).
+3. **Create transactions on the operator path**, so callbacks have something to
+   correlate against.
+4. **Review the recorded agreement rate** from a shadow soak.
+
+Only then flip the rules to authoritative. Doing it earlier stops device
+liveness promotion.
+
 ## ⭐ NEXT — Execute the read-only PIT inquiry (tooling ready, run pending)
 
 Blocked on two operator inputs, not on code:
