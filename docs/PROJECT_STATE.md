@@ -7,7 +7,40 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-07-21. Branch at time of writing:
-> `docs/tmobile-pit-success-closeout` (PR open, NOT merged; based on `main`).
+> `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
+> `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
+
+## 0·URGENT FINDING — 7 of 8 T-Mobile operations have NO supplied contract [2026-07-21]
+
+T-Mobile authorized us to "run other API calls to complete your development and
+testing cycle." Building the certification harness surfaced why we largely
+cannot yet.
+
+**There is no T-Mobile OpenAPI spec, Postman collection, PDF, or reference
+implementation anywhere in this repository.** Every subscriber-family path is
+produced by our own string join in `tmobile_taap._subscriber_path()`.
+
+**That derivation is provably wrong.** Activation works at
+`/wholesale/v1/subscriber/activation` only because `TMOBILE_ACTIVATION_PATH`
+overrides it — the derived default is `/wholesale/v1/subscriber/activate`. Had we
+trusted the derivation, the successful activation would have gone to a
+non-existent path. So `/suspend`, `/restore`, `/deactivate`, `/inquiry`, and
+`/changesim` are **guesses**, and no response schema for any of them has ever
+been observed.
+
+**Consequence:** `activate_subscriber` is the only sendable operation. The other
+seven are BLOCKED by `app/integrations/tmobile_operations.py` — a refusal that
+config cannot lift, only a T-Mobile-supplied contract plus a reviewed code
+change. Blocked ≠ broken: they stay implemented and mock-tested.
+
+**Next action is a documentation request, not an API call.** Run
+`python ../scripts/tmobile_pit.py show <operation>` for the exact question list
+and send it to T-Mobile. See `TMOBILE_API_INVENTORY.md` and
+`TMOBILE_PIT_CERTIFICATION_PLAN.md` §2.
+
+**The one live-ready step today** touches no network: confirm whether a callback
+ever arrived for the 2026-07-21 activation —
+`python -m scripts.tmobile_callback_inspect --iccid <ICCID> --partner-transaction-id <ptx>`.
 
 ## 0·✅ DONE — T-Mobile PIT ACTIVATION SUCCEEDED [2026-07-21]
 

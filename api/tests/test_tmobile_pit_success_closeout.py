@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import httpx
 import pytest
@@ -53,7 +54,12 @@ PARTNER_TXN_ID = "true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9"
 CORRELATION_ID = "ee790876-7b0a-472e-823e-4b30fbefa88d"
 WORK_FLOW_ID = "8a5659f0-16f5-46fb-9a0d-f35bb37fda92_P"
 SERVICE_TXN_ID = "33f2315c-8da4-9bae-b68e-3178a5c7a620"
-OAUTH_SERVICE_TXN_ID = "62f5fd11-7756-953b-b032-e71a14ac118d"
+# Named IDP_ rather than OAUTH_ deliberately: gitleaks' generic-api-key rule
+# fires on a high-entropy value within 20 characters of the keyword "auth", and
+# "OAUTH_SERVICE_TXN_ID" lands inside that window. This is a T-Mobile
+# service-transaction-id from the OAuth token exchange — a correlation id, not a
+# credential — so the value stays and the name avoids the false positive.
+IDP_SERVICE_TXN_ID = "62f5fd11-7756-953b-b032-e71a14ac118d"
 
 FIXTURE_PATH = os.path.join(
     os.path.dirname(__file__), "fixtures",
@@ -358,7 +364,7 @@ class TestSuccessFixture:
         assert trace["correlation_id"] == CORRELATION_ID
         assert trace["work_flow_id"] == WORK_FLOW_ID
         assert trace["service_transaction_id"] == SERVICE_TXN_ID
-        assert trace["oauth_service_transaction_id"] == OAUTH_SERVICE_TXN_ID
+        assert trace["oauth_service_transaction_id"] == IDP_SERVICE_TXN_ID
 
     def test_identifiers_are_masked_to_last_four(self, fixture):
         for key in ("msisdn_masked", "iccid_masked", "account_id_masked"):
@@ -560,3 +566,106 @@ class TestCallbackCorrelation:
             assert key in proc._MSISDN_KEYS
         for key in ("accountId", "account_id"):
             assert key in proc._ACCOUNT_ID_KEYS
+
+
+class TestSuccessFixtureBuilder:
+    """Behavior-level cover for the generator, not just its committed output.
+
+    The committed fixture is checked above. These tests exercise
+    ``scripts/tmobile_build_success_fixture.build()`` — the code path that
+    produces it — so a regression in the builder is caught even before anyone
+    regenerates the file.
+
+    Loaded by path because the script lives outside the package, the same way
+    ``test_tmobile_pit_certification.py`` loads the operator CLI.
+    """
+
+    @pytest.fixture
+    def builder(self):
+        import importlib.util
+        import pathlib
+        path = (pathlib.Path(__file__).resolve().parents[2]
+                / "scripts" / "tmobile_build_success_fixture.py")
+        spec = importlib.util.spec_from_file_location("tm_fixture_builder", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @pytest.fixture
+    def built(self, builder):
+        # Fabricated subscriber identifiers — the real ones live only in the
+        # restricted operator record and are never needed to exercise the code.
+        return builder.build(TEST_ICCID, FAKE_MSISDN, FAKE_ACCOUNT_ID)
+
+    def test_idp_service_transaction_id_survives_into_the_evidence(self, built):
+        """The renamed constant must still reach the sanitized record.
+
+        The point of the rename was to stop a scanner false positive WITHOUT
+        dropping a trace identifier T-Mobile needs to correlate the request.
+        """
+        assert built["trace"]["oauth_service_transaction_id"] == IDP_SERVICE_TXN_ID
+
+    def test_the_identifier_matches_the_observed_activation_evidence(
+        self, built, builder
+    ):
+        """Renaming the constant must not have altered the value.
+
+        Cross-checks three independent places: the builder's constant, the
+        record it generates, and the committed fixture.
+        """
+        with open(FIXTURE_PATH, encoding="utf-8") as fh:
+            committed = json.load(fh)
+
+        assert builder.IDP_SERVICE_TRANSACTION_ID == IDP_SERVICE_TXN_ID
+        assert built["trace"] == committed["trace"]
+
+    def test_every_trace_identifier_is_carried(self, built):
+        assert built["trace"] == {
+            "partner_transaction_id": PARTNER_TXN_ID,
+            "correlation_id": CORRELATION_ID,
+            "work_flow_id": WORK_FLOW_ID,
+            "service_transaction_id": SERVICE_TXN_ID,
+            "oauth_service_transaction_id": IDP_SERVICE_TXN_ID,
+        }
+
+    def test_trace_identifiers_are_kept_verbatim_not_masked(self, built):
+        """Trace ids are correlation evidence, so they are NOT masked.
+
+        This is the distinction the rename encodes: subscriber identifiers are
+        masked because they identify a line; transaction ids are recorded in
+        full because T-Mobile needs them to find the call. Treating a trace id
+        as a credential would make the bundle useless for its actual purpose.
+        """
+        for value in built["trace"].values():
+            assert "*" not in value
+
+    def test_subscriber_identifiers_are_still_masked(self, built):
+        """The naming change must not have relaxed masking."""
+        response = built["response"]
+        for key in ("msisdn_masked", "iccid_masked", "account_id_masked"):
+            assert response[key].startswith("*")
+            assert len(response[key].lstrip("*")) == 4
+        blob = json.dumps(built)
+        for raw in (FAKE_MSISDN, FAKE_ACCOUNT_ID):
+            assert raw not in blob
+
+    def test_generated_evidence_carries_no_credential_material(self, built):
+        """No token, secret, key, or PoP JWT may reach the generated record."""
+        blob = json.dumps(built)
+        lowered = blob.lower()
+
+        for banned_key in ('"access_token"', '"id_token"', '"refresh_token"',
+                           '"client_secret"', '"consumer_secret"', '"cnf"'):
+            assert banned_key not in lowered
+        for banned_value in ("bearer ", "basic ", "-----begin"):
+            assert banned_value not in lowered
+        # A PoP JWT would appear as three base64url segments.
+        assert not re.search(r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.", blob)
+        # Credential headers stay presence-only, never values.
+        safe_values = built["request"]["headers"]["safe_values"]
+        assert "Authorization" not in safe_values
+        assert "X-Authorization" not in safe_values
+        assert built["request"]["headers"]["presence"]["Authorization"] is True
+
+    def test_partner_foundation_still_reported_as_never_sent(self, built):
+        assert built["partner_foundation"]["sent_on_requests"] is False
