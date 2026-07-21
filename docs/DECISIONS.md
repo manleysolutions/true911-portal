@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-018 recorded; latest ID: D-018 |
+| **Status** | Active — D-001 … D-019 recorded; latest ID: D-019 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -260,3 +260,30 @@ Decision · Consequences.
   (`suspend`/`restore`/`deactivate`) remain individually ungated — the safety
   lives in the harness, so a direct call still bypasses it; adding a fail-closed
   guard to the client itself is tracked in `TMOBILE_PRODUCTION_READINESS.md` #15.
+
+### D-019 — Reconcile against authorized vendor documentation without publishing it
+- **Date:** 2026-07-21 · **Status:** Accepted
+- **Context:** Authorized T-Mobile Wholesale documentation was obtained. Reconciling
+  against it found the previously derived paths wrong for **every** operation, four
+  wrong HTTP methods, and a wrong request body on every lifecycle call — confirming
+  D-018's blocking decision. But this repository is **public**, and the vendor
+  material is confidential to Manley Solutions as the intended recipient, with a
+  legend prohibiting retransmission. Committing the contract matrix, the response-code
+  catalogue, or sample payloads would disseminate it to the open internet.
+- **Decision:** Split the record. The **public repository** carries only the minimum
+  facts needed for the integration to function — exact paths, methods, wire field
+  names, header names, state logic, safety gates, fabricated tests, and a status-only
+  readiness table. The **private evidence store** (`.private-evidence/`, gitignored)
+  carries the contract matrix, the full response-code analysis, source citations and
+  document hashes. Public references use an opaque evidence reference
+  (`TMO-REST-RECON-001`), never a document title, version, page, or quotation.
+  Separately: **documentation does not authorize sending.** Readiness became a gate
+  distinct from provenance, and only real PIT evidence opens it.
+- **Consequences:** All eight non-activation operations remain live-blocked despite
+  now being fully documented. A fail-closed guard runs inside the client before the
+  OAuth token is fetched, closing the direct-call bypass tracked as readiness item
+  #15. The public response-code mapping is a reviewed subset, not an import, and a
+  test prevents it growing into a catalogue. Automated confidentiality guards assert
+  no vendor binary, hash, reconstructing citation, or absolute operator path is
+  committed. Machine-readable API definitions remain desirable for structural
+  validation; a few contract questions stay open and their operations stay blocked.

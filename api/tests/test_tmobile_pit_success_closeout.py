@@ -406,7 +406,9 @@ class TestSuccessFixture:
 class TestMaskTail:
     def test_keeps_only_the_last_four(self):
         assert ev.mask_tail("8901260963132697538") == "***************7538"
-        assert ev.mask_tail("4102406851") == "******6851"
+        # Fabricated: the assigned MSISDN belongs only in the restricted
+        # operator record, never in a test.
+        assert ev.mask_tail("5550001234") == "******1234"
 
     def test_short_values_are_fully_masked(self):
         assert ev.mask_tail("1234") == "****"

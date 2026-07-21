@@ -6,7 +6,6 @@ with generated keys and mocked responses.
 
 from __future__ import annotations
 
-import json
 import os
 import time
 
@@ -293,32 +292,75 @@ async def test_access_token_failure():
 
 # ── API Call (mocked HTTP) ──────────────────────────────────────────────────
 
+# The one operation cleared for live sending, at its exact registry path.
+_ACTIVATION_PATH = "/wholesale/v1/subscriber/activation"
+_ACTIVATION_URL = f"https://pit-apis.t-mobile.com{_ACTIVATION_PATH}"
+
+
+def _sendable_client(**kwargs):
+    """Build a client pinned to the one live-sendable operation's real path."""
+    from app.integrations.tmobile_taap import TMobileTAAPClient
+    return TMobileTAAPClient(activation_path=_ACTIVATION_PATH, **kwargs)
+
+
 @respx.mock
 @pytest.mark.asyncio
-async def test_subscriber_inquiry():
-    from app.integrations.tmobile_taap import TMobileTAAPClient
+async def test_subscriber_inquiry_is_blocked_before_any_network_call():
+    """subscriber_inquiry cannot reach the network at all.
 
-    # Mock token endpoint
+    This test used to drive an inquiry end-to-end against a mocked
+    ``/wholesale/v1/subscriber/inquiry``.  Two facts changed: that path was
+    never the vendor's (the real one is ``/wholesale/v1/subscriber/profile``),
+    and the client now runs a fail-closed boundary at the top of ``_request``,
+    before OAuth, for every operation not yet cleared for live sending.  The
+    assertion is therefore stronger than the old one: the call raises AND costs
+    zero HTTP requests — not even a token fetch.
+    """
+    from app.integrations.tmobile_operations import TMobileOperationBlockedError
+
+    token_route = respx.post("https://pit-oauth.t-mobile.com/oauth2/v2/tokens").mock(
+        return_value=httpx.Response(200, json={
+            "access_token": "test-token", "expires_in": 3600,
+        })
+    )
+    profile_route = respx.post(
+        "https://pit-apis.t-mobile.com/wholesale/v1/subscriber/profile"
+    ).mock(return_value=httpx.Response(200, json={"status": "active"}))
+
+    client = _sendable_client()
+    with pytest.raises(TMobileOperationBlockedError, match="subscriber_inquiry"):
+        await client.subscriber_inquiry("5550001234")
+
+    assert token_route.call_count == 0, "a blocked operation must not fetch a token"
+    assert profile_route.call_count == 0, "a blocked operation must not be sent"
+    await client.close()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_authenticated_request_carries_the_taap_headers():
+    """Header coverage moved onto the only operation that may be sent live.
+
+    The assertions are the originals; only the carrier call changed, because
+    subscriber_inquiry is now refused at the client boundary and can no longer
+    produce a wire request to inspect.
+    """
     respx.post("https://pit-oauth.t-mobile.com/oauth2/v2/tokens").mock(
         return_value=httpx.Response(200, json={
-            "access_token": "test-token",
-            "expires_in": 3600,
+            "access_token": "test-token", "expires_in": 3600,
         })
     )
-
-    # Mock subscriber inquiry
-    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/inquiry").mock(
-        return_value=httpx.Response(200, json={
-            "msisdn": "12125551234",
-            "status": "active",
-            "iccid": "8901234567890123456",
-        })
+    respx.post(_ACTIVATION_URL).mock(
+        return_value=httpx.Response(200, json={"status": "SUCCESS"})
     )
 
-    client = TMobileTAAPClient()
-    result = await client.subscriber_inquiry("12125551234")
-    assert result["msisdn"] == "12125551234"
-    assert result["status"] == "active"
+    with mock.patch("app.config.settings.TMOBILE_PIT_LIVE_CALLS_ENABLED", "true"), \
+         mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL), \
+         mock.patch("app.config.settings.TMOBILE_MARKET_ZIP", "30346"):
+        client = _sendable_client()
+        result = await client.activate_subscriber("8901260963132600001")
+
+    assert result["status"] == "SUCCESS"
 
     # Verify the API call included proper headers.  The X-Authorization
     # value is the bare PoP JWT (no "PoP " prefix) — that is the format
@@ -342,143 +384,95 @@ async def test_subscriber_inquiry():
 @respx.mock
 @pytest.mark.asyncio
 async def test_api_error_handling():
-    from app.integrations.tmobile_taap import TMobileTAAPClient
+    """A 4xx from T-Mobile still raises RuntimeError with the status + body.
 
+    Exercised through ``activate_subscriber`` — the only live-sendable
+    operation — because the old carrier (subscriber_inquiry) is now stopped by
+    the client boundary before any response could be produced.
+    """
     respx.post("https://pit-oauth.t-mobile.com/oauth2/v2/tokens").mock(
         return_value=httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
     )
-    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/inquiry").mock(
+    respx.post(_ACTIVATION_URL).mock(
         return_value=httpx.Response(404, json={"error": "subscriber not found"})
     )
 
-    client = TMobileTAAPClient()
-    with pytest.raises(RuntimeError, match="T-Mobile API error"):
-        await client.subscriber_inquiry("12125550000")
+    with mock.patch("app.config.settings.TMOBILE_PIT_LIVE_CALLS_ENABLED", "true"), \
+         mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL), \
+         mock.patch("app.config.settings.TMOBILE_MARKET_ZIP", "30346"):
+        client = _sendable_client()
+        with pytest.raises(RuntimeError, match="T-Mobile API error"):
+            await client.activate_subscriber("8901260963132600001")
     await client.close()
 
 
 # ── Async call-back-location header propagation ─────────────────────────────
 #
-# Async-capable calls (subscriber_inquiry / query_network / change_sim) attach
-# the same ``call-back-location`` HTTP header that activate_subscriber uses, so
-# T-Mobile can return the async response to our ingest endpoint.  These tests
-# prove: (a) the header is present and correct when configured, (b) an explicit
-# arg overrides the env, and (c) when nothing is configured the header is
-# omitted and the request body is byte-for-byte unchanged.  No live T-Mobile
-# call is ever made — token + endpoint are mocked.
+# subscriber_inquiry / query_network / change_sim resolve the same
+# ``call-back-location`` header that activate_subscriber uses, so T-Mobile can
+# return an async response to our ingest endpoint.  These tests prove: (a) the
+# header is present and correct when configured, (b) an explicit arg overrides
+# the env, and (c) when nothing is configured the header is omitted entirely.
+#
+# They exercise the resolver ``TMobileTAAPClient._callback_headers`` directly
+# rather than by making a call.  All three of those operations are now refused
+# at the client's fail-closed boundary before any request is built, so a
+# request-level assertion is no longer observable — but the header logic they
+# all share is, and it is still worth pinning.  The blocking itself is covered
+# by test_subscriber_inquiry_is_blocked_before_any_network_call.
 
 _CB_URL = "https://pit-api.manleysolutions.com/tmobile/wholesale/callback/subscriber-status"
 _CB_OVERRIDE = "https://pit-api.manleysolutions.com/tmobile/wholesale/callback/device-change"
 
 
-def _mock_token():
-    respx.post("https://pit-oauth.t-mobile.com/oauth2/v2/tokens").mock(
-        return_value=httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
-    )
+def test_callback_header_resolves_from_env():
+    """Env fallback — was asserted on a subscriber_inquiry wire request.
 
-
-@respx.mock
-@pytest.mark.asyncio
-async def test_subscriber_inquiry_attaches_callback_header_from_env():
+    subscriber_inquiry is now refused at the client boundary, so the same
+    intent is pinned on the shared resolver the async-capable calls use.
+    """
     from app.integrations.tmobile_taap import TMobileTAAPClient
-
-    _mock_token()
-    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/inquiry").mock(
-        return_value=httpx.Response(200, json={"status": "active"})
-    )
 
     with mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL):
-        client = TMobileTAAPClient()
-        await client.subscriber_inquiry("12125551234")
-
-    req = respx.calls[-1].request
-    assert req.headers.get("call-back-location") == _CB_URL
-    # Body is unchanged — the callback rides as a header, never in the payload.
-    assert json.loads(req.content) == {"msisdn": "12125551234", "accountId": "test-account"}
-    await client.close()
+        assert TMobileTAAPClient._callback_headers(None) == {
+            "call-back-location": _CB_URL}
 
 
-@respx.mock
-@pytest.mark.asyncio
-async def test_query_network_attaches_callback_header_from_env():
+def test_callback_header_is_the_same_for_every_async_capable_call():
+    """query_network / change_sim shared one resolver; that is now the assertion.
+
+    Each previously had its own end-to-end test against a path that was not the
+    vendor's.  The behaviour they were really covering is this single helper,
+    which all of them call.
+    """
     from app.integrations.tmobile_taap import TMobileTAAPClient
-
-    _mock_token()
-    respx.post("https://pit-apis.t-mobile.com/wholesale/network/v1/query").mock(
-        return_value=httpx.Response(200, json={"status": "registered"})
-    )
 
     with mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL):
-        client = TMobileTAAPClient()
-        await client.query_network("12125551234")
-
-    req = respx.calls[-1].request
-    assert req.headers.get("call-back-location") == _CB_URL
-    assert json.loads(req.content) == {"msisdn": "12125551234"}
-    await client.close()
+        headers = TMobileTAAPClient._callback_headers(None)
+    assert headers == {"call-back-location": _CB_URL}
+    # A single dict is produced per call — callers can never share/mutate one.
+    with mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL):
+        assert TMobileTAAPClient._callback_headers(None) is not headers
 
 
-@respx.mock
-@pytest.mark.asyncio
-async def test_change_sim_attaches_callback_header_from_env():
+def test_callback_location_arg_overrides_env():
+    """Explicit arg must win over the env default (unchanged intent)."""
     from app.integrations.tmobile_taap import TMobileTAAPClient
-
-    _mock_token()
-    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/changesim").mock(
-        return_value=httpx.Response(200, json={"status": "accepted"})
-    )
 
     with mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL):
-        client = TMobileTAAPClient()
-        await client.change_sim("12125551234", "8901234567890999999")
-
-    req = respx.calls[-1].request
-    assert req.headers.get("call-back-location") == _CB_URL
-    assert json.loads(req.content) == {
-        "msisdn": "12125551234",
-        "iccid": "8901234567890999999",
-        "accountId": "test-account",
-    }
-    await client.close()
+        assert TMobileTAAPClient._callback_headers(_CB_OVERRIDE) == {
+            "call-back-location": _CB_OVERRIDE}
 
 
-@respx.mock
-@pytest.mark.asyncio
-async def test_callback_location_arg_overrides_env():
+def test_async_calls_omit_callback_header_when_unset():
+    """Nothing configured -> no header at all, so the request is unchanged.
+
+    Reframed onto the resolver for the same reason as the tests above; the
+    operations that consume it no longer reach the wire.
+    """
     from app.integrations.tmobile_taap import TMobileTAAPClient
 
-    _mock_token()
-    respx.post("https://pit-apis.t-mobile.com/wholesale/network/v1/query").mock(
-        return_value=httpx.Response(200, json={"status": "registered"})
-    )
-
-    with mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", _CB_URL):
-        client = TMobileTAAPClient()
-        # Explicit arg must win over the env default.
-        await client.query_network("12125551234", callback_location=_CB_OVERRIDE)
-
-    req = respx.calls[-1].request
-    assert req.headers.get("call-back-location") == _CB_OVERRIDE
-    await client.close()
-
-
-@respx.mock
-@pytest.mark.asyncio
-async def test_async_calls_omit_callback_header_when_unset():
-    from app.integrations.tmobile_taap import TMobileTAAPClient
-
-    _mock_token()
-    respx.post("https://pit-apis.t-mobile.com/wholesale/v1/subscriber/inquiry").mock(
-        return_value=httpx.Response(200, json={"status": "active"})
-    )
-
-    # Fixture leaves TMOBILE_CALLBACK_LOCATION unset ("") — header must be absent
-    # and the synchronous request must be unchanged.
     with mock.patch("app.config.settings.TMOBILE_CALLBACK_LOCATION", ""):
-        client = TMobileTAAPClient()
-        await client.subscriber_inquiry("12125551234")
-
-    req = respx.calls[-1].request
-    assert "call-back-location" not in req.headers
-    assert json.loads(req.content) == {"msisdn": "12125551234", "accountId": "test-account"}
-    await client.close()
+        assert TMobileTAAPClient._callback_headers(None) == {}
+        # Whitespace-only is treated as unset, never sent as an empty header.
+        assert TMobileTAAPClient._callback_headers("   ") == {}

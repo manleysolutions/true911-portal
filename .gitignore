@@ -55,3 +55,11 @@ Thumbs.db
 # Node
 node_modules/
 dist/
+
+# Confidential vendor evidence — NEVER commit.
+# This repository is PUBLIC. Vendor documentation supplied to Manley Solutions
+# as the intended recipient carries a confidentiality legend prohibiting
+# retransmission. The detailed reconciliation records, source documents, and
+# extracted contract/response-code data live here and stay out of git.
+# Narrow by design: matches only this directory, never normal source files.
+.private-evidence/

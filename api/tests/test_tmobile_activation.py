@@ -7,7 +7,8 @@ Covers:
     header, and falls back to env / PIT constants.
   * activate_subscriber() validates required inputs.
   * activate_subscriber() refuses to send unless TMOBILE_PIT_LIVE_CALLS_ENABLED.
-  * subscriber_inquiry() is disabled until an account ID exists.
+  * subscriber_inquiry() needs no account ID (that requirement was never in the
+    vendor contract) and is stopped only by the live-send boundary.
   * the callback processor captures a generated account ID + assigned
     MSISDN (pure helpers — no DB, per the house test pattern).
 
@@ -27,6 +28,7 @@ import respx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+import app.integrations.tmobile_operations as ops
 import app.integrations.tmobile_taap as taap
 from app.services.tmobile_callback_processor import (
     extract_signal,
@@ -398,13 +400,39 @@ class TestActivationPayloadMatchesTMobileSample:
         assert p2["baseProduct"]["product"][0]["action"] == "ADD"
 
 
-# ── subscriber_inquiry gated on account ID ───────────────────────────
-class TestSubscriberInquiryGate:
+# ── subscriber_inquiry needs no account ID ───────────────────────────
+class TestSubscriberInquiryNeedsNoAccountId:
+    """subscriber_inquiry never required an account ID.
+
+    This class previously asserted that the call was "disabled until an account
+    ID exists". That gate was our own invention — the vendor contract identifies
+    the subscriber by msisdn / iccid / imsi and has no account-id field at all,
+    so the absence of an account ID is simply not an error. What DOES stop the
+    call today is the client's fail-closed boundary: subscriber_inquiry is not
+    yet cleared for live sending.
+    """
+
     @pytest.mark.asyncio
-    async def test_disabled_without_account_id(self, tmobile_env):
+    async def test_missing_account_id_is_not_what_stops_the_call(self, tmobile_env):
+        """No account ID configured, and the refusal is the live-send boundary.
+
+        Changed because the account-id requirement was never in the vendor
+        contract; the error that remains is the certification gate, not a
+        missing account.
+        """
         client = taap.TMobileTAAPClient()  # TMOBILE_ACCOUNT_ID == ""
-        with pytest.raises(RuntimeError, match="disabled until an account ID"):
-            await client.subscriber_inquiry("7542697860")
+        with pytest.raises(ops.TMobileOperationBlockedError) as exc:
+            await client.subscriber_inquiry("5550001234")
+        assert "account" not in str(exc.value).lower()
+        assert "subscriber_inquiry" in str(exc.value)
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_identifier_is_required(self, tmobile_env):
+        """An identifier — not an account ID — is the one mandatory input."""
+        client = taap.TMobileTAAPClient()
+        with pytest.raises(ValueError, match="msisdn, iccid, or imsi"):
+            await client.subscriber_inquiry()
         await client.close()
 
 

@@ -7,26 +7,31 @@ operation may only be sent when that provenance is strong enough.
 
 Why this exists
 ---------------
-The repository contains **no T-Mobile OpenAPI spec, Postman collection, PDF, or
-reference implementation**. Every subscriber-family path in ``tmobile_taap.py``
-is produced by joining an operation name onto ``TMOBILE_SUBSCRIBER_BASE_PATH``::
+Every subscriber-family path here was once produced by joining an operation name
+onto a base path::
 
     def _subscriber_path(self, op: str) -> str:
         return f"{self.subscriber_base_path}/{op.lstrip('/')}"
 
-That derivation is demonstrably unreliable, and we have proof. The one operation
-we can verify — activation — required an explicit
-``TMOBILE_ACTIVATION_PATH=/wholesale/v1/subscriber/activation`` override,
-because the derived default ``/wholesale/v1/subscriber/activate`` is **wrong**.
-If the derivation is wrong for the only endpoint we can check, treating
-``/suspend``, ``/restore``, ``/deactivate``, ``/inquiry``, and ``/changesim`` as
-real is a guess — and a guess aimed at a carrier's live gateway, where a wrong
-path against a real subscriber is not a cheap mistake.
+That derivation was wrong for **every** operation it was applied to. The paths
+and methods below have since been reconciled against authorized vendor
+documentation reviewed privately, and the corrections were substantial: seven
+wrong paths, four wrong HTTP methods, and a wrong request body on every
+lifecycle call.
 
-So: operations whose provenance is ``DERIVED`` are **blocked from sending**. They
-stay implemented, documented, and mock-tested, and each carries the exact
-question T-Mobile must answer to unblock it. Unblocking is a config change plus
-a reviewed provenance edit — never a silent default.
+Two rules follow, and both are load-bearing:
+
+1. **Paths and methods are exact literals.** No route builder may reconstruct
+   them from a naming convention. The convention has a perfect record of being
+   wrong.
+2. **Documentation does not authorize sending.** Knowing the contract says what
+   to send; it says nothing about whether this client sends it correctly. Every
+   reconciled operation stays live-blocked until it has been exercised in PIT
+   under the normal gates — see :class:`ReadinessState` and ``is_sendable``.
+
+The vendor source material is confidential and is retained only in the
+operator's private evidence store. Nothing here quotes it; the entries below
+carry the minimum wire facts needed for the client to function.
 """
 
 from __future__ import annotations
@@ -50,17 +55,50 @@ class Provenance(str, Enum):
     # We sent it and T-Mobile answered with a success. The strongest evidence
     # available to a client, and currently true of exactly one operation.
     CONFIRMED_BY_LIVE_RESPONSE = "confirmed_by_live_response"
-    # T-Mobile supplied a written contract stored in this repository.
-    # No operation currently qualifies — no such artifact exists here.
-    TMOBILE_WRITTEN_SPEC = "tmobile_written_spec"
+    # Reconciled against authorized vendor documentation reviewed privately.
+    # The contract below is transcribed from that review; the source material
+    # itself is confidential and is retained in the operator's private evidence
+    # store, never in this repository.
+    VENDOR_DOCUMENTED = "vendor_documented"
     # The path was produced by our own string derivation. NOT documented.
     DERIVED_UNCONFIRMED = "derived_unconfirmed"
+
+
+class ReadinessState(str, Enum):
+    """How far an operation has progressed toward being safe to send live.
+
+    Separate from :class:`Provenance` on purpose: knowing the contract is not
+    the same as having exercised it. An operation can be fully documented and
+    still be nowhere near authorized for a live subscriber.
+    """
+
+    DOCUMENTED_UNREVIEWED = "documented_unreviewed"
+    DOCUMENTED_REVIEWED = "documented_reviewed"
+    IMPLEMENTATION_MISMATCH = "implementation_mismatch"
+    IMPLEMENTATION_UPDATED = "implementation_updated"
+    MOCK_CERTIFIED = "mock_certified"
+    PIT_TEST_PREPARED = "pit_test_prepared"
+    PIT_TEST_AUTHORIZED = "pit_test_authorized"
+    PIT_TESTED = "pit_tested"
+    PRODUCTION_APPROVED = "production_approved"
+    BLOCKED = "blocked"
+
+
+#: Opaque handle for the private reconciliation record. Deliberately carries no
+#: document title, version, page, hash, or quotation — those live only in the
+#: operator's private evidence store.
+CONTRACT_EVIDENCE_REF = "TMO-REST-RECON-001"
+
+#: Readiness states from which a live send may ever be considered. Being
+#: documented is explicitly NOT enough.
+LIVE_SENDABLE_READINESS = frozenset({ReadinessState.PIT_TESTED,
+                                     ReadinessState.PRODUCTION_APPROVED})
 
 
 # Provenance strong enough to authorize a live request.
 SENDABLE_PROVENANCE = frozenset({
     Provenance.CONFIRMED_BY_LIVE_RESPONSE,
-    Provenance.TMOBILE_WRITTEN_SPEC,
+    Provenance.VENDOR_DOCUMENTED,
 })
 
 
@@ -93,16 +131,24 @@ class Operation:
     # Empty for operations that are already sendable.
     blocking_questions: tuple[str, ...] = field(default_factory=tuple)
 
+    #: How far this operation has progressed toward live authorization.
+    readiness: ReadinessState = ReadinessState.BLOCKED
+
     @property
     def is_sendable(self) -> bool:
-        """True only when provenance is strong AND the class is understood.
+        """True only when provenance, risk class, AND readiness all allow it.
 
-        Both conditions matter: a documented path with unknown lifecycle
-        semantics is still not safe to fire at a live subscriber.
+        The readiness term is the one that matters most here. Obtaining the
+        vendor's contract answered *what* to send; it says nothing about whether
+        this client actually sends it correctly, so knowing the contract must
+        never by itself unlock a live subscriber call. Every operation whose
+        contract was reconciled from documentation therefore stays blocked until
+        it has been exercised in PIT under the normal gates.
         """
         return (
             self.provenance in SENDABLE_PROVENANCE
             and self.classification is not Classification.UNKNOWN
+            and self.readiness in LIVE_SENDABLE_READINESS
         )
 
     @property
@@ -131,11 +177,16 @@ CONFIRMED_HEADERS = (
 
 _ACTIVATION_HEADERS = CONFIRMED_HEADERS + ("call-back-location",)
 
-_DERIVED_PATH_NOTE = (
-    "Derived by tmobile_taap._subscriber_path() joining the operation name onto "
-    "TMOBILE_SUBSCRIBER_BASE_PATH. NOT supplied by T-Mobile. The same derivation "
-    "produces the WRONG activation path (/activate vs the working /activation), "
-    "so it is not trustworthy evidence."
+# Every path below was corrected against authorized vendor documentation
+# reviewed privately (see CONTRACT_EVIDENCE_REF). The previous values were
+# produced by joining an operation name onto a base path, and that derivation
+# was wrong for EVERY operation it was used on. Treat these as exact literals:
+# no route builder may reconstruct them from a naming convention.
+_VENDOR_PATH_NOTE = (
+    "Exact vendor-confirmed wire path, reconciled against authorized vendor "
+    "documentation retained in the operator's private evidence store "
+    f"({CONTRACT_EVIDENCE_REF}). Do NOT derive by naming convention — the "
+    "previous derived value was wrong."
 )
 
 _STANDARD_BLOCKING_QUESTIONS = (
@@ -204,200 +255,208 @@ OPERATIONS: tuple[Operation, ...] = (
         test_status=(
             "Mock-tested (payload golden + 201 parsing) and LIVE-tested once."
         ),
+        readiness=ReadinessState.PIT_TESTED,
     ),
 
-    # ── Read-family: implemented, path derived, therefore blocked ───────────
+    # ── Read-family: contract reconciled; live send still blocked ──────────
     Operation(
         name="subscriber_inquiry",
         client_method="TMobileTAAPClient.subscriber_inquiry",
         http_method="POST",
-        path="/wholesale/v1/subscriber/inquiry",
-        path_source=_DERIVED_PATH_NOTE,
+        path="/wholesale/v1/subscriber/profile",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.READ_ONLY,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn, accountId} — our construction, not documented.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior=(
-            "Attaches call-back-location when TMOBILE_CALLBACK_LOCATION is set. "
-            "Whether T-Mobile actually emits a callback for a read is unknown."
-        ),
-        required_headers=CONFIRMED_HEADERS + ("call-back-location (optional)",),
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="One of msisdn / iccid / imsi is required; any one suffices. Optional pairingId for companion or wearable lines. An account id is NOT a field of this operation.",
+        response_schema="status is required, plus subscriber detail; isMultiline optional. Unknown fields are preserved.",
+        callback_behavior="No callback. Synchronous only.",
+        required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="Assumed synchronous. Unconfirmed.",
-        reversibility="N/A — read-only.",
-        prerequisite_state="An activated line with a known accountId.",
-        pit_restrictions="UNKNOWN.",
-        implementation_status=(
-            "Implemented; wired to app.services.tmobile_subscriber."
-            "query_subscriber_by_iccid, which resolves the per-ICCID account ID."
+        synchronous="Synchronous.",
+        reversibility="N/A - read-only.",
+        prerequisite_state="Must have been previously provisioned; may be in any state, but a SIM still inactive in inventory is not queryable.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, and the request no longer demands an account id - that requirement was never part of the contract.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
+            "Confirm whether an inactive-in-inventory SIM returns an error code or an empty result.",
         ),
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS,
     ),
     Operation(
         name="query_network",
         client_method="TMobileTAAPClient.query_network",
         http_method="POST",
-        path="/wholesale/network/v1/query",
-        path_source=(
-            "Hard-coded literal in tmobile_taap.py. No repository artifact "
-            "attributes it to T-Mobile; it predates the documented contract work."
-        ),
+        path="/wholesale/v1/subscriber/network-profile",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.READ_ONLY,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn} — our construction, not documented.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior="Attaches call-back-location when configured. Unconfirmed.",
-        required_headers=CONFIRMED_HEADERS + ("call-back-location (optional)",),
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="One of msisdn / iccid / imsi is required; any one suffices.",
+        response_schema="status is required; optional msisdn, iccid, iccidStatus, imei, imsi, subscriberStatus and simNetworkType. Unknown fields are preserved.",
+        callback_behavior="No callback. Synchronous only.",
+        required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="Assumed synchronous. Unconfirmed.",
-        reversibility="N/A — read-only.",
-        prerequisite_state="An activated line.",
-        pit_restrictions="UNKNOWN.",
-        implementation_status="Implemented; not called by any service.",
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS,
+        synchronous="Synchronous. Async not applicable.",
+        reversibility="N/A - read-only.",
+        prerequisite_state="Subscriber must have been previously activated.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, and iccid/imsi are now accepted as identifiers alongside msisdn.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
+        ),
     ),
     Operation(
         name="query_usage",
         client_method="TMobileTAAPClient.query_usage",
         http_method="POST",
-        path="/wholesale/usage/v1/query",
-        path_source=(
-            "Hard-coded literal in tmobile_taap.py. No repository artifact "
-            "attributes it to T-Mobile."
-        ),
+        path="/wholesale/v1/subscriber/usage",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.READ_ONLY,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn, startDate, endDate} — date FORMAT is unspecified.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior="No callback header attached. Unconfirmed.",
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="One of msisdn / iccid / imsi is required; any one suffices. This operation takes NO date range.",
+        response_schema="status is required; isMultiline optional; usage detail; simNetworkType optional. Unknown fields are preserved.",
+        callback_behavior="No callback. Synchronous only.",
         required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="Assumed synchronous. Unconfirmed.",
-        reversibility="N/A — read-only.",
-        prerequisite_state="An activated line with usage history.",
-        pit_restrictions="UNKNOWN — PIT lines may have no usage data at all.",
-        implementation_status="Implemented; not called by any service.",
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS + (
-            "Required date format for startDate / endDate (ISO-8601? YYYYMMDD?).",
+        synchronous="Synchronous. Async not applicable.",
+        reversibility="N/A - read-only.",
+        prerequisite_state="Previously activated and provisioned with voice, messaging, wallet or data.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, identifier choice, and removal of the start/end date fields, which are not part of the contract.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
         ),
     ),
 
-    # ── Lifecycle-family: implemented, path derived, therefore blocked ──────
+    # ── Lifecycle family: contract reconciled; live send still blocked ─────
     Operation(
         name="suspend_subscriber",
         client_method="TMobileTAAPClient.suspend_subscriber",
-        http_method="POST",
-        path="/wholesale/v1/subscriber/suspend",
-        path_source=_DERIVED_PATH_NOTE,
+        http_method="PUT",
+        path="/wholesale/v1/subscriber/suspension",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.REVERSIBLE,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn, accountId} — our construction, not documented.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior="No callback header attached by the client. Unconfirmed.",
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="msisdn and iccid are BOTH required. Optional pairingId. An account id is not a field of this operation.",
+        response_schema="status plus result detail. Unknown fields are preserved.",
+        callback_behavior="Async response is not applicable to this operation - the synchronous response is the terminal answer.",
         required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="UNKNOWN.",
-        reversibility="Assumed reversible by restore_subscriber. UNCONFIRMED.",
-        prerequisite_state="Active line.",
-        pit_restrictions="UNKNOWN.",
-        implementation_status=(
-            "Implemented, and NOT fail-closed: unlike activate_subscriber it has "
-            "no live-calls guard of its own. The harness supplies the gate."
-        ),
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS + (
-            "Does suspension bill differently, or have a maximum duration after "
-            "which the line is auto-deactivated?",
+        synchronous="Synchronous only.",
+        reversibility="Reversible via restore_subscriber, the documented inverse.",
+        prerequisite_state="SIM and MSISDN must both be active.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the body now sends the required iccid and drops the undocumented account id.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
         ),
     ),
     Operation(
         name="restore_subscriber",
         client_method="TMobileTAAPClient.restore_subscriber",
-        http_method="POST",
-        path="/wholesale/v1/subscriber/restore",
-        path_source=_DERIVED_PATH_NOTE,
+        http_method="PUT",
+        path="/wholesale/v1/subscriber/restoration",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.REVERSIBLE,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn, accountId} — our construction, not documented.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior="No callback header attached by the client. Unconfirmed.",
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="msisdn and iccid are BOTH required. Optional pairingId.",
+        response_schema="status plus result detail. Unknown fields are preserved.",
+        callback_behavior="Async response follows once basic voice, data and text provisioning completes.",
         required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="UNKNOWN.",
-        reversibility="Inverse of suspend. UNCONFIRMED.",
-        prerequisite_state="Suspended line.",
-        pit_restrictions="UNKNOWN.",
-        implementation_status="Implemented, not fail-closed (see suspend).",
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS + (
-            "Does restore return the ORIGINAL MSISDN, or may it assign a new one?",
+        synchronous="Synchronous acceptance, then asynchronous completion.",
+        reversibility="Inverse of suspend_subscriber. Restores the same products and plans held before suspension.",
+        prerequisite_state="SIM and MSISDN must both be suspended.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the required iccid added.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
         ),
     ),
     Operation(
         name="change_sim",
         client_method="TMobileTAAPClient.change_sim",
-        http_method="POST",
-        path="/wholesale/v1/subscriber/changesim",
-        path_source=_DERIVED_PATH_NOTE,
+        http_method="PUT",
+        path="/wholesale/v1/subscriber/sim-change",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.DESTRUCTIVE,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn, iccid, accountId} — our construction.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior=(
-            "Attaches call-back-location when configured; the client's docstring "
-            "states the swap completes asynchronously. UNCONFIRMED."
-        ),
-        required_headers=CONFIRMED_HEADERS + ("call-back-location (optional)",),
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="msisdn, iccid (the CURRENT sim) and newIccid are required. Optional pairingId. A rollback flag exists but is vendor-internal and is never sent by this client.",
+        response_schema="status plus result detail. Unknown fields are preserved.",
+        callback_behavior="Async response follows once basic provisioning completes.",
+        required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="Documented by us as async. Unconfirmed.",
-        reversibility=(
-            "Classified DESTRUCTIVE: a swap detaches the original ICCID, and no "
-            "documented operation restores it. Swapping back requires the old SIM "
-            "to still be assignable — unproven."
-        ),
-        prerequisite_state="Active line, plus a second unassigned ICCID.",
-        pit_restrictions="UNKNOWN. Requires a second PIT SIM we may not have.",
-        implementation_status="Implemented, not fail-closed.",
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS + (
-            "Can a swapped-out ICCID be re-attached, and by what operation?",
+        synchronous="Synchronous acceptance, then asynchronous completion.",
+        reversibility="DESTRUCTIVE. The replaced SIM enters an aging process and no customer-facing inverse is documented. The vendor-internal rollback flag is not a supported customer rollback.",
+        prerequisite_state="Current SIM and MSISDN active; the replacement SIM must be available.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the body now distinguishes the current iccid from newIccid - the previous code sent the replacement SIM in the iccid field.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
+            "Confirm whether a replaced ICCID can ever be re-attached, and by which operation.",
         ),
     ),
     Operation(
         name="deactivate_subscriber",
         client_method="TMobileTAAPClient.deactivate_subscriber",
-        http_method="POST",
-        path="/wholesale/v1/subscriber/deactivate",
-        path_source=_DERIVED_PATH_NOTE,
+        http_method="PUT",
+        path="/wholesale/v1/subscriber/deactivation",
+        path_source=_VENDOR_PATH_NOTE,
         classification=Classification.DESTRUCTIVE,
-        provenance=Provenance.DERIVED_UNCONFIRMED,
-        request_schema="{msisdn, accountId} — our construction, not documented.",
-        response_schema="UNKNOWN — never observed.",
-        callback_behavior="No callback header attached by the client. Unconfirmed.",
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="msisdn and iccid are BOTH required. A reuse flag exists but is machine-to-machine only and is never sent by this client without confirmation.",
+        response_schema="status plus result detail. Unknown fields are preserved.",
+        callback_behavior="Async response follows once basic provisioning completes.",
         required_headers=CONFIRMED_HEADERS,
         pop_ehts=REFERENCE_EHTS,
         body_signed=True,
-        synchronous="UNKNOWN.",
-        reversibility=(
-            "TERMINAL. No documented operation reactivates a deactivated line, "
-            "and the MSISDN is expected to return to T-Mobile's pool."
+        synchronous="Synchronous acceptance, then asynchronous completion.",
+        reversibility="Classified DESTRUCTIVE. A reactivation operation exists in the vendor contract but is NOT implemented or tested here, and is not assumed to restore the same number or plans. Treat as terminal.",
+        prerequisite_state="SIM and MSISDN active or suspended.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the required iccid added.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
+            "Confirm whether reactivation restores the original MSISDN and plans.",
         ),
-        prerequisite_state="Active or suspended line.",
-        pit_restrictions="UNKNOWN.",
-        implementation_status="Implemented, not fail-closed (see suspend).",
-        test_status="Mock-tested only. Never sent live.",
-        blocking_questions=_STANDARD_BLOCKING_QUESTIONS + (
-            "Is deactivation reversible in PIT, and is the MSISDN released?",
-            "Is there a grace period during which the line can be recovered?",
+    ),
+
+    # ── Transaction support: newly reconciled, live send blocked ────────
+    Operation(
+        name="query_transaction_status",
+        client_method="TMobileTAAPClient.query_transaction_status",
+        http_method="POST",
+        path="/wholesale/v1/transaction",
+        path_source=_VENDOR_PATH_NOTE,
+        classification=Classification.READ_ONLY,
+        provenance=Provenance.VENDOR_DOCUMENTED,
+        request_schema="transactionId is required - the customer transaction id of a previously submitted request.",
+        response_schema="status and action are required; optional msisdn, iccid, imei, marketZip and a result structure. Unknown fields are preserved.",
+        callback_behavior="No callback. Synchronous only.",
+        required_headers=CONFIRMED_HEADERS,
+        pop_ehts=REFERENCE_EHTS,
+        body_signed=True,
+        synchronous="Synchronous.",
+        reversibility="N/A - read-only.",
+        prerequisite_state="A previously submitted transaction whose id we still hold.",
+        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        implementation_status="Newly implemented from the reconciled contract. This is the vendor-recommended way to inspect a delayed provisioning result instead of resending the request.",
+        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        readiness=ReadinessState.MOCK_CERTIFIED,
+        blocking_questions=(
+            "Confirm whether the transactionId to submit is the value this client already sends as its per-request partner transaction id, or a different vendor-assigned identifier.",
         ),
     ),
 )
@@ -446,8 +505,84 @@ def require_sendable(op: Operation) -> None:
         "aimed at a live carrier gateway.\n\n"
         f"Required from T-Mobile before this can be unblocked:\n{questions}\n\n"
         "To unblock: record T-Mobile's written answer in the repository, update "
-        "this operation's provenance to TMOBILE_WRITTEN_SPEC in "
+        "this operation's provenance to VENDOR_DOCUMENTED in "
         "app/integrations/tmobile_operations.py, and add a golden test pinning "
         "the confirmed contract. It is a reviewed code change, never a config "
         "toggle."
     )
+
+class TMobileOperationBlockedError(RuntimeError):
+    """Raised when a live send is attempted for an operation not cleared for it.
+
+    Carries everything an operator needs to understand the refusal without
+    having to read this module: which operation, which gate stopped it, how far
+    the operation has actually progressed, whether its contract is known, and
+    the command that explains the rest.
+    """
+
+    def __init__(self, operation: str, gate: str, readiness: str,
+                 contract_status: str, detail: str = ""):
+        self.operation = operation
+        self.gate = gate
+        self.readiness = readiness
+        self.contract_status = contract_status
+        lines = [
+            f"{operation}: BLOCKED — nothing was sent.",
+            f"  blocking gate    : {gate}",
+            f"  readiness state  : {readiness}",
+            f"  contract status  : {contract_status}",
+        ]
+        if detail:
+            lines.append(f"  detail           : {detail}")
+        lines.append(
+            f"  for details      : python ../scripts/tmobile_pit.py show {operation}"
+        )
+        super().__init__("\n".join(lines))
+
+
+#: Exact wire paths mapped to their operation name. Used by the client boundary
+#: to recognise an outbound request no matter which entry point produced it.
+PATH_TO_OPERATION: dict[tuple[str, str], str] = {
+    (op.http_method.upper(), op.path): op.name for op in OPERATIONS
+}
+
+
+def require_live_sendable(name: str) -> None:
+    """Fail closed unless this operation is cleared for live transmission.
+
+    This is the client boundary. It runs before OAuth and before any resource
+    request, so a blocked operation costs zero network calls — not a failed one.
+    Calling a client method directly must not be a way around the harness gates,
+    which is why this lives next to the registry rather than in the CLI.
+    """
+    try:
+        op = get_operation(name)
+    except KeyError:
+        raise TMobileOperationBlockedError(
+            name, "unknown operation", "unknown", "not in the contract registry",
+            "An operation absent from the registry has no reviewed contract.",
+        ) from None
+
+    if op.is_sendable:
+        return
+
+    if op.provenance is Provenance.DERIVED_UNCONFIRMED:
+        gate, contract = "provenance", "no reviewed vendor contract"
+    elif op.classification is Classification.UNKNOWN:
+        gate, contract = "risk classification", "semantics not established"
+    else:
+        gate = "readiness"
+        contract = (
+            f"reconciled against authorized vendor documentation "
+            f"({CONTRACT_EVIDENCE_REF})"
+        )
+    raise TMobileOperationBlockedError(
+        op.name, gate, op.readiness.value, contract,
+        "Knowing the contract is not authorization to send it. This operation "
+        "must be exercised in PIT under the operator gates before live use.",
+    )
+
+
+def operation_for_request(http_method: str, path: str) -> str | None:
+    """Return the operation name for an outbound request, if it is a known one."""
+    return PATH_TO_OPERATION.get((http_method.upper(), path))

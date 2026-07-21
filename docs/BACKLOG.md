@@ -13,7 +13,24 @@
 
 ---
 
+## ✅ RESOLVED — T-Mobile contract obtained and reconciled [2026-07-21]
+
+Authorized vendor documentation obtained and reviewed privately
+(`TMO-REST-RECON-001`). Implementation corrected: seven wrong paths, four wrong
+HTTP methods, every lifecycle request body wrong. All eight non-activation
+operations **remain live-blocked** — documentation is not authorization.
+
+**Next:** the read-only operations are the cheapest to certify. Each still needs
+a supervised PIT run before its readiness can advance. Callback correlation gaps
+are unchanged (`TMOBILE_CALLBACK_CERTIFICATION.md`), and machine-readable API
+definitions are still worth obtaining for automated structural validation.
+
+Confidential vendor material is not committed to this public repository; the
+detailed records are in the operator's private evidence store.
+
 ## 🔴 URGENT — T-Mobile: 7 of 8 operations blocked, no supplied contract [2026-07-21]
+
+> **SUPERSEDED the same day** by the entry above.
 
 T-Mobile authorized "other API calls to complete your development and testing
 cycle." A provenance audit found **no T-Mobile OpenAPI spec, Postman collection,

@@ -100,6 +100,11 @@ class TestOperationInventory:
             "activate_subscriber", "subscriber_inquiry", "query_network",
             "query_usage", "change_sim", "suspend_subscriber",
             "restore_subscriber", "deactivate_subscriber",
+            # Added by the authoritative-contract reconciliation: the vendor
+            # contract carries a transaction-status lookup, which is the
+            # supported way to investigate a submitted request instead of
+            # resending it.
+            "query_transaction_status",
         }
         # Confirm the expected set really is what the client exposes.
         for name in client_methods:
@@ -127,65 +132,100 @@ class TestOperationInventory:
 
 
 class TestOperationProvenance:
-    """The load-bearing rule: no documented contract, no live request."""
+    """The load-bearing rule, in its post-reconciliation form.
+
+    Originally this class pinned "no documented contract, no live request".
+    The contracts have since been obtained and reconciled, so the rule that now
+    carries the weight is the second half: **having the contract is still not
+    authorization to send it.** Every reconciled operation stays blocked on
+    readiness until it has actually been exercised in PIT.
+    """
+
+    RECONCILED = [
+        "subscriber_inquiry", "query_network", "query_usage",
+        "suspend_subscriber", "restore_subscriber", "change_sim",
+        "deactivate_subscriber", "query_transaction_status",
+    ]
 
     def test_only_activation_is_currently_sendable(self):
-        """Exactly one operation has evidence strong enough to send.
+        """Exactly one operation may be transmitted live.
 
-        If this fails, either T-Mobile supplied a contract (good — update the
-        docs alongside) or someone relaxed a provenance without evidence (bad).
+        If this fails, either an operation was cleared after real PIT testing
+        (update the docs alongside) or someone advanced a readiness state
+        without the evidence (revert it).
         """
         assert [op.name for op in ops.sendable_operations()] == [
             "activate_subscriber"]
-        assert len(ops.blocked_operations()) == 7
+        assert len(ops.blocked_operations()) == 8
 
     def test_activation_provenance_is_the_live_response(self):
         op = ops.get_operation("activate_subscriber")
         assert op.provenance is ops.Provenance.CONFIRMED_BY_LIVE_RESPONSE
+        assert op.readiness is ops.ReadinessState.PIT_TESTED
         assert op.path == ACTIVATE_PATH
         assert op.is_sendable
 
-    @pytest.mark.parametrize("name", [
-        "subscriber_inquiry", "query_network", "query_usage",
-        "suspend_subscriber", "restore_subscriber", "change_sim",
-        "deactivate_subscriber",
-    ])
-    def test_derived_paths_are_blocked(self, name):
+    @pytest.mark.parametrize("name", RECONCILED)
+    def test_reconciled_operations_are_documented_but_still_blocked(self, name):
+        """Documentation moved provenance forward; it did NOT unblock sending."""
         op = ops.get_operation(name)
-        assert op.provenance is ops.Provenance.DERIVED_UNCONFIRMED
+        assert op.provenance is ops.Provenance.VENDOR_DOCUMENTED
+        assert op.readiness is ops.ReadinessState.MOCK_CERTIFIED
         assert not op.is_sendable
-        with pytest.raises(ops.OperationBlocked):
-            ops.require_sendable(op)
+        with pytest.raises(ops.TMobileOperationBlockedError):
+            ops.require_live_sendable(name)
 
-    @pytest.mark.parametrize("name", [
-        "subscriber_inquiry", "query_network", "query_usage",
-        "suspend_subscriber", "restore_subscriber", "change_sim",
-        "deactivate_subscriber",
-    ])
-    def test_blocked_operations_state_what_tmobile_must_answer(self, name):
-        """A block is only useful if it says how to lift it."""
-        op = ops.get_operation(name)
-        assert len(op.blocking_questions) >= 8
-        with pytest.raises(ops.OperationBlocked) as exc:
-            ops.require_sendable(op)
+    @pytest.mark.parametrize("name", RECONCILED)
+    def test_block_reason_is_readiness_not_missing_contract(self, name):
+        """The refusal must say why, and the why has changed.
+
+        These are no longer blocked for lack of a contract — they are blocked
+        because knowing a contract is not the same as having exercised it.
+        """
+        with pytest.raises(ops.TMobileOperationBlockedError) as exc:
+            ops.require_live_sendable(name)
         message = str(exc.value)
-        assert "nothing was sent" in message.lower()
-        assert "TMOBILE_WRITTEN_SPEC" in message
-        # The refusal must not read as a config toggle.
-        assert "never a config toggle" in message
+        assert "nothing was sent" in message
+        assert "blocking gate    : readiness" in message
+        assert "mock_certified" in message
+        assert ops.CONTRACT_EVIDENCE_REF in message
+
+    def test_no_readiness_state_below_pit_tested_can_send(self):
+        """Readiness is the gate; only real PIT evidence opens it."""
+        assert ops.LIVE_SENDABLE_READINESS == {
+            ops.ReadinessState.PIT_TESTED, ops.ReadinessState.PRODUCTION_APPROVED}
+        for state in ops.ReadinessState:
+            if state in ops.LIVE_SENDABLE_READINESS:
+                continue
+            candidate = ops.Operation(
+                name="probe", client_method="c", http_method="POST", path="/p",
+                path_source="s", classification=ops.Classification.READ_ONLY,
+                provenance=ops.Provenance.VENDOR_DOCUMENTED,
+                request_schema="r", response_schema="r", callback_behavior="c",
+                required_headers=("Authorization",), pop_ehts="e",
+                body_signed=True, synchronous="s", reversibility="r",
+                prerequisite_state="p", pit_restrictions="p",
+                implementation_status="i", test_status="t", readiness=state,
+            )
+            assert not candidate.is_sendable, state
 
     def test_unknown_classification_is_never_sendable(self):
-        """Even a documented path is blocked while its semantics are unknown."""
+        """Even a documented, PIT-tested path is blocked if semantics are unknown."""
         unknown = ops.Operation(
             name="x", client_method="c", http_method="POST", path="/p",
             path_source="s", classification=ops.Classification.UNKNOWN,
-            provenance=ops.Provenance.TMOBILE_WRITTEN_SPEC,
+            provenance=ops.Provenance.VENDOR_DOCUMENTED,
             request_schema="r", response_schema="r", callback_behavior="c",
             required_headers=("Authorization",), pop_ehts="e", body_signed=True,
             synchronous="s", reversibility="r", prerequisite_state="p",
             pit_restrictions="p", implementation_status="i", test_status="t",
+            readiness=ops.ReadinessState.PIT_TESTED,
         )
         assert not unknown.is_sendable
+
+    def test_an_unregistered_operation_fails_closed(self):
+        with pytest.raises(ops.TMobileOperationBlockedError, match="unknown operation"):
+            ops.require_live_sendable("cancel_everything")
 
     def test_classification_drives_the_confirmation_requirements(self):
         read = ops.get_operation("subscriber_inquiry")
@@ -199,9 +239,66 @@ class TestOperationProvenance:
         assert destructive.requires_confirm_destructive
 
     def test_change_sim_is_classified_destructive(self):
-        """A SIM swap detaches the original ICCID with no documented inverse."""
+        """The replaced SIM ages out and no customer-facing inverse exists."""
         assert (ops.get_operation("change_sim").classification
                 is ops.Classification.DESTRUCTIVE)
+
+    def test_deactivation_stays_destructive_despite_a_documented_inverse(self):
+        """A reactivation operation exists in the vendor contract.
+
+        We still treat deactivation as terminal: reactivation is neither
+        implemented nor tested here, and is not assumed to return the same
+        number or plans.
+        """
+        op = ops.get_operation("deactivate_subscriber")
+        assert op.classification is ops.Classification.DESTRUCTIVE
+        assert op.requires_confirm_destructive
+
+
+class TestReconciledWireContract:
+    """Exact paths and methods. These are literals, never derived."""
+
+    EXPECTED = {
+        "activate_subscriber": ("POST", "/wholesale/v1/subscriber/activation"),
+        "subscriber_inquiry": ("POST", "/wholesale/v1/subscriber/profile"),
+        "query_network": ("POST", "/wholesale/v1/subscriber/network-profile"),
+        "query_usage": ("POST", "/wholesale/v1/subscriber/usage"),
+        "suspend_subscriber": ("PUT", "/wholesale/v1/subscriber/suspension"),
+        "restore_subscriber": ("PUT", "/wholesale/v1/subscriber/restoration"),
+        "change_sim": ("PUT", "/wholesale/v1/subscriber/sim-change"),
+        "deactivate_subscriber": ("PUT", "/wholesale/v1/subscriber/deactivation"),
+        "query_transaction_status": ("POST", "/wholesale/v1/transaction"),
+    }
+
+    @pytest.mark.parametrize("name", sorted(EXPECTED))
+    def test_exact_path_and_method(self, name):
+        op = ops.get_operation(name)
+        method, path = self.EXPECTED[name]
+        assert (op.http_method, op.path) == (method, path)
+
+    def test_no_path_is_reproducible_by_the_old_derivation(self):
+        """The naming convention that produced these paths was wrong every time.
+
+        Guards against anyone reintroducing a route builder: if a path ever
+        again equals base + '/' + operation-name, that is the bug returning.
+        """
+        base = "/wholesale/v1/subscriber"
+        for op in ops.OPERATIONS:
+            derived = f"{base}/{op.name.replace('_subscriber', '').replace('_', '')}"
+            assert op.path != derived, op.name
+
+    def test_four_lifecycle_operations_use_put_not_post(self):
+        """The most dangerous class of prior defect: right path, wrong verb."""
+        for name in ("suspend_subscriber", "restore_subscriber",
+                     "change_sim", "deactivate_subscriber"):
+            assert ops.get_operation(name).http_method == "PUT", name
+
+    def test_path_lookup_recognises_an_outbound_request(self):
+        assert ops.operation_for_request(
+            "PUT", "/wholesale/v1/subscriber/suspension") == "suspend_subscriber"
+        assert ops.operation_for_request(
+            "POST", "/wholesale/v1/subscriber/suspension") is None
+        assert ops.operation_for_request("POST", "/nope") is None
 
 
 # ── Allowlist policy ────────────────────────────────────────────────────────
