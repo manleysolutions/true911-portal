@@ -28,6 +28,10 @@
 > tested. The run itself is **pending an operator-nominated subscriber and
 > configured PIT credentials**. P3 in the matrix below stays ⬜, not ✅.
 
+> **Update — all four read-only operations have tooling; none executed.**
+> Blocked on a nominated subscriber, a known transaction id, and PIT
+> credentials. See `TMOBILE_READONLY_GO_LIVE_PLAN.md`.
+
 ## 1. Scope
 
 | In scope | Out of scope |
