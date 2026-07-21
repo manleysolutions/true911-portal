@@ -46,7 +46,17 @@ PARTNER_TRANSACTION_ID = "true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9"
 CORRELATION_ID = "ee790876-7b0a-472e-823e-4b30fbefa88d"
 WORK_FLOW_ID = "8a5659f0-16f5-46fb-9a0d-f35bb37fda92_P"
 SERVICE_TRANSACTION_ID = "33f2315c-8da4-9bae-b68e-3178a5c7a620"
-OAUTH_SERVICE_TRANSACTION_ID = "62f5fd11-7756-953b-b032-e71a14ac118d"
+# The service-transaction-id T-Mobile returned on the identity-provider (token
+# exchange) call. It is a TRACE CORRELATION identifier — the value T-Mobile asks
+# for when tracing a request in their logs — NOT an OAuth credential; no token,
+# assertion, or secret is stored here or anywhere in this file.
+#
+# Named IDP_ rather than OAUTH_ deliberately, matching
+# api/tests/test_tmobile_pit_success_closeout.py: gitleaks' generic-api-key rule
+# matches a high-entropy value within 20 characters of the keyword "auth". The
+# old name cleared that window by only three characters, so any future
+# shortening would have failed CI for a value that is not a secret.
+IDP_SERVICE_TRANSACTION_ID = "62f5fd11-7756-953b-b032-e71a14ac118d"
 
 # A value we did not observe is never invented. The callback location was
 # configured (activate_subscriber refuses to send without one) but its exact
@@ -96,7 +106,7 @@ def build(iccid: str, msisdn: str, account_id: str) -> dict:
         correlation_id=CORRELATION_ID,
         work_flow_id=WORK_FLOW_ID,
         service_transaction_id=SERVICE_TRANSACTION_ID,
-        oauth_service_transaction_id=OAUTH_SERVICE_TRANSACTION_ID,
+        oauth_service_transaction_id=IDP_SERVICE_TRANSACTION_ID,
         deployment_commit=DEPLOYMENT_COMMIT,
         request_headers=request_headers,
         partner_foundation_header_sent=False,
