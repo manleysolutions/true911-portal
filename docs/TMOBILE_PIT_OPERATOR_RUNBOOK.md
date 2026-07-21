@@ -71,6 +71,41 @@ python ../scripts/tmobile_subscriber_status.py `
 
 ---
 
+
+## 2a. Read-only subscriber inquiry (PIT certification)
+
+**Preview is the default.** The command below opens no connection:
+
+```powershell
+cd api
+python ../scripts/tmobile_pit.py subscriber-inquiry --iccid <PIT_ICCID>
+```
+
+It prints the environment, the explicit endpoint and method, the masked
+selector, the request body with identifiers masked, the header names with values
+omitted, the response model, the readiness state, and the send policy.
+
+To send **exactly one** request, every gate below must pass:
+
+```powershell
+$env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "true"
+python ../scripts/tmobile_pit.py subscriber-inquiry `
+    --iccid <PIT_ICCID> --execute --confirm-live `
+    --confirm-subscriber-approved --operator <you>
+$env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"
+```
+
+Gates, in order: exactly one selector supplied · typed request validates ·
+`--confirm-live` · `--confirm-subscriber-approved` · `--operator` ·
+read-only ICCID allowlist · live-call switch · credentials configured ·
+single-run authorization granted.
+
+The authorization covers **one operation, one subscriber, one request**, is
+PIT-only, expires after 15 minutes, and is consumed the moment the client
+boundary spends it. A second invocation finds nothing and is refused. It cannot
+be issued for any lifecycle mutation — the allowlist is read-only operations by
+construction.
+
 ## 3. The gates, in order
 
 A live send passes all eight. Each is independent; any one refuses on its own.

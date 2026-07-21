@@ -566,6 +566,18 @@ def require_live_sendable(name: str) -> None:
     if op.is_sendable:
         return
 
+    # Single-run PIT exception, checked BEFORE the refusal is raised and only
+    # here. It covers one read-only operation, one nominated subscriber, one
+    # request, in PIT, and destroys itself on use — see
+    # tmobile_pit_authorization. A missing or mismatched grant returns None and
+    # we fall straight through to the normal refusal, so this can never widen
+    # access; it can only spend a key an operator deliberately cut.
+    from app.integrations.tmobile_pit_authorization import consume_if_authorized
+
+    granted = consume_if_authorized(name)
+    if granted is not None:
+        return
+
     if op.provenance is Provenance.DERIVED_UNCONFIRMED:
         gate, contract = "provenance", "no reviewed vendor contract"
     elif op.classification is Classification.UNKNOWN:

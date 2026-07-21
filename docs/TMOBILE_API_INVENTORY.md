@@ -1,6 +1,8 @@
 # T-Mobile Wholesale — API operation inventory
 
-> **SUPERSEDED IN PART — 2026-07-21.** Typed contracts now live in
+> **SUPERSEDED IN PART — 2026-07-21.** Read-only PIT certification tooling for
+> SubscriberInquiry exists; no live inquiry has been run and it remains blocked.
+> Typed contracts now live in
 > `app/integrations/tmobile_contracts.py`; lifecycle in `tmobile_state.py`.
 > The "no vendor contract exists" premise
 > below is no longer true: authorized vendor documentation has since been

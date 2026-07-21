@@ -13,7 +13,24 @@
 
 ---
 
-## ⭐ NEXT — T-Mobile read-only PIT certification [2026-07-21]
+## ⭐ NEXT — Execute the read-only PIT inquiry (tooling ready, run pending)
+
+Blocked on two operator inputs, not on code:
+
+1. **Nominate a PIT subscriber** and add it to
+   `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`.
+2. **Configure PIT credentials** in the environment that will run it.
+
+Then preview, and run exactly one inquiry — see
+`TMOBILE_PIT_OPERATOR_RUNBOOK.md` §2a. Capture the evidence bundle, reconcile the
+observed shape against `tests/fixtures/tmobile_subscriber_inquiry_shapes.json`
+(fabricated, **not yet validated against a live response**), correct the model
+only where the observation agrees with authorized documentation, and only then
+advance readiness to PIT-tested.
+
+**After that:** QueryNetwork, using the same single-run mechanism.
+
+## ✅ SUPERSEDED — T-Mobile read-only PIT certification [2026-07-21]
 
 The typed contract and lifecycle foundation is merged-ready. The next task is
 the first supervised live read.
