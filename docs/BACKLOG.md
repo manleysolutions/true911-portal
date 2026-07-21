@@ -13,6 +13,22 @@
 
 ---
 
+## ⛔ BLOCKED ON OPERATOR INPUT — read-only PIT certification (4 operations)
+
+Tooling complete for all four; **zero executed**. Needs, from an operator:
+
+1. Nominate a PIT subscriber → `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`
+2. Supply a known PIT transaction id (for QueryTransactionStatus)
+3. Configure PIT credentials in the executing environment
+
+Then run the four in order — `TMOBILE_READONLY_GO_LIVE_PLAN.md` §2 — stopping
+after each to reconcile before advancing.
+
+**Downstream, blocked until one real response exists:** carrier-observation
+persistence, the internal super-admin view, the manual sync control, and the
+filled certification report for T-Mobile. Each would otherwise be designed
+against an unobserved response shape.
+
 ## 🔗 BLOCKED — Promote typed callback rules to authoritative
 
 Wired in shadow mode (default off). Cannot become authoritative until, in order:

@@ -44,6 +44,12 @@ DEFAULT_TTL = timedelta(minutes=15)
 
 SELECTOR_TYPES = frozenset({"iccid", "msisdn", "imsi"})
 
+#: QueryTransactionStatus does not target a subscriber — it targets one
+#: previously submitted transaction. Its grant binds to that transaction id
+#: instead, so a grant for transaction A cannot be spent on transaction B.
+TRANSACTION_SELECTOR = "transaction_id"
+ALL_SELECTOR_TYPES = SELECTOR_TYPES | {TRANSACTION_SELECTOR}
+
 
 class AuthorizationError(RuntimeError):
     """Raised when a grant cannot be issued, or does not apply."""
@@ -156,9 +162,20 @@ def grant_single_run(
             f"operations qualify: {', '.join(sorted(AUTHORIZABLE_OPERATIONS))}. "
             "Lifecycle mutations are never reachable through this path."
         )
-    if selector_type not in SELECTOR_TYPES:
+    if selector_type not in ALL_SELECTOR_TYPES:
         raise AuthorizationError(
-            f"selector_type must be one of {sorted(SELECTOR_TYPES)}."
+            f"selector_type must be one of {sorted(ALL_SELECTOR_TYPES)}."
+        )
+    if operation == "query_transaction_status" and selector_type != TRANSACTION_SELECTOR:
+        raise AuthorizationError(
+            "query_transaction_status binds to an exact transaction id, not a "
+            f"subscriber selector (got '{selector_type}'). There is no "
+            "'latest transaction' lookup."
+        )
+    if selector_type == TRANSACTION_SELECTOR and operation != "query_transaction_status":
+        raise AuthorizationError(
+            f"a transaction-id grant only covers query_transaction_status, "
+            f"not '{operation}'."
         )
     if not (selector or "").strip():
         raise AuthorizationError(

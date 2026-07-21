@@ -10,6 +10,36 @@
 > `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
 > `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
 
+## 0·BLOCKED — Read-only certification sprint: tooling complete, 0 of 4 executed [2026-07-21]
+
+All four read-only operations (SubscriberInquiry, QueryNetwork,
+QuerySubscriberUsage, QueryTransactionStatus) are implemented, typed,
+mock-certified, and each has its own single-run PIT authorization with preview
+by default. **None has been executed.**
+
+**Three operator inputs are missing**, and everything downstream is blocked on
+them rather than on code:
+
+1. A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`
+2. A known PIT transaction id for QueryTransactionStatus
+3. PIT credentials in the executing environment (`is_configured` is false)
+
+**Deliberately not built:** carrier-observation persistence, the internal
+super-admin view, and the manual sync control. All three would be designed
+against a response shape nobody has observed — the guessing this integration has
+spent four PRs eliminating. The Alembic graph also still has two unresolved
+heads sharing `049`, so a new table would compound the branch.
+
+**Authorization isolation:** each operation needs its own grant. An inquiry
+grant does not authorize a network query; a transaction-status grant binds to
+one exact transaction id. All grants are single-use and PIT-only, and none can
+cover a lifecycle mutation.
+
+Unchanged: activation is the sole live-sendable operation, all four mutations
+are blocked, and the callback shadow remains non-authoritative and off.
+
+Plan and exact commands: `TMOBILE_READONLY_GO_LIVE_PLAN.md`.
+
 ## 0·DONE — Typed callback rules wired in shadow mode [2026-07-21]
 
 The typed callback rules now run **alongside** the deployed ingest path behind

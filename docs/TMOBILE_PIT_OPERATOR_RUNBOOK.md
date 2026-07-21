@@ -106,6 +106,22 @@ boundary spends it. A second invocation finds nothing and is refused. It cannot
 be issued for any lifecycle mutation — the allowlist is read-only operations by
 construction.
 
+## 2b. The other three read-only operations
+
+Same shape as §2a, one grant each, preview by default:
+
+```powershell
+python ../scripts/tmobile_pit.py query-network            --iccid <PIT_ICCID>
+python ../scripts/tmobile_pit.py query-usage              --iccid <PIT_ICCID>
+python ../scripts/tmobile_pit.py query-transaction-status --transaction-id <TXN>
+```
+
+Add `--execute --confirm-live --confirm-subscriber-approved --operator <you>` to
+send exactly one. **Each operation needs its own authorization** — an inquiry
+grant does not authorize a network query, and a transaction-status grant binds
+to one exact transaction id. Run them in the order above and reconcile each
+before advancing.
+
 ## 3. The gates, in order
 
 A live send passes all eight. Each is independent; any one refuses on its own.
