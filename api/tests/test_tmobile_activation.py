@@ -7,7 +7,8 @@ Covers:
     header, and falls back to env / PIT constants.
   * activate_subscriber() validates required inputs.
   * activate_subscriber() refuses to send unless TMOBILE_PIT_LIVE_CALLS_ENABLED.
-  * subscriber_inquiry() is disabled until an account ID exists.
+  * subscriber_inquiry() needs no account ID (that requirement was never in the
+    vendor contract) and is stopped only by the live-send boundary.
   * the callback processor captures a generated account ID + assigned
     MSISDN (pure helpers — no DB, per the house test pattern).
 
@@ -27,6 +28,7 @@ import respx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+import app.integrations.tmobile_operations as ops
 import app.integrations.tmobile_taap as taap
 from app.services.tmobile_callback_processor import (
     extract_signal,
@@ -36,7 +38,7 @@ from app.services.tmobile_callback_processor import (
 TOKEN_URL = "https://pit-oauth.t-mobile.com/oauth2/v2/tokens"
 BASE_URL = "https://pit-apis.t-mobile.com"
 # Default subscriber base path is the PIT gateway's /wholesale/v1/subscriber.
-ACTIVATE_PATH = "/wholesale/v1/subscriber/activate"
+ACTIVATE_PATH = "/wholesale/v1/subscriber/activation"
 ACTIVATE_URL = f"{BASE_URL}{ACTIVATE_PATH}"
 
 
@@ -221,8 +223,7 @@ class TestEnvDrivenPaths:
         client = taap.TMobileTAAPClient()
         # PIT gateway URL list uses /wholesale/v1/subscriber (not subscriber/v2).
         assert client.subscriber_base_path == "/wholesale/v1/subscriber"
-        assert client.activation_endpoint() == "/wholesale/v1/subscriber/activate"
-        assert client._subscriber_path("inquiry") == "/wholesale/v1/subscriber/inquiry"
+        assert client.activation_endpoint() == "/wholesale/v1/subscriber/activation"
 
     def test_activation_path_env_override(self, tmobile_env, monkeypatch):
         monkeypatch.setattr("app.config.settings.TMOBILE_ACTIVATION_PATH",
@@ -230,20 +231,31 @@ class TestEnvDrivenPaths:
         client = taap.TMobileTAAPClient()
         # Explicit activation override wins; subscriber base is unaffected.
         assert client.activation_endpoint() == "/wholesale/v1/activation/submit"
-        assert client._subscriber_path("inquiry") == "/wholesale/v1/subscriber/inquiry"
 
-    def test_subscriber_base_env_override_changes_derived_activate(self, tmobile_env, monkeypatch):
+    def test_subscriber_base_override_no_longer_moves_activation(
+        self, tmobile_env, monkeypatch
+    ):
+        """Changing the base path must NOT relocate the activation route.
+
+        It used to: the fallback derived ``{base}/activate``, which is a route
+        that does not exist. Activation only ever worked because the explicit
+        override happened to be set. The fallback is now the registry's exact
+        vendor-confirmed path, so a base-path change cannot silently point
+        activation somewhere wrong.
+        """
         monkeypatch.setattr("app.config.settings.TMOBILE_SUBSCRIBER_BASE_PATH",
                             "/wholesale/subscriber/v2")
         client = taap.TMobileTAAPClient()
-        # No explicit activation override -> derived from the (overridden) base.
-        assert client.activation_endpoint() == "/wholesale/subscriber/v2/activate"
+
+        assert client.activation_endpoint() == "/wholesale/v1/subscriber/activation"
 
     def test_trailing_slash_is_normalized(self, tmobile_env, monkeypatch):
         monkeypatch.setattr("app.config.settings.TMOBILE_SUBSCRIBER_BASE_PATH",
                             "/wholesale/v1/subscriber/")
         client = taap.TMobileTAAPClient()
         assert client._subscriber_path("activate") == "/wholesale/v1/subscriber/activate"
+        # NOTE: _subscriber_path still joins strings, but no operation resolves
+        # its wire path through it any more — see tmobile_operations.
 
     @respx.mock
     @pytest.mark.asyncio
@@ -272,8 +284,8 @@ class TestActivationPreview:
 
         assert preview["method"] == "POST"
         assert preview["would_send"] is False
-        assert preview["path"] == "/wholesale/v1/subscriber/activate"
-        assert preview["url"].endswith("/wholesale/v1/subscriber/activate")
+        assert preview["path"] == "/wholesale/v1/subscriber/activation"
+        assert preview["url"].endswith("/wholesale/v1/subscriber/activation")
         assert preview["payload"] == {
             "iccid": "8901260963132697538",
             "marketZip": "30346",
@@ -398,13 +410,39 @@ class TestActivationPayloadMatchesTMobileSample:
         assert p2["baseProduct"]["product"][0]["action"] == "ADD"
 
 
-# ── subscriber_inquiry gated on account ID ───────────────────────────
-class TestSubscriberInquiryGate:
+# ── subscriber_inquiry needs no account ID ───────────────────────────
+class TestSubscriberInquiryNeedsNoAccountId:
+    """subscriber_inquiry never required an account ID.
+
+    This class previously asserted that the call was "disabled until an account
+    ID exists". That gate was our own invention — the vendor contract identifies
+    the subscriber by msisdn / iccid / imsi and has no account-id field at all,
+    so the absence of an account ID is simply not an error. What DOES stop the
+    call today is the client's fail-closed boundary: subscriber_inquiry is not
+    yet cleared for live sending.
+    """
+
     @pytest.mark.asyncio
-    async def test_disabled_without_account_id(self, tmobile_env):
+    async def test_missing_account_id_is_not_what_stops_the_call(self, tmobile_env):
+        """No account ID configured, and the refusal is the live-send boundary.
+
+        Changed because the account-id requirement was never in the vendor
+        contract; the error that remains is the certification gate, not a
+        missing account.
+        """
         client = taap.TMobileTAAPClient()  # TMOBILE_ACCOUNT_ID == ""
-        with pytest.raises(RuntimeError, match="disabled until an account ID"):
-            await client.subscriber_inquiry("7542697860")
+        with pytest.raises(ops.TMobileOperationBlockedError) as exc:
+            await client.subscriber_inquiry("5550001234")
+        assert "account" not in str(exc.value).lower()
+        assert "subscriber_inquiry" in str(exc.value)
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_identifier_is_required(self, tmobile_env):
+        """An identifier — not an account ID — is the one mandatory input."""
+        client = taap.TMobileTAAPClient()
+        with pytest.raises(ValueError, match="msisdn, iccid, or imsi"):
+            await client.subscriber_inquiry()
         await client.close()
 
 

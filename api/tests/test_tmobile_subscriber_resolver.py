@@ -9,7 +9,8 @@ Proves:
   * MSISDN resolves from meta, falling back to the Sim's own column.
   * The live call is gated behind TMOBILE_PIT_LIVE_CALLS_ENABLED.
   * Missing account ID / Sim / MSISDN fail with clear errors and no call.
-  * The low-level subscriber_inquiry() prefers a passed account_id over env.
+  * The low-level subscriber_inquiry() neither requires nor transmits an
+    account id — it identifies the line by msisdn / iccid / imsi.
 
 No real T-Mobile credentials and no network: the DB is mocked and the TAAP
 client is a stub.
@@ -165,41 +166,73 @@ class TestQueryByIccid:
         client.subscriber_inquiry.assert_not_called()
 
 
-# ─── low-level subscriber_inquiry: passed account_id wins ────────────
+# ─── low-level subscriber_inquiry: account id is neither required nor sent ───
 
 
-class TestSubscriberInquiryAccountId:
+class TestSubscriberInquiryTakesNoAccountId:
+    """SubscriberInquiry identifies the line, not the account.
+
+    These tests previously asserted that an account ID was merged into the
+    request body — from the per-call argument, else from the env — and that the
+    call was "disabled until an account ID exists". None of that was ever in the
+    vendor contract: the operation takes one of msisdn / iccid / imsi and has no
+    account-id field. The ``account_id`` keyword survives only so existing
+    callers (the per-ICCID resolver above) keep working; it is accepted and
+    discarded.
+    """
+
     @pytest.mark.asyncio
-    async def test_passed_account_id_overrides_env(self):
+    async def test_passed_account_id_is_accepted_but_never_transmitted(self):
+        """Changed: the body carries only the identifier — no accountId key.
+
+        The old assertion pinned an accountId into the payload, which the
+        vendor contract does not define for this operation.
+        """
         from app.integrations.tmobile_taap import TMobileTAAPClient
         client = TMobileTAAPClient(
             consumer_key="ck", consumer_secret="cs", account_id="ENV-ACC")
-        client.post_json = AsyncMock(return_value={"ok": True})
+        client._request = AsyncMock(return_value={"ok": True})
 
-        await client.subscriber_inquiry("12125551234", account_id="PER-ICCID")
+        await client.subscriber_inquiry("5550001234", account_id="PER-ICCID")
 
-        path, body = client.post_json.call_args.args
-        assert body == {"msisdn": "12125551234", "accountId": "PER-ICCID"}
+        body = client._request.call_args.kwargs["json_body"]
+        assert body == {"msisdn": "5550001234"}
+        assert "accountId" not in body
+        assert "PER-ICCID" not in str(body)
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_env_account_id(self):
+    async def test_env_account_id_is_not_merged_into_the_body(self):
+        """Changed: there is no env fallback because there is no field to fill."""
         from app.integrations.tmobile_taap import TMobileTAAPClient
         client = TMobileTAAPClient(
             consumer_key="ck", consumer_secret="cs", account_id="ENV-ACC")
-        client.post_json = AsyncMock(return_value={"ok": True})
+        client._request = AsyncMock(return_value={"ok": True})
 
-        await client.subscriber_inquiry("12125551234")
+        await client.subscriber_inquiry(iccid="8901260963132600001")
 
-        _, body = client.post_json.call_args.args
-        assert body["accountId"] == "ENV-ACC"
+        body = client._request.call_args.kwargs["json_body"]
+        assert body == {"iccid": "8901260963132600001"}
+        assert "ENV-ACC" not in str(body)
 
     @pytest.mark.asyncio
-    async def test_disabled_when_neither_present(self):
+    async def test_an_identifier_is_required_not_an_account_id(self):
+        """Changed: the mandatory input is an identifier, not an account ID.
+
+        With no account ID at all the call is well-formed; what is refused is a
+        call that names no subscriber.
+        """
         from app.integrations.tmobile_taap import TMobileTAAPClient
         client = TMobileTAAPClient(
             consumer_key="ck", consumer_secret="cs", account_id="")
-        client.post_json = AsyncMock(return_value={"ok": True})
+        client._request = AsyncMock(return_value={"ok": True})
 
-        with pytest.raises(RuntimeError, match="disabled until an account ID"):
-            await client.subscriber_inquiry("12125551234")
-        client.post_json.assert_not_called()
+        # No account ID, but an identifier — accepted.
+        await client.subscriber_inquiry(imsi="310260000000001")
+        assert client._request.call_args.kwargs["json_body"] == {
+            "imsi": "310260000000001"}
+
+        # No identifier at all — refused before anything is built or sent.
+        client._request.reset_mock()
+        with pytest.raises(ValueError, match="msisdn, iccid, or imsi"):
+            await client.subscriber_inquiry()
+        client._request.assert_not_called()

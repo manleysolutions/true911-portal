@@ -1,5 +1,19 @@
 # T-Mobile Wholesale — API operation inventory
 
+> **SUPERSEDED IN PART — 2026-07-21.** The "no vendor contract exists" premise
+> below is no longer true: authorized vendor documentation has since been
+> obtained and the implementation reconciled against it (evidence reference
+> `TMO-REST-RECON-001`). The reconciliation found the previously derived paths
+> wrong for **every** operation, four wrong HTTP methods, and a wrong request
+> body on every lifecycle call — which is why the blocking decision recorded
+> here was correct.
+>
+> **Current status lives in `TMOBILE_OPERATION_READINESS.md`.** The path/method
+> table below is retained as the historical record of the derived values and
+> must not be used as a contract reference. Detailed contract facts are not
+> published here — this repository is public and the vendor material is
+> confidential.
+
 > **Authoritative source:** `api/app/integrations/tmobile_operations.py`. This
 > page is the human-readable rendering; the module is what the harness enforces.
 > `python ../scripts/tmobile_pit.py operations` prints the live state.

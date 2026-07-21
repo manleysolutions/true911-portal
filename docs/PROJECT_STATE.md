@@ -10,7 +10,40 @@
 > `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
 > `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
 
+## 0·DONE — T-Mobile contract reconciled against authorized documentation [2026-07-21]
+
+Authorized vendor documentation was obtained and **reviewed privately**;
+implementation was reconciled against it (evidence reference
+`TMO-REST-RECON-001`). The corrections were substantial: the previously derived
+paths were wrong for **every** operation, **four** operations used the wrong HTTP
+method, and **every** lifecycle request body was wrong (a required identifier was
+omitted and an undocumented one was sent). Activation — the only operation ever
+confirmed by a live response — was the sole one already correct.
+
+This vindicates the blocking decision (D-018). Had those seven been sendable,
+every one would have failed, and the wrong-verb cases would likely have failed in
+ways that mimic an auth fault.
+
+**All eight non-activation operations remain LIVE-BLOCKED.** Readiness is now a
+gate distinct from provenance: knowing a contract says what to send, not whether
+this client sends it correctly. Only real PIT evidence opens it. A fail-closed
+guard now runs inside the client before the OAuth token is fetched, so a direct
+method call cannot bypass the operator gates.
+
+**Confidentiality.** This repository is public; the vendor material is
+confidential and is NOT committed. Only the minimum wire facts needed to function
+are published. The contract matrix, response-code analysis, citations and
+document hashes live in the operator's private evidence store, outside version
+control, enforced by automated guards.
+
+**No live call was made and no subscriber state changed.** Status:
+`TMOBILE_OPERATION_READINESS.md`.
+
 ## 0·URGENT FINDING — 7 of 8 T-Mobile operations have NO supplied contract [2026-07-21]
+
+> **SUPERSEDED the same day** by the reconciliation above — the documentation was
+> subsequently obtained. Retained as the record of why the operations were
+> blocked, which the reconciliation proved correct.
 
 T-Mobile authorized us to "run other API calls to complete your development and
 testing cycle." Building the certification harness surfaced why we largely
