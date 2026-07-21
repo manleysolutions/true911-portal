@@ -123,6 +123,8 @@ class TestNoLiveIdentifiersInTests:
     def test_assigned_msisdn_never_appears_in_a_test_or_fixture(self):
         offenders = [rel for rel, text in _tracked_text(_tracked_files())
                      if rel.startswith("api/") and LIVE_PIT_MSISDN in text]
+        # Report the FILES, never the value: CI logs for this repository are
+        # public, so a leak must not be echoed into them by its own detector.
         assert offenders == [], f"assigned MSISDN present in: {offenders}"
 
     def test_generated_account_id_never_appears_in_a_test_or_fixture(self):

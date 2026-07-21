@@ -10,6 +10,47 @@
 > `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
 > `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
 
+## 0·DONE — Typed T-Mobile contracts and lifecycle foundation [2026-07-21]
+
+Typed request/response models, a normalized subscriber lifecycle, a transition
+registry, centralized preconditions, callback application rules, and a
+carrier-agnostic snapshot. Foundation only — **no PIT execution, no live call,
+no subscriber state change.**
+
+The organizing idea: **a synchronous acceptance is not a result.** The carrier
+answers immediately to say a request authenticated and validated; provisioning
+finishes later and is reported asynchronously. Every mutation therefore moves a
+line into an explicit `*_pending` state and only an asynchronous result settles
+it. (Suspension is the documented exception — its synchronous answer is
+terminal.)
+
+**Callbacks apply only on exact correlation** — partner-transaction-id, then
+workflow id, then service-transaction id. There is deliberately no
+"latest pending transaction" and no timestamp-proximity fallback: both look
+reasonable and both misattribute results under replay or concurrency. Anything
+uncorrelatable, duplicated, superseded, conflicting, or not understood is
+quarantined with its evidence intact and leaves state untouched.
+
+Five state facets are tracked separately rather than collapsed into one string
+(carrier-reported, workflow, expected, last-confirmed, reconciliation), because
+they legitimately disagree — and the disagreement is the signal.
+
+**Mutations fail closed on unknown or unconfirmed state.** Reads do not: a query
+is how you learn the state, so gating it on knowing the state is circular.
+
+**Activation remains the sole live-sendable operation; eight remain blocked.**
+Typed models explicitly do not weaken the registry — a test pins that having a
+model confers no permission to send.
+
+**Deferred:** durable persistence for lifecycle transactions. The alembic chain
+is currently branched (two revisions share a parent, one of them uncommitted),
+so migration ownership is unclear and adding one would entangle this work with
+an unrelated in-flight migration. The transaction structures are typed and
+persistence-ready for whoever resolves that.
+
+**Next:** read-only PIT certification — SubscriberInquiry against one explicitly
+nominated subscriber, operator-approved, no bulk mode.
+
 ## 0·DONE — T-Mobile contract reconciled against authorized documentation [2026-07-21]
 
 Authorized vendor documentation was obtained and **reviewed privately**;

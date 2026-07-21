@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-019 recorded; latest ID: D-019 |
+| **Status** | Active — D-001 … D-020 recorded; latest ID: D-020 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -287,3 +287,33 @@ Decision · Consequences.
   no vendor binary, hash, reconstructing citation, or absolute operator path is
   committed. Machine-readable API definitions remain desirable for structural
   validation; a few contract questions stay open and their operations stay blocked.
+
+### D-020 — Synchronous acceptance is not completion; callbacks apply only on exact correlation
+- **Date:** 2026-07-21 · **Status:** Accepted
+- **Context:** The typed contract foundation had to decide when a subscriber's state
+  actually changes. The carrier answers a mutation immediately to confirm the request
+  authenticated and validated, then reports provisioning completion separately and
+  asynchronously. Treating the immediate answer as terminal would record state we have
+  no evidence for. Separately, callbacks arrive with several possible correlation
+  identifiers, and the tempting fallbacks — "the most recent pending transaction",
+  nearest timestamp, matching ICCID alone — all misattribute results under replay,
+  retry, or concurrency.
+- **Decision:** (1) Every mutation moves a line into an explicit `*_pending` state on
+  synchronous acceptance; only an asynchronous result settles it to a terminal state.
+  Suspension is the documented exception where the synchronous answer is terminal.
+  (2) Callbacks correlate by exact identifier only, in precedence order
+  partner-transaction-id → workflow id → service-transaction id. There is no
+  latest-pending and no timestamp fallback. Anything uncorrelatable, ambiguous,
+  duplicated, superseded, conflicting, or not understood is **quarantined** with its
+  evidence and leaves state untouched. (3) Five state facets are tracked separately
+  (carrier-reported, workflow, expected, last-confirmed, reconciliation) rather than
+  collapsed into one string. (4) Mutations fail closed on unknown or unconfirmed
+  state; reads do not, because a query is how the state is learned.
+- **Consequences:** A wrong lifecycle result is materially worse than an unapplied
+  one, so the system prefers quarantine to a plausible guess and will accumulate
+  callbacks needing human reconciliation — an operator surface for that queue is
+  required before live synchronization. Duplicate deliveries are idempotent via a
+  stable key derived from correlation ids and outcome, never arrival time. Durable
+  persistence of lifecycle transactions is deferred while the migration chain is
+  branched; the structures are typed and persistence-ready. Typed models confer no
+  permission to send — activation remains the sole live-sendable operation.

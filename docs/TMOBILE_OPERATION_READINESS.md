@@ -40,6 +40,30 @@ to send; it says nothing about whether this client sends it correctly. Readiness
 is therefore a separate gate from provenance, and only real PIT evidence opens
 it. All eight non-activation operations stay blocked.
 
+## 2a. Typed contract and lifecycle foundation (2026-07-21)
+
+Requests and responses are now typed models rather than hand-built dicts, and
+the subscriber lifecycle has one authoritative state vocabulary.
+
+- **Outbound models forbid unknown fields**, so an undocumented field is a local
+  error rather than something that reaches the wire. Validation runs before OAuth.
+- **Inbound models preserve unknown fields**, so a response is never rejected for
+  carrying an attribute the carrier added after we shipped.
+- **Synchronous acceptance is modelled separately from asynchronous completion.**
+  A mutation moves the line to a `*_pending` state; only an async result settles
+  it. Acceptance means authenticated and validated — not provisioned.
+- **Callbacks apply only on exact correlation**, with no latest-pending and no
+  timestamp fallback. Duplicates are idempotent; replays after completion, stale,
+  conflicting, ambiguous, and uncorrelatable callbacks are quarantined without
+  changing state.
+- **Mutations fail closed on unknown or unconfirmed state.** Reads do not — a
+  query is how the state is learned.
+- Identifiers are masked in reprs, validation errors, and the normalized carrier
+  snapshot.
+
+Typed models confer **no** permission to send: a test pins that every blocked
+operation stays blocked despite having a model.
+
 ## 3. Safety properties
 
 - **Fail-closed at the client boundary.** The check runs before the OAuth token

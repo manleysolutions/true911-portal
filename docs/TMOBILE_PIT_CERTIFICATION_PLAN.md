@@ -18,6 +18,11 @@
 
 ---
 
+> **Update 2026-07-21.** Typed contracts and the lifecycle state model are in
+> place, so a certification run now has somewhere to record its result. Stage 1
+> (`SubscriberInquiry`, one nominated subscriber, operator-approved, single
+> request) is the next task. Nothing in this plan has been executed.
+
 ## 1. Scope
 
 | In scope | Out of scope |
