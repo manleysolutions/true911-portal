@@ -1,0 +1,70 @@
+{
+  "activated_at_utc": "2026-07-21T03:18:33.694749Z",
+  "deployment_commit": "1766f51161908d163ba2d3c4a96d1f774782cbfd",
+  "endpoint": "POST /wholesale/v1/subscriber/activation",
+  "http_status": 201,
+  "notes": [
+    "HTTP 201 with body status=SUCCESS and result code 100.",
+    "No Partner Foundation header was configured or transmitted on this request.",
+    "partner-id and sender-id were both 128, as on every prior attempt.",
+    "The immediately preceding attempts on this same deployed client contract returned HTTP 400 GENS-0003 Invalid partnerID. T-Mobile Engineering recreated the gateway configuration shortly before this request.",
+    "Root cause inside T-Mobile is not independently observable from the client; this record asserts only what the client observed.",
+    "X-Auth-Originator presence is not reproduced here \u2014 it is emitted only when the OAuth response returned an id_token. Consult the operator's raw bundle.",
+    "Exactly one activation was sent. The runner never retries."
+  ],
+  "outcome": "SUCCESS",
+  "partner_foundation": {
+    "configured_header_name": null,
+    "configured_value": null,
+    "note": "No Partner Foundation header was configured or transmitted on the successful request. The activation succeeded without it.",
+    "sent_on_requests": false
+  },
+  "request": {
+    "headers": {
+      "names": [
+        "Content-Type",
+        "Accept",
+        "Authorization",
+        "X-Authorization",
+        "X-Correlation-Id",
+        "partner-transaction-id",
+        "partner-id",
+        "sender-id",
+        "call-back-location"
+      ],
+      "presence": {
+        "Authorization": true,
+        "X-Auth-Originator": false,
+        "X-Authorization": true
+      },
+      "safe_values": {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Correlation-Id": "ee790876-7b0a-472e-823e-4b30fbefa88d",
+        "call-back-location": "<configured; value not reproduced in this record>",
+        "partner-id": "128",
+        "partner-transaction-id": "true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9",
+        "sender-id": "128"
+      }
+    },
+    "iccid_masked": "***************7538"
+  },
+  "response": {
+    "account_id_masked": "*******3214",
+    "iccid_masked": "***************7538",
+    "msisdn_masked": "******6851",
+    "result_codes": [
+      "100"
+    ],
+    "status": "SUCCESS"
+  },
+  "schema": "true911.tmobile.pit-success/1",
+  "source": "Reconstructed from the operator's tmobile_pit_evidence.py --activate bundle. The raw bundle was written to the operator's temp directory and is not committed; this record is the sanitized, masked subset.",
+  "trace": {
+    "correlation_id": "ee790876-7b0a-472e-823e-4b30fbefa88d",
+    "oauth_service_transaction_id": "62f5fd11-7756-953b-b032-e71a14ac118d",
+    "partner_transaction_id": "true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9",
+    "service_transaction_id": "33f2315c-8da4-9bae-b68e-3178a5c7a620",
+    "work_flow_id": "8a5659f0-16f5-46fb-9a0d-f35bb37fda92_P"
+  }
+}

@@ -6,42 +6,52 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-07-16. Branch at time of writing: `main` (in sync with origin).
+> Last updated: 2026-07-21. Branch at time of writing:
+> `docs/tmobile-pit-success-closeout` (PR open, NOT merged; based on `main`).
 
-## 0·URGENT — T-Mobile PIT: reference contract deployed, STILL GENS-0003; awaiting Partner Foundation ID (branch `chore/tmobile-pit-evidence-and-foundation-prep`, PR open, NOT merged) [2026-07-16]
+## 0·✅ DONE — T-Mobile PIT ACTIVATION SUCCEEDED [2026-07-21]
 
-The reference-contract fix is **merged and deployed** (commit `1766f51`). The
-first activation on it **failed identically**: `HTTP 400 GENS-0003 Invalid
-partnerID` (UTC `2026-07-16T20:39:07.197374Z`, ICCID `8901260963132697538`,
-work-flow-id `8e5f9dcb-…_P`, service-transaction-id `f7542c0d-…`, full table in
-`TMOBILE_PIT_ACTIVATION_PAYLOAD.md`).
+**`POST /wholesale/v1/subscriber/activation` → HTTP 201, `status=SUCCESS`,
+result code `100`**, at `2026-07-21T03:18:33.694749Z` on deployed commit
+`1766f51`. An MSISDN was assigned (`******6851`) and an account ID generated
+(`*******3214`) for ICCID `**************7538`. GENS-0003 is **closed**.
 
-**That is the finding: the PoP was never the cause of GENS-0003.** Our PoP now
-matches T-Mobile's builder byte-for-byte and the error is unchanged, so the
-remaining variable is partner identity itself — which is what "Partner Foundation
-ID" points at.
+Full table (trace ids, validated contract): `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`.
+Unmasked identifiers: `TMOBILE_PIT_ACTIVATED_SUBSCRIBER_RESTRICTED.md`
+(operators only). Machine-readable record:
+`api/tests/fixtures/tmobile_pit_success_20260721T031833Z.json`.
 
-**BLOCKED on T-Mobile.** Aman mentioned a "Partner Foundation ID" but supplied no
-value, header name, or semantics. **Do not guess** — every guess so far
-(`partner-id` in PoP claims #165, signed `sender-id` #167,
-`Content-Type;uri;http-method` #168) was plausible and cost a live PIT cycle. The
-six required answers are listed in `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`
-§ "Partner Foundation ID".
+**Root cause — stated exactly as far as the evidence goes.** T-Mobile Engineering
+recreated the gateway configuration immediately before this request. *Resolved by
+T-Mobile gateway configuration recreation. The available evidence indicates the
+client request contract was valid at the time of the successful activation, and
+no additional Partner Foundation header was required. Exact internal T-Mobile
+root cause is not independently observable from the client.*
 
-This PR ships **preparation only, zero wire change**:
+The **same deployed client contract** had returned `400 GENS-0003 Invalid
+partnerID` days earlier with **no code change in between**, `partner-id`/
+`sender-id` both `128` on each, and **no Partner Foundation header ever sent**.
 
-- `TMOBILE_PARTNER_FOUNDATION_ID` / `_HEADER` config — **deliberately inert**;
-  stored + stripped, never sent, never mapped onto `partner-id`
-- `app/integrations/tmobile_evidence.py` — sanitized capture (allowlist, so an
-  unknown header redacts by default; body = length + SHA-256 only)
-- `scripts/tmobile_pit_evidence.py` — `--token-only` / `--activation-preview` /
-  `--activate` (needs **both** `--confirm-live` and
-  `TMOBILE_PIT_LIVE_CALLS_ENABLED=true`; one request, never retries)
-- `scripts/compare_tmobile_request_contract.py` — diffs our request against a
-  reference T-Mobile supplies later
+**Hypotheses now closed (superseded, not erased):**
 
-**Next session checklist** is in `BACKLOG.md` §URGENT. **No live activation was
-run by Claude. PR NOT merged.**
+- Partner Foundation ID required → **no**; it was never sent. Config stays inert.
+- PoP contract unverified → **verified**; the reference contract was accepted.
+- `sender-id` transmission unverified → **verified**; sent and accepted on both
+  the token and resource calls.
+- GENS-0003 active → **closed.**
+
+**⚠️ Still unverified — do not read success as readiness:**
+
+- **Callback: UNVERIFIED.** No callback confirmed for this activation; the
+  account ID came from the synchronous 201 body. Read-only check (SELECT only,
+  no network): `python -m scripts.tmobile_callback_inspect --iccid <ICCID> …`
+- **Subscriber status: UNVERIFIED.** `scripts/tmobile_subscriber_status.py`
+  exists (read-only, `--confirm-read-only`) and has not been run.
+- **Persistence gap:** a synchronous-201 activation writes nothing to our DB.
+- **19 of 20 production gates open** — `TMOBILE_PRODUCTION_READINESS.md`.
+
+⛔ **Do not re-activate the PIT ICCID; do not suspend/deactivate/SIM-swap the
+line.** It is the only end-to-end evidence we have.
 
 ## 0·DONE — T-Mobile TAAP restored to the supplied reference contract (PR #170, MERGED as `1766f51`) [2026-07-16]
 

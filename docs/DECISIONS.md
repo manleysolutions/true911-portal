@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-016 recorded; latest ID: D-016 |
+| **Status** | Active — D-001 … D-017 recorded; latest ID: D-017 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -194,3 +194,36 @@ Decision · Consequences.
   `docs/customer/ASSURANCE_ENGINE.md`, `docs/customer/RH_GO_LIVE_RUNBOOK.md`,
   `api/app/services/customer/preview.py`. Preview is a bridge — retired per location
   as real evidence supersedes attestation.
+
+### D-017 — T-Mobile PIT closeout: record the root cause only as far as the client can see it
+- **Date:** 2026-07-21 · **Status:** Accepted
+- **Context:** The first successful T-Mobile PIT activation (`HTTP 201`,
+  `status=SUCCESS`, result `100`, `2026-07-21T03:18:33.694749Z`, deployed commit
+  `1766f51`) landed on the **same client contract** that had returned `400
+  GENS-0003 Invalid partnerID` days earlier, with no code change in between.
+  T-Mobile Engineering recreated the gateway configuration immediately before the
+  successful request. The leading internal hypothesis — that a "Partner
+  Foundation ID" header was required — was **never exercised**: no such header
+  was configured or transmitted. Three prior PRs (#165, #167, #168) had each
+  attributed GENS-0003 to a plausible client-side cause and each cost a live PIT
+  cycle; all three attributions were wrong.
+- **Decision:** Record the root cause as *"Resolved by T-Mobile gateway
+  configuration recreation. The available evidence indicates the client request
+  contract was valid at the time of the successful activation, and no additional
+  Partner Foundation header was required. Exact internal T-Mobile root cause is
+  not independently observable from the client."* — and no more. Superseded
+  hypotheses are **marked superseded, never deleted**. The Partner Foundation
+  config stays **inert**; the "never guess a header name" rule survives the
+  success. Unmasked subscriber identifiers live in exactly one restricted
+  operator document; every other artifact masks to the last four characters via
+  the shared `tmobile_evidence.mask_tail`.
+- **Consequences:** `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`, `tmobile_taap_setup.md`,
+  `TMOBILE_INTEGRATION_AUDIT.md`, `PROJECT_STATE.md`, and `BACKLOG.md` (C4 +
+  §URGENT) are revised rather than rewritten. New:
+  `TMOBILE_PIT_ACTIVATED_SUBSCRIBER_RESTRICTED.md` (operator-only identifiers),
+  `TMOBILE_PRODUCTION_READINESS.md` (20 gates, 1 closed),
+  `api/tests/fixtures/tmobile_pit_success_20260721T031833Z.json` (sanitized
+  record), and two read-only operator scripts. **PIT success is explicitly not
+  production readiness** — production onboarding must be confirmed with T-Mobile
+  before the first production attempt, since the PIT gateway itself needed
+  explicit recreation to work. D-003 (key rotation gate) is unchanged.
