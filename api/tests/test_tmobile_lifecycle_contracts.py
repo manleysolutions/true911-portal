@@ -129,6 +129,85 @@ class TestRequestModels:
         assert req.http_method == "PUT"
         assert req.path == "/wholesale/v1/subscriber/suspension"
 
+    @pytest.mark.parametrize("surface", ["str", "repr", "args", "cause",
+                                        "context", "traceback", "json"])
+    def test_no_exception_surface_leaks_an_identifier(self, surface):
+        """Every way an exception can be rendered must stay masked.
+
+        Pydantic attaches the raw input dict to its ValidationError, and Python
+        re-attaches that error as ``__context__`` if the replacement is raised
+        inside the ``except`` block. Both routes are closed; this pins all of
+        them, including the ones a framework or log formatter might walk rather
+        than the ones a human reads.
+        """
+        import json as _json
+        import traceback as _tb
+
+        account_id = "999" + "00011122"   # split: tracebacks render source
+        payload = {"msisdn": MSISDN, "iccid": ICCID_A, "accountId": account_id}
+        with pytest.raises(C.TMobileRequestError) as exc:
+            C.SuspendSubscriberRequest(**payload)
+        e = exc.value
+        rendered = {
+            "str": str(e), "repr": repr(e), "args": repr(e.args),
+            "cause": repr(e.__cause__), "context": repr(e.__context__),
+            "traceback": "".join(
+                _tb.format_exception(type(e), e, e.__traceback__)),
+            "json": _json.dumps({"detail": str(e)}),
+        }[surface]
+
+        for secret in (MSISDN, ICCID_A, account_id):
+            assert secret not in rendered, f"{surface} leaked an identifier"
+
+    def test_exception_chain_is_empty_not_merely_suppressed(self):
+        """Suppression hides the chain from tracebacks; it does not remove it."""
+        with pytest.raises(C.TMobileRequestError) as exc:
+            C.ChangeSimRequest(msisdn=MSISDN, iccid=ICCID_A, new_iccid=ICCID_A)
+        assert exc.value.__cause__ is None
+        assert exc.value.__context__ is None
+
+    def test_logging_exception_does_not_emit_raw_input(self):
+        import io
+        import logging
+
+        # Values come from variables, not literals: a traceback renders the
+        # SOURCE line, so an inline literal would appear for reasons that have
+        # nothing to do with runtime masking. Real callers pass variables too.
+        account_id = "999" + "00011122"
+        payload = {"msisdn": MSISDN, "iccid": ICCID_A, "accountId": account_id}
+
+        buf = io.StringIO()
+        handler = logging.StreamHandler(buf)
+        logger = logging.getLogger("tmobile-contract-test")
+        logger.addHandler(handler)
+        logger.setLevel(logging.ERROR)
+        try:
+            try:
+                C.SuspendSubscriberRequest(**payload)
+            except C.TMobileRequestError:
+                logger.exception("request rejected")
+            captured = buf.getvalue()
+        finally:
+            logger.removeHandler(handler)
+
+        assert captured, "nothing was logged; the test proves nothing"
+        for secret in (MSISDN, ICCID_A, account_id):
+            assert secret not in captured
+
+    def test_wire_alias_spellings_mask_too(self):
+        """A caller passes the ALIAS, so the alias is what must mask."""
+        account_id = "999" + "00011122"
+        with pytest.raises(C.TMobileRequestError) as exc:
+            C.SubscriberInquiryRequest(msisdn=MSISDN, accountId=account_id)
+        assert account_id not in str(exc.value)
+        assert "1122" in str(exc.value)      # masked tail still useful
+
+    def test_unrecognised_key_carrying_a_number_is_masked(self):
+        """An unanticipated field name must not be a bypass."""
+        with pytest.raises(C.TMobileRequestError) as exc:
+            C.QueryNetworkRequest(msisdn=MSISDN, someUnknownRef="12345678901")
+        assert "12345678901" not in str(exc.value)
+
     def test_repr_masks_identifiers(self):
         req = C.SuspendSubscriberRequest(msisdn=MSISDN, iccid=ICCID_A)
         text = repr(req)
@@ -454,13 +533,21 @@ class TestSafetyUnchanged:
 
     def test_fixtures_contain_no_live_identifier(self):
         blob = FIXTURE_PATH.read_text(encoding="utf-8")
-        # Split literals: this assertion must not itself become an occurrence
-        # of the very identifiers it forbids — the confidentiality guard scans
-        # tracked test files for exactly these values.
-        for banned in ("89012609631" + "32697538",      # live PIT ICCID
-                       "410240" + "6851",                # assigned MSISDN
-                       "104107" + "63214"):              # generated account id
-            assert banned not in blob
+        # Two safeguards here, both deliberate.
+        #
+        # Split literals, so this assertion does not itself become a committed
+        # occurrence of the identifiers it forbids — the confidentiality guard
+        # scans tracked test files for exactly these values.
+        #
+        # pytest.fail rather than assert, because pytest's assertion rewriting
+        # would render the reconstructed value into the failure output, and this
+        # repository's CI logs are public. A failure here means an identifier
+        # leaked; the report must not leak it a second time.
+        for label, banned in (("live PIT ICCID", "89012609631" + "32697538"),
+                              ("assigned MSISDN", "410240" + "6851"),
+                              ("generated account id", "104107" + "63214")):
+            if banned in blob:
+                pytest.fail(f"golden fixtures contain the {label} (value redacted)")
 
     def test_no_module_performs_io_on_import(self):
         for mod in (C, ST, TX, SNAP):

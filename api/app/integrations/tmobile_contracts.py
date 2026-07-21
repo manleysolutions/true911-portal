@@ -45,15 +45,37 @@ from app.integrations.tmobile_operations import get_operation
 
 # ── Shared helpers ──────────────────────────────────────────────────────────
 
-_IDENTIFIER_FIELDS = frozenset({"iccid", "msisdn", "imsi", "new_iccid",
-                                "current_iccid", "account_id"})
+#: Matched case- and separator-insensitively, so the wire alias (``newIccid``,
+#: ``accountId``) masks exactly as the Python name does. An earlier version
+#: matched only snake_case, which let a rejected ``accountId`` echo unmasked
+#: into the error text — the alias is precisely what a caller passes.
+_IDENTIFIER_FIELDS = frozenset({"iccid", "msisdn", "imsi", "imei", "newiccid",
+                                "currenticcid", "accountid", "transactionid",
+                                "pairingid", "subscriberref"})
+
+
+def _is_identifier_key(key: str) -> bool:
+    return key.replace("_", "").replace("-", "").lower() in _IDENTIFIER_FIELDS
 
 
 def _mask_identifiers(data: dict[str, Any]) -> dict[str, Any]:
-    return {
-        k: (mask_tail(str(v)) if k in _IDENTIFIER_FIELDS and v else v)
-        for k, v in data.items()
-    }
+    """Mask identifier-valued entries, whatever spelling they arrived under.
+
+    Also masks any long digit run regardless of key: an unrecognised field name
+    carrying a subscriber number must not escape simply because we did not
+    anticipate the name.
+    """
+    out: dict[str, Any] = {}
+    for k, v in data.items():
+        if v is None or v == "":
+            out[k] = v
+        elif _is_identifier_key(str(k)):
+            out[k] = mask_tail(str(v))
+        elif isinstance(v, str) and v.isdigit() and len(v) >= 7:
+            out[k] = mask_tail(v)
+        else:
+            out[k] = v
+    return out
 
 
 class _MaskedModel(BaseModel):
@@ -102,6 +124,7 @@ class _OutboundRequest(_MaskedModel):
         themselves. Catching here rather than at each call site means no caller
         can construct one of these models and get an unmasked error.
         """
+        masked: TMobileRequestError | None = None
         try:
             super().__init__(**data)
         except ValidationError as exc:
@@ -109,10 +132,17 @@ class _OutboundRequest(_MaskedModel):
                 f"{'.'.join(str(p) for p in e['loc']) or '<model>'}: {e['msg']}"
                 for e in exc.errors()
             )
-            raise TMobileRequestError(
+            masked = TMobileRequestError(
                 f"{type(self).__name__} is invalid — nothing was sent. {details} "
                 f"(fields: {sorted(_mask_identifiers(data).items())})"
-            ) from None
+            )
+        # Raised OUTSIDE the except block on purpose. Raising inside it would
+        # make Python attach the original ValidationError — which carries the
+        # raw, unmasked input dict — as __context__, where anything walking the
+        # exception chain could still read it. Out here no exception is being
+        # handled, so the chain is genuinely empty.
+        if masked is not None:
+            raise masked from None
 
     def to_wire(self) -> dict[str, Any]:
         """Serialize to the exact wire shape, omitting unset optional fields."""
