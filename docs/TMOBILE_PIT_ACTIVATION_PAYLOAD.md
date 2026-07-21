@@ -23,7 +23,91 @@ from an ICCID:
 }
 ```
 
-## 2026-07-16 — PIT retest on the reference contract: still GENS-0003 ⬅ CURRENT
+## 2026-07-21 — ✅ PIT ACTIVATION SUCCEEDED ⬅ CURRENT
+
+First successful activation. Same deployed client contract as the 2026-07-16
+failure below — commit `1766f51` — with **no code change in between**.
+
+| Field | Value |
+|---|---|
+| UTC | `2026-07-21T03:18:33.694749Z` |
+| Deployment commit | `1766f51` |
+| Endpoint | `POST /wholesale/v1/subscriber/activation` |
+| HTTP status | **`201`** |
+| Body status | `SUCCESS` · result code `100` |
+| ICCID | `**************7538` |
+| Assigned MSISDN | `******6851` |
+| Generated account ID | `*******3214` |
+| partner-id / sender-id | `128` / `128` |
+| Partner Foundation header | **none sent** |
+| `partner-transaction-id` | `true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9` |
+| `X-Correlation-Id` | `ee790876-7b0a-472e-823e-4b30fbefa88d` |
+| `work-flow-id` | `8a5659f0-16f5-46fb-9a0d-f35bb37fda92_P` |
+| `service-transaction-id` | `33f2315c-8da4-9bae-b68e-3178a5c7a620` |
+| OAuth `service-transaction-id` | `62f5fd11-7756-953b-b032-e71a14ac118d` |
+
+Unmasked identifiers: `TMOBILE_PIT_ACTIVATED_SUBSCRIBER_RESTRICTED.md` (operators
+only). Sanitized machine-readable record:
+`api/tests/fixtures/tmobile_pit_success_20260721T031833Z.json`, pinned by
+`api/tests/test_tmobile_pit_success_closeout.py`.
+
+### Root cause — stated no more strongly than the evidence supports
+
+T-Mobile Engineering recreated the gateway configuration immediately before this
+request.
+
+> **Resolved by T-Mobile gateway configuration recreation. The available evidence
+> indicates the client request contract was valid at the time of the successful
+> activation, and no additional Partner Foundation header was required. Exact
+> internal T-Mobile root cause is not independently observable from the client.**
+
+What the client *can* assert:
+
+- The identical deployed contract produced `400 GENS-0003 Invalid partnerID`
+  before, and `201 SUCCESS` after, with no client change.
+- `partner-id: 128` and `sender-id: 128` were sent on both, unchanged.
+- **No Partner Foundation ID was configured or transmitted** on the successful
+  request. Whatever GENS-0003 was, it was not a missing Partner Foundation
+  header.
+
+What the client **cannot** assert: what T-Mobile changed, why the gateway
+previously rejected `partnerID=128`, or whether the same gateway state exists in
+production. Treat production onboarding as unproven — see
+`TMOBILE_PRODUCTION_READINESS.md` §2 item 7.
+
+### Validated request contract
+
+Confirmed accepted by the gateway, and now the reference for any future change:
+
+| Element | Value |
+|---|---|
+| PoP (OAuth + resource) | signs `Content-Type;Authorization;uri;http-method;body`, `typ=JWT`, `exp=iat+60`, `v="1"`, no `iss` |
+| `partner-id` / `sender-id` | `128` / `128`, lowercase HTTP headers, unsigned |
+| `sender-id` on the token request | present, unsigned |
+| `partner-transaction-id` | per-request `true911-pit-<uuid4>` |
+| `call-back-location` | present (mandatory for activation) |
+| Body | the exact nested `{iccid, marketZip, language, baseProduct{…}}` above, compact-serialized, hashed into the PoP `edts` |
+| Partner Foundation header | **absent** |
+
+### Not yet verified
+
+The activation succeeded; the surrounding lifecycle did not get verified with it.
+
+- **Callback: UNVERIFIED.** No callback has been confirmed for this activation.
+  The account ID was recovered from the **synchronous 201 body**, not a callback.
+  Read-only check (no network call, SELECT only):
+  `python -m scripts.tmobile_callback_inspect --iccid <ICCID> --partner-transaction-id <id>`
+- **Subscriber status: UNVERIFIED.** `scripts/tmobile_subscriber_status.py`
+  (SubscriberInquiry + NetworkQuery, read-only, `--confirm-read-only` required)
+  exists and has not been run.
+- **Persistence: gap.** A synchronous-201 activation run from the operator script
+  writes nothing to our database — `tmobile_callback_processor` only persists on
+  the callback path.
+
+⛔ **Do not re-activate this ICCID** and do not suspend/deactivate/SIM-swap the
+line. It is the only end-to-end evidence we have.
+
+## 2026-07-16 — PIT retest on the reference contract: still GENS-0003 *(superseded 2026-07-21)*
 
 First activation run with the **supplied T-Mobile reference contract** deployed
 (commit `1766f51`). The PoP now matches the reference builder exactly — OAuth and
@@ -47,7 +131,15 @@ cause of GENS-0003.
 | service-transaction-id | `f7542c0d-8eaf-9d43-a826-4a4b757b3977` |
 | Response | `HTTP 400` · `GENS-0003` · `Invalid partnerID` |
 
-### Partner Foundation ID — OPEN QUESTION, DO NOT GUESS
+### Partner Foundation ID — CLOSED, was never required
+
+> **SUPERSEDED 2026-07-21.** The activation succeeded with **no Partner
+> Foundation header configured or transmitted**. This hypothesis — the leading
+> one at the time — is closed as **not the cause**. The six questions below are
+> retained as the historical record and are no longer blocking. The config stays
+> **inert**: if T-Mobile ever does require the header, wiring it remains a
+> deliberate, tested code change, and the "do not guess a header name" rule still
+> stands. Pinned by `TestPartnerFoundationWasNotNeeded`.
 
 T-Mobile mentioned a **"Partner Foundation ID"** but has **not** supplied the
 value, the header name, or the semantics.

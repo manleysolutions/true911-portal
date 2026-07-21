@@ -505,6 +505,109 @@ def write_evidence(bundle: dict[str, Any], out_dir: str) -> tuple[str, str]:
     return json_path, txt_path
 
 
+def mask_tail(value: str | None, *, keep: int = 4) -> str | None:
+    """Mask an identifier down to its last ``keep`` characters.
+
+    Used for MSISDN / ICCID / account IDs in BROADLY VISIBLE artifacts (committed
+    fixtures, PR bodies, the audit doc). The last four digits are enough for an
+    operator to confirm they are looking at the right line; the full value lives
+    only in the restricted operator record.
+
+    Distinct from ``tmobile_callback_processor._redact_identifier``, which keeps
+    the leading six characters because a log reader needs the carrier prefix.
+    Here the prefix is exactly what we do not want to publish.
+    """
+    if not value:
+        return None
+    text = str(value)
+    if len(text) <= keep:
+        return "*" * len(text)
+    return "*" * (len(text) - keep) + text[-keep:]
+
+
+def build_success_record(
+    *,
+    activated_at_utc: str,
+    endpoint: str,
+    http_status: int,
+    response_body: dict[str, Any] | str,
+    iccid: str,
+    partner_transaction_id: str,
+    correlation_id: str,
+    work_flow_id: str | None,
+    service_transaction_id: str | None,
+    oauth_service_transaction_id: str | None = None,
+    deployment_commit: str,
+    request_headers: Any,
+    partner_foundation_header_sent: bool = False,
+    notes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build the committed, sanitized record of a SUCCESSFUL PIT activation.
+
+    Every identifier that could be considered subscriber-identifying is reduced
+    to its last four characters by :func:`mask_tail` before it enters the record,
+    and the response body passes through :func:`_redact_body_text` so a body that
+    ever echoes a credential key is masked by the same rules as a live capture.
+    Headers are classified by the same allowlist as a live capture
+    (:func:`sanitize_headers`), so an unrecognised header's value is dropped by
+    DEFAULT rather than published.
+
+    This is a reconstruction from the operator's runner output, not a second
+    capture — ``source`` records that explicitly so the artifact never reads as
+    more authoritative than it is.
+    """
+    body_text = (
+        response_body if isinstance(response_body, str)
+        else json.dumps(response_body, separators=(",", ":"))
+    )
+    sanitized_body = json.loads(_redact_body_text(body_text))
+
+    results = sanitized_body.get("result") or []
+    result_codes = [str(r.get("result")) for r in results if isinstance(r, dict)]
+
+    return {
+        "schema": "true911.tmobile.pit-success/1",
+        "source": (
+            "Reconstructed from the operator's tmobile_pit_evidence.py --activate "
+            "bundle. The raw bundle was written to the operator's temp directory "
+            "and is not committed; this record is the sanitized, masked subset."
+        ),
+        "outcome": "SUCCESS",
+        "activated_at_utc": activated_at_utc,
+        "deployment_commit": deployment_commit,
+        "endpoint": endpoint,
+        "http_status": http_status,
+        "response": {
+            "status": sanitized_body.get("status"),
+            "result_codes": result_codes,
+            "msisdn_masked": mask_tail(sanitized_body.get("msisdn")),
+            "iccid_masked": mask_tail(sanitized_body.get("iccid")),
+            "account_id_masked": mask_tail(sanitized_body.get("accountId")),
+        },
+        "request": {
+            "iccid_masked": mask_tail(iccid),
+            "headers": sanitize_headers(request_headers),
+        },
+        "trace": {
+            "partner_transaction_id": partner_transaction_id,
+            "correlation_id": correlation_id,
+            "work_flow_id": work_flow_id,
+            "service_transaction_id": service_transaction_id,
+            "oauth_service_transaction_id": oauth_service_transaction_id,
+        },
+        "partner_foundation": {
+            "configured_value": None,
+            "configured_header_name": None,
+            "sent_on_requests": partner_foundation_header_sent,
+            "note": (
+                "No Partner Foundation header was configured or transmitted on "
+                "the successful request. The activation succeeded without it."
+            ),
+        },
+        "notes": notes or [],
+    }
+
+
 def partner_foundation_status(client: Any) -> dict[str, Any]:
     """Report Partner Foundation config state WITHOUT sending anything.
 

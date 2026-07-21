@@ -1,5 +1,22 @@
 # T-Mobile Wholesale TAAP Integration Setup
 
+> ## ✅ 2026-07-21 — PIT activation succeeded
+>
+> `POST /wholesale/v1/subscriber/activation` → **HTTP 201**, `status=SUCCESS`,
+> result code `100`, on deployed commit `1766f51`. The OAuth + PoP + header
+> contract documented on this page is **confirmed accepted by T-Mobile's
+> gateway**. Full record: `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`; unmasked
+> identifiers: `TMOBILE_PIT_ACTIVATED_SUBSCRIBER_RESTRICTED.md` (operators only).
+>
+> Resolved by T-Mobile gateway configuration recreation. The available evidence
+> indicates the client request contract was valid at the time of the successful
+> activation, and no additional Partner Foundation header was required. Exact
+> internal T-Mobile root cause is not independently observable from the client.
+>
+> **PIT success is not production readiness** — 19 of 20 gates remain open. See
+> `TMOBILE_PRODUCTION_READINESS.md` before changing any production flag. Do not
+> re-activate the PIT ICCID or modify the activated line.
+
 ## Overview
 
 T-Mobile Wholesale APIs use TAAP (Token-Aware Authentication Protocol) with PoP (Proof of Possession) tokens. This is NOT standard OAuth2 — every request requires a fresh RSA-signed JWT alongside the Bearer token.
@@ -295,7 +312,13 @@ grant-type value: 'client_credentials'
 body properties: ['cnf']
 ```
 
-### Partner Foundation ID — configured, NOT sent
+### Partner Foundation ID — configured, NOT sent, and NOT required
+
+> **2026-07-21: the activation succeeded with no Partner Foundation header.**
+> This was the leading hypothesis for `GENS-0003`; it is closed as **not the
+> cause**. Nothing below changes — the config stays inert, and the "never guess a
+> header name" rule still applies if T-Mobile ever does require one. Pinned by
+> `test_tmobile_pit_success_closeout.py::TestPartnerFoundationWasNotNeeded`.
 
 T-Mobile mentioned a "Partner Foundation ID" while diagnosing the 2026-07-16
 `GENS-0003` failure but has not supplied the value, header name, or semantics.

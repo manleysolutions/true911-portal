@@ -7,6 +7,44 @@
 
 ---
 
+## Addendum — 2026-07-21: outbound activation now proven end to end
+
+> This audit is a **2026-05-25 snapshot** and is preserved as written. Two of its
+> findings have since changed; the rest of the page still stands.
+
+**Superseded finding — "outbound TAAP is implemented but never called."** It is
+now called, and it works. `POST /wholesale/v1/subscriber/activation` returned
+**HTTP 201** with `status=SUCCESS` / result code `100` at
+`2026-07-21T03:18:33.694749Z` on deployed commit `1766f51`, assigning an MSISDN
+(`******6851`) and generating an account ID (`*******3214`) for ICCID
+`**************7538`. Record: `TMOBILE_PIT_ACTIVATION_PAYLOAD.md`. Unmasked
+identifiers: `TMOBILE_PIT_ACTIVATED_SUBSCRIBER_RESTRICTED.md`.
+
+**Superseded finding — "medium-severity secret leak: `print` of the Base64
+Authorization header."** Removed; outbound logging is now correlation ids only,
+pinned by `test_tmobile_taap_no_secret_logging.py`.
+
+**Still-standing findings.** Inbound signature verification is still absent (a
+shared-secret + IP gate replaced it behind `FEATURE_TMOBILE_CALLBACK_AUTH`; HMAC
+awaits a T-Mobile spec), and there is still **no replay protection and no
+idempotency key** on `webhook.tmobile` jobs.
+
+**New gaps this addendum records:**
+
+1. **The callback path is unverified on the success case.** No callback has been
+   confirmed for the 2026-07-21 activation. The account ID came from the
+   **synchronous 201 body**, not a callback. Read-only check:
+   `python -m scripts.tmobile_callback_inspect --iccid <ICCID> …`.
+2. **A synchronous activation persists nothing.** `tmobile_callback_processor`
+   writes `sims.meta` only on the callback path, so an operator-script activation
+   leaves no database record — the evidence bundle is the sole artifact.
+3. **`suspend_subscriber` / `restore_subscriber` / `deactivate_subscriber` have
+   no fail-closed gate**, unlike `activate_subscriber`. Highest-risk open item.
+
+Full gate list: `TMOBILE_PRODUCTION_READINESS.md`.
+
+---
+
 ## Bottom line
 
 T-Mobile is in an asymmetric state: **outbound TAAP signing is fully implemented and production-ready, but no part of the codebase ever calls it. Inbound callbacks are wired to seven URLs that log and discard the payload — no DB write, no SIM/device lookup, no carrier liveness signal, no health-normalizer evidence.** From the Health Normalizer's point of view, T-Mobile does not exist. Verizon's pattern of writing `Device.last_network_event` is the template; T-Mobile needs to mirror it before it can become a real evidence source.
