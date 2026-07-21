@@ -11,7 +11,7 @@
 | **Owner** | Product Owner + Principal Architect |
 | **Last Reviewed** | 2026-06-14 |
 | **Change Frequency** | Append-only (frequent additions; entries never edited) |
-| **Status** | Active — D-001 … D-017 recorded; latest ID: D-017 |
+| **Status** | Active — D-001 … D-018 recorded; latest ID: D-018 |
 | **Governed By** | `CONSTITUTION.md` |
 | **Detailed In** | the document each decision affects |
 | **Related Decisions** | — |
@@ -227,3 +227,36 @@ Decision · Consequences.
   production readiness** — production onboarding must be confirmed with T-Mobile
   before the first production attempt, since the PIT gateway itself needed
   explicit recreation to work. D-003 (key rotation gate) is unchanged.
+
+### D-018 — Block T-Mobile operations whose endpoint contract we derived rather than received
+- **Date:** 2026-07-21 · **Status:** Accepted
+- **Context:** T-Mobile Engineering authorized True911 to "run other API calls to
+  complete your development and testing cycle." Building the certification
+  harness established that this repository contains **no T-Mobile OpenAPI spec,
+  Postman collection, PDF, or reference implementation**. Seven of the eight
+  wholesale operations in `tmobile_taap.py` use paths produced by our own string
+  join (`_subscriber_path`), and no response schema for any of them has ever been
+  observed. That derivation is **provably wrong**: the one operation we can
+  verify succeeds at `/wholesale/v1/subscriber/activation` only because
+  `TMOBILE_ACTIVATION_PATH` overrides the derived `/wholesale/v1/subscriber/activate`.
+  Authorization to call an API is not a specification for it.
+- **Decision:** Introduce a provenance-gated operation inventory
+  (`app/integrations/tmobile_operations.py`). An operation may be sent only when
+  its provenance is `CONFIRMED_BY_LIVE_RESPONSE` or `TMOBILE_WRITTEN_SPEC`, and
+  its risk class is understood. Everything else is **blocked in preview and in
+  run alike** — previewing a request we may never send only invites sending it.
+  A block states the exact questions T-Mobile must answer; lifting one requires
+  their written answer recorded in the repository plus a reviewed provenance
+  change and a golden test. **It is never a config toggle.** This extends the
+  "never guess a header name" rule (D-017) from headers to endpoints.
+- **Consequences:** `activate_subscriber` is the only sendable operation; the
+  other seven are blocked but remain implemented and mock-tested. The next
+  T-Mobile interaction is a documentation request, not an API call, and the
+  certification plan's steps 6-11 are gated on it. Adds:
+  `tmobile_lifecycle.py` (state machine + three nested ICCID allowlists, empty by
+  default, `destructive ⊆ lifecycle ⊆ read-only`, first-activation ICCID
+  protected), `scripts/tmobile_pit.py` (single operator entry point, preview by
+  default, eight independent gates), and five docs. Client methods
+  (`suspend`/`restore`/`deactivate`) remain individually ungated — the safety
+  lives in the harness, so a direct call still bypasses it; adding a fail-closed
+  guard to the client itself is tracked in `TMOBILE_PRODUCTION_READINESS.md` #15.

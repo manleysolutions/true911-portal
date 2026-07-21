@@ -13,6 +13,48 @@
 
 ---
 
+## 🔴 URGENT — T-Mobile: 7 of 8 operations blocked, no supplied contract [2026-07-21]
+
+T-Mobile authorized "other API calls to complete your development and testing
+cycle." A provenance audit found **no T-Mobile OpenAPI spec, Postman collection,
+or written contract in this repository**. Seven of eight wholesale paths are
+derived by our own string join — and that derivation is **provably wrong**
+(activation works at `/activation`; the derivation yields `/activate`).
+
+Those seven are now **BLOCKED** by `app/integrations/tmobile_operations.py`.
+Blocked ≠ broken — they stay implemented and mock-tested. Unblocking requires a
+T-Mobile-supplied contract recorded here plus a reviewed provenance change;
+**config cannot lift it**.
+
+### Next action — a documentation request, not an API call
+
+1. `python ../scripts/tmobile_pit.py show <operation>` for each of the seven →
+   send T-Mobile the exact question list (8 standard + operation-specific).
+   Priority order: `subscriber_inquiry` (unblocks status verification),
+   `suspend`/`restore` (the reversible lifecycle pair), then `deactivate`.
+2. Also ask: the **full activation result-code vocabulary** (we have only ever
+   seen `100`), and whether an activation callback should have fired for
+   `true911-pit-d1475fec-…` on 2026-07-21.
+
+### Ready to run today (no network, no state change)
+
+`python -m scripts.tmobile_callback_inspect --iccid <ICCID> --partner-transaction-id <ptx>`
+— settles the outstanding callback question from the activation closeout.
+
+### Callback certification — 6 of 10 properties met
+
+Gaps, in dependency order (`TMOBILE_CALLBACK_CERTIFICATION.md`): **transaction-id
+correlation** (nothing ties a callback to the request that caused it) → then
+**replay dedupe inside the window**, **quarantine of unknown callbacks**, and
+**job idempotency keys**. Do not implement these by guessing which id T-Mobile
+echoes back — confirm the callback payload schema first.
+
+Harness, allowlists, state machine, and 85 new tests are on
+`feat/tmobile-pit-api-certification-harness` — **PR open, NOT merged**. No live
+call was made.
+
+---
+
 ## ✅ CLOSED — T-Mobile PIT activation succeeded [2026-07-21]
 
 > **Supersedes** "🔴 URGENT — T-Mobile PIT: BLOCKED on Partner Foundation ID

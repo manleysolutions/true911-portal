@@ -377,6 +377,27 @@ class Settings(BaseSettings):
     # a route that is NOT derivable from the subscriber base. Blank => the client
     # derives "{TMOBILE_SUBSCRIBER_BASE_PATH}/activate".
     TMOBILE_ACTIVATION_PATH: str = ""
+    # ── PIT designated test-SIM allowlists ──────────────────────────────
+    # Three nested tiers gating which ICCIDs a live PIT call may target.
+    # Comma-separated 19-20 digit ICCIDs. ALL EMPTY BY DEFAULT — an empty
+    # list refuses every operation at that tier rather than allowing all.
+    # No wildcards are accepted; malformed entries raise at parse time.
+    #
+    # The tiers are enforced as SUBSETS: destructive ⊆ lifecycle ⊆ read-only.
+    # An ICCID you may not read is not one you may deactivate. Being on a
+    # lower-risk list never authorizes a higher-risk operation.
+    #
+    # The first successfully activated ICCID is additionally PROTECTED
+    # (app/integrations/tmobile_lifecycle.PROTECTED_ICCIDS): it must be
+    # nominated to the destructive list separately and explicitly, and the
+    # operator tool still requires --confirm-protected. Deactivating it would
+    # destroy the only end-to-end evidence the integration works.
+    #
+    # Never put a production ICCID in any of these. See
+    # docs/TMOBILE_PIT_TEST_SIM_POLICY.md.
+    TMOBILE_PIT_READONLY_ICCID_ALLOWLIST: str = ""
+    TMOBILE_PIT_LIFECYCLE_ICCID_ALLOWLIST: str = ""
+    TMOBILE_PIT_DESTRUCTIVE_ICCID_ALLOWLIST: str = ""
     # ── Partner Foundation ID — CONFIGURATION ONLY, NOT SENT ────────────
     # T-Mobile mentioned a "Partner Foundation ID" while diagnosing the
     # 2026-07-16 GENS-0003 "Invalid partnerID" failure, but has NOT supplied:
