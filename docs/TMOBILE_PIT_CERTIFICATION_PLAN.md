@@ -23,6 +23,11 @@
 > (`SubscriberInquiry`, one nominated subscriber, operator-approved, single
 > request) is the next task. Nothing in this plan has been executed.
 
+> **Update — Stage 1 tooling ready, not executed.** The `subscriber-inquiry`
+> operator command and the single-run PIT authorization are implemented and
+> tested. The run itself is **pending an operator-nominated subscriber and
+> configured PIT credentials**. P3 in the matrix below stays ⬜, not ✅.
+
 ## 1. Scope
 
 | In scope | Out of scope |

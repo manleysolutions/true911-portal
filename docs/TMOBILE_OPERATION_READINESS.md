@@ -64,6 +64,22 @@ the subscriber lifecycle has one authoritative state vocabulary.
 Typed models confer **no** permission to send: a test pins that every blocked
 operation stays blocked despite having a model.
 
+## 2b. Read-only PIT certification tooling (2026-07-21)
+
+The tooling to certify `SubscriberInquiry` in PIT is in place: a preview-by-default
+operator command and a single-run authorization covering one read-only operation,
+one nominated subscriber, one request, PIT-only, time-boxed, consumed on use, and
+auditable.
+
+**No live inquiry has been executed.** `SubscriberInquiry` remains
+mock-certified and live-blocked. The run requires an operator-nominated PIT
+subscriber and configured PIT credentials, neither of which is available in the
+environment where this work was prepared. Readiness advances only on real
+evidence.
+
+The authorization cannot cover a lifecycle mutation: its allowlist is read-only
+operations by construction, and a grant for anything else raises.
+
 ## 3. Safety properties
 
 - **Fail-closed at the client boundary.** The check runs before the OAuth token

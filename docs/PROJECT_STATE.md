@@ -10,6 +10,33 @@
 > `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
 > `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
 
+## 0·BLOCKED — Read-only PIT certification prepared, NOT executed [2026-07-21]
+
+The tooling to certify `SubscriberInquiry` in PIT is complete and tested. **The
+run did not happen**, and two independent stop conditions are why:
+
+1. **No subscriber was nominated.** The read-only ICCID allowlist is empty and no
+   identifier was supplied. There is deliberately no default and no "latest"
+   subscriber.
+2. **No PIT credentials are configured** in the environment where this was
+   prepared (`is_configured` is false — no consumer key, secret, or signing key),
+   so a live request is impossible and the environment cannot be proven against a
+   live gateway.
+
+`SubscriberInquiry` therefore remains **mock-certified and live-blocked**.
+Readiness advances only on real evidence.
+
+**What is ready:** a preview-by-default `subscriber-inquiry` operator command,
+and a single-run authorization covering one read-only operation, one nominated
+subscriber, one request — PIT-only, 15-minute expiry, consumed the moment the
+client boundary spends it, auditable, and incapable of covering a lifecycle
+mutation. A missing or mismatched grant falls through to the normal refusal, so
+it cannot widen access.
+
+**To execute**, an operator supplies a nominated PIT subscriber, adds it to
+`TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`, configures PIT credentials, and runs the
+command in `TMOBILE_PIT_OPERATOR_RUNBOOK.md` §2a.
+
 ## 0·DONE — Typed T-Mobile contracts and lifecycle foundation [2026-07-21]
 
 Typed request/response models, a normalized subscriber lifecycle, a transition

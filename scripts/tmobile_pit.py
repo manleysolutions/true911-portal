@@ -42,12 +42,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
 from dotenv import load_dotenv  # noqa: E402
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "api", ".env"))
 
+from app.integrations.tmobile_contracts import (  # noqa: E402
+    ResponseKind,
+    TMobileResponseEnvelope,
+)
 from app.integrations.tmobile_evidence import (  # noqa: E402
     EvidenceRecorder,
     _bundle_skeleton,
     _redact_body_text,
     mask_tail,
     render_text_report,
+    utc_now_iso,
     write_evidence,
 )
 from app.integrations.tmobile_lifecycle import (  # noqa: E402
@@ -58,6 +63,15 @@ from app.integrations.tmobile_lifecycle import (  # noqa: E402
     LifecycleState,
     is_confirmed_state,
     next_state,
+)
+from app.integrations.tmobile_contracts import (  # noqa: E402
+    SubscriberInquiryRequest,
+    TMobileRequestError,
+)
+from app.integrations.tmobile_pit_authorization import (  # noqa: E402
+    AuthorizationError,
+    clear_authorization,
+    grant_single_run,
 )
 from app.integrations.tmobile_operations import (  # noqa: E402
     OPERATIONS,
@@ -418,6 +432,148 @@ async def cmd_run(args: argparse.Namespace) -> int:
     return 0 if bundle.get("ok") else 1
 
 
+
+# ── subscriber-inquiry: the read-only certification command ─────────────────
+
+def _selector_from(args: argparse.Namespace) -> tuple[str, str]:
+    """Resolve exactly one nominated selector. Never guesses."""
+    supplied = [(t, getattr(args, t)) for t in ("iccid", "msisdn", "imsi")
+                if getattr(args, t, None)]
+    if not supplied:
+        raise SystemExit(
+            "A subscriber must be explicitly nominated: pass exactly one of "
+            "--iccid / --msisdn / --imsi. There is no default and no 'latest' "
+            "subscriber."
+        )
+    if len(supplied) > 1:
+        raise SystemExit(
+            f"Exactly one selector is allowed; got {len(supplied)}. Nothing was sent."
+        )
+    return supplied[0]
+
+
+def _print_preflight_report(args, selector_type, selector, request, authorized):
+    """Show everything about the request except the things that must stay secret."""
+    op = get_operation("subscriber_inquiry")
+    body = request.to_wire()
+    masked_body = {k: (mask_tail(v) if k in ("iccid", "msisdn", "imsi") else v)
+                   for k, v in body.items()}
+    print("=" * 72)
+    print(f"ENVIRONMENT     {os.environ.get('TMOBILE_ENV', 'pit')} (must be PIT)")
+    print(f"OPERATION       subscriber_inquiry  [class {op.classification.value} "
+          f"{op.classification.name}]")
+    print(f"ENDPOINT        {op.http_method} {op.path}   (explicit; never derived)")
+    print(f"SELECTOR        {selector_type} = {mask_tail(selector)}")
+    print(f"REQUEST BODY    {masked_body}")
+    print(f"HEADERS         Authorization / X-Authorization present, values omitted;")
+    print(f"                partner-id, sender-id, partner-transaction-id, "
+          f"X-Correlation-Id")
+    print(f"RESPONSE MODEL  TMobileResponseEnvelope (synchronous)")
+    print(f"READINESS       {op.readiness.value}")
+    print(f"SEND POLICY     {'TEMPORARILY AUTHORIZED (single run)' if authorized else 'BLOCKED'}")
+    print(f"AUDIT           {_state_dir()}  (+ private evidence store)")
+    print("-" * 72)
+
+
+async def cmd_subscriber_inquiry(args: argparse.Namespace) -> int:
+    """Preview by default; send exactly one request only when fully authorized."""
+    selector_type, selector = _selector_from(args)
+
+    # Build and validate the typed request FIRST. A malformed request must fail
+    # here, as a local object, before anything touches OAuth.
+    try:
+        request = SubscriberInquiryRequest(**{selector_type: selector})
+    except TMobileRequestError as exc:
+        print(f"\nREFUSED — request validation failed. Nothing was sent.\n\n{exc}")
+        return 2
+
+    if not args.execute:
+        _print_preflight_report(args, selector_type, selector, request, authorized=False)
+        print("\nPREVIEW ONLY — no OAuth request and no API call were made.")
+        print("To execute one real request, re-run with:")
+        print(f"  --execute --confirm-live --operator <you> "
+              f"--confirm-subscriber-approved")
+        return 0
+
+    # ── live path: every gate, in order ────────────────────────────────────
+    if not args.confirm_live:
+        raise SystemExit("--confirm-live is required to execute. Nothing was sent.")
+    if not args.confirm_subscriber_approved:
+        raise SystemExit(
+            "--confirm-subscriber-approved is required: the operator must "
+            "affirm this subscriber is approved for read-only inquiry. "
+            "Nothing was sent."
+        )
+    if not (args.operator or "").strip():
+        raise SystemExit("--operator is required for the audit record. Nothing was sent.")
+
+    policy = AllowlistPolicy.from_settings()
+    policy.require_allowed(selector, Classification.READ_ONLY) if selector_type == "iccid" \
+        else None
+
+    if not TMobileTAAPClient.live_calls_enabled():
+        raise SystemExit(
+            "TMOBILE_PIT_LIVE_CALLS_ENABLED is not true. Nothing was sent."
+        )
+
+    client = TMobileTAAPClient()
+    if not client.is_configured:
+        raise SystemExit(
+            "T-Mobile credentials are not configured in this environment, so a "
+            "live request is impossible. Nothing was sent."
+        )
+
+    auth = grant_single_run(
+        operation="subscriber_inquiry", selector_type=selector_type,
+        selector=selector, operator=args.operator, confirmed=True,
+    )
+    _print_preflight_report(args, selector_type, selector, request, authorized=True)
+    print(f"AUTHORIZATION   {auth.audit_ref} (single run, consumed on use)")
+
+    bundle = _bundle_skeleton(client, "certify:subscriber_inquiry")
+    bundle["operation"] = "subscriber_inquiry"
+    bundle["selector_type"] = selector_type
+    bundle["selector_masked"] = mask_tail(selector)
+    bundle["operator"] = args.operator
+    bundle["authorization"] = auth.audit_record()
+    recorder = EvidenceRecorder(env=client.base_url)
+    recorder.attach(client)
+
+    started = utc_now_iso()
+    try:
+        # Exactly one call. No retry wrapper anywhere on this path.
+        result = await client.subscriber_inquiry(**{selector_type: selector})
+        envelope = TMobileResponseEnvelope.from_payload(
+            result, operation="subscriber_inquiry",
+            kind=ResponseKind.SYNCHRONOUS, http_status=200,
+        )
+        bundle["ok"] = True
+        bundle["normalized_status"] = envelope.normalized_status.value
+        bundle["vendor_code"] = envelope.vendor_code
+        bundle["sim_network_type_present"] = envelope.sim_network_type is not None
+        bundle["unknown_response_fields"] = sorted(envelope.raw_extra_fields)
+        bundle["subscriber_status_normalized"] = envelope.normalized_status.value
+    except Exception as exc:
+        bundle["ok"] = False
+        bundle["error"] = _redact_body_text(str(exc))
+    finally:
+        bundle["exchanges"] = recorder.finalize()
+        bundle["started_at_utc"] = started
+        bundle["finished_at_utc"] = utc_now_iso()
+        await client.close()
+        clear_authorization()
+
+    bundle["notes"].append(
+        "Exactly one SubscriberInquiry was sent. Read-only: no subscriber "
+        "state was changed. No retry, no follow-up query, no polling."
+    )
+    print(render_text_report(bundle))
+    json_path, txt_path = write_evidence(bundle, args.out_dir)
+    print(f"\nEvidence written:\n  {json_path}\n  {txt_path}")
+    print("Authorization consumed and cleared.")
+    return 0 if bundle.get("ok") else 1
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -433,6 +589,24 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("operation")
 
     sub.add_parser("allowlists", help="Show the configured test-SIM allowlists (masked).")
+
+    inq = sub.add_parser(
+        "subscriber-inquiry",
+        help="Read-only subscriber inquiry. PREVIEW by default.")
+    inq.add_argument("--iccid")
+    inq.add_argument("--msisdn")
+    inq.add_argument("--imsi")
+    inq.add_argument("--preview", action="store_true",
+                     help="Explicit preview (the default behaviour).")
+    inq.add_argument("--execute", action="store_true",
+                     help="Send exactly ONE request. Requires every gate below.")
+    inq.add_argument("--confirm-live", action="store_true")
+    inq.add_argument("--confirm-subscriber-approved", action="store_true",
+                     help="Affirm this subscriber is approved for read-only inquiry.")
+    inq.add_argument("--operator", default="",
+                     help="Audit identity. Required to execute.")
+    inq.add_argument("--expected-state", help="Optional: known expected state.")
+    inq.add_argument("--out-dir", default=tempfile.gettempdir())
 
     state = sub.add_parser("state", help="Last known lifecycle state for an ICCID.")
     state.add_argument("--iccid", required=True)
@@ -469,6 +643,8 @@ def main() -> int:
             return cmd_allowlists(args)
         if args.command == "state":
             return cmd_state(args)
+        if args.command == "subscriber-inquiry":
+            return asyncio.run(cmd_subscriber_inquiry(args))
         if args.command == "preview":
             return asyncio.run(cmd_preview(args))
         if args.command == "run":

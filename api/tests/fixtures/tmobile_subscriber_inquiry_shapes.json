@@ -1,0 +1,85 @@
+{
+  "_README": "FABRICATED SubscriberInquiry response shapes. Modelled from the typed contract, NOT copied from a live response \u2014 no live inquiry has been run. When the first real PIT response arrives, reconcile against these and correct here if the wire disagrees. No real identifier, no vendor sample body, and no vendor prose appears in this file.",
+  "_status": "not_yet_validated_against_live_response",
+  "fixtures": {
+    "active_subscriber": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "isMultiline": false,
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS",
+        "subscriberStatus": "ACTIVE"
+      },
+      "http_status": 200
+    },
+    "suspended_subscriber": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "isMultiline": false,
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "status": "SUCCESS",
+        "subscriberStatus": "SUSPENDED"
+      },
+      "http_status": 200
+    },
+    "validation_failure": {
+      "body": {
+        "result": [
+          {
+            "result": "GENS-0012",
+            "status": "FAILURE"
+          }
+        ],
+        "status": "FAILURE"
+      },
+      "http_status": 400
+    },
+    "with_sim_network_type": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "imsi": "310260000000001",
+        "isMultiline": false,
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "simNetworkType": "FABRICATED_NET_A",
+        "status": "SUCCESS",
+        "subscriberStatus": "ACTIVE"
+      },
+      "http_status": 200
+    },
+    "with_unknown_field": {
+      "body": {
+        "iccid": "8901260963132600001",
+        "isMultiline": false,
+        "msisdn": "5550001234",
+        "result": [
+          {
+            "result": "100",
+            "status": "SUCCESS"
+          }
+        ],
+        "someFutureAttribute": "fabricated-value",
+        "status": "SUCCESS",
+        "subscriberStatus": "ACTIVE"
+      },
+      "http_status": 200
+    }
+  }
+}
