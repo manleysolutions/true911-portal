@@ -6,9 +6,59 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-07-21. Branch at time of writing:
-> `feat/tmobile-pit-api-certification-harness` (PR open, NOT merged; stacked on
-> `docs/tmobile-pit-success-closeout`, which is stacked on `main`).
+> Last updated: 2026-08-11. Branch at time of writing:
+> `feat/ops-center-resolution-intelligence` (**PR #180 open, NOT merged**;
+> branched off `main`).
+>
+> **Correction to the prior revision:** the read-only certification harness has
+> since **MERGED** as **PR #179** (`306f359`, tooling commit `eadf8b0`) — the
+> sections below that describe it as "PR open, NOT merged" were accurate on
+> 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
+> is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·DONE — Ops Center Phase 1.6 landed; Alembic chain un-branched (PR #180, open) [2026-08-11]
+
+Lands the Phase 1.6 **Resolution Intelligence** foundations that had been sitting
+**uncommitted in the working tree since 2026-06-24**, and resolves the branched
+migration graph in the same change.
+
+**The migration fork is the reason this mattered.** The work was authored as
+revision `050` chained off `049`; `051_portfolio_registry` (PR #162) also chains
+off `049`, leaving **two heads**. That fork was the stated reason
+lifecycle-transaction persistence was deferred, which gates promoting the typed
+T-Mobile callback rules out of shadow mode — so an *uncommitted* migration was
+blocking unrelated work. Rebased to **`052` off `051`**; the chain is linear.
+
+**What the module is:** a deterministic library of operational knowledge for
+technicians / NOC / carrier support / installers — **22 known issues** across
+`elevator_phone` (5) · `fire_alarm_communicator` (5) · `gate_phone` (3) ·
+`carrier` (9), each with an ordered diagnostic and resolution workflow, plus a
+**rules-based, explainable** recommendation engine. **No LLM** (§4.4
+deterministic-before-AI); a later phase may add AI *on top of* this, never in
+place of it.
+
+**Posture:** additive and inert — four new tables, nothing reads it at runtime,
+no new routes, behind `FEATURE_OPS_CENTER` (default off). The three knowledge
+tables are **global shared knowledge and carry no `tenant_id`**; only
+`OpsResolutionOutcome`, which records a real engagement, is tenant-scoped. The
+`confidence` score is an **internal** tech/NOC signal, never customer-facing
+(§7.1). The seeder is idempotent by `code` and is **not** wired into any startup
+or deploy command.
+
+**New structural guard:** `api/tests/test_alembic_single_head.py` parses every
+version file (no DB, no Alembic import) and asserts one head, one base, no two
+revisions sharing a parent, no dangling `down_revision`, and a base→head walk
+covering every revision. A branched chain is not a syntax error and nothing
+caught it before — it surfaced only as an `alembic upgrade head` failure at
+deploy time. Mutation-tested: re-forking `052` onto `049` fails 4 of its 7 tests.
+
+Tests: `test_ops_center_resolution_intelligence.py` (**107**) + the graph guard
+(**7**). Full backend suite green (**4414**). Doc: `OPS_CENTER_PHASE_1_6.md`.
+
+**Downstream effect:** a new table is now structurally safe to add. Durable
+lifecycle-transaction persistence — chained off `052` — is the highest-value
+unblocked engine task, and the first step toward taking the typed callback rules
+authoritative.
 
 ## 0·BLOCKED — Read-only certification sprint: tooling complete, 0 of 4 executed [2026-07-21]
 
@@ -27,8 +77,13 @@ them rather than on code:
 **Deliberately not built:** carrier-observation persistence, the internal
 super-admin view, and the manual sync control. All three would be designed
 against a response shape nobody has observed — the guessing this integration has
-spent four PRs eliminating. The Alembic graph also still has two unresolved
-heads sharing `049`, so a new table would compound the branch.
+spent four PRs eliminating.
+
+> **Update [2026-08-11]:** the second reason given here — "the Alembic graph
+> also still has two unresolved heads sharing `049`, so a new table would
+> compound the branch" — **no longer holds.** The fork is resolved in PR #180
+> (see §0 above). A new table is now structurally safe to add; the
+> unobserved-response-shape reason stands on its own and still blocks.
 
 **Authorization isolation:** each operation needs its own grant. An inquiry
 grant does not authorize a network query; a transaction-status grant binds to
@@ -60,9 +115,11 @@ throwaway state object and no session, so it is structurally incapable of side
 effects. Two layers of exception absorption keep a broken shadow from ever
 failing ingest. Identifiers are masked in the observation and in logs.
 
-**To promote to authority**, in order: un-branch the Alembic chain → persist
-lifecycle transactions → have the operator path create them → review the
-recorded agreement rate → then flip the rules to authoritative.
+**To promote to authority**, in order: ~~un-branch the Alembic chain~~ **(done —
+PR #180, pending merge)** → persist lifecycle transactions → have the operator
+path create them → review the recorded agreement rate → then flip the rules to
+authoritative. **The next step is now the first unblocked one:** a migration
+adding durable lifecycle-transaction persistence, chained off `052`.
 
 ## 0·BLOCKED — Read-only PIT certification prepared, NOT executed [2026-07-21]
 
@@ -123,11 +180,14 @@ is how you learn the state, so gating it on knowing the state is circular.
 Typed models explicitly do not weaken the registry — a test pins that having a
 model confers no permission to send.
 
-**Deferred:** durable persistence for lifecycle transactions. The alembic chain
+**Deferred:** durable persistence for lifecycle transactions. ~~The alembic chain
 is currently branched (two revisions share a parent, one of them uncommitted),
 so migration ownership is unclear and adding one would entangle this work with
-an unrelated in-flight migration. The transaction structures are typed and
-persistence-ready for whoever resolves that.
+an unrelated in-flight migration.~~ **[2026-08-11] That blocker is cleared** — the
+uncommitted revision was the ops-center `050`, now landed as `052` off `051`
+(PR #180), and `test_alembic_single_head.py` guards against a recurrence. The
+transaction structures are typed and persistence-ready; **this is now the
+highest-value unblocked engine task.**
 
 **Next:** read-only PIT certification — SubscriberInquiry against one explicitly
 nominated subscriber, operator-approved, no bulk mode.
@@ -282,7 +342,11 @@ decodable JWT.
 Retest outcome: **still GENS-0003** — see §0 above. The contract is correct; the
 failure is elsewhere. **Merged as `1766f51`.**
 
-## 0·NEXT — RH registry approval operator script (branch `feat/rh-registry-approve`, PR open, NOT merged) [2026-07-02]
+## 0·PREV — RH registry approval operator script (**PR #164, MERGED**) [2026-07-02]
+
+> **Corrected 2026-08-11:** this was recorded as "PR open, NOT merged"; GitHub
+> confirms **MERGED**. Verified open PRs are only **#180** (this work), **#169**
+> (gitleaks CI allowlist), and **#166** (draft, superseded PoP fix).
 
 Turns the 56 pending `PortfolioReviewItem` candidates into approved `PortfolioBuilding`
 rows so RH flips from `fallback_mode` → `registry_mode` (approved buildings 0 → N).
@@ -309,7 +373,7 @@ Go-live gate unchanged: run fusion → sync queue → **approve (this script)** 
 the registry-view flags → verify the RH Test dashboard → only then send Judy's invite.
 **Judy invite remains BLOCKED.**
 
-## 0·PREV — Customer Dashboard → Portfolio Registry integration (branch `feat/customer-portfolio-registry-view`, PR open, NOT merged) [2026-07-02]
+## 0·PREV — Customer Dashboard → Portfolio Registry integration (**PR #163, MERGED**) [2026-07-02]
 
 Moves the RH customer dashboard + Location/Building Workspace from raw `Site` rows to
 canonical **PortfolioBuildings** (fixes the stale 42/42 vs 56-canonical count and the
@@ -415,7 +479,7 @@ canonical **Building Digital Twin** per location. Additive, read-only, new scrip
 **Stacks on the certification engine** (PRs #155/#156/#157 merged; #158 known-alias
 registry open — this branch includes it and reuses `KNOWN_RH_LOCATIONS`).
 
-## 0·PREV — RH Certification v2: known special-location registry (PR #158, open) [2026-07-01]
+## 0·PREV — RH Certification v2: known special-location registry (**PR #158, MERGED**) [2026-07-01]
 
 Teaches the certification engine that operator-confirmed RH special locations are
 legitimate (were previously flagged "weird RH label"). Additive, read-only.
@@ -892,17 +956,45 @@ NAPCO export to produce the real reconciliation artifacts (part of Operation Gre
 
 ## 8. Next Actions (do these next, in order)
 
-**`EPIC-RH-GO-LIVE` Phase 1 — the foundation that gates Judy's credentials** (see
-`BACKLOG.md` for the full four-phase epic):
-1. **PR-S1 — tenant-isolation fixes** (H1 subscriber-import batch rows; L1/L2/L3
-   child-query tenant filters; M2 gate `/api/zoho/config`) per `RH_SECURITY_READINESS.md` §5.
-2. **PR-B1 — `INTERNAL_OPS` guard** on bare-`get_current_user` internal GETs, granted to
-   all six existing roles (behavior-preserving; no-regression test gate).
-3. **PR-B2 — four `CUSTOMER_*` roles** + customer perms in `permissions.json`; Bucket-B
-   customer guards (`CUSTOMER_EXPERIENCE_BOUNDARY.md` §A).
-4. Then **Phase 2** (RH data remediation: E911 42/42, device mapping 51/51, telemetry,
-   service units) in parallel via Sivmey + Eng; **Phase 3** (customer API) gated behind it;
-   **Phase 4** (Judy onboarding + launch) per `FEATURE_CUSTOMER_API_ROLLOUT.md`.
+> **Rewritten 2026-08-11.** The prior list was stale: it named **PR-B1**
+> (`INTERNAL_OPS` guard) and **PR-B2** (four `CUSTOMER_*` roles) as to-do, but
+> both landed via PRs #142–#148 — `permissions.json` contains `INTERNAL_OPS` and
+> `CUSTOMER_ADMIN/MANAGER/VIEWER/SUPPORT` today, and §0b describes the work.
+> **PR-S1 (tenant-isolation fixes) was NOT re-verified** in this pass and is
+> carried forward as unconfirmed.
+
+**Engine track — unblocked by PR #180, do this first:**
+1. **Merge PR #180** (Ops Center Phase 1.6 + the un-branched Alembic chain).
+2. **Durable lifecycle-transaction persistence** — a migration chained off `052`.
+   This was blocked on the migration fork and is now the highest-value unblocked
+   engine task. It is step 2 of 5 toward taking the typed T-Mobile callback rules
+   authoritative (see the typed-callback-shadow section above for the full order).
+
+**T-Mobile track — blocked on operator inputs, not on code:**
+3. Read-only PIT certification: **0 of 4 operations executed.** Needs a nominated
+   PIT subscriber in `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`, a known PIT
+   transaction id, and PIT credentials in the executing environment
+   (`is_configured` is false). Commands: `TMOBILE_READONLY_GO_LIVE_PLAN.md`.
+
+**RH go-live track (`EPIC-RH-GO-LIVE`; see `BACKLOG.md` for the four-phase epic):**
+4. **Verify PR-S1 tenant-isolation fixes** actually landed (H1 subscriber-import
+   batch rows; L1/L2/L3 child-query tenant filters; M2 gate `/api/zoho/config`)
+   per `RH_SECURITY_READINESS.md` §5 — confirm before treating Phase 1 as closed.
+5. **Phase 2** RH data remediation (E911 42/42, device mapping 51/51, telemetry,
+   service units) via Sivmey + Eng; **Phase 3** customer API gated behind it;
+   **Phase 4** Judy onboarding + launch per `FEATURE_CUSTOMER_API_ROLLOUT.md`.
+   The go-live gate is unchanged: fusion → sync queue → approve → enable the
+   registry-view flags → verify the RH Test dashboard → **only then** Judy's
+   invite. **Judy invite remains BLOCKED.**
+
+**Housekeeping:**
+6. Two stale open PRs need a decision: **#169** (gitleaks CI allowlist, open since
+   2026-07-16) and **#166** (draft PoP fix, superseded by the reference contract
+   in PR #170 — likely close).
+7. **15 untracked docs** sit in `docs/` uncommitted (`OPERATIONS_CENTER.md`,
+   `SUBSCRIBER_RESOLUTION.md`, `SUPPORT_CASE_SPINE.md`, the RH go-live set, …).
+   They are a separate design thread from PR #180 and were deliberately left
+   untracked; decide whether they land as a docs PR.
 
 ## 9. How to Resume
 
