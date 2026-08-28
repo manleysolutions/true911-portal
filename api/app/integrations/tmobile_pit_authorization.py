@@ -23,6 +23,12 @@ It does **not** weaken the global guard. ``require_live_sendable`` still refuses
 everything; this simply gives it one narrowly-matching key to check, and the key
 destroys itself on use. Nothing here can authorize a mutation: the allowlist
 below is read-only operations, and a grant for anything else raises.
+
+Eligibility is independent of certification maturity, in both directions. An
+operation that has never been sent live may be granted one controlled run; an
+operation already **live PIT certified** stays eligible for further controlled
+runs, and does *not* graduate to sending freely. Being PIT-certified records
+what has been proven, not what may now be done — see ``SendAuthorization``.
 """
 
 from __future__ import annotations
@@ -34,7 +40,10 @@ from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.integrations.tmobile_evidence import mask_tail
-from app.integrations.tmobile_operations import certification_blockers
+from app.integrations.tmobile_operations import (
+    certification_blockers,
+    declares_single_run_authorization,
+)
 
 #: Operations a single-run grant may ever cover. Read-only by construction —
 #: a lifecycle mutation must never be reachable through this path.
@@ -161,11 +170,21 @@ def grant_single_run(
             f"Environment is '{settings.TMOBILE_ENV}', not PIT. A single-run "
             "authorization may only be issued in PIT. Nothing was granted."
         )
+    # Two independent checks, deliberately not collapsed. The frozenset above
+    # is a hard floor that does not move; the registry check is the reviewed
+    # per-operation declaration. An operation must satisfy BOTH, so neither a
+    # registry edit nor a set edit can widen access on its own.
     if operation not in AUTHORIZABLE_OPERATIONS:
         raise AuthorizationError(
             f"'{operation}' may not be single-run authorized. Only read-only "
             f"operations qualify: {', '.join(sorted(AUTHORIZABLE_OPERATIONS))}. "
             "Lifecycle mutations are never reachable through this path."
+        )
+    if not declares_single_run_authorization(operation):
+        raise AuthorizationError(
+            f"'{operation}' does not declare SINGLE_RUN_ONLY send "
+            "authorization in the operation registry, so no controlled "
+            "certification grant may be issued for it. Nothing was granted."
         )
     if selector_type not in ALL_SELECTOR_TYPES:
         raise AuthorizationError(

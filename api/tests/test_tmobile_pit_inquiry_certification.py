@@ -246,10 +246,11 @@ class TestResponseShapes:
 
 
 class TestReadinessUnchanged:
-    def test_subscriber_inquiry_has_not_been_certified(self):
-        """No live run has happened, so nothing may claim otherwise."""
+    def test_subscriber_inquiry_is_certified_but_still_not_sendable(self):
+        """Certified live on 2026-08-28; authorization deliberately unmoved."""
         op = OPS.get_operation("subscriber_inquiry")
-        assert op.readiness is OPS.ReadinessState.MOCK_CERTIFIED
+        assert op.readiness is OPS.ReadinessState.PIT_TESTED
+        assert op.send_authorization is OPS.SendAuthorization.SINGLE_RUN_ONLY
         assert not op.is_sendable
 
     def test_activation_remains_the_sole_generally_sendable_operation(self):

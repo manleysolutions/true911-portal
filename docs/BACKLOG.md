@@ -39,19 +39,21 @@ contact. **The live run must happen where PIT credentials, the read-only
 allowlist entry, and `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` all exist** — a
 workstation without them is refused at the allowlist gate.
 
-## 🔷 DECISION NEEDED — should `PIT_TESTED` authorize an ungated send?
+## ✅ RESOLVED — certification maturity is not send authorization [2026-08-28]
 
-`subscriber_inquiry` ran live on 2026-08-28 and its `readiness` still reads
-`mock_certified`. Advancing it would make it **generally sendable**, because
-`LIVE_SENDABLE_READINESS = {PIT_TESTED, PRODUCTION_APPROVED}` — one exercised
-call would buy unlimited future ones.
+Readiness no longer authorizes anything. `SendAuthorization` is an explicit
+per-operation declaration; maturity can veto a send and can never grant one;
+`PRODUCTION` needs `PRODUCTION_APPROVED` and is still not a bypass; a
+certification blocker outranks both. Enforced at import and pinned by
+`test_tmobile_send_authorization_matrix.py` (63 tests).
 
-Suggested resolution: drop `PIT_TESTED` from `LIVE_SENDABLE_READINESS`, leaving
-`PRODUCTION_APPROVED` as the only self-authorizing state, and keep the single-run
-grant as the route to any PIT call. Keeps one taxonomy
-(`IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED → PRODUCTION_APPROVED`) and stops
-readiness from doubling as an authorization. Owner's call — see
+`subscriber_inquiry` is consequently promoted to `PIT_TESTED` on its real
+2026-08-28 evidence **and remains not generally sendable**. Detail:
 `TMOBILE_PIT_CERTIFICATION_20260828.md` §5.3.
+
+Follow-on, not urgent: nothing is `PRODUCTION_APPROVED` yet, so the `PRODUCTION`
+authorization tier is declared and tested but unused. Promoting anything to it
+is a separate decision with its own evidence bar.
 
 ## ⛔ BLOCKED ON A CARRIER ANSWER — QueryTransactionStatus [2026-08-28]
 
@@ -91,8 +93,9 @@ mutation; the single-run grant was consumed and cleared. Record:
 
 Still open from this step: reconcile the observed shape against
 `tests/fixtures/tmobile_subscriber_inquiry_shapes.json` (fabricated, and now
-*checkable* against a real response), and settle the readiness question above —
-the registry still reads `mock_certified`, deliberately.
+*checkable* against a real response). The readiness question is settled — the
+registry now reads `PIT_TESTED`, and the operation is still not generally
+sendable.
 
 If the operator host still holds the 2026-08-28 evidence bundle, settle the
 ledger from it rather than resending:

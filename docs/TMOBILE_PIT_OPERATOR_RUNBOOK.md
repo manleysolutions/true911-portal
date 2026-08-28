@@ -31,11 +31,26 @@
 >    unrelated `api/scripts` package that wins the import there. Every command
 >    below uses the path form.
 
-## 1. The rule
+## 1. The rules
 
 **Preview everything. Send nothing you have not previewed.** `preview` opens no
 network connection and runs the same gates a live send would, so it is a real
 rehearsal rather than a formality.
+
+**Certification maturity is not send authorization.** `operations` prints them
+as two separate columns because they are two separate questions:
+
+| Column | Question |
+|---|---|
+| MATURITY | how far has this been certified? |
+| GENERAL SEND | may it be transmitted with no explicit grant? |
+| 1-SHOT GRANT | may a controlled single-run authorization be issued? |
+
+`pit_tested` means **live PIT certified** — successfully exercised against the
+carrier PIT gateway with evidence retained. It does **not** mean production
+authorized, and it does **not** permit an unauthorized send. `subscriber_inquiry`
+is live PIT certified and is exactly as un-sendable as it was before. Advancing
+an operation's maturity never changes what you may send.
 
 ---
 
@@ -45,7 +60,7 @@ rehearsal rather than a formality.
 
 ```powershell
 cd api
-python ../scripts/tmobile_pit.py operations              # what is sendable, and what is blocked
+python ../scripts/tmobile_pit.py operations              # maturity vs authorization, side by side
 python ../scripts/tmobile_pit.py show suspend_subscriber # full record + what T-Mobile must answer
 python ../scripts/tmobile_pit.py allowlists              # configured test SIMs (masked)
 python ../scripts/tmobile_pit.py state --iccid <ICCID>   # state AND the evidence for it

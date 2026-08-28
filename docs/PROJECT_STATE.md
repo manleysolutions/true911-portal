@@ -114,12 +114,28 @@ a failed run, another subscriber's evidence, a truncated body, or a bundle with
 no exchange on the operation's exact wire path. This exists so that a stale local
 file is never a reason to resend anything.
 
-**Readiness deliberately not advanced.** `subscriber_inquiry` ran live and still
-reads `mock_certified`, because `PIT_TESTED` is a member of
-`LIVE_SENDABLE_READINESS` — advancing it would make the operation generally
-sendable and remove its single-run gate. Whether "exercised once in PIT" should
-authorize an ungated send is an owner decision, recorded in
-`TMOBILE_PIT_CERTIFICATION_20260828.md` §5.3, not made in passing.
+**Certification maturity is now separate from send authorization**, and
+`subscriber_inquiry` is `PIT_TESTED` **and still not generally sendable**.
+
+Readiness used to double as authorization (`LIVE_SENDABLE_READINESS =
+{PIT_TESTED, PRODUCTION_APPROVED}`), so honestly recording a successful
+*controlled, one-shot* PIT run would have converted the operation into one that
+could be sent freely — one certified call buying unlimited uncertified ones, as
+a side effect of bookkeeping rather than a decision.
+
+Two axes now. `ReadinessState` is maturity only, on the unchanged canonical
+ladder `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED → PRODUCTION_APPROVED`.
+`SendAuthorization` is an explicit per-operation declaration — `NONE`,
+`SINGLE_RUN_ONLY`, `OPERATOR_HARNESS_ONLY`, `PRODUCTION`. **Maturity can veto a
+send and can never grant one**; `PRODUCTION` additionally needs
+`PRODUCTION_APPROVED`, which is necessary for ordinary sendability and
+sufficient for nothing. A certification blocker outranks maturity and route
+alike. `_validate_authorization_policy()` enforces this at import, so a bad edit
+fails the process rather than a reviewer's attention.
+
+`activate_subscriber` keeps exactly the policy it had, now declared
+`OPERATOR_HARNESS_ONLY` instead of inferred — preserved, not broadened, and not
+reachable through the read-only grant path.
 
 **QueryNetwork / QuerySubscriberUsage previewed 2026-08-28**, every gate
 inspected, request body carrying the ICCID alone (usage takes no date range),
@@ -182,8 +198,9 @@ grant does not authorize a network query; a transaction-status grant binds to
 one exact transaction id. All grants are single-use and PIT-only, and none can
 cover a lifecycle mutation.
 
-Unchanged: activation is the sole live-sendable operation, all four mutations
-are blocked, and the callback shadow remains non-authoritative and off.
+Unchanged: activation is the sole generally sendable operation (operator
+harness only), all four mutations are blocked, and the callback shadow remains
+non-authoritative and off.
 
 Plan and exact commands: `TMOBILE_READONLY_GO_LIVE_PLAN.md`. Open carrier
 questions, drafted and **not sent**: `TMOBILE_CARRIER_QUESTIONS_OPEN.md`.

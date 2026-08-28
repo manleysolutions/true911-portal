@@ -118,22 +118,45 @@ from app.integrations.tmobile_taap import TMobileTAAPClient  # noqa: E402
 # ── Informational subcommands (never touch the network) ─────────────────────
 
 def cmd_operations(args: argparse.Namespace) -> int:
+    """Two independent columns, because they are two independent questions.
+
+    MATURITY is how far an operation has been certified. GENERAL SEND is
+    whether it may be transmitted with no explicit grant. Neither implies the
+    other, and reading one as the other is the mistake this table exists to
+    make impossible.
+    """
     print("T-MOBILE PIT OPERATION INVENTORY")
-    print("=" * 72)
-    print(f"{'OPERATION':<24}{'CLASS':<6}{'SENDABLE':<10}PROVENANCE")
-    print("-" * 72)
+    print("=" * 88)
+    print(f"{'OPERATION':<25}{'CL':<4}{'MATURITY':<17}"
+          f"{'GENERAL SEND':<14}{'1-SHOT GRANT':<14}PROVENANCE")
+    print("-" * 88)
     for op in OPERATIONS:
-        mark = "YES" if op.is_sendable else "BLOCKED"
-        print(f"{op.name:<24}{op.classification.value:<6}{mark:<10}"
+        general = "YES" if op.is_sendable else "no"
+        grant = "eligible" if op.is_single_run_certifiable else "—"
+        print(f"{op.name:<25}{op.classification.value:<4}"
+              f"{op.readiness.value:<17}{general:<14}{grant:<14}"
               f"{op.provenance.value}")
     print()
-    print(f"Sendable: {len(sendable_operations())} · "
-          f"Blocked: {len(blocked_operations())} of {len(OPERATIONS)}")
+    print(f"Generally sendable: {len(sendable_operations())} · "
+          f"Not generally sendable: {len(blocked_operations())} "
+          f"of {len(OPERATIONS)}")
     print()
     print("Class A=read-only  B=reversible  C=destructive  D=unknown")
-    print("A BLOCKED operation has no T-Mobile-supplied contract in this "
-          "repository.\nRun `show <operation>` for the exact questions T-Mobile "
-          "must answer.")
+    print()
+    print("CERTIFICATION MATURITY IS NOT SEND AUTHORIZATION.")
+    print("  MATURITY      how far this has been certified. 'pit_tested' means")
+    print("                LIVE PIT CERTIFIED — successfully exercised against")
+    print("                the carrier PIT gateway with evidence retained. It")
+    print("                does NOT mean production authorized, and it does NOT")
+    print("                permit an unauthorized send.")
+    print("  GENERAL SEND  may be transmitted with no explicit one-shot grant.")
+    print("                Every other gate still applies.")
+    print("  1-SHOT GRANT  eligible for an explicit, consumed, single-run PIT")
+    print("                certification authorization. Eligibility does not")
+    print("                change when maturity advances.")
+    print()
+    print("Run `show <operation>` for the full record and any open carrier "
+          "questions.")
     return 0
 
 
@@ -147,7 +170,15 @@ def cmd_show(args: argparse.Namespace) -> int:
         ("path source", op.path_source),
         ("classification", f"{op.classification.name} ({op.classification.value})"),
         ("provenance", op.provenance.value),
-        ("SENDABLE", "yes" if op.is_sendable else "NO — BLOCKED"),
+        ("maturity", f"{op.readiness.value}  (certification only — "
+                    f"never an authorization)"),
+        ("send authorization", op.send_authorization.value),
+        ("GENERAL LIVE SEND",
+         "yes — no grant needed (other gates still apply)" if op.is_sendable
+         else "NO"),
+        ("one-shot PIT grant",
+         "eligible" if op.is_single_run_certifiable
+         else "NOT eligible"),
         ("request schema", op.request_schema),
         ("response schema", op.response_schema),
         ("callback behavior", op.callback_behavior),

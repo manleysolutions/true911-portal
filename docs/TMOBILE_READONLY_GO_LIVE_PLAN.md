@@ -26,12 +26,17 @@ its own single-run PIT authorization. **One of the four has now been executed.**
 | PIT credentials in the executing environment | ✅ present |
 | A known PIT transaction id for QueryTransactionStatus | ❌ absent — **and not the blocker** |
 
-| # | Operation | Status |
-|---|---|---|
-| 1 | SubscriberInquiry | ✅ **executed 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
-| 2 | QueryNetwork | ⏳ **preview verified 2026-08-28**, live run pending |
-| 3 | QuerySubscriberUsage | ⏳ **preview verified 2026-08-28**, live run pending |
-| 4 | QueryTransactionStatus | ⛔ **not authorizable** — `transactionId` semantics unresolved |
+| # | Operation | Maturity | Status |
+|---|---|---|---|
+| 1 | SubscriberInquiry | **`PIT_TESTED`** | ✅ **live PIT certified 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
+| 2 | QueryNetwork | `MOCK_CERTIFIED` | ⏳ **preview verified 2026-08-28**, live run pending |
+| 3 | QuerySubscriberUsage | `MOCK_CERTIFIED` | ⏳ **preview verified 2026-08-28**, live run pending |
+| 4 | QueryTransactionStatus | `MOCK_CERTIFIED` | ⛔ **grant REFUSED** — `transactionId` semantics unresolved |
+
+**None of the four is generally live-sendable, including the certified one.**
+Each live run costs its own explicit one-shot grant, before and after
+certification alike. Being live PIT certified records what has been proven; it
+authorizes nothing.
 
 Step 4's blocker is no longer a missing input. Even given a transaction id we do
 not know which of the four identifiers our activation returned belongs in the
@@ -78,10 +83,11 @@ python ../scripts/tmobile_pit.py query-network --iccid <PIT_ICCID> `
 $env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"
 ```
 
-Each operation needs **its own** grant. An inquiry authorization does not
-authorize a network query; a network authorization does not authorize usage; a
-transaction-status authorization binds to one exact transaction id. Every grant
-is consumed on use.
+Each operation needs **its own** grant, every time — certification does not
+buy a standing permission. An inquiry authorization does not authorize a network
+query; a network authorization does not authorize usage; a transaction-status
+authorization binds to one exact transaction id and is currently refused
+outright. Every grant is consumed on use.
 
 **After each step:** capture the evidence bundle, confirm the response parsed,
 note any unknown fields, and reconcile against the fabricated fixture before

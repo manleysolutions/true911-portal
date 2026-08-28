@@ -14,24 +14,43 @@
 
 ## 1. Readiness
 
-| Operation | Implemented | Mock-certified | PIT-tested | Live-send | Risk | Unresolved blocker |
-|---|---|---|---|---|---|---|
-| Activate subscriber | Yes | Yes | **Yes** (07-21, 08-28) | **Allowed** | B reversible | — |
-| Subscriber inquiry | Yes | Yes | **Yes** (08-28) | Single-run grant | A read-only | — |
-| Query network | Yes | Yes | No | Single-run grant | A read-only | None — certification-ready, not yet run |
-| Query subscriber usage | Yes | Yes | No | Single-run grant | A read-only | None — certification-ready, not yet run |
-| Suspend subscriber | Yes | Yes | No | **Blocked** | B reversible | Not yet exercised in PIT |
-| Restore subscriber | Yes | Yes | No | **Blocked** | B reversible | Not yet exercised in PIT |
-| Change SIM | Yes | Yes | No | **Blocked** | **C destructive** | Replaced SIM ages out; no customer-facing inverse |
-| Deactivate subscriber | Yes | Yes | No | **Blocked** | **C destructive** | Treated as terminal; reactivation not implemented |
-| Query transaction status | Yes | Yes | No | **Not authorizable** | A read-only | **`transactionId` semantics unconfirmed — carrier answer required** |
+**Certification maturity is not send authorization.** The two columns below
+are independent, and neither implies the other. *Maturity* answers "how far has
+this been certified"; *general live send* answers "may we transmit it right
+now". Advancing maturity has no effect on authorization — that is enforced in
+code, not by convention.
 
-**Activation remains the only operation that is *generally* sendable.** The
-read-only family is reachable only through a single-run PIT authorization: one
-operation, one nominated subscriber, one request, consumed on use. Being
-certification-*ready* is not the same as being sendable, and neither is having
-been run once — `readiness` stays `mock_certified` for QueryNetwork and
-QuerySubscriberUsage until a live run justifies moving it.
+| Operation | Maturity | General live send | One-shot PIT grant | Live evidence | Risk | Unresolved blocker |
+|---|---|---|---|---|---|---|
+| Activate subscriber | `PIT_TESTED` | **Operator harness only** | not eligible | yes (07-21, 08-28) | B reversible | — |
+| Subscriber inquiry | **`PIT_TESTED`** | **NO** | eligible | **yes (08-28)** | A read-only | — |
+| Query network | `MOCK_CERTIFIED` | **NO** | eligible | no | A read-only | — |
+| Query subscriber usage | `MOCK_CERTIFIED` | **NO** | eligible | no | A read-only | — |
+| Suspend subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | B reversible | Not yet exercised in PIT |
+| Restore subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | B reversible | Not yet exercised in PIT |
+| Change SIM | `MOCK_CERTIFIED` | **NO** | not eligible | no | **C destructive** | Replaced SIM ages out; no customer-facing inverse |
+| Deactivate subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | **C destructive** | Treated as terminal; reactivation not implemented |
+| Query transaction status | `MOCK_CERTIFIED` | **NO** | **REFUSED** | no | A read-only | **`transactionId` semantics unconfirmed — carrier answer required** |
+
+Read the terms precisely:
+
+- **`PIT_TESTED` = live PIT certified.** Successfully exercised against the
+  carrier PIT gateway, with acceptable evidence retained. It does **not** mean
+  production authorized, and it does not permit an unauthorized send.
+- **Operator harness only** means the client boundary permits it, and every
+  harness gate still applies — allowlist tier, state machine, operator
+  confirmations, the live switch. It is **not** ordinary application-path
+  sendability, which would require `PRODUCTION_APPROVED`.
+- **Eligible for a one-shot PIT grant** means an explicit, consumed, single-run
+  certification authorization may be issued. It does **not** mean generally
+  live-sendable, and eligibility does not change when maturity advances.
+
+**Activation remains the only operation that is generally sendable**, and only
+through the operator harness. The read-only family is reachable only through a
+single-run PIT authorization: one operation, one nominated subscriber, one
+request, consumed on use. Being certification-*ready* is not the same as being
+sendable — and neither is having been certified. `subscriber_inquiry` is live
+PIT certified and remains just as un-sendable as it was the day before.
 
 **QueryTransactionStatus is now refused at the grant, not merely un-run.** An
 operation carrying an unresolved carrier question about *what to put on the
@@ -40,18 +59,38 @@ wire* is not certifiable even once (`Operation.certification_blockers`): a wrong
 transaction, so the run could not be interpreted either way. See
 `TMOBILE_CARRIER_QUESTIONS_OPEN.md` §1.
 
-### 1b. Why an exercised operation still reads `mock_certified`
+### 1b. Certification maturity is not send authorization
 
-`subscriber_inquiry` was sent live on 2026-08-28 and succeeded. Its `readiness`
-was deliberately **not** advanced, because `PIT_TESTED` is currently a member of
-`LIVE_SENDABLE_READINESS` — advancing it would make the operation generally
-sendable and silently remove its single-run gate. One exercised call would buy
-unlimited future calls.
+Until 2026-08-28 the readiness state doubled as live-send authorization:
 
-The ladder stays `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED →
-PRODUCTION_APPROVED`; there is no second taxonomy. What needs an owner's
-decision is whether `PIT_TESTED` should authorize an ungated send at all. See
-`TMOBILE_PIT_CERTIFICATION_20260828.md` §5.3.
+```python
+LIVE_SENDABLE_READINESS = {PIT_TESTED, PRODUCTION_APPROVED}
+is_sendable = provenance and classification and readiness in LIVE_SENDABLE_READINESS
+```
+
+Recording the truth about a successful controlled PIT run — advancing
+`subscriber_inquiry` to `PIT_TESTED` — would therefore have silently converted
+it from "needs an explicit one-shot key" into "send freely". One certified call
+would have bought unlimited uncertified ones, and nobody would have had to
+decide that; it would have happened as a side effect of honest bookkeeping.
+
+The two are now separate axes:
+
+- **`ReadinessState`** — maturity only. The canonical ladder is
+  `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED → PRODUCTION_APPROVED`. There is
+  exactly one taxonomy; the remaining enum members are finer waypoints on it.
+- **`SendAuthorization`** — an explicit, reviewed, per-operation declaration:
+  `NONE` · `SINGLE_RUN_ONLY` · `OPERATOR_HARNESS_ONLY` · `PRODUCTION`.
+
+**Maturity can veto a send. It can never grant one.** `is_sendable` requires an
+explicit authorization first; maturity is then consulted only to shut things
+down, and `PRODUCTION` additionally requires `PRODUCTION_APPROVED` — necessary
+for ordinary sendability, sufficient for nothing. A certification blocker
+outranks both and shuts the operation at any maturity, by any route.
+
+Enforced at import by `_validate_authorization_policy()`, so a future edit fails
+the process rather than a reviewer's attention, and pinned by
+`test_tmobile_send_authorization_matrix.py`.
 
 ## 1a. Carrier-state authority (2026-08-28)
 
@@ -70,6 +109,14 @@ A class-C observation may be applied live, or replayed offline from its own
 evidence bundle via `tmobile_pit.py reconcile`. Either route runs the same
 reconciler; the ledger records which one it was in `carrier_verified_source`.
 Replaying an activation bundle is refused — that is class B.
+
+Three things that are **not** interchangeable, and are never collapsed:
+
+| | |
+|---|---|
+| Live carrier attestation | the carrier answered us just now |
+| Replay of captured carrier evidence | the carrier answered us before, and we kept the response |
+| Manual operator assertion | **not accepted** — a status word cannot be typed in |
 
 A synchronous acceptance is still not a completion. What changed is that an
 **independent read now settles the line without a callback**: a read is not a

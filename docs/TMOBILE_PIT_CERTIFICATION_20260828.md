@@ -222,14 +222,18 @@ so the fix cannot silently drift back.
 
 ## 5. Certification status after this run
 
-| Operation | Class | Live status |
-|---|---|---|
-| `activate_subscriber` | B reversible | ✅ PIT-tested (2026-07-21, 2026-08-28) |
-| `subscriber_inquiry` | A read-only | ✅ PIT-tested (2026-08-28) |
-| `query_network` | A read-only | ⏳ certification-ready — see §5.1 |
-| `query_usage` | A read-only | ⏳ certification-ready — see §5.1 |
-| `query_transaction_status` | A read-only | ⛔ blocked on a carrier answer — §5.2 |
-| `suspend` / `restore` / `change_sim` / `deactivate` | B / C | ⛔ blocked, unchanged |
+| Operation | Class | Maturity | General live send | One-shot grant |
+|---|---|---|---|---|
+| `activate_subscriber` | B | `PIT_TESTED` | operator harness only | not eligible |
+| `subscriber_inquiry` | A | **`PIT_TESTED`** | **NO** | eligible |
+| `query_network` | A | `MOCK_CERTIFIED` | **NO** | eligible — §5.1 |
+| `query_usage` | A | `MOCK_CERTIFIED` | **NO** | eligible — §5.1 |
+| `query_transaction_status` | A | `MOCK_CERTIFIED` | **NO** | **REFUSED** — §5.2 |
+| `suspend` / `restore` / `change_sim` / `deactivate` | B / C | `MOCK_CERTIFIED` | **NO** | not eligible |
+
+`PIT_TESTED` here means **live PIT certified** — exercised against the carrier
+PIT gateway with evidence retained. It does not mean production authorized, and
+it does not permit an unauthorized send. See §5.3.
 
 ### 5.1 QueryNetwork and QuerySubscriberUsage — ready, still gated
 
@@ -270,29 +274,67 @@ Neither has been sent. Preview was audited with a `sys.addaudithook` on
 `socket.connect` / `socket.getaddrinfo`: the only event observed was asyncio's
 own loopback self-pipe, and no name resolution occurred at all.
 
-### 5.3 Readiness taxonomy — a decision, not an oversight
+### 5.3 Certification maturity is not send authorization — RESOLVED
 
-`subscriber_inquiry` was exercised live on 2026-08-28 and its `readiness` still
-reads `mock_certified`. That is deliberate and needs an owner's decision, because
-of how the taxonomy is currently wired:
+`subscriber_inquiry` is now `PIT_TESTED` **and still not generally sendable.**
+Getting to a state where recording that truth was safe required separating two
+things the code had conflated.
+
+**The hazard.** Readiness doubled as authorization:
 
 ```
 LIVE_SENDABLE_READINESS = {PIT_TESTED, PRODUCTION_APPROVED}
-is_sendable = provenance OK and classification OK and readiness in LIVE_SENDABLE_READINESS
+is_sendable = provenance and classification and readiness in LIVE_SENDABLE_READINESS
 ```
 
-Advancing it to `pit_tested` would therefore make it **generally live-sendable**
-and silently remove its single-run gate — one exercised call would buy unlimited
-future calls. That is almost certainly not what "we ran it once in PIT" should
-mean.
+So honestly recording a successful **controlled, one-shot** PIT run would have
+converted the operation into one that could be sent freely. One certified call
+buying unlimited uncertified ones — and nobody would have decided it, it would
+have been a side effect of bookkeeping.
 
-The canonical ladder is `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED →
-PRODUCTION_APPROVED`, and it should stay the only one. The suggested fix is to
-stop treating `PIT_TESTED` as self-authorizing — drop it from
-`LIVE_SENDABLE_READINESS`, leaving `PRODUCTION_APPROVED` as the only state that
-authorizes an ungated send, and keep the single-run grant as the route to a PIT
-call at any readiness. That is a policy change with its own review, so it is
-recorded here rather than made in passing.
+**The resolution.** Two independent axes:
+
+- `ReadinessState` — **maturity only**. Canonical ladder
+  `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED → PRODUCTION_APPROVED`, unchanged
+  and still the only one.
+- `SendAuthorization` — an **explicit, reviewed, per-operation declaration**:
+  `NONE` (no route at all) · `SINGLE_RUN_ONLY` (only via a consumed one-shot
+  grant) · `OPERATOR_HARNESS_ONLY` (harness may send; every harness gate still
+  applies) · `PRODUCTION` (ordinary application-path sendability).
+
+`is_sendable` now requires an explicit authorization **first**. Maturity is
+consulted only to veto, never to grant, and `PRODUCTION` additionally requires
+`PRODUCTION_APPROVED` — necessary for ordinary sendability and sufficient for
+nothing: provenance, classification, and certification blockers all still bite.
+A certification blocker outranks maturity and route alike.
+
+`_validate_authorization_policy()` runs at import and refuses to load a registry
+that violates the policy — `PRODUCTION` below the top of the ladder, a
+single-run route on a non-read-only operation, or any authorization on a
+destructive one. A future edit fails the process, not a reviewer's attention.
+
+**What did not change.** `activate_subscriber` keeps exactly the policy it had;
+it is now *declared* `OPERATOR_HARNESS_ONLY` rather than inferred from maturity.
+It was never affected by the hazard — it was marked sendable by a reviewed
+decision on live evidence, not silently promoted. Its authorization was
+preserved, not broadened, and it is deliberately **not** reachable through the
+read-only grant path.
+
+### 5.4 What replaced the old refusal message
+
+The client boundary now names the gate that actually stopped the request, since
+a reconciled operation can be shut by its authorization or by an open carrier
+question and an operator told the wrong reason fixes the wrong thing:
+
+```
+subscriber_inquiry: BLOCKED — nothing was sent.
+  blocking gate    : send authorization
+  readiness state  : pit_tested
+  detail           : 'subscriber_inquiry' is authorized ONLY through an explicit
+                     one-shot PIT grant (maturity: pit_tested). It is not
+                     generally sendable and advancing its maturity will not make
+                     it so.
+```
 
 ### 5.2 QueryTransactionStatus — blocked, and now enforced
 

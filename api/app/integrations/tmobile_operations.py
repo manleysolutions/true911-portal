@@ -65,11 +65,26 @@ class Provenance(str, Enum):
 
 
 class ReadinessState(str, Enum):
-    """How far an operation has progressed toward being safe to send live.
+    """**Certification maturity only.** How far this operation has been proven.
 
-    Separate from :class:`Provenance` on purpose: knowing the contract is not
-    the same as having exercised it. An operation can be fully documented and
-    still be nowhere near authorized for a live subscriber.
+    This answers one question — *how far has this operation been technically
+    certified?* — and deliberately does NOT answer *may we send it right now?*
+    That second question is :class:`SendAuthorization`, and the two are kept
+    apart because conflating them is a live-fire hazard: an operation promoted
+    on the strength of one successful controlled PIT run would otherwise be
+    silently converted from "needs an explicit one-shot key" into "send freely".
+    Certification maturity is not send authorization.
+
+    The canonical ladder is::
+
+        IMPLEMENTED -> MOCK_CERTIFIED -> PIT_TESTED -> PRODUCTION_APPROVED
+
+    The remaining members are finer-grained waypoints on that same ladder, not
+    a competing one. There is exactly one maturity taxonomy.
+
+    ``PIT_TESTED`` means: *we have successfully exercised this operation against
+    the live carrier PIT environment and retained acceptable evidence.* It does
+    not mean future live calls may be sent without explicit authorization.
     """
 
     DOCUMENTED_UNREVIEWED = "documented_unreviewed"
@@ -89,10 +104,46 @@ class ReadinessState(str, Enum):
 #: operator's private evidence store.
 CONTRACT_EVIDENCE_REF = "TMO-REST-RECON-001"
 
-#: Readiness states from which a live send may ever be considered. Being
-#: documented is explicitly NOT enough.
-LIVE_SENDABLE_READINESS = frozenset({ReadinessState.PIT_TESTED,
-                                     ReadinessState.PRODUCTION_APPROVED})
+class SendAuthorization(str, Enum):
+    """**Authorization to transmit.** Orthogonal to certification maturity.
+
+    Every value here is an explicit, reviewed, per-operation declaration. None
+    of them is ever derived from :class:`ReadinessState`, and advancing an
+    operation's maturity can never change its authorization — that is the whole
+    point of the split.
+    """
+
+    #: No live send by any route. Not even a single-run certification grant.
+    NONE = "none"
+    #: Reachable ONLY through an explicit, consumed, one-shot PIT grant — one
+    #: operation, one nominated target, one request. Never freely sendable.
+    SINGLE_RUN_ONLY = "single_run_only"
+    #: Sendable through the operator harness, where every harness gate still
+    #: applies: allowlist tier, state machine, operator confirmations, the live
+    #: switch. NOT ordinary application-path sendability.
+    OPERATOR_HARNESS_ONLY = "operator_harness_only"
+    #: Ordinary, general live-sendability — the application path, not just the
+    #: harness. Requires PRODUCTION_APPROVED maturity, enforced below.
+    PRODUCTION = "production"
+
+
+#: Authorizations under which the client boundary lets a request through with
+#: no single-run grant. Both still sit behind every other control.
+_BOUNDARY_PASSING_AUTHORIZATIONS = frozenset({
+    SendAuthorization.OPERATOR_HARNESS_ONLY, SendAuthorization.PRODUCTION,
+})
+
+#: Maturity states that do not VETO a send. Membership grants nothing on its
+#: own — an operation still needs an explicit SendAuthorization. This exists so
+#: that maturity can only ever subtract permission, never add it.
+READINESS_NOT_VETOING_SEND = frozenset({ReadinessState.PIT_TESTED,
+                                        ReadinessState.PRODUCTION_APPROVED})
+
+#: Ordinary/general sendability additionally requires the top of the ladder.
+#: PRODUCTION_APPROVED is the only maturity state that may satisfy the readiness
+#: component of general live-sendability — and even then it is necessary, never
+#: sufficient.
+READINESS_FOR_PRODUCTION_SEND = frozenset({ReadinessState.PRODUCTION_APPROVED})
 
 
 # Provenance strong enough to authorize a live request.
@@ -142,24 +193,64 @@ class Operation:
     #: way. ``grant_single_run`` refuses while this is non-empty.
     certification_blockers: tuple[str, ...] = field(default_factory=tuple)
 
-    #: How far this operation has progressed toward live authorization.
+    #: How far this operation has been CERTIFIED. Maturity only — it never
+    #: authorizes anything. See ``send_authorization``.
     readiness: ReadinessState = ReadinessState.BLOCKED
+
+    #: Whether, and by what route, this operation may be transmitted. An
+    #: explicit reviewed declaration, never inferred from ``readiness``.
+    send_authorization: SendAuthorization = SendAuthorization.NONE
 
     @property
     def is_sendable(self) -> bool:
-        """True only when provenance, risk class, AND readiness all allow it.
+        """True only for a live send that needs NO single-run grant.
 
-        The readiness term is the one that matters most here. Obtaining the
-        vendor's contract answered *what* to send; it says nothing about whether
-        this client actually sends it correctly, so knowing the contract must
-        never by itself unlock a live subscriber call. Every operation whose
-        contract was reconciled from documentation therefore stays blocked until
-        it has been exercised in PIT under the normal gates.
+        Five independent terms, and every one of them can veto:
+
+        1. an explicit ``send_authorization`` that passes the client boundary —
+           maturity alone never gets an operation here;
+        2. maturity that does not veto (and, for ``PRODUCTION``, the top of the
+           ladder — ``PRODUCTION_APPROVED`` is necessary for ordinary
+           sendability, never sufficient for anything);
+        3. provenance strong enough that we know what to send;
+        4. a risk class whose semantics are established;
+        5. no unresolved certification blocker — a blocker outranks maturity,
+           so even a PRODUCTION_APPROVED operation with an open carrier question
+           about what to put on the wire stays shut.
+
+        A False here is not the end of the story: a read-only operation may
+        still be reachable through an explicit one-shot PIT grant. That is a
+        different question — see ``is_single_run_certifiable``.
+        """
+        if self.send_authorization not in _BOUNDARY_PASSING_AUTHORIZATIONS:
+            return False
+        required = (
+            READINESS_FOR_PRODUCTION_SEND
+            if self.send_authorization is SendAuthorization.PRODUCTION
+            else READINESS_NOT_VETOING_SEND
+        )
+        return (
+            self.readiness in required
+            and self.provenance in SENDABLE_PROVENANCE
+            and self.classification is not Classification.UNKNOWN
+            and not self.certification_blockers
+        )
+
+    @property
+    def is_single_run_certifiable(self) -> bool:
+        """True when a controlled one-shot PIT grant may ever be issued.
+
+        Independent of maturity by design: an operation stays eligible for
+        further controlled testing after it has been PIT-tested, and is eligible
+        before it ever has been. What disqualifies it is an unresolved carrier
+        question about what to put on the wire, or an authorization that does
+        not permit the route at all.
         """
         return (
-            self.provenance in SENDABLE_PROVENANCE
-            and self.classification is not Classification.UNKNOWN
-            and self.readiness in LIVE_SENDABLE_READINESS
+            self.send_authorization is SendAuthorization.SINGLE_RUN_ONLY
+            and self.classification is Classification.READ_ONLY
+            and self.provenance in SENDABLE_PROVENANCE
+            and not self.certification_blockers
         )
 
     @property
@@ -264,9 +355,16 @@ OPERATIONS: tuple[Operation, ...] = (
         ),
         implementation_status="Implemented and proven live.",
         test_status=(
-            "Mock-tested (payload golden + 201 parsing) and LIVE-tested once."
+            "Mock-tested (payload golden + 201 parsing) and LIVE-tested twice "
+            "(2026-07-21, 2026-08-28)."
         ),
         readiness=ReadinessState.PIT_TESTED,
+        # Unchanged policy, now DECLARED rather than inferred from maturity.
+        # The operator harness may send it; every harness gate still applies —
+        # allowlist tier, state machine, confirmations, the live switch. This is
+        # not ordinary application-path sendability, which would need
+        # PRODUCTION_APPROVED.
+        send_authorization=SendAuthorization.OPERATOR_HARNESS_ONLY,
     ),
 
     # ── Read-family: contract reconciled; live send still blocked ──────────
@@ -287,10 +385,14 @@ OPERATIONS: tuple[Operation, ...] = (
         synchronous="Synchronous.",
         reversibility="N/A - read-only.",
         prerequisite_state="Must have been previously provisioned; may be in any state, but a SIM still inactive in inventory is not queryable.",
-        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        pit_restrictions="Live PIT certified. NOT generally sendable: reachable only through an explicit one-shot PIT grant.",
         implementation_status="Implemented. Corrected: exact path, and the request no longer demands an account id - that requirement was never part of the contract.",
-        test_status="Mock-certified against the reconciled contract. Never sent live.",
-        readiness=ReadinessState.MOCK_CERTIFIED,
+        test_status="Mock-certified, then LIVE PIT certified 2026-08-28: one request, HTTP 200, status SUCCESS, result 100, subscriberStatus Active. No retry, no polling, no mutation. Evidence in the operator's private store; summary in TMOBILE_PIT_CERTIFICATION_20260828.md.",
+        # Maturity advanced on real carrier evidence. Authorization did NOT
+        # move with it, and that is the point: PIT_TESTED records what we have
+        # proven, not what we may now do.
+        readiness=ReadinessState.PIT_TESTED,
+        send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
         blocking_questions=(
             "Confirm whether an inactive-in-inventory SIM returns an error code or an empty result.",
         ),
@@ -314,8 +416,9 @@ OPERATIONS: tuple[Operation, ...] = (
         prerequisite_state="Subscriber must have been previously activated.",
         pit_restrictions="Live send blocked; not yet exercised in PIT.",
         implementation_status="Implemented. Corrected: exact path, and iccid/imsi are now accepted as identifiers alongside msisdn.",
-        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        test_status="Mock-certified against the reconciled contract. Gates certified offline and previewed 2026-08-28. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
         blocking_questions=(
         ),
     ),
@@ -338,8 +441,9 @@ OPERATIONS: tuple[Operation, ...] = (
         prerequisite_state="Previously activated and provisioned with voice, messaging, wallet or data.",
         pit_restrictions="Live send blocked; not yet exercised in PIT.",
         implementation_status="Implemented. Corrected: exact path, identifier choice, and removal of the start/end date fields, which are not part of the contract.",
-        test_status="Mock-certified against the reconciled contract. Never sent live.",
+        test_status="Mock-certified against the reconciled contract. Gates certified offline and previewed 2026-08-28. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
         blocking_questions=(
         ),
     ),
@@ -366,6 +470,8 @@ OPERATIONS: tuple[Operation, ...] = (
         implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the body now sends the required iccid and drops the undocumented account id.",
         test_status="Mock-certified against the reconciled contract. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        # A mutation is never reachable through a single-run grant.
+        send_authorization=SendAuthorization.NONE,
         blocking_questions=(
         ),
     ),
@@ -390,6 +496,7 @@ OPERATIONS: tuple[Operation, ...] = (
         implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the required iccid added.",
         test_status="Mock-certified against the reconciled contract. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        send_authorization=SendAuthorization.NONE,
         blocking_questions=(
         ),
     ),
@@ -414,6 +521,7 @@ OPERATIONS: tuple[Operation, ...] = (
         implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the body now distinguishes the current iccid from newIccid - the previous code sent the replacement SIM in the iccid field.",
         test_status="Mock-certified against the reconciled contract. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        send_authorization=SendAuthorization.NONE,
         blocking_questions=(
             "Confirm whether a replaced ICCID can ever be re-attached, and by which operation.",
         ),
@@ -439,6 +547,7 @@ OPERATIONS: tuple[Operation, ...] = (
         implementation_status="Implemented. Corrected: exact path, HTTP method (was POST), and the required iccid added.",
         test_status="Mock-certified against the reconciled contract. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        send_authorization=SendAuthorization.NONE,
         blocking_questions=(
             "Confirm whether reactivation restores the original MSISDN and plans.",
         ),
@@ -466,6 +575,11 @@ OPERATIONS: tuple[Operation, ...] = (
         implementation_status="Newly implemented from the reconciled contract. This is the vendor-recommended way to inspect a delayed provisioning result instead of resending the request.",
         test_status="Mock-certified against the reconciled contract. Never sent live.",
         readiness=ReadinessState.MOCK_CERTIFIED,
+        # Nominally the same route as the other reads. It is nonetheless
+        # ungrantable, because certification_blockers below outranks the route:
+        # a blocker shuts an operation at ANY maturity and under ANY
+        # authorization.
+        send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
         blocking_questions=(
             "Confirm whether the transactionId to submit is the value this client already sends as its per-request partner transaction id, or a different vendor-assigned identifier.",
         ),
@@ -484,6 +598,39 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
 )
 
+def _validate_authorization_policy() -> None:
+    """Enforce the maturity/authorization split at import, not by review.
+
+    These are the rules a future edit could otherwise quietly break, so they
+    fail the process rather than a code reviewer's attention.
+    """
+    for op in OPERATIONS:
+        if (op.send_authorization is SendAuthorization.PRODUCTION
+                and op.readiness not in READINESS_FOR_PRODUCTION_SEND):
+            raise AssertionError(
+                f"{op.name}: PRODUCTION send authorization requires "
+                f"PRODUCTION_APPROVED maturity, not {op.readiness.value}. "
+                "Ordinary live-sendability is the one thing the top of the "
+                "ladder is necessary for."
+            )
+        if (op.send_authorization is SendAuthorization.SINGLE_RUN_ONLY
+                and op.classification is not Classification.READ_ONLY):
+            raise AssertionError(
+                f"{op.name}: a single-run certification grant covers read-only "
+                f"operations only, not {op.classification.name}. A lifecycle "
+                "mutation must never be reachable through that path."
+            )
+        if (op.classification is Classification.DESTRUCTIVE
+                and op.send_authorization is not SendAuthorization.NONE):
+            raise AssertionError(
+                f"{op.name}: a destructive operation may not carry "
+                f"{op.send_authorization.value} authorization."
+            )
+
+
+_validate_authorization_policy()
+
+
 _BY_NAME = {op.name: op for op in OPERATIONS}
 
 
@@ -498,9 +645,39 @@ def get_operation(name: str) -> Operation:
         ) from None
 
 
+def single_run_certifiable_operations() -> tuple[Operation, ...]:
+    """Operations a controlled one-shot PIT grant may ever cover."""
+    return tuple(op for op in OPERATIONS if op.is_single_run_certifiable)
+
+
 def certification_blockers(name: str) -> tuple[str, ...]:
     """Unanswered carrier questions that forbid even a single-run live test."""
     return get_operation(name).certification_blockers
+
+
+def is_single_run_certifiable(name: str) -> bool:
+    """Whether a controlled one-shot PIT grant may ever be issued for this."""
+    try:
+        return get_operation(name).is_single_run_certifiable
+    except KeyError:
+        return False
+
+
+def declares_single_run_authorization(name: str) -> bool:
+    """Whether the registry declares the single-run ROUTE for this operation.
+
+    Narrower than :func:`is_single_run_certifiable` on purpose. This asks only
+    "is that route declared at all", so that an operation which declares the
+    route but is shut by an open carrier question is refused by the blocker
+    check — with the blocker's own message — rather than by this one. An
+    operator told the wrong reason fixes the wrong thing.
+    """
+    try:
+        op = get_operation(name)
+    except KeyError:
+        return False
+    return (op.send_authorization is SendAuthorization.SINGLE_RUN_ONLY
+            and op.classification is Classification.READ_ONLY)
 
 
 def sendable_operations() -> tuple[Operation, ...]:
@@ -606,20 +783,54 @@ def require_live_sendable(name: str) -> None:
     if granted is not None:
         return
 
+    contract = (
+        f"reconciled against authorized vendor documentation "
+        f"({CONTRACT_EVIDENCE_REF})"
+    )
+    detail = (
+        "Knowing the contract is not authorization to send it, and neither is "
+        "having certified it. Certification maturity and send authorization are "
+        "separate."
+    )
     if op.provenance is Provenance.DERIVED_UNCONFIRMED:
         gate, contract = "provenance", "no reviewed vendor contract"
     elif op.classification is Classification.UNKNOWN:
         gate, contract = "risk classification", "semantics not established"
+    elif op.certification_blockers:
+        gate = "certification blocker"
+        contract = (
+            f"{len(op.certification_blockers)} unanswered carrier question(s) "
+            "about what to put on the wire"
+        )
+        detail = (
+            "A certification blocker outranks maturity and authorization "
+            "alike: it shuts the operation at any readiness state and by any "
+            "route, including a single-run grant."
+        )
+    elif op.send_authorization is SendAuthorization.SINGLE_RUN_ONLY:
+        gate = "send authorization"
+        detail = (
+            f"'{op.name}' is authorized ONLY through an explicit one-shot PIT "
+            f"grant (maturity: {op.readiness.value}). It is not generally "
+            "sendable and advancing its maturity will not make it so. Issue a "
+            "grant deliberately, or run it from the operator harness."
+        )
+    elif op.send_authorization is SendAuthorization.NONE:
+        gate = "send authorization"
+        detail = (
+            f"'{op.name}' has NO live send authorization by any route — not "
+            "even a single-run certification grant. This is a deliberate "
+            "declaration, not a missing certification."
+        )
     else:
         gate = "readiness"
-        contract = (
-            f"reconciled against authorized vendor documentation "
-            f"({CONTRACT_EVIDENCE_REF})"
+        detail = (
+            f"'{op.name}' is authorized as {op.send_authorization.value}, but "
+            f"its maturity ({op.readiness.value}) vetoes the send. Maturity can "
+            "only ever subtract permission here; it never grants any."
         )
     raise TMobileOperationBlockedError(
-        op.name, gate, op.readiness.value, contract,
-        "Knowing the contract is not authorization to send it. This operation "
-        "must be exercised in PIT under the operator gates before live use.",
+        op.name, gate, op.readiness.value, contract, detail,
     )
 
 
