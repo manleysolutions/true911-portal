@@ -32,8 +32,26 @@ $env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"
 
 One at a time, reconciling before advancing. Afterwards check
 `state --iccid <ICCID>`: a read carrying a `subscriberStatus` also reconciles
-the ledger, and a `CONFLICT` there is a stop condition. Then, and only then,
-advance `readiness` to `pit_tested` in a reviewed change.
+the ledger, and a `CONFLICT` there is a stop condition.
+
+Both were previewed on 2026-08-28 with every gate inspected and no network
+contact. **The live run must happen where PIT credentials, the read-only
+allowlist entry, and `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` all exist** — a
+workstation without them is refused at the allowlist gate.
+
+## 🔷 DECISION NEEDED — should `PIT_TESTED` authorize an ungated send?
+
+`subscriber_inquiry` ran live on 2026-08-28 and its `readiness` still reads
+`mock_certified`. Advancing it would make it **generally sendable**, because
+`LIVE_SENDABLE_READINESS = {PIT_TESTED, PRODUCTION_APPROVED}` — one exercised
+call would buy unlimited future ones.
+
+Suggested resolution: drop `PIT_TESTED` from `LIVE_SENDABLE_READINESS`, leaving
+`PRODUCTION_APPROVED` as the only self-authorizing state, and keep the single-run
+grant as the route to any PIT call. Keeps one taxonomy
+(`IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED → PRODUCTION_APPROVED`) and stops
+readiness from doubling as an authorization. Owner's call — see
+`TMOBILE_PIT_CERTIFICATION_20260828.md` §5.3.
 
 ## ⛔ BLOCKED ON A CARRIER ANSWER — QueryTransactionStatus [2026-08-28]
 
@@ -73,8 +91,15 @@ mutation; the single-run grant was consumed and cleared. Record:
 
 Still open from this step: reconcile the observed shape against
 `tests/fixtures/tmobile_subscriber_inquiry_shapes.json` (fabricated, and now
-*checkable* against a real response), and advance `readiness` to `pit_tested`
-in a reviewed change — the registry still reads `mock_certified`.
+*checkable* against a real response), and settle the readiness question above —
+the registry still reads `mock_certified`, deliberately.
+
+If the operator host still holds the 2026-08-28 evidence bundle, settle the
+ledger from it rather than resending:
+`python ../scripts/tmobile_pit.py reconcile --iccid <ICCID> --evidence <bundle>.json`.
+If the bundle is gone (ephemeral `/tmp`), leave the ledger alone and take the
+carrier state from the certification record — **do not resend an activation or
+an inquiry to rebuild a local file.**
 
 **After that:** QueryNetwork and QuerySubscriberUsage, using the same single-run
 mechanism — see the NEXT item above.

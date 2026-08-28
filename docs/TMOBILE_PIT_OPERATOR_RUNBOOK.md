@@ -51,6 +51,29 @@ python ../scripts/tmobile_pit.py allowlists              # configured test SIMs 
 python ../scripts/tmobile_pit.py state --iccid <ICCID>   # state AND the evidence for it
 ```
 
+### Reconcile — settle the ledger from a read that already happened
+
+```powershell
+python ../scripts/tmobile_pit.py reconcile --iccid <ICCID> `
+    --evidence <path-to-evidence-bundle>.json --operator <you>
+```
+
+Opens no socket. Use it when the ledger and the carrier evidence were recorded
+separately — for example when a read was captured by a build of this harness
+that had no way to reconcile it. **Re-running a live inquiry purely to rebuild a
+local file spends a real carrier request to learn something already observed and
+written down; this is how you avoid that.**
+
+It is a replay, not an attestation: it parses the carrier's own recorded
+response out of the bundle and runs it through the same reconciler a live run
+uses. You cannot type a status in. It refuses:
+
+- an activation bundle (that is class-B evidence and settles nothing);
+- a bundle recording a request that did not succeed;
+- a bundle about a different subscriber;
+- a truncated or unparseable response body;
+- a bundle with no exchange matching the operation's exact wire path.
+
 ### Preview — rehearse without sending
 
 ```powershell

@@ -359,6 +359,163 @@ def _envelope(body: dict, operation: str):
         http_status=200)
 
 
+# ── 5b. Replaying a read that already happened ──────────────────────────────
+
+def _bundle(operation, path, body, *, ok=True, selector_masked=None,
+            method="POST"):
+    """An evidence bundle shaped exactly as ``write_evidence`` produces one."""
+    return {
+        "schema": "true911.tmobile.pit-evidence/1",
+        "operation": operation,
+        "ok": ok,
+        "generated_at_utc": "2026-08-28T17:18:33.000000Z",
+        "selector_type": "iccid",
+        "selector_masked": selector_masked or ("*" * 15 + ICCID[-4:]),
+        "exchanges": [
+            # The OAuth exchange a real bundle also carries — must be skipped.
+            {"request": {"method": "POST", "path": "/oauth2/v1/tokens"},
+             "response": {"status_code": 200, "body": '{"access_token":"x"}'}},
+            {"request": {"method": method, "path": path},
+             "response": {"status_code": 200, "body": json.dumps(body)}},
+        ],
+    }
+
+
+PROFILE_ACTIVE = {
+    "status": "SUCCESS", "iccid": ICCID, "msisdn": MSISDN,
+    "subscriberStatus": "Active",
+    "result": [{"result": "100", "status": "SUCCESS"}],
+}
+
+
+class TestOfflineReplay:
+    """Rebuilding a local file must never cost a real carrier request."""
+
+    def _write(self, tmp_path, doc, name="bundle.json"):
+        path = tmp_path / name
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return str(path)
+
+    def _args(self, evidence):
+        return argparse.Namespace(
+            command="reconcile", iccid=ICCID, evidence=evidence,
+            operator="reviewer")
+
+    def test_a_recorded_inquiry_settles_the_ledger_with_no_network(
+        self, cli, pit_env, monkeypatch
+    ):
+        """respx is not even installed here — any socket would be a real one."""
+        evidence = self._write(pit_env, _bundle(
+            "subscriber_inquiry", PROFILE_PATH, PROFILE_ACTIVE))
+
+        code = cli.cmd_reconcile(self._args(evidence))
+
+        assert code == 0
+        doc = cli._load_ledger(ICCID)
+        assert doc["state"] == LifecycleState.ACTIVE.value
+        assert doc["evidence"] == CarrierEvidence.CARRIER_VERIFIED.value
+        assert doc["evidence_ledger"]["carrier_verified_status_raw"] == "Active"
+
+    def test_the_ledger_records_that_it_was_replayed_not_watched(
+        self, cli, pit_env
+    ):
+        evidence = self._write(pit_env, _bundle(
+            "subscriber_inquiry", PROFILE_PATH, PROFILE_ACTIVE))
+        cli.cmd_reconcile(self._args(evidence))
+
+        source = cli._load_ledger(ICCID)["evidence_ledger"][
+            "carrier_verified_source"]
+        assert source.startswith("replayed:")
+        assert "bundle.json" in source
+
+    def test_a_query_network_bundle_replays_too(self, cli, pit_env):
+        evidence = self._write(pit_env, _bundle(
+            "query_network", NETWORK_PATH,
+            {"status": "SUCCESS", "iccid": ICCID, "subscriberStatus": "Active"}))
+
+        assert cli.cmd_reconcile(self._args(evidence)) == 0
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.ACTIVE.value
+
+    def test_an_activation_bundle_is_refused(self, cli, pit_env, capsys):
+        """Class B must never be replayed as class C.
+
+        An activation bundle records the carrier answering OUR request. Letting
+        it settle a line would reintroduce exactly the confusion the ledger
+        exists to prevent.
+        """
+        evidence = self._write(pit_env, _bundle(
+            "activate_subscriber", ACTIVATE_PATH, ACTIVATION_SUCCESS))
+
+        assert cli.cmd_reconcile(self._args(evidence)) == 2
+        assert "not a read-only operation" in capsys.readouterr().out
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.UNKNOWN.value
+
+    def test_a_failed_run_is_refused(self, cli, pit_env):
+        evidence = self._write(pit_env, _bundle(
+            "subscriber_inquiry", PROFILE_PATH, PROFILE_ACTIVE, ok=False))
+
+        assert cli.cmd_reconcile(self._args(evidence)) == 2
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.UNKNOWN.value
+
+    def test_another_subscribers_evidence_is_refused(self, cli, pit_env):
+        evidence = self._write(pit_env, _bundle(
+            "subscriber_inquiry", PROFILE_PATH,
+            {"status": "SUCCESS", "iccid": "8901260963132609999",
+             "subscriberStatus": "Active"},
+            selector_masked="***************9999"))
+
+        assert cli.cmd_reconcile(self._args(evidence)) == 2
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.UNKNOWN.value
+
+    def test_a_truncated_response_body_is_refused_not_guessed(
+        self, cli, pit_env, capsys
+    ):
+        doc = _bundle("subscriber_inquiry", PROFILE_PATH, PROFILE_ACTIVE)
+        doc["exchanges"][1]["response"]["body"] = '{"status": "SUCC'
+
+        assert cli.cmd_reconcile(self._args(self._write(pit_env, doc))) == 2
+        assert "truncated" in capsys.readouterr().out
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.UNKNOWN.value
+
+    def test_a_bundle_without_the_operations_exchange_is_refused(
+        self, cli, pit_env
+    ):
+        """Matched by the exact wire path — never by position."""
+        doc = _bundle("subscriber_inquiry", "/wholesale/v1/subscriber/profiles",
+                      PROFILE_ACTIVE)
+
+        assert cli.cmd_reconcile(self._args(self._write(pit_env, doc))) == 2
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.UNKNOWN.value
+
+    def test_a_usage_bundle_reconciles_nothing_and_says_so(self, cli, pit_env):
+        """Usage carries no subscriberStatus. Silence is not evidence."""
+        doc = _bundle("query_usage", "/wholesale/v1/subscriber/usage",
+                      {"status": "SUCCESS", "isMultiline": False})
+
+        assert cli.cmd_reconcile(self._args(self._write(pit_env, doc))) == 1
+        assert cli._load_ledger(ICCID)["state"] == LifecycleState.UNKNOWN.value
+
+    def test_an_unreadable_bundle_is_refused(self, cli, pit_env):
+        missing = str(pit_env / "does-not-exist.json")
+        assert cli.cmd_reconcile(self._args(missing)) == 2
+
+    def test_replay_reaches_the_same_verdict_as_the_live_path(self, cli, pit_env):
+        """The point of a replay: same reconciler, same answer."""
+        live = LC.reconcile_from_carrier_read(
+            "Active", current=LifecycleState.ACTIVATION_REQUESTED)
+
+        cli._record_state(
+            ICCID, LifecycleState.ACTIVATION_REQUESTED, {"kind": "seed"},
+            evidence=CarrierEvidence.CARRIER_SYNC_ACK)
+        evidence = self._write(pit_env, _bundle(
+            "subscriber_inquiry", PROFILE_PATH, PROFILE_ACTIVE))
+        cli.cmd_reconcile(self._args(evidence))
+
+        doc = cli._load_ledger(ICCID)
+        assert doc["state"] == live.observed_state.value
+        assert doc["evidence"] == live.evidence.value
+
+
 # ── 6-8. A callback arriving afterwards ─────────────────────────────────────
 
 class TestLateCallbackAgreement:

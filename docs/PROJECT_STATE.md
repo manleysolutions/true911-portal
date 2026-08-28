@@ -106,6 +106,28 @@ flag and the authenticity gate, and the logging architecture cannot prove a
 negative. It does not block the state determination, because the synchronous
 result was complete and an independent read confirms it.
 
+**Rebuilding the ledger costs no carrier call.** `tmobile_pit.py reconcile
+--iccid <ICCID> --evidence <bundle>.json` replays an already-captured read
+offline — same reconciler, no socket, `carrier_verified_source` recording that
+it was replayed rather than watched. It refuses an activation bundle (class B),
+a failed run, another subscriber's evidence, a truncated body, or a bundle with
+no exchange on the operation's exact wire path. This exists so that a stale local
+file is never a reason to resend anything.
+
+**Readiness deliberately not advanced.** `subscriber_inquiry` ran live and still
+reads `mock_certified`, because `PIT_TESTED` is a member of
+`LIVE_SENDABLE_READINESS` — advancing it would make the operation generally
+sendable and remove its single-run gate. Whether "exercised once in PIT" should
+authorize an ungated send is an owner decision, recorded in
+`TMOBILE_PIT_CERTIFICATION_20260828.md` §5.3, not made in passing.
+
+**QueryNetwork / QuerySubscriberUsage previewed 2026-08-28**, every gate
+inspected, request body carrying the ICCID alone (usage takes no date range),
+preview audited to open no outbound socket and perform no DNS lookup. **Neither
+was sent.** A live run needs an environment with PIT credentials, the ICCID on
+the read-only allowlist, and the live switch on; a workstation without them is
+refused at the allowlist gate, which is the intended behaviour.
+
 **Operator-experience defect fixed:** the harness printed
 `python -m scripts.tmobile_callback_inspect …`, which cannot work from `api/` —
 a second, unrelated `api/scripts` package wins the import there. Every emitted

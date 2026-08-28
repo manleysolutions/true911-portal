@@ -29,8 +29,8 @@ its own single-run PIT authorization. **One of the four has now been executed.**
 | # | Operation | Status |
 |---|---|---|
 | 1 | SubscriberInquiry | ✅ **executed 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
-| 2 | QueryNetwork | ⏳ certification-ready, unexecuted |
-| 3 | QuerySubscriberUsage | ⏳ certification-ready, unexecuted |
+| 2 | QueryNetwork | ⏳ **preview verified 2026-08-28**, live run pending |
+| 3 | QuerySubscriberUsage | ⏳ **preview verified 2026-08-28**, live run pending |
 | 4 | QueryTransactionStatus | ⛔ **not authorizable** — `transactionId` semantics unresolved |
 
 Step 4's blocker is no longer a missing input. Even given a transaction id we do
@@ -49,6 +49,18 @@ Run in this order. **Do not advance until the previous step is reconciled.**
 | 2 | QueryNetwork | `query-network --iccid <ICCID>` |
 | 3 | QuerySubscriberUsage | `query-usage --iccid <ICCID>` |
 | 4 | QueryTransactionStatus | `query-transaction-status --transaction-id <TXN>` |
+
+Steps 2 and 3 have been previewed and every gate inspected — exact vendor
+path, read-only class, no callback, ICCID accepted, no certification blocker,
+single-run grant available, not generally sendable, and a request body carrying
+the ICCID alone (usage takes **no** date range). Preview was audited to open no
+outbound socket and perform no DNS lookup.
+
+**A live run must be executed from an environment that has PIT credentials, the
+designated ICCID on `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`, and
+`TMOBILE_PIT_LIVE_CALLS_ENABLED=true`.** A development workstation without those
+is refused at the allowlist gate before anything else is evaluated, which is the
+intended behaviour and not a configuration error to work around.
 
 Preview is the default and opens no connection:
 

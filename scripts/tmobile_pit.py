@@ -7,6 +7,7 @@ scattered across ad hoc scripts.
     python ../scripts/tmobile_pit.py show <operation>
     python ../scripts/tmobile_pit.py allowlists
     python ../scripts/tmobile_pit.py state --iccid <ICCID>
+    python ../scripts/tmobile_pit.py reconcile --iccid <ICCID> --evidence <bundle.json>
     python ../scripts/tmobile_pit.py preview <operation> --iccid <ICCID> [...]
     python ../scripts/tmobile_pit.py run <operation> --iccid <ICCID> --confirm-live [...]
 
@@ -39,6 +40,11 @@ record*. What settles a line is an independent read — ``subscriber-inquiry`` �
 whose ``subscriberStatus`` reconciles the ledger through
 ``reconcile_from_carrier_read``. That path, not a callback, is what moves an
 activation from ``activation_requested`` to ``active``.
+
+``reconcile`` replays a read that already happened, parsing the carrier's own
+recorded response out of its evidence bundle and through the same reconciler. It
+opens no socket. It exists so that rebuilding a local file never costs a real
+carrier request — and it refuses anything that is not an independent read.
 """
 
 from __future__ import annotations
@@ -228,6 +234,7 @@ def cmd_state(args: argparse.Namespace) -> int:
         ("C carrier verified    ", "carrier_verified_at"),
         ("  verified status raw ", "carrier_verified_status_raw"),
         ("  verified by         ", "carrier_verified_by_operation"),
+        ("  verified from       ", "carrier_verified_source"),
         ("D callback received   ", "callback_received_at"),
         ("E callback authentic  ", "callback_authenticity_verified"),
         ("F callback correlated ", "callback_correlated"),
@@ -280,6 +287,7 @@ def _blank_evidence_ledger() -> dict:
         "carrier_verified_at": None,
         "carrier_verified_status_raw": None,
         "carrier_verified_by_operation": None,
+        "carrier_verified_source": None,
         # D/E/F/G — the callback, in the four stages it can reach.
         "callback_received_at": None,
         "callback_authenticity_verified": None,
@@ -804,6 +812,7 @@ async def cmd_subscriber_inquiry(args: argparse.Namespace) -> int:
 
 def _reconcile_ledger_from_read(
     operation: str, envelope, *, iccid: str | None, operator: str,
+    source: str = "live",
 ) -> dict | None:
     """Settle the certification ledger from an INDEPENDENT carrier read.
 
@@ -833,6 +842,10 @@ def _reconcile_ledger_from_read(
         "carrier_verified_at": now,
         "carrier_verified_status_raw": result.carrier_status_raw,
         "carrier_verified_by_operation": operation,
+        # Whether we watched the answer arrive or replayed one we had already
+        # captured. The observation is the same; where it came from is not, and
+        # a ledger that hides the difference is harder to audit later.
+        "carrier_verified_source": source,
     }
     if result.conflict:
         updates["reconciliation_required"] = True
@@ -851,12 +864,14 @@ def _reconcile_ledger_from_read(
             "conflict": result.conflict,
             "reason": result.reason,
             "verification_timestamp_utc": now,
+            "source": source,
             "operator": operator,
         },
         evidence=result.evidence, evidence_updates=updates,
     )
 
     print("\nLEDGER RECONCILED FROM AN INDEPENDENT CARRIER READ")
+    print(f"  source           : {source}")
     print(f"  previous state   : {result.previous_state.value}")
     print(f"  observed state   : {result.observed_state.value}")
     print(f"  evidence class   : {result.evidence.value}")
@@ -868,6 +883,7 @@ def _reconcile_ledger_from_read(
 
     return {
         "reconciled": True,
+        "source": source,
         "previous_state": result.previous_state.value,
         "observed_state": result.observed_state.value,
         "evidence_class": result.evidence.value,
@@ -998,6 +1014,10 @@ async def cmd_read_only(args: argparse.Namespace, operation: str) -> int:
         bundle["vendor_code"] = envelope.vendor_code
         bundle["sim_network_type_present"] = envelope.sim_network_type is not None
         bundle["unknown_response_fields"] = sorted(envelope.raw_extra_fields)
+        # The field the ledger reconciles on, lifted to the top of the bundle so
+        # a later offline replay does not have to re-derive it from the captured
+        # exchange. A status word, not an identifier — nothing to mask.
+        bundle["subscriber_status_raw"] = envelope.subscriber_status_raw
         # Guarded separately: a problem writing the local ledger must not be
         # reported as a failure of the carrier request, which already
         # succeeded and whose evidence bundle is the thing being certified.
@@ -1037,6 +1057,132 @@ async def cmd_read_only(args: argparse.Namespace, operation: str) -> int:
         print("\nSTOP — this operation did not succeed. Do NOT retry and do NOT "
               "advance to the next operation. Classify the failure first.")
     return 0 if bundle.get("ok") else 1
+
+
+# ── Offline reconciliation from an already-captured response ───────────────
+
+class EvidenceReplayError(RuntimeError):
+    """Raised when an evidence bundle cannot be replayed into the ledger."""
+
+
+def _replayable_response_body(bundle: dict, op) -> dict:
+    """Pull the carrier's own recorded answer out of an evidence bundle.
+
+    Matched by the operation's **exact** wire path, never by position or by a
+    naming convention — a bundle contains the OAuth exchange too, and every path
+    in this integration that was ever derived turned out to be wrong.
+    """
+    for exchange in bundle.get("exchanges") or []:
+        request = exchange.get("request") or {}
+        response = exchange.get("response") or {}
+        if (str(request.get("method") or "").upper() != op.http_method.upper()
+                or str(request.get("path") or "") != op.path):
+            continue
+        raw = response.get("body")
+        if not raw:
+            raise EvidenceReplayError(
+                "The captured exchange for this operation has no response body. "
+                "Nothing was reconciled."
+            )
+        try:
+            return json.loads(raw)
+        except ValueError as exc:
+            raise EvidenceReplayError(
+                "The captured response body is not parseable JSON — it may have "
+                "been truncated by the evidence recorder's size limit. Nothing "
+                f"was reconciled, and nothing was guessed. ({exc})"
+            ) from exc
+    raise EvidenceReplayError(
+        f"No captured exchange in this bundle targets {op.http_method} "
+        f"{op.path}. Nothing was reconciled."
+    )
+
+
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    """Settle the ledger from a read that ALREADY happened. Opens no socket.
+
+    Exists because the ledger and the carrier evidence can be recorded on
+    different days, or by a build of this harness that had no way to reconcile
+    them. Re-running a live inquiry purely to rebuild a local file would spend a
+    real carrier request to learn something we already observed and wrote down.
+
+    This is a replay, not an attestation: it parses the carrier's own recorded
+    response through the same envelope and the same
+    ``reconcile_from_carrier_read`` a live run uses. An operator cannot type a
+    status in. If the bundle does not contain the answer, this refuses.
+    """
+    try:
+        with open(args.evidence, encoding="utf-8") as fh:
+            bundle = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"\nREFUSED — cannot read the evidence bundle. Nothing was "
+              f"reconciled.\n\n{exc}")
+        return 2
+
+    operation = bundle.get("operation") or ""
+    if operation not in READ_ONLY_OPERATIONS:
+        print(
+            f"\nREFUSED — this bundle records '{operation or '<none>'}', which "
+            "is not a read-only operation. Nothing was reconciled.\n\n"
+            "Only an INDEPENDENT carrier read may settle a line. An activation "
+            "bundle records the carrier answering our own request, which is "
+            "evidence class B and settles nothing — replaying one here would "
+            "reintroduce exactly the confusion this ledger exists to prevent."
+        )
+        return 2
+    if bundle.get("ok") is not True:
+        print("\nREFUSED — this bundle records a request that did not succeed. "
+              "Nothing was reconciled.")
+        return 2
+
+    op = get_operation(operation)
+    masked = mask_tail(args.iccid)
+    recorded_selector = bundle.get("selector_masked")
+    if recorded_selector and recorded_selector != masked:
+        print(
+            f"\nREFUSED — this bundle is about {recorded_selector}, not "
+            f"{masked}. Nothing was reconciled.\n\n"
+            "A ledger entry for one subscriber must never be written from "
+            "another subscriber's evidence."
+        )
+        return 2
+
+    try:
+        body = _replayable_response_body(bundle, op)
+    except EvidenceReplayError as exc:
+        print(f"\nREFUSED — {exc}")
+        return 2
+
+    envelope = TMobileResponseEnvelope.from_payload(
+        body, operation=operation, kind=ResponseKind.SYNCHRONOUS,
+        http_status=200,
+    )
+    if envelope.iccid and envelope.iccid != args.iccid:
+        print(f"\nREFUSED — the recorded response names SIM "
+              f"{mask_tail(envelope.iccid)}, not {masked}. Nothing was "
+              "reconciled.")
+        return 2
+
+    print("=" * 72)
+    print("OFFLINE RECONCILIATION — no network connection will be opened")
+    print(f"  source operation : {operation}")
+    print(f"  evidence bundle  : {args.evidence}")
+    print(f"  captured at      : {bundle.get('generated_at_utc', 'unknown')}")
+    print(f"  target ICCID     : {masked}")
+    print("-" * 72)
+
+    result = _reconcile_ledger_from_read(
+        operation, envelope, iccid=args.iccid, operator=args.operator,
+        source=f"replayed:{args.evidence}",
+    )
+    if result is None:
+        print("\nNOTHING TO RECONCILE — the recorded response carries no "
+              "subscriberStatus. Silence is not evidence, so the ledger is "
+              "unchanged.")
+        return 1
+    if not result.get("reconciled"):
+        return 1
+    return 0
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
@@ -1098,6 +1244,16 @@ def build_parser() -> argparse.ArgumentParser:
     state = sub.add_parser("state", help="Last known lifecycle state for an ICCID.")
     state.add_argument("--iccid", required=True)
 
+    rec = sub.add_parser(
+        "reconcile",
+        help="Settle the ledger from an ALREADY-CAPTURED read. Opens no socket.")
+    rec.add_argument("--iccid", required=True)
+    rec.add_argument("--evidence", required=True,
+                     help="Path to the evidence bundle JSON from a previous "
+                          "read-only run.")
+    rec.add_argument("--operator", default=os.environ.get("USER") or
+                     os.environ.get("USERNAME") or "unknown")
+
     for name, help_text in (
         ("preview", "Rehearse an operation. Opens no network connection."),
         ("run", "Send exactly one live request. Requires every gate to pass."),
@@ -1130,6 +1286,8 @@ def main() -> int:
             return cmd_allowlists(args)
         if args.command == "state":
             return cmd_state(args)
+        if args.command == "reconcile":
+            return cmd_reconcile(args)
         for _op, _spec in READ_ONLY_OPERATIONS.items():
             if args.command == _spec["command"]:
                 return asyncio.run(cmd_read_only(args, _op))

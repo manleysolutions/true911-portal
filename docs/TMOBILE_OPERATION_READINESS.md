@@ -40,6 +40,19 @@ wire* is not certifiable even once (`Operation.certification_blockers`): a wrong
 transaction, so the run could not be interpreted either way. See
 `TMOBILE_CARRIER_QUESTIONS_OPEN.md` §1.
 
+### 1b. Why an exercised operation still reads `mock_certified`
+
+`subscriber_inquiry` was sent live on 2026-08-28 and succeeded. Its `readiness`
+was deliberately **not** advanced, because `PIT_TESTED` is currently a member of
+`LIVE_SENDABLE_READINESS` — advancing it would make the operation generally
+sendable and silently remove its single-run gate. One exercised call would buy
+unlimited future calls.
+
+The ladder stays `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED →
+PRODUCTION_APPROVED`; there is no second taxonomy. What needs an owner's
+decision is whether `PIT_TESTED` should authorize an ungated send at all. See
+`TMOBILE_PIT_CERTIFICATION_20260828.md` §5.3.
+
 ## 1a. Carrier-state authority (2026-08-28)
 
 What we believe about a line and *why* are now recorded separately, and the
@@ -52,6 +65,11 @@ distinction is load-bearing:
 | C `carrier_verified` | the carrier described **its own record** | the line |
 | D/E/F `callback_confirmed` | callback received, authentic, correlated | the line, if not already verified |
 | G `conflict` | two observations disagree | nothing — routed to a human |
+
+A class-C observation may be applied live, or replayed offline from its own
+evidence bundle via `tmobile_pit.py reconcile`. Either route runs the same
+reconciler; the ledger records which one it was in `carrier_verified_source`.
+Replaying an activation bundle is refused — that is class B.
 
 A synchronous acceptance is still not a completion. What changed is that an
 **independent read now settles the line without a callback**: a read is not a

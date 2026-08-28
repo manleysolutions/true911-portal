@@ -164,6 +164,32 @@ Applied to 2026-08-28, the sequence is:
 (SubscriberInquiry `Active`) `active` / class **C**, with every callback field
 still `null`.
 
+### 3.3 Rebuilding the ledger without spending another carrier call
+
+The reconciliation above is driven by a live response envelope, which left a
+practical gap: the 2026-08-28 SubscriberInquiry **already happened** and its
+answer is already written down, but the only way to settle the ledger was to
+send a second one.
+
+`reconcile --iccid <ICCID> --evidence <bundle>.json` closes that. It opens no
+socket, parses the carrier's own recorded response out of the evidence bundle
+(matched by the operation's **exact** wire path, never by position), and runs it
+through the same `reconcile_from_carrier_read`. The ledger records
+`carrier_verified_source: replayed:<path>` so an audit can tell a watched answer
+from a replayed one.
+
+It is a replay, not an operator attestation — a status word cannot be typed in.
+It refuses an activation bundle outright: that is class-B evidence, and
+replaying one as class C would reintroduce precisely the confusion §3.1
+describes.
+
+**Prerequisite:** the evidence bundle must still exist. The 2026-08-28 bundles
+were written to `/tmp` on the operator host. If that host's `/tmp` has been
+cleared or the run happened in an ephemeral deploy container, the bundles are
+gone and the ledger cannot be reconciled from them — in which case the correct
+response is to leave the ledger where it is and record the carrier state from
+this document, **not** to resend anything.
+
 ---
 
 ## 4. Operator-experience defect fixed
@@ -225,6 +251,48 @@ until a live run justifies moving it.
 
 The exact commands are in `TMOBILE_READONLY_GO_LIVE_PLAN.md` §2. A live run is
 an operator decision, not a consequence of this document.
+
+**Verified 2026-08-28 (offline, no carrier contact):**
+
+| Check | query_network | query_usage |
+|---|---|---|
+| Exact vendor-documented path | ✅ `POST /wholesale/v1/subscriber/network-profile` | ✅ `POST /wholesale/v1/subscriber/usage` |
+| Classification | ✅ A read-only | ✅ A read-only |
+| Callback behaviour | ✅ none, synchronous only | ✅ none, synchronous only |
+| ICCID accepted as selector | ✅ | ✅ |
+| Certification blocker | ✅ none | ✅ none |
+| Eligible for single-run grant | ✅ | ✅ |
+| Generally live-sendable | ✅ **NO — BLOCKED** | ✅ **NO — BLOCKED** |
+| Preview renders correct body | ✅ `{iccid}` only | ✅ `{iccid}` only — **no date range** |
+| Preview opens no connection | ✅ audited: 0 outbound sockets, 0 DNS lookups | ✅ same |
+
+Neither has been sent. Preview was audited with a `sys.addaudithook` on
+`socket.connect` / `socket.getaddrinfo`: the only event observed was asyncio's
+own loopback self-pipe, and no name resolution occurred at all.
+
+### 5.3 Readiness taxonomy — a decision, not an oversight
+
+`subscriber_inquiry` was exercised live on 2026-08-28 and its `readiness` still
+reads `mock_certified`. That is deliberate and needs an owner's decision, because
+of how the taxonomy is currently wired:
+
+```
+LIVE_SENDABLE_READINESS = {PIT_TESTED, PRODUCTION_APPROVED}
+is_sendable = provenance OK and classification OK and readiness in LIVE_SENDABLE_READINESS
+```
+
+Advancing it to `pit_tested` would therefore make it **generally live-sendable**
+and silently remove its single-run gate — one exercised call would buy unlimited
+future calls. That is almost certainly not what "we ran it once in PIT" should
+mean.
+
+The canonical ladder is `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED →
+PRODUCTION_APPROVED`, and it should stay the only one. The suggested fix is to
+stop treating `PIT_TESTED` as self-authorizing — drop it from
+`LIVE_SENDABLE_READINESS`, leaving `PRODUCTION_APPROVED` as the only state that
+authorizes an ungated send, and keep the single-run grant as the route to a PIT
+call at any readiness. That is a policy change with its own review, so it is
+recorded here rather than made in passing.
 
 ### 5.2 QueryTransactionStatus — blocked, and now enforced
 
