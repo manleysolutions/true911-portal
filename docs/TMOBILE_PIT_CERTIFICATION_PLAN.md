@@ -148,7 +148,7 @@ python ../scripts/tmobile_pit.py state --iccid <SUCCESS_ICCID>
 
 ```powershell
 # Step 1-2: did a callback ever arrive for the successful activation?
-python -m scripts.tmobile_callback_inspect `
+python ../scripts/tmobile_callback_inspect.py `
     --iccid <SUCCESS_ICCID> `
     --partner-transaction-id true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9 `
     --work-flow-id 8a5659f0-16f5-46fb-9a0d-f35bb37fda92_P `
@@ -185,7 +185,7 @@ python ../scripts/tmobile_pit.py run activate_subscriber `
 $env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"   # close the switch immediately
 
 # ⏸ PAUSE — operator review. Then step 5: verify.
-python -m scripts.tmobile_callback_inspect --iccid <LIFECYCLE_ICCID>
+python ../scripts/tmobile_callback_inspect.py --iccid <LIFECYCLE_ICCID>
 python ../scripts/tmobile_pit.py state --iccid <LIFECYCLE_ICCID>
 ```
 

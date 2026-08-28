@@ -1,7 +1,10 @@
 # T-Mobile read-only certification and production go-live plan
 
-> Prepared, **not executed**. No live PIT request has been made and no
-> production access has been enabled.
+> **Update 2026-08-28.** Step 1 (SubscriberInquiry) **has been executed** and
+> succeeded against a carrier-confirmed `Active` line. Steps 2 and 3 are
+> certification-ready and unexecuted; step 4 is now refused outright pending a
+> carrier answer. See `TMOBILE_PIT_CERTIFICATION_20260828.md`. No production
+> access has been enabled.
 
 | Metadata | |
 |---|---|
@@ -15,18 +18,26 @@
 ## 1. Where this actually stands
 
 Four read-only operations are implemented, typed, mock-certified, and each has
-its own single-run PIT authorization. **None has been executed**, because three
-operator inputs are missing:
+its own single-run PIT authorization. **One of the four has now been executed.**
 
 | Required input | Status |
 |---|---|
-| A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` | ❌ absent |
-| A known PIT transaction id for QueryTransactionStatus | ❌ absent |
-| PIT credentials in the executing environment | ❌ absent |
+| A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` | ✅ present, carrier-confirmed `Active` |
+| PIT credentials in the executing environment | ✅ present |
+| A known PIT transaction id for QueryTransactionStatus | ❌ absent — **and not the blocker** |
 
-Everything downstream of execution — persistence, the internal view, the
-certification report to T-Mobile, production rollout — is blocked on those
-three, not on code.
+| # | Operation | Status |
+|---|---|---|
+| 1 | SubscriberInquiry | ✅ **executed 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
+| 2 | QueryNetwork | ⏳ certification-ready, unexecuted |
+| 3 | QuerySubscriberUsage | ⏳ certification-ready, unexecuted |
+| 4 | QueryTransactionStatus | ⛔ **not authorizable** — `transactionId` semantics unresolved |
+
+Step 4's blocker is no longer a missing input. Even given a transaction id we do
+not know which of the four identifiers our activation returned belongs in the
+field, and a wrong id is indistinguishable from an expired one. The harness now
+refuses to issue a grant for it at all. `TMOBILE_CARRIER_QUESTIONS_OPEN.md` §1
+holds the exact question.
 
 ## 2. Certification sequence
 
@@ -63,6 +74,12 @@ is consumed on use.
 **After each step:** capture the evidence bundle, confirm the response parsed,
 note any unknown fields, and reconcile against the fabricated fixture before
 starting the next. On any non-success: **stop, do not retry, classify.**
+
+A read whose response carries a `subscriberStatus` also reconciles the operator
+ledger — that is how a line reaches `active` on class-C carrier-verified
+evidence. Check it afterwards with
+`python ../scripts/tmobile_pit.py state --iccid <ICCID>`. A `CONFLICT` there
+means two observations disagree and is a stop condition, not a warning.
 
 ## 3. Deliberately not built yet
 

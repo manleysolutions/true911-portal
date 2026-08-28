@@ -96,7 +96,7 @@ The activation succeeded; the surrounding lifecycle did not get verified with it
 - **Callback: UNVERIFIED.** No callback has been confirmed for this activation.
   The account ID was recovered from the **synchronous 201 body**, not a callback.
   Read-only check (no network call, SELECT only):
-  `python -m scripts.tmobile_callback_inspect --iccid <ICCID> --partner-transaction-id <id>`
+  `python ../scripts/tmobile_callback_inspect.py --iccid <ICCID> --partner-transaction-id <id>`
 - **Subscriber status: UNVERIFIED.** `scripts/tmobile_subscriber_status.py`
   (SubscriberInquiry + NetworkQuery, read-only, `--confirm-read-only` required)
   exists and has not been run.

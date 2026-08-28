@@ -24,8 +24,21 @@ Safety model — every gate must pass, and each is independent:
 7. **Allowlist tier.** The ICCID must be nominated at the operation's risk tier.
 8. **State machine.** The transition must be legal from the last known state,
    and a pending request blocks a duplicate.
+9. **Certification blockers.** An operation with an unresolved carrier question
+   about what to put on the wire cannot be single-run authorized at all — see
+   ``Operation.certification_blockers``.
 
 Exactly one request per invocation. Nothing here retries a state-changing call.
+
+State and evidence are recorded SEPARATELY
+------------------------------------------
+The ledger keeps what we believe about a line apart from why we believe it, and
+``state --iccid`` prints both. A synchronous carrier answer settles nothing on
+its own: it is the carrier replying to *our request*, not describing *its own
+record*. What settles a line is an independent read — ``subscriber-inquiry`` —
+whose ``subscriberStatus`` reconciles the ledger through
+``reconcile_from_carrier_read``. That path, not a callback, is what moves an
+activation from ``activation_requested`` to ``active``.
 """
 
 from __future__ import annotations
@@ -44,6 +57,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", "api", ".env"))
 
 from app.config import settings  # noqa: E402
 from app.integrations.tmobile_contracts import (  # noqa: E402
+    NormalizedStatus,
     ResponseKind,
     TMobileResponseEnvelope,
 )
@@ -60,10 +74,14 @@ from app.integrations.tmobile_lifecycle import (  # noqa: E402
     PROTECTED_ICCIDS,
     AllowlistError,
     AllowlistPolicy,
+    CarrierEvidence,
     InvalidTransition,
     LifecycleState,
+    ReconciliationError,
+    is_carrier_attested,
     is_confirmed_state,
     next_state,
+    reconcile_from_carrier_read,
 )
 from app.integrations.tmobile_contracts import (  # noqa: E402
     QueryNetworkRequest,
@@ -83,6 +101,7 @@ from app.integrations.tmobile_operations import (  # noqa: E402
     Classification,
     OperationBlocked,
     blocked_operations,
+    certification_blockers,
     get_operation,
     require_sendable,
     sendable_operations,
@@ -138,6 +157,11 @@ def cmd_show(args: argparse.Namespace) -> int:
     ]
     for label, value in fields:
         print(f"  {label:<20} {value}")
+    if op.certification_blockers:
+        print("\n  BLOCKED PENDING A T-MOBILE ANSWER — not sendable even once,")
+        print("  and not single-run authorizable, until these are resolved:")
+        for i, q in enumerate(op.certification_blockers, 1):
+            print(f"    {i}. {q}")
     if op.blocking_questions:
         print("\n  REQUIRED FROM T-MOBILE BEFORE THIS CAN BE SENT:")
         for i, q in enumerate(op.blocking_questions, 1):
@@ -168,20 +192,56 @@ def cmd_allowlists(args: argparse.Namespace) -> int:
 
 
 def cmd_state(args: argparse.Namespace) -> int:
-    """Report the last known lifecycle state for an ICCID.
+    """Report the last known lifecycle state for an ICCID, and how it is known.
 
     Read-only and offline: this reflects what the harness recorded, not a live
-    query. A live status check needs `run subscriber_inquiry`, which is
-    currently BLOCKED pending T-Mobile's contract.
+    query. Two separate things are printed on purpose. The *state* is what we
+    believe; the *evidence* is why. A state recorded on our own request's
+    say-so and the same state confirmed by an independent carrier read are not
+    the same claim, and an operator deciding whether to act needs to see which
+    one they have.
     """
+    doc = _load_ledger(args.iccid)
     state = _load_state(args.iccid)
+    evidence = _load_evidence(args.iccid)
+    ledger = doc["evidence_ledger"]
+
     print(f"ICCID {mask_tail(args.iccid)}")
     print(f"  last known state : {state.value}")
-    print(f"  state confirmed  : {is_confirmed_state(state)}")
+    print(f"  state modelled   : {is_confirmed_state(state)}")
+    print(f"  evidence class   : {evidence.value}")
+    print(f"  carrier-attested : {is_carrier_attested(evidence)}")
     if not is_confirmed_state(state):
         print("  NOTE: this state is reachable only via an operation whose "
               "contract\n        T-Mobile has not supplied. Treat it as an "
               "assumption.")
+    if not is_carrier_attested(evidence):
+        print("  NOTE: no independent carrier read backs this state. Run "
+              "subscriber-inquiry\n        to verify it against T-Mobile's own "
+              "record.")
+    print()
+    print("  EVIDENCE LEDGER  (each line is a separate observation)")
+    for label, key in (
+        ("A request submitted   ", "request_submitted_at"),
+        ("B carrier sync ack    ", "carrier_sync_ack_at"),
+        ("  sync status / code  ", "carrier_sync_status_raw"),
+        ("C carrier verified    ", "carrier_verified_at"),
+        ("  verified status raw ", "carrier_verified_status_raw"),
+        ("  verified by         ", "carrier_verified_by_operation"),
+        ("D callback received   ", "callback_received_at"),
+        ("E callback authentic  ", "callback_authenticity_verified"),
+        ("F callback correlated ", "callback_correlated"),
+        ("G callback agrees     ", "callback_agrees"),
+    ):
+        value = ledger.get(key)
+        print(f"    {label} {'—' if value is None else value}")
+    if ledger.get("carrier_sync_vendor_code"):
+        print(f"    vendor result code    {ledger['carrier_sync_vendor_code']}")
+    if ledger.get("reconciliation_required"):
+        print()
+        print("  *** RECONCILIATION REQUIRED ***")
+        print(f"      {ledger.get('reconciliation_reason')}")
+    print()
     print(f"  source           : {_state_path(args.iccid)}")
     return 0
 
@@ -202,30 +262,87 @@ def _state_path(iccid: str) -> str:
     return os.path.join(_state_dir(), f"{iccid}.json")
 
 
-def _load_state(iccid: str) -> LifecycleState:
+def _blank_evidence_ledger() -> dict:
+    """The observations that establish a state, kept apart from one another.
+
+    Seven things can be separately true about an activation, and squashing them
+    into one flag is how a ledger ends up claiming more (or less) than it knows.
+    Each key here is one observation, absent until it actually happens.
+    """
+    return {
+        # A — we sent something.
+        "request_submitted_at": None,
+        # B — the carrier answered the request itself, synchronously.
+        "carrier_sync_ack_at": None,
+        "carrier_sync_status_raw": None,
+        "carrier_sync_vendor_code": None,
+        # C — we asked the carrier separately and it described its own record.
+        "carrier_verified_at": None,
+        "carrier_verified_status_raw": None,
+        "carrier_verified_by_operation": None,
+        # D/E/F/G — the callback, in the four stages it can reach.
+        "callback_received_at": None,
+        "callback_authenticity_verified": None,
+        "callback_correlated": None,
+        "callback_agrees": None,
+        # Set when two observations disagree. Never cleared automatically.
+        "reconciliation_required": False,
+        "reconciliation_reason": None,
+    }
+
+
+def _load_ledger(iccid: str) -> dict:
+    """Read the certification ledger, filling in anything an older file lacks."""
     try:
         with open(_state_path(iccid), encoding="utf-8") as fh:
-            return LifecycleState(json.load(fh)["state"])
-    except (OSError, KeyError, ValueError):
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        doc = {}
+    doc.setdefault("iccid_masked", mask_tail(iccid))
+    doc.setdefault("history", [])
+    doc.setdefault("state", LifecycleState.UNKNOWN.value)
+    doc.setdefault("evidence", CarrierEvidence.NONE.value)
+    ledger = _blank_evidence_ledger()
+    ledger.update(doc.get("evidence_ledger") or {})
+    doc["evidence_ledger"] = ledger
+    return doc
+
+
+def _load_state(iccid: str) -> LifecycleState:
+    try:
+        return LifecycleState(_load_ledger(iccid)["state"])
+    except ValueError:
         return LifecycleState.UNKNOWN
 
 
-def _record_state(iccid: str, state: LifecycleState, entry: dict) -> None:
+def _load_evidence(iccid: str) -> CarrierEvidence:
+    try:
+        return CarrierEvidence(_load_ledger(iccid)["evidence"])
+    except ValueError:
+        return CarrierEvidence.NONE
+
+
+def _record_state(iccid: str, state: LifecycleState, entry: dict, *,
+                  evidence: CarrierEvidence | None = None,
+                  evidence_updates: dict | None = None) -> None:
     """Append one certification record and update the current state.
+
+    ``state`` and ``evidence`` are written separately and neither implies the
+    other: an unchanged state with stronger evidence is a real and useful
+    outcome (it is what an independent confirmation produces), and so is a
+    changed state whose evidence class stays where it was.
 
     Identifiers are masked on the way in — the ledger is a working artifact that
     may be attached to a report.
     """
     os.makedirs(_state_dir(), exist_ok=True)
-    path = _state_path(iccid)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError):
-        doc = {"iccid_masked": mask_tail(iccid), "history": []}
+    doc = _load_ledger(iccid)
     doc["state"] = state.value
+    if evidence is not None:
+        doc["evidence"] = evidence.value
+    doc["evidence_ledger"].update(evidence_updates or {})
     doc["history"].append(entry)
-    with open(path, "w", encoding="utf-8") as fh:
+    with open(_state_path(iccid), "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=2, sort_keys=True)
 
 
@@ -389,6 +506,9 @@ async def cmd_run(args: argparse.Namespace) -> int:
     recorder.attach(client)
 
     observed, result_text = None, None
+    evidence = CarrierEvidence.REQUEST_SUBMITTED
+    evidence_updates = {"request_submitted_at": utc_now_iso()}
+    envelope = None
     try:
         # Exactly one call. No retry wrapper anywhere in this path.
         if op.name == "activate_subscriber":
@@ -400,14 +520,45 @@ async def cmd_run(args: argparse.Namespace) -> int:
                 "Wiring it is a deliberate change made only once T-Mobile "
                 "supplies its contract."
             )
+        # A 2xx is not a success. ``_request`` raises only on HTTP >= 400, so a
+        # body carrying status=FAILURE, or no status at all, reaches here
+        # looking exactly like the 201 that worked. Classify it before anything
+        # is written down: an apparent success we cannot read must fail closed,
+        # because a ledger that records an unreadable answer as an activation is
+        # worse than one that records a failure.
+        envelope = TMobileResponseEnvelope.from_payload(
+            result, operation=op.name, kind=ResponseKind.SYNCHRONOUS,
+            http_status=201,
+        )
+        if not envelope.accepted:
+            raise RuntimeError(
+                f"{op.name}: the carrier returned a 2xx whose body does not "
+                f"read as an acceptance (status="
+                f"{envelope.normalized_status.value}, result code="
+                f"{envelope.vendor_code or 'absent'}). Treating it as a "
+                "FAILURE. Nothing is claimed about the line; classify the "
+                "response before doing anything else."
+            )
         result_text = _redact_body_text(json.dumps(result))
         bundle["ok"] = True
         bundle["result"] = result_text
+        bundle["normalized_status"] = envelope.normalized_status.value
+        bundle["vendor_code"] = envelope.vendor_code
+        # The line moves to its *_requested state and no further. The carrier
+        # answered our request; it has not yet told us about its own record.
+        # That is evidence class B, and B is not C.
         observed = expected
+        if envelope.normalized_status is NormalizedStatus.SUCCESS:
+            evidence = CarrierEvidence.CARRIER_SYNC_ACK
+            evidence_updates["carrier_sync_ack_at"] = utc_now_iso()
+        evidence_updates["carrier_sync_status_raw"] = (
+            envelope.normalized_status.value)
+        evidence_updates["carrier_sync_vendor_code"] = envelope.vendor_code
     except Exception as exc:
         bundle["ok"] = False
         bundle["error"] = _redact_body_text(str(exc))
         observed = LifecycleState.FAILED
+        evidence = CarrierEvidence.REQUEST_SUBMITTED
     finally:
         bundle["exchanges"] = recorder.finalize()
         await client.close()
@@ -426,17 +577,49 @@ async def cmd_run(args: argparse.Namespace) -> int:
         result="ok" if bundle.get("ok") else "failed",
     )
     entry["evidence_json"] = json_path
-    _record_state(args.iccid, observed, entry)
+    entry["evidence_class"] = evidence.value
+    _record_state(args.iccid, observed, entry, evidence=evidence,
+                  evidence_updates=evidence_updates)
 
     print(f"\nEvidence written:\n  {json_path}\n  {txt_path}")
     print(f"State recorded:\n  {_state_path(args.iccid)}")
+    print(f"  state            : {observed.value}")
+    print(f"  evidence class   : {evidence.value}")
+    if envelope is not None and bundle.get("ok"):
+        print(f"  carrier answered : status="
+              f"{envelope.normalized_status.value} "
+              f"result={envelope.vendor_code or 'absent'}")
+        print("  NOTE: that is the carrier answering OUR REQUEST. It is not "
+              "yet the carrier\n        describing its own record. Verify "
+              "independently before relying on it.")
     print(
-        "\nNEXT: verify the callback before any further state change —\n"
-        f"  python -m scripts.tmobile_callback_inspect --iccid {args.iccid}"
+        "\nNEXT: establish the carrier's own view before any further state "
+        "change.\n"
+        "  1. Independent read (this is what settles the state):\n"
+        f"       python {_callback_inspect_sibling('tmobile_pit.py')} "
+        f"subscriber-inquiry --iccid {args.iccid}\n"
+        "  2. Callback arrival, authenticity and correlation:\n"
+        f"       python {_callback_inspect_command()} --iccid {args.iccid}"
     )
     return 0 if bundle.get("ok") else 1
 
 
+
+
+def _callback_inspect_sibling(script: str) -> str:
+    """Path to a sibling operator script, as invoked from the runbook's cwd.
+
+    The runbook runs these from ``api/``, and ``python -m scripts.<name>``
+    resolves ``scripts`` to ``api/scripts`` from there — a DIFFERENT package
+    that does not contain the T-Mobile tooling, so the module form fails with
+    ModuleNotFoundError. Emit the path form, which is what every other command
+    in this harness already documents.
+    """
+    return f"../scripts/{script}"
+
+
+def _callback_inspect_command() -> str:
+    return _callback_inspect_sibling("tmobile_callback_inspect.py")
 
 
 # ── Read-only certification operations ─────────────────────────────────────
@@ -619,6 +802,80 @@ async def cmd_subscriber_inquiry(args: argparse.Namespace) -> int:
 
 
 
+def _reconcile_ledger_from_read(
+    operation: str, envelope, *, iccid: str | None, operator: str,
+) -> dict | None:
+    """Settle the certification ledger from an INDEPENDENT carrier read.
+
+    This is the answer to "why is the ledger still activation_requested after a
+    successful activation": nothing here ever ran. A read is not a transition,
+    so it does not go through ``next_state``; it is the carrier describing its
+    own record, which is stronger evidence than our inference about our own
+    request and is what lets an activation settle **without** a callback.
+
+    Returns None when the response gives nothing to reconcile against — a usage
+    query carries no subscriberStatus, and silence is not evidence.
+    """
+    status_raw = envelope.subscriber_status_raw
+    if not iccid or not status_raw:
+        return None
+
+    previous = _load_state(iccid)
+    try:
+        result = reconcile_from_carrier_read(status_raw, current=previous)
+    except ReconciliationError as exc:
+        print(f"\nLEDGER NOT RECONCILED — {exc}")
+        return {"reconciled": False, "reason": str(exc),
+                "carrier_status_raw": status_raw}
+
+    now = utc_now_iso()
+    updates = {
+        "carrier_verified_at": now,
+        "carrier_verified_status_raw": result.carrier_status_raw,
+        "carrier_verified_by_operation": operation,
+    }
+    if result.conflict:
+        updates["reconciliation_required"] = True
+        updates["reconciliation_reason"] = result.reason
+
+    _record_state(
+        iccid, result.observed_state,
+        {
+            "operation": operation,
+            "iccid_masked": mask_tail(iccid),
+            "kind": "carrier_read_reconciliation",
+            "previous_state": result.previous_state.value,
+            "observed_state": result.observed_state.value,
+            "carrier_status_raw": result.carrier_status_raw,
+            "evidence_class": result.evidence.value,
+            "conflict": result.conflict,
+            "reason": result.reason,
+            "verification_timestamp_utc": now,
+            "operator": operator,
+        },
+        evidence=result.evidence, evidence_updates=updates,
+    )
+
+    print("\nLEDGER RECONCILED FROM AN INDEPENDENT CARRIER READ")
+    print(f"  previous state   : {result.previous_state.value}")
+    print(f"  observed state   : {result.observed_state.value}")
+    print(f"  evidence class   : {result.evidence.value}")
+    print(f"  {result.reason}")
+    if result.conflict:
+        print("  *** CONFLICT — the recorded state was NOT overwritten. "
+              "Resolve by hand. ***")
+    print(f"  ledger           : {_state_path(iccid)}")
+
+    return {
+        "reconciled": True,
+        "previous_state": result.previous_state.value,
+        "observed_state": result.observed_state.value,
+        "evidence_class": result.evidence.value,
+        "conflict": result.conflict,
+        "carrier_status_raw": result.carrier_status_raw,
+    }
+
+
 async def cmd_read_only(args: argparse.Namespace, operation: str) -> int:
     """Preview by default; send exactly one request when fully authorized.
 
@@ -674,6 +931,9 @@ async def cmd_read_only(args: argparse.Namespace, operation: str) -> int:
         if audit_ref:
             print(f"AUTHORIZATION   {audit_ref} (single run, consumed on use)")
         print(f"EVIDENCE        {args.out_dir}  (+ private evidence store)")
+        for i, question in enumerate(certification_blockers(operation), 1):
+            print(f"CARRIER BLOCKER {i}. {question}"
+                  if i == 1 else f"                {i}. {question}")
         print("-" * 72)
 
     if not args.execute:
@@ -738,6 +998,23 @@ async def cmd_read_only(args: argparse.Namespace, operation: str) -> int:
         bundle["vendor_code"] = envelope.vendor_code
         bundle["sim_network_type_present"] = envelope.sim_network_type is not None
         bundle["unknown_response_fields"] = sorted(envelope.raw_extra_fields)
+        # Guarded separately: a problem writing the local ledger must not be
+        # reported as a failure of the carrier request, which already
+        # succeeded and whose evidence bundle is the thing being certified.
+        try:
+            reconciliation = _reconcile_ledger_from_read(
+                operation, envelope,
+                iccid=(selector if selector_type == "iccid" else envelope.iccid),
+                operator=args.operator,
+            )
+        except Exception as exc:            # noqa: BLE001 - reported, not raised
+            reconciliation = {"reconciled": False,
+                              "reason": _redact_body_text(str(exc))}
+            print(f"\nLEDGER NOT UPDATED — {exc}\n"
+                  "The carrier request itself succeeded; only the local record "
+                  "failed to write.")
+        if reconciliation:
+            bundle["ledger_reconciliation"] = reconciliation
     except Exception as exc:
         bundle["ok"] = False
         bundle["error"] = _redact_body_text(str(exc))

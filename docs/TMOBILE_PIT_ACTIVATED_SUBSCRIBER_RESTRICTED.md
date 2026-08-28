@@ -81,7 +81,7 @@ Both scripts below make **no** change to subscriber state.
 Pure SELECT against our own database; sends nothing to T-Mobile:
 
 ```powershell
-python -m scripts.tmobile_callback_inspect `
+python ../scripts/tmobile_callback_inspect.py `
     --iccid 8901260963132697538 `
     --partner-transaction-id true911-pit-d1475fec-981b-40a7-a27c-d867aab8e7f9 `
     --work-flow-id 8a5659f0-16f5-46fb-9a0d-f35bb37fda92_P `

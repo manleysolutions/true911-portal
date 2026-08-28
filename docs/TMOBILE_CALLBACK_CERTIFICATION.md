@@ -81,7 +81,7 @@ and refuse a regression. Lowest priority; the window bounds the damage.
 
 ```powershell
 # Read-only. Pure SELECT — opens no network connection.
-python -m scripts.tmobile_callback_inspect `
+python ../scripts/tmobile_callback_inspect.py `
     --iccid <ICCID> `
     --partner-transaction-id <ptx> `
     --work-flow-id <wf> `

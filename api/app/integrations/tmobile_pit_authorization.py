@@ -13,7 +13,11 @@ So this is deliberately the narrowest possible exception:
   it, so a second call in the same process finds nothing;
 * **PIT only**, refused outright if the environment is not PIT;
 * **time-boxed**, so a forgotten grant expires rather than lingering;
-* **auditable**, carrying operator identity and an audit reference.
+* **auditable**, carrying operator identity and an audit reference;
+* **contract-settled**, refused outright while the operation still has an
+  unanswered carrier question about what to put on the wire — a run whose
+  request is a guess certifies nothing, because neither outcome could be
+  attributed to the client rather than to the guess.
 
 It does **not** weaken the global guard. ``require_live_sendable`` still refuses
 everything; this simply gives it one narrowly-matching key to check, and the key
@@ -30,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.integrations.tmobile_evidence import mask_tail
+from app.integrations.tmobile_operations import certification_blockers
 
 #: Operations a single-run grant may ever cover. Read-only by construction —
 #: a lifecycle mutation must never be reachable through this path.
@@ -187,6 +192,25 @@ def grant_single_run(
     if not confirmed:
         raise AuthorizationError(
             "Operator confirmation is required. Nothing was granted."
+        )
+
+    # Being read-only is not enough. An operation whose request we cannot
+    # construct from settled evidence must not be sendable even once: the run
+    # would not certify anything, because neither a success nor a failure could
+    # be attributed to the client rather than to the guess. Checked here, at the
+    # point a grant is cut, so no caller can reach the wire without passing it.
+    blockers = certification_blockers(operation)
+    if blockers:
+        raise AuthorizationError(
+            f"'{operation}' has {len(blockers)} unanswered carrier question(s) "
+            "that must be resolved before ANY live send, including a "
+            "single-run certification. Nothing was granted.\n\n"
+            + "\n".join(f"  {i}. {q}" for i, q in enumerate(blockers, 1))
+            + "\n\nTo unblock: record T-Mobile's written answer in the "
+            "repository, clear certification_blockers for this operation in "
+            "app/integrations/tmobile_operations.py, and pin the confirmed "
+            "contract with a test. It is a reviewed code change, never a "
+            "config toggle."
         )
 
     now = datetime.now(timezone.utc)

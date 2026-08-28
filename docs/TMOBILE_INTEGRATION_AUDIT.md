@@ -34,7 +34,7 @@ idempotency key** on `webhook.tmobile` jobs.
 1. **The callback path is unverified on the success case.** No callback has been
    confirmed for the 2026-07-21 activation. The account ID came from the
    **synchronous 201 body**, not a callback. Read-only check:
-   `python -m scripts.tmobile_callback_inspect --iccid <ICCID> …`.
+   `python ../scripts/tmobile_callback_inspect.py --iccid <ICCID> …`.
 2. **A synchronous activation persists nothing.** `tmobile_callback_processor`
    writes `sims.meta` only on the callback path, so an operator-script activation
    leaves no database record — the evidence bundle is the sole artifact.

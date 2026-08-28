@@ -17,6 +17,20 @@
 > see may now come from request validation, the lifecycle precondition policy, or
 > the operation registry — all three fail closed and all say *nothing was sent*.
 
+> **Update 2026-08-28.** Two things changed after the first activation +
+> readback run (`TMOBILE_PIT_CERTIFICATION_20260828.md`).
+>
+> 1. **`state --iccid` now prints an evidence ledger, not one boolean.** A
+>    synchronous carrier acceptance leaves the line `activation_requested` on
+>    class-**B** evidence and settles nothing; running `subscriber-inquiry`
+>    against the same ICCID is what moves it to `active` on class-**C**
+>    evidence. **You do not need a callback for this.** If `carrier-attested`
+>    reads `False`, run the inquiry before acting on the state.
+> 2. **The callback inspector is invoked by path, not as a module.** `python -m
+>    scripts.tmobile_callback_inspect` fails from `api/` — there is a second,
+>    unrelated `api/scripts` package that wins the import there. Every command
+>    below uses the path form.
+
 ## 1. The rule
 
 **Preview everything. Send nothing you have not previewed.** `preview` opens no
@@ -34,7 +48,7 @@ cd api
 python ../scripts/tmobile_pit.py operations              # what is sendable, and what is blocked
 python ../scripts/tmobile_pit.py show suspend_subscriber # full record + what T-Mobile must answer
 python ../scripts/tmobile_pit.py allowlists              # configured test SIMs (masked)
-python ../scripts/tmobile_pit.py state --iccid <ICCID>   # last known lifecycle state
+python ../scripts/tmobile_pit.py state --iccid <ICCID>   # state AND the evidence for it
 ```
 
 ### Preview — rehearse without sending
@@ -61,7 +75,7 @@ python ../scripts/tmobile_pit.py run deactivate_subscriber `
 
 ```powershell
 # Callbacks for a request — pure SELECT, no network call:
-python -m scripts.tmobile_callback_inspect --iccid <ICCID> `
+python ../scripts/tmobile_callback_inspect.py --iccid <ICCID> `
     --partner-transaction-id <ptx> --work-flow-id <wf>
 
 # Subscriber status against the live gateway (currently BLOCKED — no contract):
@@ -151,7 +165,12 @@ happened.
 4. **Run exactly one command.** Never re-run on a timeout or an unclear result — investigate first. A retry is a second activation.
 5. **Close the switch immediately:** `$env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"`. This is what makes an accidental second invocation harmless.
 6. **Capture** the evidence bundle paths the tool prints.
-7. **Verify** the callback before any further state change: `python -m scripts.tmobile_callback_inspect --iccid <ICCID>`.
+7. **Verify** the carrier's own view before any further state change:
+   - `python ../scripts/tmobile_pit.py subscriber-inquiry --iccid <ICCID>` —
+     this is what settles the ledger;
+   - `python ../scripts/tmobile_callback_inspect.py --iccid <ICCID>` — callback
+     arrival, authenticity and correlation. A `NO CALLBACK FOUND` result is not
+     proof none was sent; it is the absence of a persisted one.
 8. **Pause for review.** Do not chain state-changing operations.
 
 ### If a request times out or the outcome is unclear

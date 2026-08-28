@@ -6,9 +6,9 @@
 | Metadata | |
 |---|---|
 | **Authority Level** | 3 — Execution |
-| **Last reviewed** | 2026-07-21 |
+| **Last reviewed** | 2026-08-28 |
 | **Evidence reference** | `TMO-REST-RECON-001` |
-| **Related** | `TMOBILE_API_INVENTORY.md` · `TMOBILE_PIT_CERTIFICATION_PLAN.md` · `TMOBILE_PRODUCTION_READINESS.md` |
+| **Related** | `TMOBILE_API_INVENTORY.md` · `TMOBILE_PIT_CERTIFICATION_PLAN.md` · `TMOBILE_PRODUCTION_READINESS.md` · `TMOBILE_PIT_CERTIFICATION_20260828.md` |
 
 ---
 
@@ -16,17 +16,50 @@
 
 | Operation | Implemented | Mock-certified | PIT-tested | Live-send | Risk | Unresolved blocker |
 |---|---|---|---|---|---|---|
-| Activate subscriber | Yes | Yes | Yes | **Allowed** | B reversible | — |
-| Subscriber inquiry | Yes | Yes | No | **Blocked** | A read-only | Not yet exercised in PIT |
-| Query network | Yes | Yes | No | **Blocked** | A read-only | Not yet exercised in PIT |
-| Query subscriber usage | Yes | Yes | No | **Blocked** | A read-only | Not yet exercised in PIT |
+| Activate subscriber | Yes | Yes | **Yes** (07-21, 08-28) | **Allowed** | B reversible | — |
+| Subscriber inquiry | Yes | Yes | **Yes** (08-28) | Single-run grant | A read-only | — |
+| Query network | Yes | Yes | No | Single-run grant | A read-only | None — certification-ready, not yet run |
+| Query subscriber usage | Yes | Yes | No | Single-run grant | A read-only | None — certification-ready, not yet run |
 | Suspend subscriber | Yes | Yes | No | **Blocked** | B reversible | Not yet exercised in PIT |
 | Restore subscriber | Yes | Yes | No | **Blocked** | B reversible | Not yet exercised in PIT |
 | Change SIM | Yes | Yes | No | **Blocked** | **C destructive** | Replaced SIM ages out; no customer-facing inverse |
 | Deactivate subscriber | Yes | Yes | No | **Blocked** | **C destructive** | Treated as terminal; reactivation not implemented |
-| Query transaction status | Yes | Yes | No | **Blocked** | A read-only | Identifier semantics unconfirmed |
+| Query transaction status | Yes | Yes | No | **Not authorizable** | A read-only | **`transactionId` semantics unconfirmed — carrier answer required** |
 
-**Activation remains the only operation that may be transmitted live.**
+**Activation remains the only operation that is *generally* sendable.** The
+read-only family is reachable only through a single-run PIT authorization: one
+operation, one nominated subscriber, one request, consumed on use. Being
+certification-*ready* is not the same as being sendable, and neither is having
+been run once — `readiness` stays `mock_certified` for QueryNetwork and
+QuerySubscriberUsage until a live run justifies moving it.
+
+**QueryTransactionStatus is now refused at the grant, not merely un-run.** An
+operation carrying an unresolved carrier question about *what to put on the
+wire* is not certifiable even once (`Operation.certification_blockers`): a wrong
+`transactionId` returns "not found", and so does a correct one for an expired
+transaction, so the run could not be interpreted either way. See
+`TMOBILE_CARRIER_QUESTIONS_OPEN.md` §1.
+
+## 1a. Carrier-state authority (2026-08-28)
+
+What we believe about a line and *why* are now recorded separately, and the
+distinction is load-bearing:
+
+| Class | Meaning | What it settles |
+|---|---|---|
+| A `request_submitted` | we sent something | nothing |
+| B `carrier_sync_ack` | the carrier answered **our request** | nothing on its own |
+| C `carrier_verified` | the carrier described **its own record** | the line |
+| D/E/F `callback_confirmed` | callback received, authentic, correlated | the line, if not already verified |
+| G `conflict` | two observations disagree | nothing — routed to a human |
+
+A synchronous acceptance is still not a completion. What changed is that an
+**independent read now settles the line without a callback**: a read is not a
+transition, so it is gated by neither the transition table nor the
+pending-duplicate rule. Gating a query on already knowing the state is circular,
+and was why a successful activation plus a confirming inquiry still left the
+ledger reading `activation_requested`. Full account:
+`TMOBILE_PIT_CERTIFICATION_20260828.md` §3.
 
 ## 2. What changed, and what did not
 

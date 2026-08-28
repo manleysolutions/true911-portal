@@ -6,9 +6,14 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-08-11. Branch at time of writing:
-> `feat/ops-center-resolution-intelligence` (**PR #180 open, NOT merged**;
-> branched off `main`).
+> Last updated: 2026-08-28. Branch at time of writing:
+> `feat/tmobile-pit-carrier-state-reconciliation` (**PR #181 open, NOT merged**;
+> rebased onto `main`).
+>
+> **PR #180 has MERGED** (`5cc3cf0`, 2026-08-11) — Ops Center Phase 1.6 and the
+> un-branched Alembic chain are on `main`. Sections below that describe it as
+> "open" or "pending merge" were accurate when written and are stale; the
+> section headers have been corrected, the body prose has not been rewritten.
 >
 > **Correction to the prior revision:** the read-only certification harness has
 > since **MERGED** as **PR #179** (`306f359`, tooling commit `eadf8b0`) — the
@@ -16,7 +21,7 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·DONE — Ops Center Phase 1.6 landed; Alembic chain un-branched (PR #180, open) [2026-08-11]
+## 0·DONE — Ops Center Phase 1.6 landed; Alembic chain un-branched (PR #180, MERGED `5cc3cf0`) [2026-08-11]
 
 Lands the Phase 1.6 **Resolution Intelligence** foundations that had been sitting
 **uncommitted in the working tree since 2026-06-24**, and resolves the branched
@@ -60,19 +65,84 @@ lifecycle-transaction persistence — chained off `052` — is the highest-value
 unblocked engine task, and the first step toward taking the typed callback rules
 authoritative.
 
-## 0·BLOCKED — Read-only certification sprint: tooling complete, 0 of 4 executed [2026-07-21]
+## 0·✅ DONE — First carrier-backed activation + independent readback [2026-08-28]
+
+Two live PIT requests, one each, no retry. Full record:
+`TMOBILE_PIT_CERTIFICATION_20260828.md`.
+
+**Live proven:** OAuth · PoP · partner headers ·
+`POST /wholesale/v1/subscriber/activation` (HTTP 201, `SUCCESS`, result `100`) ·
+MSISDN assignment · `accountId` assignment ·
+`POST /wholesale/v1/subscriber/profile` · carrier `subscriberStatus: Active`
+readback. Reserve PIT ICCIDs were **not** touched and are on no allowlist.
+
+**The defect this exposed.** After the 201, the operator ledger still read
+`activation_requested` while an independent carrier read said `Active`. Neither
+call was wrong — there was **no code path by which any observation could settle
+the ledger**. `cmd_run` wrote `observed = expected` and never classified the
+response body; `tmobile_lifecycle.settle()` had no caller outside a test; the
+read-only path wrote an evidence bundle and never touched the ledger. A second,
+quieter defect sat beside it: `bundle["ok"]` came from "no exception raised",
+and `_request` raises only on HTTP ≥ 400 — so a 2xx carrying `status: FAILURE`
+would have been recorded as a successful activation.
+
+**What changed.** State and evidence are now recorded separately (classes A–G),
+and `state --iccid` prints both. A synchronous acceptance stays class **B** and
+settles nothing — that principle was right. What was missing is that an
+**independent carrier read now settles the line, with no callback required**: a
+read is not a transition, so it is gated by neither the transition table nor the
+pending-duplicate rule (gating a query on already knowing the state is
+circular). Unrecognised status words raise rather than being guessed;
+contradictions set `reconciliation_required` and leave the state alone; an
+apparent success we cannot parse fails closed.
+
+**Recorded, not normalized:** activation was sent with `marketZip` **30338** as
+instructed and the profile returned **99722**. Untouched in code, and question 2
+in `TMOBILE_CARRIER_QUESTIONS_OPEN.md`.
+
+**Separate open issue:** no callback was observed or persisted for the
+activation. That is not proof none was sent — persistence needs both the ingest
+flag and the authenticity gate, and the logging architecture cannot prove a
+negative. It does not block the state determination, because the synchronous
+result was complete and an independent read confirms it.
+
+**Operator-experience defect fixed:** the harness printed
+`python -m scripts.tmobile_callback_inspect …`, which cannot work from `api/` —
+a second, unrelated `api/scripts` package wins the import there. Every emitted
+instruction and every doc now uses the path form, pinned by a test that actually
+runs it.
+
+## 0·BLOCKED — Read-only certification sprint: tooling complete, 1 of 4 executed [2026-08-28]
 
 All four read-only operations (SubscriberInquiry, QueryNetwork,
 QuerySubscriberUsage, QueryTransactionStatus) are implemented, typed,
 mock-certified, and each has its own single-run PIT authorization with preview
-by default. **None has been executed.**
+by default. **SubscriberInquiry has been executed** (2026-08-28); the other
+three have not.
 
-**Three operator inputs are missing**, and everything downstream is blocked on
-them rather than on code:
+| # | Operation | Status |
+|---|---|---|
+| 1 | SubscriberInquiry | ✅ executed 2026-08-28 |
+| 2 | QueryNetwork | ⏳ certification-ready, unexecuted — **no code change needed** |
+| 3 | QuerySubscriberUsage | ⏳ certification-ready, unexecuted — **no code change needed** |
+| 4 | QueryTransactionStatus | ⛔ **not authorizable** pending a carrier answer |
 
-1. A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`
-2. A known PIT transaction id for QueryTransactionStatus
-3. PIT credentials in the executing environment (`is_configured` is false)
+Steps 2 and 3 meet every prerequisite step 1 met: vendor-documented exact path,
+reconciled schema, mock-certified, read-only, no callback, proven OAuth/PoP, and
+a target ICCID that is carrier-confirmed `Active` and read-only allowlisted. The
+existing single-run grant already covers them, so certifying them is an operator
+decision rather than a code change. Neither was promoted to generally sendable.
+
+Step 4 is now refused **at the point a grant is cut**, via a new
+`Operation.certification_blockers` field. `transactionId` could be any of the
+four identifiers our activation returned, and a wrong id returns "not found"
+exactly as a correct id does for an expired transaction — so the run would prove
+nothing either way. Clearing it needs T-Mobile's written answer plus a reviewed
+code change, never a config toggle.
+
+The prior blocker list is resolved except for the transaction id, which is no
+longer the operative blocker: a nominated PIT subscriber is present and
+carrier-confirmed `Active`, and PIT credentials are configured.
 
 **Deliberately not built:** carrier-observation persistence, the internal
 super-admin view, and the manual sync control. All three would be designed
@@ -93,7 +163,8 @@ cover a lifecycle mutation.
 Unchanged: activation is the sole live-sendable operation, all four mutations
 are blocked, and the callback shadow remains non-authoritative and off.
 
-Plan and exact commands: `TMOBILE_READONLY_GO_LIVE_PLAN.md`.
+Plan and exact commands: `TMOBILE_READONLY_GO_LIVE_PLAN.md`. Open carrier
+questions, drafted and **not sent**: `TMOBILE_CARRIER_QUESTIONS_OPEN.md`.
 
 ## 0·DONE — Typed callback rules wired in shadow mode [2026-07-21]
 
@@ -255,7 +326,7 @@ and send it to T-Mobile. See `TMOBILE_API_INVENTORY.md` and
 
 **The one live-ready step today** touches no network: confirm whether a callback
 ever arrived for the 2026-07-21 activation —
-`python -m scripts.tmobile_callback_inspect --iccid <ICCID> --partner-transaction-id <ptx>`.
+`python ../scripts/tmobile_callback_inspect.py --iccid <ICCID> --partner-transaction-id <ptx>`.
 
 ## 0·✅ DONE — T-Mobile PIT ACTIVATION SUCCEEDED [2026-07-21]
 
@@ -292,7 +363,7 @@ partnerID` days earlier with **no code change in between**, `partner-id`/
 
 - **Callback: UNVERIFIED.** No callback confirmed for this activation; the
   account ID came from the synchronous 201 body. Read-only check (SELECT only,
-  no network): `python -m scripts.tmobile_callback_inspect --iccid <ICCID> …`
+  no network): `python ../scripts/tmobile_callback_inspect.py --iccid <ICCID> …`
 - **Subscriber status: UNVERIFIED.** `scripts/tmobile_subscriber_status.py`
   exists (read-only, `--confirm-read-only`) and has not been run.
 - **Persistence gap:** a synchronous-201 activation writes nothing to our DB.

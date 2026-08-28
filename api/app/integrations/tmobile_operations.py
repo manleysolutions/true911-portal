@@ -131,6 +131,17 @@ class Operation:
     # Empty for operations that are already sendable.
     blocking_questions: tuple[str, ...] = field(default_factory=tuple)
 
+    #: Questions that must be answered before the operation may be sent live
+    #: AT ALL — including under a single-run certification grant.
+    #:
+    #: Distinct from ``blocking_questions``, which are things we expect the
+    #: certification run itself to answer by observation. These are the ones a
+    #: run *cannot* answer, because without the answer we do not know what to
+    #: put on the wire. Sending anyway would not be a test; it would be a guess
+    #: aimed at a live gateway, and its result would be uninterpretable either
+    #: way. ``grant_single_run`` refuses while this is non-empty.
+    certification_blockers: tuple[str, ...] = field(default_factory=tuple)
+
     #: How far this operation has progressed toward live authorization.
     readiness: ReadinessState = ReadinessState.BLOCKED
 
@@ -458,6 +469,18 @@ OPERATIONS: tuple[Operation, ...] = (
         blocking_questions=(
             "Confirm whether the transactionId to submit is the value this client already sends as its per-request partner transaction id, or a different vendor-assigned identifier.",
         ),
+        certification_blockers=(
+            "For POST /wholesale/v1/transaction, is request.transactionId our "
+            "partner-transaction-id, or a separate T-Mobile-assigned "
+            "identifier? If the latter, which response field or header "
+            "supplies it? Until T-Mobile answers in writing there is no value "
+            "we can put in the field: the activation returned four distinct "
+            "identifiers (partner transaction id, correlation id, work-flow "
+            "id, service transaction id) and picking one by resemblance is a "
+            "guess. A wrong id would return 'not found', which is also what a "
+            "correct id returns for an expired transaction — so the run would "
+            "prove nothing either way.",
+        ),
     ),
 )
 
@@ -473,6 +496,11 @@ def get_operation(name: str) -> Operation:
             f"Unknown operation {name!r}. Known operations: "
             f"{', '.join(sorted(_BY_NAME))}"
         ) from None
+
+
+def certification_blockers(name: str) -> tuple[str, ...]:
+    """Unanswered carrier questions that forbid even a single-run live test."""
+    return get_operation(name).certification_blockers
 
 
 def sendable_operations() -> tuple[Operation, ...]:

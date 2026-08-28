@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -104,9 +105,29 @@ class TestPerOperationIsolation:
 
 
 class TestTransactionStatusBinding:
-    def test_binds_to_an_exact_transaction_id(self, pit_env):
-        auth = _grant("query_transaction_status", TXN,
-                      selector_type=AUTH.TRANSACTION_SELECTOR)
+    def test_no_grant_is_issued_while_the_carrier_question_is_open(self, pit_env):
+        """Stricter than it was: the operation is not certifiable at all yet.
+
+        transactionId's meaning is unresolved — the activation returned four
+        distinct identifiers and the contract does not say which one belongs in
+        the field. A run built on a guess certifies nothing, because a wrong id
+        and an expired transaction return the same "not found".
+        """
+        with pytest.raises(AUTH.AuthorizationError,
+                           match="unanswered carrier question"):
+            _grant("query_transaction_status", TXN,
+                   selector_type=AUTH.TRANSACTION_SELECTOR)
+
+    def test_binds_to_an_exact_transaction_id(self):
+        """The binding property still holds for when the blocker clears."""
+        auth = AUTH.PitSingleRunAuthorization(
+            operation="query_transaction_status",
+            selector_type=AUTH.TRANSACTION_SELECTOR,
+            selector_fingerprint=AUTH._fingerprint(TXN),
+            selector_masked="", operator="reviewer", audit_ref="TMO-PIT-TEST",
+            granted_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+        )
         assert auth.matches_selector(TXN)
         assert not auth.matches_selector(OTHER_TXN)
 
