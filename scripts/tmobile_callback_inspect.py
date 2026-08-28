@@ -8,14 +8,22 @@ without sending anything to T-Mobile and without writing a single row.
 **This script issues SELECT statements only.** It never commits, never enqueues
 a job, never calls the T-Mobile API, and never triggers an activation.
 
-Correlate by any combination of the identifiers the activation returned::
+Run it from ``api/`` — the same working directory as the rest of the T-Mobile
+harness — using the PATH form, not ``python -m``::
 
-    python -m scripts.tmobile_callback_inspect --iccid <ICCID>
-    python -m scripts.tmobile_callback_inspect \
+    cd api
+    python ../scripts/tmobile_callback_inspect.py --iccid <ICCID>
+    python ../scripts/tmobile_callback_inspect.py \
         --partner-transaction-id true911-pit-... \
         --work-flow-id 8a5659f0-..._P \
         --service-transaction-id 33f2315c-... \
         --iccid <ICCID> --msisdn <MSISDN>
+
+``python -m scripts.tmobile_callback_inspect`` does NOT work from ``api/``:
+there is a second, unrelated ``api/scripts`` package, and from that working
+directory it wins the import, so the module form fails with
+ModuleNotFoundError. The convention used by ``api/scripts/*`` does not carry
+over to this directory.
 
 At least one identifier is required — the script refuses to dump the whole
 callback archive. ``--since`` (UTC ISO-8601) narrows the window; it defaults to

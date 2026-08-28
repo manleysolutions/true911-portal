@@ -316,4 +316,33 @@ Decision · Consequences.
   stable key derived from correlation ids and outcome, never arrival time. Durable
   persistence of lifecycle transactions is deferred while the migration chain is
   branched; the structures are typed and persistence-ready. Typed models confer no
-  permission to send — activation remains the sole live-sendable operation.
+  permission to send — activation remains the sole generally sendable
+  operation, and then only through the operator harness.
+
+### D-2026-08-28 — Certification maturity is not send authorization
+
+**Decision.** An operation's certification maturity (`ReadinessState`) and its
+authorization to transmit (`SendAuthorization`) are separate, independent
+concepts. Maturity may **veto** a send; it may **never grant** one.
+
+**Why.** Readiness previously doubled as authorization
+(`LIVE_SENDABLE_READINESS = {PIT_TESTED, PRODUCTION_APPROVED}`). Honestly
+recording that an operation had passed one *controlled, single-run* PIT
+certification would therefore have converted it into one that could be sent
+freely — one certified call buying unlimited uncertified ones, arrived at as a
+side effect of bookkeeping rather than as a decision anybody made.
+
+**Consequences.**
+
+- The canonical maturity ladder is unchanged and remains the only one:
+  `IMPLEMENTED → MOCK_CERTIFIED → PIT_TESTED → PRODUCTION_APPROVED`.
+- `PIT_TESTED` means *live PIT certified*: exercised against the carrier PIT
+  gateway with evidence retained. It does not mean production authorized.
+- Authorization is an explicit, reviewed, per-operation declaration.
+  `PRODUCTION` requires `PRODUCTION_APPROVED` — necessary for ordinary
+  sendability, sufficient for nothing: provenance, classification, allowlists,
+  the lifecycle state machine, operator confirmations, feature flags and
+  certification blockers all still apply.
+- A certification blocker outranks both maturity and route, at any state.
+- Enforced at import by `_validate_authorization_policy()`; pinned by
+  `api/tests/test_tmobile_send_authorization_matrix.py`.

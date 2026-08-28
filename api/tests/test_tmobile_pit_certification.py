@@ -24,6 +24,23 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import app.integrations.tmobile_evidence as ev
 import app.integrations.tmobile_lifecycle as lc
 import app.integrations.tmobile_operations as ops
+
+
+def _probe(**overrides):
+    """A synthetic Operation for probing one policy term at a time."""
+    import app.integrations.tmobile_operations as _ops
+    kwargs = dict(
+        name="probe", client_method="c", http_method="POST", path="/probe",
+        path_source="s", classification=_ops.Classification.READ_ONLY,
+        provenance=_ops.Provenance.VENDOR_DOCUMENTED,
+        request_schema="r", response_schema="r", callback_behavior="c",
+        required_headers=("Authorization",), pop_ehts="e", body_signed=True,
+        synchronous="s", reversibility="r", prerequisite_state="p",
+        pit_restrictions="p", implementation_status="i", test_status="t",
+    )
+    kwargs.update(overrides)
+    return _ops.Operation(**kwargs)
+
 import app.integrations.tmobile_taap as taap
 
 TOKEN_URL = "https://wholesaleapi-test.t-mobile.com/oauth2/v1/tokens"
@@ -141,11 +158,16 @@ class TestOperationProvenance:
     readiness until it has actually been exercised in PIT.
     """
 
+    # Reconciled from vendor documentation and still NOT generally sendable.
     RECONCILED = [
         "subscriber_inquiry", "query_network", "query_usage",
         "suspend_subscriber", "restore_subscriber", "change_sim",
         "deactivate_subscriber", "query_transaction_status",
     ]
+    # Of those, the ones whose maturity is still mock_certified. Split out
+    # because subscriber_inquiry is now LIVE PIT CERTIFIED and remains just as
+    # un-sendable — which is the property worth stating separately.
+    RECONCILED_UNEXERCISED = [n for n in RECONCILED if n != "subscriber_inquiry"]
 
     def test_only_activation_is_currently_sendable(self):
         """Exactly one operation may be transmitted live.
@@ -167,59 +189,77 @@ class TestOperationProvenance:
 
     @pytest.mark.parametrize("name", RECONCILED)
     def test_reconciled_operations_are_documented_but_still_blocked(self, name):
-        """Documentation moved provenance forward; it did NOT unblock sending."""
+        """Documentation moved provenance forward; it did NOT unblock sending.
+
+        Nor did certification. ``subscriber_inquiry`` is in this list and is
+        now live PIT certified — and is still refused, because maturity is not
+        authorization.
+        """
         op = ops.get_operation(name)
         assert op.provenance is ops.Provenance.VENDOR_DOCUMENTED
-        assert op.readiness is ops.ReadinessState.MOCK_CERTIFIED
         assert not op.is_sendable
         with pytest.raises(ops.TMobileOperationBlockedError):
             ops.require_live_sendable(name)
 
-    @pytest.mark.parametrize("name", RECONCILED)
-    def test_block_reason_is_readiness_not_missing_contract(self, name):
-        """The refusal must say why, and the why has changed.
+    @pytest.mark.parametrize("name", RECONCILED_UNEXERCISED)
+    def test_unexercised_operations_are_still_mock_certified(self, name):
+        assert (ops.get_operation(name).readiness
+                is ops.ReadinessState.MOCK_CERTIFIED)
 
-        These are no longer blocked for lack of a contract — they are blocked
-        because knowing a contract is not the same as having exercised it.
+    @pytest.mark.parametrize("name", RECONCILED)
+    def test_block_reason_names_the_gate_that_actually_stopped_it(self, name):
+        """The refusal must say why, and the why is no longer one thing.
+
+        A reconciled operation can be stopped by its send authorization, or by
+        an unresolved carrier question. Reporting "readiness" for either would
+        send an operator to fix the wrong thing.
         """
         with pytest.raises(ops.TMobileOperationBlockedError) as exc:
             ops.require_live_sendable(name)
         message = str(exc.value)
-        assert "nothing was sent" in message
-        assert "blocking gate    : readiness" in message
-        assert "mock_certified" in message
-        assert ops.CONTRACT_EVIDENCE_REF in message
+        op = ops.get_operation(name)
+        assert "nothing was sent" in message.lower()
+        expected = ("certification blocker" if op.certification_blockers
+                    else "send authorization")
+        assert f"blocking gate    : {expected}" in message
+        assert op.readiness.value in message
 
-    def test_no_readiness_state_below_pit_tested_can_send(self):
-        """Readiness is the gate; only real PIT evidence opens it."""
-        assert ops.LIVE_SENDABLE_READINESS == {
-            ops.ReadinessState.PIT_TESTED, ops.ReadinessState.PRODUCTION_APPROVED}
+    def test_maturity_alone_never_makes_anything_sendable(self):
+        """The central safety property: maturity can veto, never grant.
+
+        Every readiness state, with NO send authorization declared, must be
+        unsendable — including the two at the top of the ladder.
+        """
         for state in ops.ReadinessState:
-            if state in ops.LIVE_SENDABLE_READINESS:
-                continue
-            candidate = ops.Operation(
-                name="probe", client_method="c", http_method="POST", path="/p",
-                path_source="s", classification=ops.Classification.READ_ONLY,
-                provenance=ops.Provenance.VENDOR_DOCUMENTED,
-                request_schema="r", response_schema="r", callback_behavior="c",
-                required_headers=("Authorization",), pop_ehts="e",
-                body_signed=True, synchronous="s", reversibility="r",
-                prerequisite_state="p", pit_restrictions="p",
-                implementation_status="i", test_status="t", readiness=state,
-            )
+            candidate = _probe(readiness=state)
             assert not candidate.is_sendable, state
 
+    def test_maturity_can_still_veto_a_declared_authorization(self):
+        """Necessary, not sufficient — and it works in the vetoing direction."""
+        for state in ops.ReadinessState:
+            candidate = _probe(
+                readiness=state,
+                send_authorization=ops.SendAuthorization.OPERATOR_HARNESS_ONLY)
+            expected = state in ops.READINESS_NOT_VETOING_SEND
+            assert candidate.is_sendable is expected, state
+
+    def test_production_send_needs_the_top_of_the_ladder(self):
+        """PRODUCTION_APPROVED is the only maturity that satisfies it."""
+        assert ops.READINESS_FOR_PRODUCTION_SEND == {
+            ops.ReadinessState.PRODUCTION_APPROVED}
+        for state in ops.ReadinessState:
+            candidate = _probe(
+                readiness=state,
+                send_authorization=ops.SendAuthorization.PRODUCTION)
+            assert candidate.is_sendable is (
+                state is ops.ReadinessState.PRODUCTION_APPROVED), state
+
     def test_unknown_classification_is_never_sendable(self):
-        """Even a documented, PIT-tested path is blocked if semantics are unknown."""
-        unknown = ops.Operation(
-            name="x", client_method="c", http_method="POST", path="/p",
-            path_source="s", classification=ops.Classification.UNKNOWN,
-            provenance=ops.Provenance.VENDOR_DOCUMENTED,
-            request_schema="r", response_schema="r", callback_behavior="c",
-            required_headers=("Authorization",), pop_ehts="e", body_signed=True,
-            synchronous="s", reversibility="r", prerequisite_state="p",
-            pit_restrictions="p", implementation_status="i", test_status="t",
-            readiness=ops.ReadinessState.PIT_TESTED,
+        """Even a documented, PIT-tested, AUTHORIZED path is blocked."""
+        unknown = _probe(
+            classification=ops.Classification.UNKNOWN,
+            readiness=ops.ReadinessState.PRODUCTION_APPROVED,
+            send_authorization=ops.SendAuthorization.PRODUCTION,
         )
         assert not unknown.is_sendable
 

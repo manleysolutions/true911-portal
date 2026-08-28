@@ -13,12 +13,22 @@ So this is deliberately the narrowest possible exception:
   it, so a second call in the same process finds nothing;
 * **PIT only**, refused outright if the environment is not PIT;
 * **time-boxed**, so a forgotten grant expires rather than lingering;
-* **auditable**, carrying operator identity and an audit reference.
+* **auditable**, carrying operator identity and an audit reference;
+* **contract-settled**, refused outright while the operation still has an
+  unanswered carrier question about what to put on the wire — a run whose
+  request is a guess certifies nothing, because neither outcome could be
+  attributed to the client rather than to the guess.
 
 It does **not** weaken the global guard. ``require_live_sendable`` still refuses
 everything; this simply gives it one narrowly-matching key to check, and the key
 destroys itself on use. Nothing here can authorize a mutation: the allowlist
 below is read-only operations, and a grant for anything else raises.
+
+Eligibility is independent of certification maturity, in both directions. An
+operation that has never been sent live may be granted one controlled run; an
+operation already **live PIT certified** stays eligible for further controlled
+runs, and does *not* graduate to sending freely. Being PIT-certified records
+what has been proven, not what may now be done — see ``SendAuthorization``.
 """
 
 from __future__ import annotations
@@ -30,6 +40,10 @@ from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.integrations.tmobile_evidence import mask_tail
+from app.integrations.tmobile_operations import (
+    certification_blockers,
+    declares_single_run_authorization,
+)
 
 #: Operations a single-run grant may ever cover. Read-only by construction —
 #: a lifecycle mutation must never be reachable through this path.
@@ -156,11 +170,21 @@ def grant_single_run(
             f"Environment is '{settings.TMOBILE_ENV}', not PIT. A single-run "
             "authorization may only be issued in PIT. Nothing was granted."
         )
+    # Two independent checks, deliberately not collapsed. The frozenset above
+    # is a hard floor that does not move; the registry check is the reviewed
+    # per-operation declaration. An operation must satisfy BOTH, so neither a
+    # registry edit nor a set edit can widen access on its own.
     if operation not in AUTHORIZABLE_OPERATIONS:
         raise AuthorizationError(
             f"'{operation}' may not be single-run authorized. Only read-only "
             f"operations qualify: {', '.join(sorted(AUTHORIZABLE_OPERATIONS))}. "
             "Lifecycle mutations are never reachable through this path."
+        )
+    if not declares_single_run_authorization(operation):
+        raise AuthorizationError(
+            f"'{operation}' does not declare SINGLE_RUN_ONLY send "
+            "authorization in the operation registry, so no controlled "
+            "certification grant may be issued for it. Nothing was granted."
         )
     if selector_type not in ALL_SELECTOR_TYPES:
         raise AuthorizationError(
@@ -187,6 +211,25 @@ def grant_single_run(
     if not confirmed:
         raise AuthorizationError(
             "Operator confirmation is required. Nothing was granted."
+        )
+
+    # Being read-only is not enough. An operation whose request we cannot
+    # construct from settled evidence must not be sendable even once: the run
+    # would not certify anything, because neither a success nor a failure could
+    # be attributed to the client rather than to the guess. Checked here, at the
+    # point a grant is cut, so no caller can reach the wire without passing it.
+    blockers = certification_blockers(operation)
+    if blockers:
+        raise AuthorizationError(
+            f"'{operation}' has {len(blockers)} unanswered carrier question(s) "
+            "that must be resolved before ANY live send, including a "
+            "single-run certification. Nothing was granted.\n\n"
+            + "\n".join(f"  {i}. {q}" for i, q in enumerate(blockers, 1))
+            + "\n\nTo unblock: record T-Mobile's written answer in the "
+            "repository, clear certification_blockers for this operation in "
+            "app/integrations/tmobile_operations.py, and pin the confirmed "
+            "contract with a test. It is a reviewed code change, never a "
+            "config toggle."
         )
 
     now = datetime.now(timezone.utc)

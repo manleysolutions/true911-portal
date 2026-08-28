@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -104,9 +105,29 @@ class TestPerOperationIsolation:
 
 
 class TestTransactionStatusBinding:
-    def test_binds_to_an_exact_transaction_id(self, pit_env):
-        auth = _grant("query_transaction_status", TXN,
-                      selector_type=AUTH.TRANSACTION_SELECTOR)
+    def test_no_grant_is_issued_while_the_carrier_question_is_open(self, pit_env):
+        """Stricter than it was: the operation is not certifiable at all yet.
+
+        transactionId's meaning is unresolved — the activation returned four
+        distinct identifiers and the contract does not say which one belongs in
+        the field. A run built on a guess certifies nothing, because a wrong id
+        and an expired transaction return the same "not found".
+        """
+        with pytest.raises(AUTH.AuthorizationError,
+                           match="unanswered carrier question"):
+            _grant("query_transaction_status", TXN,
+                   selector_type=AUTH.TRANSACTION_SELECTOR)
+
+    def test_binds_to_an_exact_transaction_id(self):
+        """The binding property still holds for when the blocker clears."""
+        auth = AUTH.PitSingleRunAuthorization(
+            operation="query_transaction_status",
+            selector_type=AUTH.TRANSACTION_SELECTOR,
+            selector_fingerprint=AUTH._fingerprint(TXN),
+            selector_masked="", operator="reviewer", audit_ref="TMO-PIT-TEST",
+            granted_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+        )
         assert auth.matches_selector(TXN)
         assert not auth.matches_selector(OTHER_TXN)
 
@@ -206,11 +227,23 @@ class TestCliWiring:
 
 class TestReadinessUnchanged:
     @pytest.mark.parametrize("operation", READ_ONLY)
-    def test_none_has_been_certified(self, operation):
-        """No live run has happened, so nothing may claim otherwise."""
-        op = OPS.get_operation(operation)
-        assert op.readiness is OPS.ReadinessState.MOCK_CERTIFIED
+    def test_none_became_generally_sendable(self, operation):
+        """Whatever their maturity, none of the four may be sent freely."""
+        assert not OPS.get_operation(operation).is_sendable
+
+    @pytest.mark.parametrize(
+        "operation", [o for o in READ_ONLY if o != "subscriber_inquiry"])
+    def test_the_unexercised_reads_are_still_mock_certified(self, operation):
+        """No live run has happened for these, so nothing may claim otherwise."""
+        assert (OPS.get_operation(operation).readiness
+                is OPS.ReadinessState.MOCK_CERTIFIED)
+
+    def test_the_one_exercised_read_is_certified_but_not_authorized(self):
+        """The whole point of splitting maturity from authorization."""
+        op = OPS.get_operation("subscriber_inquiry")
+        assert op.readiness is OPS.ReadinessState.PIT_TESTED
         assert not op.is_sendable
+        assert op.is_single_run_certifiable
 
     def test_activation_remains_the_sole_generally_sendable_operation(self):
         assert [o.name for o in OPS.sendable_operations()] == ["activate_subscriber"]

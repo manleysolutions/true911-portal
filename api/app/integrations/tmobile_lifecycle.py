@@ -11,6 +11,12 @@ reachable only through an operation whose contract T-Mobile has not supplied
 documentation. The machine models them so the harness can reason and so the
 transitions are testable — never as a claim that they are real.
 
+**The carrier-evidence model** keeps *what* we believe about a line apart from
+*why*. A state reached because our own request was acknowledged and the same
+state reached because the carrier described its own record are different claims
+with different strength, and ``reconcile_from_carrier_read`` is what converts
+the second into a settled state — without needing a callback.
+
 **The allowlist policy** enforces that a live call can only ever target a SIM an
 operator deliberately nominated, at the risk tier the operation requires. Three
 nested lists, all empty by default, no wildcards. Being on the read-only list
@@ -286,3 +292,194 @@ class AllowlistPolicy:
             # "separately and explicitly allowlisted" condition. The operator
             # still gets one more deliberate gate at the CLI.
             return
+
+
+# ── Carrier evidence: how a recorded state is actually known ────────────────
+# The state alone is not the whole claim. "Active because we sent a request and
+# assume it worked" and "active because we asked the carrier and it said so" are
+# different assertions with different strength, and collapsing them into one
+# string is how a ledger comes to overstate what it knows. So the state records
+# WHAT we believe and the evidence class records WHY.
+#
+# The classes map onto the observable steps of an activation:
+#
+#   A  request submitted                      REQUEST_SUBMITTED
+#   B  synchronous carrier success            CARRIER_SYNC_ACK
+#   C  independent carrier read agrees        CARRIER_VERIFIED
+#   D  callback received                      -.
+#   E  callback authenticity verified          |- CALLBACK_CONFIRMED
+#   F  callback correlated                    -'
+#   G  callback disagrees with carrier state  CONFLICT
+#
+# D/E/F are tracked as separate timestamps in the operator ledger rather than as
+# separate enum members, because they are stages of one artifact arriving; the
+# enum records the strongest class actually reached.
+
+
+class CarrierEvidence(str, Enum):
+    """Why we believe the recorded state, ordered weakest to strongest."""
+
+    NONE = "none"
+    REQUEST_SUBMITTED = "request_submitted"
+    CARRIER_SYNC_ACK = "carrier_sync_ack"
+    CALLBACK_CONFIRMED = "callback_confirmed"
+    CARRIER_VERIFIED = "carrier_verified"
+    CONFLICT = "conflict"
+
+
+#: Evidence strong enough that the state is a carrier fact rather than our own
+#: inference. Only an independent read of the carrier's own record, or a
+#: correlated authentic callback, qualifies -- never our own request's answer to
+#: itself.
+CARRIER_ATTESTED_EVIDENCE = frozenset({
+    CarrierEvidence.CARRIER_VERIFIED,
+    CarrierEvidence.CALLBACK_CONFIRMED,
+})
+
+
+def is_carrier_attested(evidence: CarrierEvidence) -> bool:
+    return evidence in CARRIER_ATTESTED_EVIDENCE
+
+
+#: Carrier ``subscriberStatus`` words we are willing to normalize, and nothing
+#: else. An unrecognised word must reconcile to NOTHING rather than be guessed
+#: into a state -- guessing a carrier vocabulary is the exact failure this
+#: integration has spent its whole life correcting.
+CARRIER_STATUS_TO_STATE: dict[str, LifecycleState] = {
+    "active": LifecycleState.ACTIVE,
+    "suspended": LifecycleState.SUSPENDED,
+    "deactivated": LifecycleState.DEACTIVATED,
+}
+
+
+class ReconciliationError(RuntimeError):
+    """Raised when a carrier read cannot be reconciled into the ledger."""
+
+
+@dataclass(frozen=True)
+class CarrierReconciliation:
+    """The outcome of comparing an independent carrier read to the ledger."""
+
+    previous_state: LifecycleState
+    observed_state: LifecycleState
+    carrier_status_raw: str
+    evidence: CarrierEvidence
+    conflict: bool
+    reason: str
+
+    @property
+    def advanced(self) -> bool:
+        """True when the read moved the ledger off its previous state."""
+        return self.observed_state is not self.previous_state
+
+
+def reconcile_from_carrier_read(
+    carrier_status_raw: str | None, *, current: LifecycleState
+) -> CarrierReconciliation:
+    """Reconcile the ledger against an INDEPENDENT read of the carrier record.
+
+    This is evidence class C, and it is deliberately **not** a transition. A
+    transition is something a request does *to* a line; a read is how we find
+    out what is already true, so it is gated by neither ``next_state`` nor the
+    pending-duplicate rule. That distinction is what lets a subscriber inquiry
+    settle an activation without a callback: the carrier's own answer about its
+    own record outranks our inference about our own request.
+
+    Two things it refuses to do:
+
+    * **Guess.** A status word outside ``CARRIER_STATUS_TO_STATE`` raises rather
+      than resolve to anything.
+    * **Silently absorb a contradiction.** When the carrier contradicts a
+      settled local state the disagreement is returned as a CONFLICT for a
+      human, and the recorded state is left alone.
+    """
+    raw = (carrier_status_raw or "").strip()
+    if not raw:
+        raise ReconciliationError(
+            "The carrier response carried no subscriberStatus. Nothing was "
+            "reconciled -- an absent status is not evidence of any state."
+        )
+
+    token = raw.lower().replace(" ", "").replace("_", "")
+    observed = CARRIER_STATUS_TO_STATE.get(token)
+    if observed is None:
+        raise ReconciliationError(
+            f"Carrier subscriberStatus {raw!r} is not in the reconciled "
+            f"vocabulary ({', '.join(sorted(CARRIER_STATUS_TO_STATE))}). "
+            "Nothing was reconciled -- record the observed word and ask "
+            "T-Mobile what it means rather than mapping it by resemblance."
+        )
+
+    if observed is current:
+        return CarrierReconciliation(
+            previous_state=current, observed_state=observed,
+            carrier_status_raw=raw, evidence=CarrierEvidence.CARRIER_VERIFIED,
+            conflict=False,
+            reason=f"carrier independently confirms '{current.value}'",
+        )
+
+    if current is LifecycleState.UNKNOWN or current in PENDING_STATES:
+        # We were waiting to find out. This is the answer, and it is stronger
+        # evidence than the pending state it replaces.
+        return CarrierReconciliation(
+            previous_state=current, observed_state=observed,
+            carrier_status_raw=raw, evidence=CarrierEvidence.CARRIER_VERIFIED,
+            conflict=False,
+            reason=(f"carrier read settles '{current.value}' as "
+                    f"'{observed.value}'"),
+        )
+
+    return CarrierReconciliation(
+        previous_state=current, observed_state=current,
+        carrier_status_raw=raw, evidence=CarrierEvidence.CONFLICT, conflict=True,
+        reason=(
+            f"carrier reports '{observed.value}' but the ledger had settled on "
+            f"'{current.value}'. The recorded state is NOT overwritten -- one of "
+            "the two observations is wrong, and which one is a judgement for an "
+            "operator, not for this function."
+        ),
+    )
+
+
+def classify_callback_agreement(
+    callback_state: LifecycleState, *, current: LifecycleState,
+    current_evidence: CarrierEvidence,
+) -> CarrierReconciliation:
+    """Classify a correlated, authenticated callback against what we hold.
+
+    Evidence classes F and G. A callback that agrees strengthens nothing already
+    carrier-attested and settles anything that is not; a callback that disagrees
+    is a CONFLICT and never overwrites a state an independent read established.
+    """
+    if callback_state is current:
+        evidence = (
+            current_evidence if is_carrier_attested(current_evidence)
+            else CarrierEvidence.CALLBACK_CONFIRMED
+        )
+        return CarrierReconciliation(
+            previous_state=current, observed_state=current,
+            carrier_status_raw=callback_state.value, evidence=evidence,
+            conflict=False,
+            reason=f"callback agrees with the recorded '{current.value}'",
+        )
+
+    if current is LifecycleState.UNKNOWN or current in PENDING_STATES:
+        return CarrierReconciliation(
+            previous_state=current, observed_state=callback_state,
+            carrier_status_raw=callback_state.value,
+            evidence=CarrierEvidence.CALLBACK_CONFIRMED, conflict=False,
+            reason=(f"callback settles '{current.value}' as "
+                    f"'{callback_state.value}'"),
+        )
+
+    return CarrierReconciliation(
+        previous_state=current, observed_state=current,
+        carrier_status_raw=callback_state.value,
+        evidence=CarrierEvidence.CONFLICT, conflict=True,
+        reason=(
+            f"callback reports '{callback_state.value}' but the ledger holds "
+            f"'{current.value}' on {current_evidence.value} evidence. The "
+            "recorded state is NOT overwritten -- a late callback does not "
+            "outrank an independent carrier read. Reconcile by hand."
+        ),
+    )

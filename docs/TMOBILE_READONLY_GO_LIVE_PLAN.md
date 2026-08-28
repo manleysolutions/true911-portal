@@ -1,7 +1,10 @@
 # T-Mobile read-only certification and production go-live plan
 
-> Prepared, **not executed**. No live PIT request has been made and no
-> production access has been enabled.
+> **Update 2026-08-28.** Step 1 (SubscriberInquiry) **has been executed** and
+> succeeded against a carrier-confirmed `Active` line. Steps 2 and 3 are
+> certification-ready and unexecuted; step 4 is now refused outright pending a
+> carrier answer. See `TMOBILE_PIT_CERTIFICATION_20260828.md`. No production
+> access has been enabled.
 
 | Metadata | |
 |---|---|
@@ -15,18 +18,31 @@
 ## 1. Where this actually stands
 
 Four read-only operations are implemented, typed, mock-certified, and each has
-its own single-run PIT authorization. **None has been executed**, because three
-operator inputs are missing:
+its own single-run PIT authorization. **One of the four has now been executed.**
 
 | Required input | Status |
 |---|---|
-| A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` | ❌ absent |
-| A known PIT transaction id for QueryTransactionStatus | ❌ absent |
-| PIT credentials in the executing environment | ❌ absent |
+| A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` | ✅ present, carrier-confirmed `Active` |
+| PIT credentials in the executing environment | ✅ present |
+| A known PIT transaction id for QueryTransactionStatus | ❌ absent — **and not the blocker** |
 
-Everything downstream of execution — persistence, the internal view, the
-certification report to T-Mobile, production rollout — is blocked on those
-three, not on code.
+| # | Operation | Maturity | Status |
+|---|---|---|---|
+| 1 | SubscriberInquiry | **`PIT_TESTED`** | ✅ **live PIT certified 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
+| 2 | QueryNetwork | `MOCK_CERTIFIED` | ⏳ **preview verified 2026-08-28**, live run pending |
+| 3 | QuerySubscriberUsage | `MOCK_CERTIFIED` | ⏳ **preview verified 2026-08-28**, live run pending |
+| 4 | QueryTransactionStatus | `MOCK_CERTIFIED` | ⛔ **grant REFUSED** — `transactionId` semantics unresolved |
+
+**None of the four is generally live-sendable, including the certified one.**
+Each live run costs its own explicit one-shot grant, before and after
+certification alike. Being live PIT certified records what has been proven; it
+authorizes nothing.
+
+Step 4's blocker is no longer a missing input. Even given a transaction id we do
+not know which of the four identifiers our activation returned belongs in the
+field, and a wrong id is indistinguishable from an expired one. The harness now
+refuses to issue a grant for it at all. `TMOBILE_CARRIER_QUESTIONS_OPEN.md` §1
+holds the exact question.
 
 ## 2. Certification sequence
 
@@ -38,6 +54,18 @@ Run in this order. **Do not advance until the previous step is reconciled.**
 | 2 | QueryNetwork | `query-network --iccid <ICCID>` |
 | 3 | QuerySubscriberUsage | `query-usage --iccid <ICCID>` |
 | 4 | QueryTransactionStatus | `query-transaction-status --transaction-id <TXN>` |
+
+Steps 2 and 3 have been previewed and every gate inspected — exact vendor
+path, read-only class, no callback, ICCID accepted, no certification blocker,
+single-run grant available, not generally sendable, and a request body carrying
+the ICCID alone (usage takes **no** date range). Preview was audited to open no
+outbound socket and perform no DNS lookup.
+
+**A live run must be executed from an environment that has PIT credentials, the
+designated ICCID on `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST`, and
+`TMOBILE_PIT_LIVE_CALLS_ENABLED=true`.** A development workstation without those
+is refused at the allowlist gate before anything else is evaluated, which is the
+intended behaviour and not a configuration error to work around.
 
 Preview is the default and opens no connection:
 
@@ -55,14 +83,21 @@ python ../scripts/tmobile_pit.py query-network --iccid <PIT_ICCID> `
 $env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"
 ```
 
-Each operation needs **its own** grant. An inquiry authorization does not
-authorize a network query; a network authorization does not authorize usage; a
-transaction-status authorization binds to one exact transaction id. Every grant
-is consumed on use.
+Each operation needs **its own** grant, every time — certification does not
+buy a standing permission. An inquiry authorization does not authorize a network
+query; a network authorization does not authorize usage; a transaction-status
+authorization binds to one exact transaction id and is currently refused
+outright. Every grant is consumed on use.
 
 **After each step:** capture the evidence bundle, confirm the response parsed,
 note any unknown fields, and reconcile against the fabricated fixture before
 starting the next. On any non-success: **stop, do not retry, classify.**
+
+A read whose response carries a `subscriberStatus` also reconciles the operator
+ledger — that is how a line reaches `active` on class-C carrier-verified
+evidence. Check it afterwards with
+`python ../scripts/tmobile_pit.py state --iccid <ICCID>`. A `CONFLICT` there
+means two observations disagree and is a stop condition, not a warning.
 
 ## 3. Deliberately not built yet
 
