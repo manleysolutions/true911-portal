@@ -9,7 +9,7 @@ additionally asserted by scanning the assurance package source for write calls.
 from __future__ import annotations
 
 import pathlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_user, get_db
 from app.routers import assurance as assurance_router
+from app.services.assurance.engine import TEST_STALE_SECONDS
 from app.services.assurance.signals import (
     AssuranceSignals,
     DeviceSignal,
@@ -25,7 +26,24 @@ from app.services.assurance.signals import (
     TestRecord,
 )
 
-NOW = datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc)
+# These tests exercise the HTTP path, and the router reads the wall clock
+# (``app/routers/assurance.py`` -> ``datetime.now(timezone.utc)``). There is no
+# seam to inject a clock through, so a test timestamp here must be expressed
+# RELATIVE TO THAT CLOCK.
+#
+# This is the one thing that differs from ``test_assurance_engine.py``, which
+# pins an absolute ``NOW`` and passes it straight to
+# ``compute_site_assurance(..., now=NOW)``. That file is deterministic forever
+# because it supplies the clock; this one is not, and pinning an absolute date
+# here does not fail — it silently ages. The original fixture was the authoring
+# date (2026-06-03T12:00Z), which crossed the engine's 90-day staleness window
+# at 2026-09-01T12:00Z and turned the suite red three months later, with nothing
+# in the diff to point at.
+#
+# Anchoring to the same clock the endpoint reads is what keeps "fresh" fresh.
+FRESH_TEST_AT = datetime.now(timezone.utc) - timedelta(days=1)
+STALE_TEST_AT = datetime.now(timezone.utc) - timedelta(
+    seconds=TEST_STALE_SECONDS + 24 * 3600)
 
 
 def _signals(tenant="integrity", site="IPM-BELLE-TERRE", **kw):
@@ -148,13 +166,52 @@ async def test_belle_terre_response_shape(monkeypatch):
 async def test_protected_statement_includes_timestamp(monkeypatch):
     async def loader(db, t, s):
         # add a fresh passing test → Protected
-        return _signals(last_test=TestRecord(at=NOW, result="pass", source="verification_tasks"))
+        return _signals(last_test=TestRecord(at=FRESH_TEST_AT, result="pass",
+                                             source="verification_tasks"))
     c = _client(loader=loader, monkeypatch=monkeypatch)
     r = c.get("/api/assurance/site/IPM-BELLE-TERRE")
     body = r.json()
     assert body["assurance_label"] == "Protected"
     assert body["internal_label"] == "Active & Verified"
     assert body["statement"].startswith("Protected as of ")
+
+
+@pytest.mark.asyncio
+async def test_stale_passing_test_is_attention_not_protected(monkeypatch):
+    """The other side of the staleness boundary, asserted at the API layer.
+
+    Pinning only the Protected case let the fixture drift across the window
+    unnoticed: the label silently changed and the test read as a failure of the
+    endpoint rather than of the timestamp. Holding both ends means a genuine
+    change to the rule breaks a test that names the rule.
+    """
+    async def loader(db, t, s):
+        return _signals(last_test=TestRecord(at=STALE_TEST_AT, result="pass",
+                                             source="verification_tasks"))
+    c = _client(loader=loader, monkeypatch=monkeypatch)
+    r = c.get("/api/assurance/site/IPM-BELLE-TERRE")
+    body = r.json()
+    assert body["assurance_label"] == "Attention Needed"
+    assert any(rr["code"] == "ASSURANCE.TEST_STALE" for rr in body["reasons"])
+
+
+def test_api_test_timestamps_stay_anchored_to_the_real_clock():
+    """Guard against re-introducing an absolute, silently-ageing fixture.
+
+    Fails immediately — and says why — rather than 90 days later, which is the
+    failure mode this file already had once.
+    """
+    age = (datetime.now(timezone.utc) - FRESH_TEST_AT).total_seconds()
+    assert 0 <= age < TEST_STALE_SECONDS, (
+        "FRESH_TEST_AT must be inside the engine's staleness window at the "
+        "moment the suite runs. Express it relative to datetime.now(), never "
+        "as an absolute date — the API path reads the wall clock."
+    )
+
+    stale_age = (datetime.now(timezone.utc) - STALE_TEST_AT).total_seconds()
+    assert stale_age > TEST_STALE_SECONDS, (
+        "STALE_TEST_AT must be outside the staleness window at run time."
+    )
 
 
 # ── Read-only guard: assurance package contains no write calls ───────
