@@ -414,12 +414,24 @@ OPERATIONS: tuple[Operation, ...] = (
         synchronous="Synchronous. Async not applicable.",
         reversibility="N/A - read-only.",
         prerequisite_state="Subscriber must have been previously activated.",
-        pit_restrictions="Live send blocked; not yet exercised in PIT.",
+        pit_restrictions="Attempted once in PIT on 2026-09-01 against the carrier-provided Active subscriber; the gateway returned HTTP 500 / GENS-0005. Not certified. Live send remains blocked.",
         implementation_status="Implemented. Corrected: exact path, and iccid/imsi are now accepted as identifiers alongside msisdn.",
-        test_status="Mock-certified against the reconciled contract. Gates certified offline and previewed 2026-08-28. Never sent live.",
+        # ATTEMPTED, NOT CERTIFIED. Recorded here rather than in ``readiness``
+        # because a carrier error is not certification evidence: it shows the
+        # request reached the right gateway with valid credentials, and says
+        # nothing about whether this client drives the operation correctly.
+        # Maturity therefore stays MOCK_CERTIFIED - see
+        # TMOBILE_PIT_CERTIFICATION_20260901.md.
+        test_status="Mock-certified against the reconciled contract. Gates certified offline and previewed 2026-08-28. ONE live PIT attempt on 2026-09-01: OAuth HTTP 200, then the resource request returned HTTP 500 with carrier code GENS-0005 ('Unexpected Exception'). No retry, no polling, no mutation, no ledger reconciliation. NOT certified - maturity deliberately unchanged. Summary in TMOBILE_PIT_CERTIFICATION_20260901.md; evidence in the operator's private store.",
         readiness=ReadinessState.MOCK_CERTIFIED,
         send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
         blocking_questions=(
+            "Is POST /wholesale/v1/subscriber/network-profile enabled for this "
+            "partner in the Wholesale PIT gateway, and does the carrier-"
+            "supplied Active test subscriber support it? One controlled "
+            "request on 2026-09-01 returned HTTP 500 / GENS-0005 after a "
+            "successful OAuth; the cause is not established. See "
+            "TMOBILE_CARRIER_QUESTIONS_OPEN.md §4.",
         ),
     ),
     Operation(

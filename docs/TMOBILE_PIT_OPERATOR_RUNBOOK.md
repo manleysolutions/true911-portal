@@ -17,6 +17,13 @@
 > see may now come from request validation, the lifecycle precondition policy, or
 > the operation registry — all three fail closed and all say *nothing was sent*.
 
+> **Update 2026-09-01.** The Network Profile read was attempted once and the
+> carrier returned HTTP 500 / `GENS-0005`; it is **not** certified and
+> `query_network` stays `MOCK_CERTIFIED`. Two things follow for operators:
+> §2c on nominating the PIT ICCID without depending on a shell-local variable,
+> and §4's new "if the carrier answers with an error" procedure. Record:
+> `TMOBILE_PIT_CERTIFICATION_20260901.md`.
+
 > **Update 2026-08-28.** Two things changed after the first activation +
 > readback run (`TMOBILE_PIT_CERTIFICATION_20260828.md`).
 >
@@ -174,6 +181,60 @@ grant does not authorize a network query, and a transaction-status grant binds
 to one exact transaction id. Run them in the order above and reconcile each
 before advancing.
 
+## 2c. Nominating the designated PIT ICCID without a shell-session trap
+
+**The selector stays explicit.** There is no default subscriber, no "latest",
+and no implicit selection — that is not up for negotiation and none of this
+changes it. What changed is *where the operator gets the value from*.
+
+On 2026-09-01 a preview using `$PIT_ICCID` succeeded, and two later copied
+command blocks reached the explicit-subscriber gate with **no nominated
+selector** because that shell-local value was no longer set in their context:
+
+```
+A subscriber must be explicitly nominated: pass exactly one of
+--iccid / --msisdn / --imsi. There is no default and no 'latest' subscriber.
+```
+
+Nothing was sent — the gate did its job. But a variable that has to survive
+across copied blocks is a session-state dependency, and the environment already
+holds the authoritative answer. Derive it inline instead, from the same
+allowlist the gate checks against:
+
+```powershell
+cd api
+# Fails loudly if the allowlist is empty or holds more than one ICCID.
+$PitIccids = @($env:TMOBILE_PIT_READONLY_ICCID_ALLOWLIST -split ',' |
+    ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique)
+if ($PitIccids.Count -ne 1) {
+    throw "Expected exactly one read-only PIT ICCID; got $($PitIccids.Count). Nominate it by hand."
+}
+$PitIccid = $PitIccids[0]
+python ../scripts/tmobile_pit.py query-network --iccid $PitIccid
+```
+
+Bash equivalent:
+
+```bash
+cd api
+PIT_ICCID="$(printf '%s' "$TMOBILE_PIT_READONLY_ICCID_ALLOWLIST" | tr -d '[:space:]')"
+case "$PIT_ICCID" in ""|*,*) echo "Nominate the ICCID by hand." >&2; exit 1;; esac
+python ../scripts/tmobile_pit.py query-network --iccid "$PIT_ICCID"
+```
+
+Why this is safe rather than a loosening:
+
+- the ICCID is still passed on the command line as an explicit selector;
+- it is still checked against the read-only allowlist by the harness;
+- it still appears **masked in the preflight block** the operator reads before
+  confirming — check the last four before opening the live switch;
+- the derivation refuses an empty or multi-valued allowlist instead of
+  choosing, so it can never silently pick a subscriber.
+
+Do the same derivation in the preview and in the live command, in the **same**
+shell invocation, so the value the operator rehearsed is the value that gets
+sent.
+
 ## 3. The gates, in order
 
 A live send passes all eight. Each is independent; any one refuses on its own.
@@ -210,6 +271,32 @@ happened.
      arrival, authenticity and correlation. A `NO CALLBACK FOUND` result is not
      proof none was sent; it is the absence of a persisted one.
 8. **Pause for review.** Do not chain state-changing operations.
+
+### If the carrier answers with an error (a read included)
+
+A structured carrier error is a *classified* outcome, not an unclear one — but
+it is still a full stop.
+
+1. **Do not retry.** The same request against unchanged state produces the same
+   uninterpretable result.
+2. **Do not advance to the next operation.** The harness prints
+   `STOP — this operation did not succeed…` for exactly this reason; running the
+   next step turns one unexplained result into two.
+3. **Capture the evidence bundle** — it is written on failure too, with the
+   carrier's own trace identifiers, and the one-shot authorization has already
+   been consumed and cleared.
+4. **Classify how far the evidence actually reaches.** A resource error after a
+   successful OAuth is a carrier/resource failure, *not* an authentication
+   failure — and a generic vendor code (e.g. an "unexpected exception") does not
+   establish that the fault is the carrier's. Say what is known and no more.
+5. **Ask T-Mobile**, quoting the correlation, work-flow, service-transaction and
+   partner-transaction ids from the private evidence store. Add the question to
+   `TMOBILE_CARRIER_QUESTIONS_OPEN.md`.
+6. **Do not promote the operation's maturity.** A failed live attempt is not PIT
+   certification; record the attempt in the operation's `test_status`, leave
+   `readiness` alone.
+
+Worked example: `TMOBILE_PIT_CERTIFICATION_20260901.md`.
 
 ### If a request times out or the outcome is unclear
 

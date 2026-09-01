@@ -6,9 +6,9 @@
 | Metadata | |
 |---|---|
 | **Authority Level** | 3 — Execution |
-| **Last reviewed** | 2026-08-28 |
+| **Last reviewed** | 2026-09-01, after the Network Profile live attempt returned HTTP 500 / GENS-0005 |
 | **Evidence reference** | `TMO-REST-RECON-001` |
-| **Related** | `TMOBILE_API_INVENTORY.md` · `TMOBILE_PIT_CERTIFICATION_PLAN.md` · `TMOBILE_PRODUCTION_READINESS.md` · `TMOBILE_PIT_CERTIFICATION_20260828.md` |
+| **Related** | `TMOBILE_API_INVENTORY.md` · `TMOBILE_PIT_CERTIFICATION_PLAN.md` · `TMOBILE_PRODUCTION_READINESS.md` · `TMOBILE_PIT_CERTIFICATION_20260828.md` · `TMOBILE_PIT_CERTIFICATION_20260901.md` |
 
 ---
 
@@ -24,8 +24,8 @@ code, not by convention.
 |---|---|---|---|---|---|---|
 | Activate subscriber | `PIT_TESTED` | **Operator harness only** | not eligible | yes (07-21, 08-28) | B reversible | — |
 | Subscriber inquiry | **`PIT_TESTED`** | **NO** | eligible | **yes (08-28)** | A read-only | — |
-| Query network | `MOCK_CERTIFIED` | **NO** | eligible | no | A read-only | — |
-| Query subscriber usage | `MOCK_CERTIFIED` | **NO** | eligible | no | A read-only | — |
+| Query network | `MOCK_CERTIFIED` | **NO** | eligible | **attempted 09-01 — HTTP 500 / GENS-0005, NOT certified** | A read-only | Carrier error unexplained — carrier answer required |
+| Query subscriber usage | `MOCK_CERTIFIED` | **NO** | eligible | no — **never sent live** | A read-only | Sequence paused behind Query network |
 | Suspend subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | B reversible | Not yet exercised in PIT |
 | Restore subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | B reversible | Not yet exercised in PIT |
 | Change SIM | `MOCK_CERTIFIED` | **NO** | not eligible | no | **C destructive** | Replaced SIM ages out; no customer-facing inverse |
@@ -51,6 +51,18 @@ single-run PIT authorization: one operation, one nominated subscriber, one
 request, consumed on use. Being certification-*ready* is not the same as being
 sendable — and neither is having been certified. `subscriber_inquiry` is live
 PIT certified and remains just as un-sendable as it was the day before.
+
+**QueryNetwork was attempted live on 2026-09-01 and is still `MOCK_CERTIFIED`.**
+One controlled request; OAuth returned HTTP 200 and the resource request
+returned HTTP 500 / `GENS-0005`. A failed live attempt is not PIT
+certification — `PIT_TESTED` means *successfully* exercised with acceptable
+evidence retained, and neither half holds here — so maturity did not move and
+neither did authorization. The distinction between *not attempted* and
+*attempted and failed* is carried by the operation's `test_status` and
+`pit_restrictions` fields, so `query_usage` is still legibly "never sent live"
+while `query_network` is not. Detail:
+`TMOBILE_PIT_CERTIFICATION_20260901.md`; carrier question:
+`TMOBILE_CARRIER_QUESTIONS_OPEN.md` §4.
 
 **QueryTransactionStatus is now refused at the grant, not merely un-run.** An
 operation carrying an unresolved carrier question about *what to put on the

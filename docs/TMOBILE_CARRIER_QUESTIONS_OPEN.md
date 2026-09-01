@@ -7,8 +7,8 @@
 |---|---|
 | **Authority Level** | 3 — Execution |
 | **Created** | 2026-08-28 |
-| **Basis** | The 2026-08-28 PIT activation + readback — `TMOBILE_PIT_CERTIFICATION_20260828.md` |
-| **Last reviewed** | 2026-08-28, after QueryNetwork / QuerySubscriberUsage gate certification — no new questions arose |
+| **Basis** | The 2026-08-28 PIT activation + readback — `TMOBILE_PIT_CERTIFICATION_20260828.md` · the 2026-09-01 Network Profile attempt — `TMOBILE_PIT_CERTIFICATION_20260901.md` |
+| **Last reviewed** | 2026-09-01, after the Network Profile live attempt returned HTTP 500 / GENS-0005 — **question 4 added; the set is now four** |
 | **Related** | `TMOBILE_OPERATION_READINESS.md` · `TMOBILE_READONLY_GO_LIVE_PLAN.md` |
 
 Each question below is one our own evidence and the authorized vendor
@@ -17,26 +17,33 @@ documentation are deliberately absent — re-asking them wastes the carrier
 relationship and invites a contradictory second answer.
 
 Do not paste live identifiers into carrier correspondence beyond what the
-carrier already holds; the trace ids for these two requests are in the operator's
+carrier already holds; the trace ids for these requests are in the operator's
 private evidence store and can be quoted from there if T-Mobile asks for them.
+That includes the correlation, work-flow, service-transaction and
+partner-transaction ids for the 2026-09-01 Network Profile failure: T-Mobile
+already holds them and will want them, but they are carrier trace identifiers
+and this repository is public, so they stay in the private store
+(`TMOBILE_PIT_CERTIFICATION_20260828.md` §6). Paste them into the email from
+there at send time.
 
 ---
 
 ## 0. Ready-to-send draft
 
-Reviewed 2026-08-28 after QueryNetwork and QuerySubscriberUsage were certified
-as far as they can be without a live run. Neither surfaced a new question, so
-the set below is unchanged at three. Paste as-is; the reasoning behind each
-question is in §§1–3 and is deliberately **not** in the email.
+Reviewed 2026-09-01 after the Network Profile live attempt returned HTTP 500 /
+GENS-0005. That run added **question 4**; the set below is now four. Paste as-is;
+the reasoning behind each question is in §§1–4 and is deliberately **not** in
+the email.
 
-> **Subject:** True911 — three follow-up questions from our PIT activation and
-> subscriber readback
+> **Subject:** True911 — four follow-up questions from our PIT activation,
+> subscriber readback and Network Profile attempt
 >
 > Hi Aman,
 >
 > Thanks again for the PIT inventory and the marketZip guidance. We completed a
-> clean activation and readback against Wholesale PIT and wanted to close out
-> three points before we go any further.
+> clean activation and readback against Wholesale PIT, and have since made one
+> controlled Network Profile attempt that did not succeed. We wanted to close
+> out four points before we go any further.
 >
 > What worked, for context: OAuth and PoP signing, the partner headers, the
 > activation itself (HTTP 201, status SUCCESS, result 100, with the MSISDN and
@@ -80,8 +87,26 @@ question is in §§1–3 and is deliberately **not** in the email.
 > correct before we rely on callbacks for the lifecycle operations, where the
 > synchronous answer is only an acceptance.
 >
-> Happy to supply the correlation and transaction ids for either request if
-> that helps you locate them in your logs.
+> **4. Network Profile returned HTTP 500 / GENS-0005**
+>
+> On 2026-09-01 we made a single controlled request to
+> `POST /wholesale/v1/subscriber/network-profile` for the PIT subscriber you
+> supplied — the same one that Subscriber Inquiry reports as Active.
+>
+> OAuth succeeded (HTTP 200). The resource request returned HTTP 500 with
+> `GENS-0005`, "Unexpected Exception: Please notify your system administrator".
+> We sent it once and did not retry, and we have paused our certification
+> sequence rather than moving on to Usage.
+>
+> Could you confirm whether the Network Profile endpoint is enabled for our
+> partner id in PIT, whether any additional partner or subscriber provisioning
+> is required for it, whether that test subscriber is valid for this operation,
+> and whether anything is missing from our request? We have the correlation id,
+> work-flow id, service-transaction id and our partner-transaction-id for that
+> exact call and can send them to you on request.
+>
+> Happy to supply the correlation and transaction ids for any of these requests
+> if that helps you locate them in your logs.
 >
 > Best,
 > Stuart Manley
@@ -156,3 +181,51 @@ statement is that none was *observed or persisted*, not that none arrived.
 This does not currently block us: the synchronous result was complete, and an
 independent SubscriberInquiry confirms the line is `Active`. It matters for
 lifecycle operations where the synchronous answer is only an acceptance.
+
+---
+
+## 4. Network Profile — HTTP 500 / GENS-0005 after a successful OAuth
+
+> On 2026-09-01 we sent exactly one request to
+> `POST /wholesale/v1/subscriber/network-profile` for the carrier-provided PIT
+> subscriber, which Subscriber Inquiry had independently confirmed as
+> `Active` on 2026-08-28.
+>
+> OAuth returned **HTTP 200**. The resource request returned **HTTP 500**,
+> carrier code **GENS-0005**, `userMessage`: *"Unexpected Exception: Please
+> notify your system administrator"*.
+>
+> Please confirm:
+>
+> 1. Is `POST /wholesale/v1/subscriber/network-profile` enabled for our partner
+>    id in the Wholesale PIT gateway?
+> 2. Is any additional partner-level or subscriber-level provisioning required
+>    before this operation can be used?
+> 3. Is the carrier-provided active test subscriber valid for this operation?
+> 4. Is anything missing or malformed in our request that GENS-0005 would
+>    surface as a generic server error?
+
+**What the evidence does and does not support.** OAuth succeeded, the request
+reached the Network Profile gateway, and T-Mobile answered with a structured
+carrier error carrying its own trace identifiers. That is enough to classify
+this as a **carrier/resource endpoint failure after successful authentication**
+— it is *not* an authentication failure, and it is *not* a client-side refusal.
+
+It is **not** enough to locate the cause. GENS-0005 is a generic
+"unexpected exception", and every one of these remains possible: a PIT backend
+issue, partner or account provisioning, a test-data problem on the subscriber,
+an endpoint-specific entitlement, or an undocumented request requirement on our
+side. We are not asserting the fault is T-Mobile's, and nothing in our tooling
+records it as such.
+
+**Effect on our side.** `query_network` stays at maturity `MOCK_CERTIFIED`. A
+failed live attempt is not PIT certification, so nothing was promoted. We did
+not retry, did not poll, did not query Transaction Status, and did not advance
+to Usage — the certification sequence is paused at this step by design. The one
+single-run authorization for the attempt was consumed and cleared.
+
+**Trace identifiers.** T-Mobile already holds all four (correlation, work-flow,
+service transaction, and our partner-transaction-id). They are carrier trace
+identifiers and this repository is public, so they are held in the operator's
+private evidence store and are quoted into carrier correspondence from there —
+see `TMOBILE_PIT_CERTIFICATION_20260901.md` §5.

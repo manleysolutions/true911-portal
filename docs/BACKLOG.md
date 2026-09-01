@@ -13,13 +13,42 @@
 
 ---
 
-## ⭐ NEXT — Certify QueryNetwork and QuerySubscriberUsage in PIT [2026-08-28]
+## ⭐ NEXT — Send the four carrier questions; QueryNetwork PIT is paused on the answer [2026-09-01]
 
-**No code change required.** Both are certification-ready and gated only on an
-operator decision to spend one single-run grant each. Prerequisites all met:
-vendor-documented exact path, reconciled schema (usage takes **no** date range),
-mock-certified, read-only, no callback, proven OAuth/PoP/headers, and a target
-ICCID that is carrier-confirmed `Active` and read-only allowlisted.
+**QueryNetwork was attempted once on 2026-09-01 and failed.** OAuth returned
+HTTP 200; the resource request returned **HTTP 500 / `GENS-0005`**. It is **NOT
+certified** and remains `MOCK_CERTIFIED`. There was no retry, no polling, no
+Usage request, no mutation, and no ledger reconciliation from the failed read.
+Record: `TMOBILE_PIT_CERTIFICATION_20260901.md`.
+
+**The next action is a carrier question, not another request.** Re-attempting
+with nothing changed is a retry with extra steps, and `GENS-0005` is generic
+enough that a second identical result would teach us nothing.
+
+1. **Send `TMOBILE_CARRIER_QUESTIONS_OPEN.md` — now four questions.** §4 asks
+   whether the Network Profile endpoint is enabled for our partner in PIT,
+   whether more provisioning is required, whether the supplied active test
+   subscriber is valid for it, and whether anything is missing from our request.
+   Drafted, **not sent**; sending is Stuart's action. Quote the correlation,
+   work-flow, service-transaction and partner-transaction ids from the private
+   evidence store — they are not in this repository.
+2. **Archive the evidence bundle off Render.** It sits in `/tmp/pit-evidence/`
+   and `~/tmobile-pit-evidence/` on the instance; **neither survives a
+   redeploy** without a persistent disk. Not yet done.
+3. **Then, and only then, decide about a second QueryNetwork attempt.**
+
+**QuerySubscriberUsage stays unattempted.** It is still `MOCK_CERTIFIED` and has
+never been sent live. Running it now would advance past an unclassified failure
+— exactly what the harness's STOP guidance exists to prevent — and would leave
+two uninterpreted results instead of one. Its authorization is independent: the
+`query_network` grant never covered it.
+
+When a run is eventually authorized, derive the ICCID inline from
+`TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` rather than a shell-local variable
+(`TMOBILE_PIT_OPERATOR_RUNBOOK.md` §2c) — two attempts on 2026-09-01 reached the
+explicit-subscriber gate with no selector because `$PIT_ICCID` did not survive
+between copied command blocks. Nothing was sent; the gate held. Explicit
+nomination is unchanged and there is still no default subscriber.
 
 ```powershell
 cd api
@@ -31,13 +60,11 @@ $env:TMOBILE_PIT_LIVE_CALLS_ENABLED = "false"
 ```
 
 One at a time, reconciling before advancing. Afterwards check
-`state --iccid <ICCID>`: a read carrying a `subscriberStatus` also reconciles
-the ledger, and a `CONFLICT` there is a stop condition.
-
-Both were previewed on 2026-08-28 with every gate inspected and no network
-contact. **The live run must happen where PIT credentials, the read-only
-allowlist entry, and `TMOBILE_PIT_LIVE_CALLS_ENABLED=true` all exist** — a
-workstation without them is refused at the allowlist gate.
+`state --iccid <ICCID>`: a successful read carrying a `subscriberStatus` also
+reconciles the ledger, and a `CONFLICT` there is a stop condition. **The live
+run must happen where PIT credentials, the read-only allowlist entry, and
+`TMOBILE_PIT_LIVE_CALLS_ENABLED=true` all exist** — a workstation without them
+is refused at the allowlist gate.
 
 ## ✅ RESOLVED — certification maturity is not send authorization [2026-08-28]
 
@@ -65,6 +92,12 @@ expired transaction — the run would be uninterpretable either way.
 Send question 1 of `TMOBILE_CARRIER_QUESTIONS_OPEN.md` (drafted, **not sent**).
 Unblocking is: record the written answer, clear `certification_blockers` in
 `app/integrations/tmobile_operations.py`, pin the contract with a test.
+
+**Unchanged by the 2026-09-01 failure.** That 500 returned four carrier trace
+identifiers, and none has been confirmed as the `transactionId` this operation
+expects. Seeing more identifiers is not an answer, and the blocker outranks both
+maturity and any one-shot grant. Pinned by
+`test_tmobile_pit_network_failure.py::TestTransactionStatusStaysBlocked`.
 
 **Downstream, still blocked until more real responses exist:**
 carrier-observation persistence, the internal super-admin view, the manual sync

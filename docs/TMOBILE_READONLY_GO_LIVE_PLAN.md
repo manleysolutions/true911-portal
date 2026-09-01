@@ -1,5 +1,13 @@
 # T-Mobile read-only certification and production go-live plan
 
+> **Update 2026-09-01.** Step 2 (QueryNetwork) **was attempted once and did not
+> succeed**: OAuth returned HTTP 200 and the resource request returned HTTP 500
+> / `GENS-0005`. It is **NOT certified** and stays `MOCK_CERTIFIED`. **The
+> sequence is paused here** — step 3 (Usage) has not been attempted and must not
+> be until the failure is understood. See
+> `TMOBILE_PIT_CERTIFICATION_20260901.md` and question 4 of
+> `TMOBILE_CARRIER_QUESTIONS_OPEN.md`.
+
 > **Update 2026-08-28.** Step 1 (SubscriberInquiry) **has been executed** and
 > succeeded against a carrier-confirmed `Active` line. Steps 2 and 3 are
 > certification-ready and unexecuted; step 4 is now refused outright pending a
@@ -22,16 +30,24 @@ its own single-run PIT authorization. **One of the four has now been executed.**
 
 | Required input | Status |
 |---|---|
-| A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` | ✅ present, carrier-confirmed `Active` |
+| A nominated PIT subscriber, added to `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` | ✅ present, carrier-confirmed `Active` — derive it inline at invocation time, `TMOBILE_PIT_OPERATOR_RUNBOOK.md` §2c |
 | PIT credentials in the executing environment | ✅ present |
 | A known PIT transaction id for QueryTransactionStatus | ❌ absent — **and not the blocker** |
 
 | # | Operation | Maturity | Status |
 |---|---|---|---|
 | 1 | SubscriberInquiry | **`PIT_TESTED`** | ✅ **live PIT certified 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
-| 2 | QueryNetwork | `MOCK_CERTIFIED` | ⏳ **preview verified 2026-08-28**, live run pending |
-| 3 | QuerySubscriberUsage | `MOCK_CERTIFIED` | ⏳ **preview verified 2026-08-28**, live run pending |
+| 2 | QueryNetwork | `MOCK_CERTIFIED` | ⚠️ **live attempted 2026-09-01 — carrier HTTP 500 / `GENS-0005`. NOT certified.** No retry; sequence paused here |
+| 3 | QuerySubscriberUsage | `MOCK_CERTIFIED` | ⏸️ **never sent live** — deliberately not attempted while step 2 is unexplained |
 | 4 | QueryTransactionStatus | `MOCK_CERTIFIED` | ⛔ **grant REFUSED** — `transactionId` semantics unresolved |
+
+**Step 2 did not advance anything.** A failed live attempt is not PIT
+certification: maturity stayed `MOCK_CERTIFIED`, send authorization stayed
+`SINGLE_RUN_ONLY`, the one-shot grant was consumed and cleared, the operator
+ledger was not reconciled from the failed read, and nothing was retried. What
+the run does prove is *reach* — credentials, PoP, partner headers and the exact
+vendor path carry a request to the correct gateway and get a structured answer.
+That is not evidence about the operation's behaviour.
 
 **None of the four is generally live-sendable, including the certified one.**
 Each live run costs its own explicit one-shot grant, before and after
@@ -92,6 +108,12 @@ outright. Every grant is consumed on use.
 **After each step:** capture the evidence bundle, confirm the response parsed,
 note any unknown fields, and reconcile against the fabricated fixture before
 starting the next. On any non-success: **stop, do not retry, classify.**
+
+That last rule was exercised on 2026-09-01 and held: step 2 failed, the harness
+printed its STOP guidance, and step 3 was not run. **Do not resume the sequence
+at step 3 while step 2 is unexplained** — a second uninterpreted result is worse
+than one, and step 2 must not be re-attempted with nothing changed either.
+Procedure for a structured carrier error: `TMOBILE_PIT_OPERATOR_RUNBOOK.md` §4.
 
 A read whose response carries a `subscriberStatus` also reconciles the operator
 ledger — that is how a line reaches `active` on class-C carrier-verified
