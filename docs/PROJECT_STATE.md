@@ -6,9 +6,12 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-08-28. Branch at time of writing:
-> `feat/tmobile-pit-carrier-state-reconciliation` (**PR #181 open, NOT merged**;
-> rebased onto `main`).
+> Last updated: 2026-09-01. Branch at time of writing:
+> `docs/tmobile-network-pit-failure`.
+>
+> **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
+> maturity/authorization split are on `main`, which is what Render is running.
+> The note below describing it as open was accurate on 2026-08-28.
 >
 > **PR #180 has MERGED** (`5cc3cf0`, 2026-08-11) — Ops Center Phase 1.6 and the
 > un-branched Alembic chain are on `main`. Sections below that describe it as
@@ -20,6 +23,76 @@
 > sections below that describe it as "PR open, NOT merged" were accurate on
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·⚠️ ATTEMPTED, NOT CERTIFIED — Network Profile live PIT run returned HTTP 500 / GENS-0005 [2026-09-01]
+
+One controlled live request to `POST /wholesale/v1/subscriber/network-profile`
+for the carrier-provided PIT subscriber (`…2715`, independently confirmed
+`Active` on 2026-08-28). **OAuth succeeded (HTTP 200); the resource request
+returned HTTP 500, carrier code `GENS-0005`, "Unexpected Exception: Please
+notify your system administrator".** Full record:
+`TMOBILE_PIT_CERTIFICATION_20260901.md`.
+
+**`query_network` remains `MOCK_CERTIFIED`.** A failed live carrier attempt is
+not PIT certification: `PIT_TESTED` means *successfully* exercised with
+acceptable evidence retained, and neither half is true here. Send authorization
+also did not move — it is still `SINGLE_RUN_ONLY`. No new state was invented to
+say "attempted and failed"; the existing `test_status` / `pit_restrictions`
+fields carry it, which keeps `query_usage`'s "Never sent live." legibly
+different.
+
+**Classify it as a carrier/resource endpoint failure after successful
+authentication** — and no further. It is *not* an auth failure (OAuth returned
+200 and the request reached the Network Profile gateway, which answered with a
+structured carrier error), and it is *not* established that the fault is inside
+T-Mobile. `GENS-0005` is a generic unexpected-exception code; a PIT backend
+issue, partner/account provisioning, subscriber test data, an endpoint
+entitlement, or an undocumented request requirement on our side are all still
+possible. The run proves *reach* — credentials, PoP, partner headers and the
+exact vendor path get a structured answer from the right gateway — which is not
+evidence about operation behaviour.
+
+**What did not happen:** no retry · no polling · no Usage request · no
+Transaction Status request · no subscriber mutation · no reserve-SIM activity ·
+no ledger reconciliation from the failed read · no Render env-var change. The
+one-shot grant was consumed and cleared, an evidence bundle was written on
+failure, and the harness printed its STOP guidance, which was followed.
+
+**Certification sequence is PAUSED at step 2.** `query_usage` has **not** been
+sent live and must not be until this is understood — advancing would turn one
+uninterpreted result into two. `query_transaction_status` stays blocked: today's
+failure surfaced four carrier trace identifiers and **none** of them has been
+confirmed as the `transactionId` that operation expects, so the blocker stands.
+
+**Carrier questions are now four**, not three — `TMOBILE_CARRIER_QUESTIONS_OPEN.md`
+§4 asks whether the Network Profile endpoint is enabled for our partner in PIT,
+whether further provisioning is required, whether the supplied test subscriber
+is valid for it, and whether anything is missing from our request. Still
+**drafted, NOT sent**.
+
+**Operator ergonomics.** Two live attempts before the successful invocation were
+refused at the explicit-subscriber gate with no nominated selector — a
+shell-local `$PIT_ICCID` that did not survive between copied command blocks. No
+carrier request was sent by either. The runbook now recommends deriving the
+ICCID inline from `TMOBILE_PIT_READONLY_ICCID_ALLOWLIST` at invocation time
+(`TMOBILE_PIT_OPERATOR_RUNBOOK.md` §2c): still explicit, still allowlist-checked,
+still masked in the preflight the operator reads. Explicit nomination was **not**
+weakened and no "latest subscriber" exists.
+
+**Evidence is not yet durable — open action.** The bundle was written to
+`/tmp/pit-evidence/` on the Render instance and copied to `~/tmobile-pit-evidence/`
+in the same session. **Neither survives a redeploy** without a persistent disk.
+It must be downloaded to the operator's private evidence store before the next
+deploy; that has **not** been done. Nothing raw is committed — the repository
+carries only this sanitized record.
+
+**Failure-path invariants are now pinned** by
+`api/tests/test_tmobile_pit_network_failure.py` (43 tests): a carrier 500 writes
+evidence, records failure, consumes the grant, does not retry, does not poll,
+does not advance maturity, does not reconcile the ledger, does not run the next
+operation, and cannot leak authorization to `query_usage`; the transaction-status
+blocker outranks a one-shot grant; and an explicit ICCID survives parser →
+preview → execute dispatch.
 
 ## 0·DONE — Ops Center Phase 1.6 landed; Alembic chain un-branched (PR #180, MERGED `5cc3cf0`) [2026-08-11]
 
