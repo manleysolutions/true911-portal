@@ -201,6 +201,15 @@ class Operation:
     #: explicit reviewed declaration, never inferred from ``readiness``.
     send_authorization: SendAuthorization = SendAuthorization.NONE
 
+    #: Whether a successful response from this operation may settle the
+    #: lifecycle ledger (evidence class C, ``carrier_verified``). An explicit,
+    #: reviewed declaration - true only for a READ-ONLY operation whose
+    #: reconciled contract returns the carrier's own ``subscriberStatus`` for the
+    #: subscriber named in the request. Never inferred from a response merely
+    #: containing a field of that name: a read whose contract does not declare
+    #: it (usage, transaction status) reconciles nothing, whatever it returns.
+    lifecycle_evidence: bool = False
+
     @property
     def is_sendable(self) -> bool:
         """True only for a live send that needs NO single-run grant.
@@ -393,6 +402,9 @@ OPERATIONS: tuple[Operation, ...] = (
         # proven, not what we may now do.
         readiness=ReadinessState.PIT_TESTED,
         send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
+        # Class-C lifecycle evidence: the contract returns the carrier's own
+        # subscriberStatus for the requested subscriber (observed live 2026-08-28).
+        lifecycle_evidence=True,
         blocking_questions=(
             "Confirm whether an inactive-in-inventory SIM returns an error code or an empty result.",
         ),
@@ -414,25 +426,26 @@ OPERATIONS: tuple[Operation, ...] = (
         synchronous="Synchronous. Async not applicable.",
         reversibility="N/A - read-only.",
         prerequisite_state="Subscriber must have been previously activated.",
-        pit_restrictions="Attempted once in PIT on 2026-09-01 against the carrier-provided Active subscriber; the gateway returned HTTP 500 / GENS-0005. Not certified. Live send remains blocked.",
+        pit_restrictions="Live PIT certified 2026-09-30 (carrier-directed re-test). NOT generally sendable: reachable only through an explicit one-shot PIT grant. History: the first attempt on 2026-09-01 returned HTTP 500 / GENS-0005.",
         implementation_status="Implemented. Corrected: exact path, and iccid/imsi are now accepted as identifiers alongside msisdn.",
-        # ATTEMPTED, NOT CERTIFIED. Recorded here rather than in ``readiness``
-        # because a carrier error is not certification evidence: it shows the
-        # request reached the right gateway with valid credentials, and says
-        # nothing about whether this client drives the operation correctly.
-        # Maturity therefore stays MOCK_CERTIFIED - see
-        # TMOBILE_PIT_CERTIFICATION_20260901.md.
-        test_status="Mock-certified against the reconciled contract. Gates certified offline and previewed 2026-08-28. ONE live PIT attempt on 2026-09-01: OAuth HTTP 200, then the resource request returned HTTP 500 with carrier code GENS-0005 ('Unexpected Exception'). No retry, no polling, no mutation, no ledger reconciliation. NOT certified - maturity deliberately unchanged. Summary in TMOBILE_PIT_CERTIFICATION_20260901.md; evidence in the operator's private store.",
-        readiness=ReadinessState.MOCK_CERTIFIED,
+        # History is preserved, not rewritten: the 2026-09-01 attempt failed
+        # (HTTP 500 / GENS-0005) and did NOT advance maturity. On 2026-09-30
+        # T-Mobile Engineering, holding that failure's trace identifiers, asked
+        # for a re-test; exactly one request under a one-shot grant returned
+        # HTTP 200 / SUCCESS / 100 for the approved PIT subscriber, parsed by
+        # this client, evidence retained. That meets PIT_TESTED as defined on
+        # ReadinessState. Authorization did NOT move: still SINGLE_RUN_ONLY.
+        test_status="Mock-certified against the reconciled contract. ONE live PIT attempt on 2026-09-01: OAuth HTTP 200, resource HTTP 500 / GENS-0005 ('Unexpected Exception'); no retry, no polling, no mutation, no ledger reconciliation; maturity unchanged (TMOBILE_PIT_CERTIFICATION_20260901.md). Then, at T-Mobile Engineering's written request, ONE carrier-directed re-test on 2026-09-30: OAuth HTTP 200, resource HTTP 200, status SUCCESS, result 100, iccidStatus INUSE, subscriberStatus ACTIVE, simNetworkType M2M; parsed; no retry, no polling, no mutation. LIVE PIT certified - summary in TMOBILE_PIT_CERTIFICATION_20260930.md; evidence in the operator's private store.",
+        readiness=ReadinessState.PIT_TESTED,
         send_authorization=SendAuthorization.SINGLE_RUN_ONLY,
-        blocking_questions=(
-            "Is POST /wholesale/v1/subscriber/network-profile enabled for this "
-            "partner in the Wholesale PIT gateway, and does the carrier-"
-            "supplied Active test subscriber support it? One controlled "
-            "request on 2026-09-01 returned HTTP 500 / GENS-0005 after a "
-            "successful OAuth; the cause is not established. See "
-            "TMOBILE_CARRIER_QUESTIONS_OPEN.md §4.",
-        ),
+        # Class-C lifecycle evidence: the reconciled contract returns the
+        # carrier's own subscriberStatus for the requested subscriber.
+        lifecycle_evidence=True,
+        # The 2026-09-01 question (is the endpoint enabled / is the subscriber
+        # valid?) is resolved by observation: the GENS-0005 condition was not
+        # reproduced on the carrier-directed re-test. See
+        # TMOBILE_CARRIER_QUESTIONS_OPEN.md section 4 (resolved).
+        blocking_questions=(),
     ),
     Operation(
         name="query_usage",
@@ -638,6 +651,12 @@ def _validate_authorization_policy() -> None:
                 f"{op.name}: a destructive operation may not carry "
                 f"{op.send_authorization.value} authorization."
             )
+        if op.lifecycle_evidence and op.classification is not Classification.READ_ONLY:
+            raise AssertionError(
+                f"{op.name}: only an independent READ may be declared lifecycle "
+                "evidence. A request's own response describes our request, not "
+                "the carrier's record, and must never settle the ledger."
+            )
 
 
 _validate_authorization_policy()
@@ -690,6 +709,20 @@ def declares_single_run_authorization(name: str) -> bool:
         return False
     return (op.send_authorization is SendAuthorization.SINGLE_RUN_ONLY
             and op.classification is Classification.READ_ONLY)
+
+
+def is_lifecycle_evidence_operation(name: str) -> bool:
+    """Whether a successful response from ``name`` may settle the lifecycle
+    ledger. False for unknown operations - eligibility is declared, never
+    assumed."""
+    try:
+        return get_operation(name).lifecycle_evidence
+    except KeyError:
+        return False
+
+
+def lifecycle_evidence_operations() -> tuple[str, ...]:
+    return tuple(op.name for op in OPERATIONS if op.lifecycle_evidence)
 
 
 def sendable_operations() -> tuple[Operation, ...]:

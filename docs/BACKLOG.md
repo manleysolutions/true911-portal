@@ -48,7 +48,21 @@ not enable the canonical read model for her.
   `FEATURE_CANONICAL_SERVICE_MODEL` + tenant allowlist; only once the projection
   is approved for customer use. No Judy invite until then.
 
-## ⭐ NEXT — Send the four carrier questions; QueryNetwork PIT is paused on the answer [2026-09-01]
+## ✅ DONE — QueryNetwork live PIT certified on a carrier-directed re-test [2026-09-30]
+
+T-Mobile Engineering asked for a re-test after receiving the 09-01 trace ids;
+one request returned HTTP 200 / `SUCCESS` / `100`. `query_network` is
+`PIT_TESTED`, still `SINGLE_RUN_ONLY` (D-026, `TMOBILE_PIT_CERTIFICATION_20260930.md`).
+Carrier question §4 resolved; questions §1–§3 remain — remove §4 from the draft
+before sending. Lifecycle evidence is now an explicit per-operation declaration.
+
+**Next T-Mobile step (not authorized by this work):** QuerySubscriberUsage — still
+`MOCK_CERTIFIED`, never sent live; it needs its own deliberate one-shot grant and
+inherits nothing from Network Profile. `query_transaction_status` stays blocked
+on the `transactionId` question. Confirm the private evidence store survives a
+redeploy.
+
+## (historical) NEXT — Send the four carrier questions; QueryNetwork PIT is paused on the answer [2026-09-01]
 
 **QueryNetwork was attempted once on 2026-09-01 and failed.** OAuth returned
 HTTP 200; the resource request returned **HTTP 500 / `GENS-0005`**. It is **NOT

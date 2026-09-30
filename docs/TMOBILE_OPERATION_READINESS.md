@@ -6,9 +6,9 @@
 | Metadata | |
 |---|---|
 | **Authority Level** | 3 — Execution |
-| **Last reviewed** | 2026-09-01, after the Network Profile live attempt returned HTTP 500 / GENS-0005 |
+| **Last reviewed** | 2026-09-30, after the carrier-directed Network Profile re-test returned HTTP 200 / SUCCESS (the 2026-09-01 attempt had returned HTTP 500 / GENS-0005) |
 | **Evidence reference** | `TMO-REST-RECON-001` |
-| **Related** | `TMOBILE_API_INVENTORY.md` · `TMOBILE_PIT_CERTIFICATION_PLAN.md` · `TMOBILE_PRODUCTION_READINESS.md` · `TMOBILE_PIT_CERTIFICATION_20260828.md` · `TMOBILE_PIT_CERTIFICATION_20260901.md` |
+| **Related** | `TMOBILE_API_INVENTORY.md` · `TMOBILE_PIT_CERTIFICATION_PLAN.md` · `TMOBILE_PRODUCTION_READINESS.md` · `TMOBILE_PIT_CERTIFICATION_20260828.md` · `TMOBILE_PIT_CERTIFICATION_20260901.md` · `TMOBILE_PIT_CERTIFICATION_20260930.md` |
 
 ---
 
@@ -24,8 +24,8 @@ code, not by convention.
 |---|---|---|---|---|---|---|
 | Activate subscriber | `PIT_TESTED` | **Operator harness only** | not eligible | yes (07-21, 08-28) | B reversible | — |
 | Subscriber inquiry | **`PIT_TESTED`** | **NO** | eligible | **yes (08-28)** | A read-only | — |
-| Query network | `MOCK_CERTIFIED` | **NO** | eligible | **attempted 09-01 — HTTP 500 / GENS-0005, NOT certified** | A read-only | Carrier error unexplained — carrier answer required |
-| Query subscriber usage | `MOCK_CERTIFIED` | **NO** | eligible | no — **never sent live** | A read-only | Sequence paused behind Query network |
+| Query network | **`PIT_TESTED`** | **NO** | eligible | **yes (09-30, carrier-directed re-test)**; 09-01 attempt HTTP 500 / GENS-0005 | A read-only | — (09-01 question resolved by observation) |
+| Query subscriber usage | `MOCK_CERTIFIED` | **NO** | eligible | no — **never sent live** | A read-only | Not yet exercised; needs its own grant |
 | Suspend subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | B reversible | Not yet exercised in PIT |
 | Restore subscriber | `MOCK_CERTIFIED` | **NO** | not eligible | no | B reversible | Not yet exercised in PIT |
 | Change SIM | `MOCK_CERTIFIED` | **NO** | not eligible | no | **C destructive** | Replaced SIM ages out; no customer-facing inverse |
@@ -50,9 +50,22 @@ through the operator harness. The read-only family is reachable only through a
 single-run PIT authorization: one operation, one nominated subscriber, one
 request, consumed on use. Being certification-*ready* is not the same as being
 sendable — and neither is having been certified. `subscriber_inquiry` is live
-PIT certified and remains just as un-sendable as it was the day before.
+PIT certified and remains just as un-sendable as it was the day before — and
+so, since 2026-09-30, is `query_network`.
 
-**QueryNetwork was attempted live on 2026-09-01 and is still `MOCK_CERTIFIED`.**
+**QueryNetwork is `PIT_TESTED` as of 2026-09-30.** T-Mobile Engineering,
+holding the 09-01 failure's trace identifiers, asked for a re-test; exactly one
+request under a one-shot grant returned HTTP 200 / `SUCCESS` / `100` for the
+approved PIT subscriber and parsed cleanly. Maturity advanced; authorization did
+not — still `SINGLE_RUN_ONLY`. Record: `TMOBILE_PIT_CERTIFICATION_20260930.md`.
+
+**Lifecycle evidence is declared, not inferred (D-026).** Only operations whose
+registry entry sets `lifecycle_evidence` — `subscriber_inquiry` and
+`query_network` — may settle the ledger from a `subscriberStatus`. Usage and
+Transaction Status never do, whatever they return.
+
+*History, as recorded on 2026-09-01:* **QueryNetwork was attempted live on
+2026-09-01 and stayed `MOCK_CERTIFIED`.**
 One controlled request; OAuth returned HTTP 200 and the resource request
 returned HTTP 500 / `GENS-0005`. A failed live attempt is not PIT
 certification — `PIT_TESTED` means *successfully* exercised with acceptable

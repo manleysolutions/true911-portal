@@ -167,7 +167,10 @@ class TestOperationProvenance:
     # Of those, the ones whose maturity is still mock_certified. Split out
     # because subscriber_inquiry is now LIVE PIT CERTIFIED and remains just as
     # un-sendable — which is the property worth stating separately.
-    RECONCILED_UNEXERCISED = [n for n in RECONCILED if n != "subscriber_inquiry"]
+    # query_network joined subscriber_inquiry on 2026-09-30 (carrier-directed
+    # re-test). Both are certified; both are still un-sendable.
+    RECONCILED_UNEXERCISED = [n for n in RECONCILED
+                              if n not in ("subscriber_inquiry", "query_network")]
 
     def test_only_activation_is_currently_sendable(self):
         """Exactly one operation may be transmitted live.

@@ -127,13 +127,14 @@ class TestPolicyMatrix:
         assert not probe(readiness=ReadinessState.MOCK_CERTIFIED).is_sendable
 
     def test_2_mock_certified_with_a_grant_allows_one_request(self, pit_env):
-        """query_network is genuinely MOCK_CERTIFIED and genuinely grantable."""
-        op = OPS.get_operation("query_network")
+        """query_usage is genuinely MOCK_CERTIFIED and genuinely grantable.
+        (query_network held this role until it was PIT certified 2026-09-30.)"""
+        op = OPS.get_operation("query_usage")
         assert op.readiness is ReadinessState.MOCK_CERTIFIED
-        assert not boundary_allows("query_network")
+        assert not boundary_allows("query_usage")
 
-        grant("query_network")
-        assert boundary_allows("query_network")
+        grant("query_usage")
+        assert boundary_allows("query_usage")
 
     def test_3_pit_tested_general_send_denied(self):
         """Being live PIT certified authorizes nothing by itself."""
@@ -222,8 +223,11 @@ class TestCertificationBlockersOutrank:
 
 class TestRegistryState:
     def test_9_query_network(self, pit_env):
+        """Live PIT certified 2026-09-30. Still not generally sendable. Still
+        grantable - and only by a one-shot grant."""
         op = OPS.get_operation("query_network")
-        assert op.readiness is ReadinessState.MOCK_CERTIFIED
+        assert op.readiness is ReadinessState.PIT_TESTED
+        assert op.send_authorization is SendAuthorization.SINGLE_RUN_ONLY
         assert not op.is_sendable
         assert op.is_single_run_certifiable
 

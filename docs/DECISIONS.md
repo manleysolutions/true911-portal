@@ -493,3 +493,39 @@ side effect of bookkeeping rather than as a decision anybody made.
 - **Consequences:** Judy is not invited and the canonical read model is not enabled
   for her until READY_FOR_CUSTOMER + RH Test acceptance + explicit approval; a
   fresh invitation is then generated.
+
+### D-026 — Network Profile PIT certified; lifecycle evidence is declared per operation
+- **Date:** 2026-09-30 · **Status:** Accepted
+- **Context:** `query_network` failed once on 2026-09-01 (HTTP 500 / GENS-0005)
+  and stayed `MOCK_CERTIFIED`. On 2026-09-30, after receiving that failure's
+  trace identifiers, T-Mobile Engineering asked in writing for a re-test; exactly
+  one request under a one-shot grant returned HTTP 200 / SUCCESS / 100 for the
+  approved PIT subscriber and parsed cleanly. The harness then reconciled the
+  local ledger `unknown` -> `active` from the response's `subscriberStatus`.
+  Audit found that reconciliation from Network Profile was intended (the class-C
+  evidence model names `subscriber-inquiry` and `query-network`, and the
+  reconciled contract returns the carrier's own `subscriberStatus`) but that
+  eligibility was inferred from the field's presence: any read-only response
+  carrying `subscriberStatus` — usage, transaction status — would also have
+  settled the ledger.
+- **Decision:**
+  1. The run meets the existing `PIT_TESTED` definition; `query_network` advances
+     `MOCK_CERTIFIED` -> `PIT_TESTED`. **Send authorization is unchanged
+     (`SINGLE_RUN_ONLY`)** — maturity never grants. Nothing else advances:
+     `query_usage` (never sent live) and `query_transaction_status` (blocked on
+     `transactionId`) are unchanged; destructive operations stay `NONE`.
+  2. The 2026-09-01 Network Profile carrier question is resolved by observation:
+     the GENS-0005 condition was not reproduced on the carrier-directed re-test.
+     No claim is made about what, if anything, the carrier changed. History is
+     preserved, not rewritten.
+  3. A carrier read may settle the lifecycle ledger only if its operation is
+     **explicitly declared** lifecycle evidence (`Operation.lifecycle_evidence`)
+     — today `subscriber_inquiry` and `query_network` — and only read-only
+     operations may be declared (enforced at import). Live and replayed
+     reconciliation both refuse undeclared operations. Absent, unrecognised and
+     conflicting statuses stay fail-closed.
+- **Consequences:** registry field + import-time check in
+  `tmobile_operations.py`; the harness reconciler gates on it; regression suite
+  `test_tmobile_pit_network_certification.py`. Record:
+  `TMOBILE_PIT_CERTIFICATION_20260930.md`. No carrier call was made to produce
+  this change.

@@ -183,14 +183,15 @@ class TestMaturityDoesNotAdvanceOnFailure:
     """`PIT_TESTED` means *successfully* exercised. A 500 is neither half."""
 
     @respx.mock
-    def test_query_network_stays_mock_certified_after_a_carrier_500(
-        self, cli, pit_env
-    ):
+    def test_a_carrier_500_advances_nothing(self, cli, pit_env):
+        """A failed run moves no maturity. (query_network later reached
+        PIT_TESTED on the 2026-09-30 carrier-directed re-test that SUCCEEDED -
+        never on the 2026-09-01 failure this suite replays.)"""
+        before = {o.name: o.readiness for o in OPS.OPERATIONS}
         code, _, _ = _run_failed_network_read(cli, pit_env)
 
         assert code == 1
-        assert (OPS.get_operation("query_network").readiness
-                is OPS.ReadinessState.MOCK_CERTIFIED)
+        assert {o.name: o.readiness for o in OPS.OPERATIONS} == before
 
     @respx.mock
     def test_send_authorization_is_untouched_by_a_failed_attempt(
@@ -208,14 +209,16 @@ class TestMaturityDoesNotAdvanceOnFailure:
         """*Attempted and failed* must stay distinguishable from *not attempted*.
 
         The existing free-text status fields carry that distinction, which is
-        why no new enum member was invented for it.
+        why no new enum member was invented for it. The 2026-09-01 failure is
+        history and stays recorded beside the 2026-09-30 success that certified
+        the operation - it is never rewritten.
         """
         network = OPS.get_operation("query_network")
         usage = OPS.get_operation("query_usage")
 
         assert "2026-09-01" in network.test_status
         assert "GENS-0005" in network.test_status
-        assert "NOT certified" in network.test_status
+        assert "2026-09-30" in network.test_status
         assert "Never sent live." in usage.test_status
         assert "GENS-0005" not in usage.test_status
 
