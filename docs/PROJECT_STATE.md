@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-09-30. Branch at time of writing:
-> `feat/canonical-foundation`.
+> `feat/source-snapshots`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -23,6 +23,35 @@
 > sections below that describe it as "PR open, NOT merged" were accurate on
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·IN REVIEW — RH Completion Program PR #187: operational source snapshots [2026-09-30]
+
+**Program:** `docs/customer/RH_COMPLETION_PROGRAM.md` (D-025) — RH becomes the
+reference customer; PRs #187–#193; Judy not invited, canonical read model not
+enabled for her until READY_FOR_CUSTOMER. Baseline: first untouched #186a
+production dry-run (26 confirmed services / 35 required connections; active
+operator decisions = 0). 45 locations is not a target.
+
+Branch `feat/source-snapshots` (PR open, **not merged**; no production import run).
+Decision **D-024**; spec `docs/customer/SOURCE_SNAPSHOTS.md`.
+- Migration **055**: `source_snapshots`, `source_snapshot_records` (immutable,
+  SHA-256 de-duplicated, fail-loud on pre-existing tables).
+- `app/services/source_snapshots/`: versioned status maps (unmapped -> UNKNOWN),
+  CSV/XLSX reader, adapters built to the ACTUAL production export structures -
+  NAPCO `napco_radiolist.v1`, Infatrac `tmobile_infatrac.v2`, Verizon
+  `verizon_inventory.v2` (index / billing / username columns dropped) - and Red
+  Pocket `redpocket.v0-provisional`; effective time OPERATOR > SOURCE > FILENAME
+  (only with an established timezone) > UNDATED; tenant
+  attribution (exact identifier HIGH / RH label rule MEDIUM / ambiguous never
+  stored); allow-listed private attributes; 7-day freshness helper.
+- `scripts.source_snapshot_import` (dry-run default; `--apply --imported-by`;
+  `--list`, `--show`; export must be outside the repo).
+- **Next:** after merge, import the NAPCO / Infatrac / Verizon exports via /tmp ->
+  dry-run -> review -> `--apply` -> `--show` -> delete the file. Then #188.
+
+## 0·DONE — Canonical Life-Safety Service & Connection model (PR #186, MERGED `1c69798`) [2026-09-30]
+
+(The section below was written while PR #186 was open; it has since merged.)
 
 ## 0·IN REVIEW — Canonical Life-Safety Service & Connection model: foundation & reconciliation (PR #186a) [2026-09-30]
 

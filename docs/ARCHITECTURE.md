@@ -227,6 +227,10 @@ Role-specific landing pages and nav are defined in `web/src/App.jsx` /
 
 ## 9. Design Decisions (the "why")
 
+- **Operational source snapshots (D-024).** `app/services/source_snapshots/`
+  imports NAPCO / carrier exports as immutable, SHA-256 de-duplicated,
+  tenant-attributed evidence (migration 055) — raw status kept beside a versioned
+  lifecycle interpretation, unmapped -> UNKNOWN. Consumers never mutate it.
 - **Canonical service model (D-023).** `app/services/canonical/` is a pure
   engine (`engine.project(snapshot)`) fed by a read-only loader (True911 SELECTs +
   live Zoho GETs) and persisted only by an explicit `--apply` writer into eight

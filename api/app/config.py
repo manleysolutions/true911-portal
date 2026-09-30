@@ -251,6 +251,12 @@ class Settings(BaseSettings):
     FEATURE_CANONICAL_SERVICE_MODEL: str = "false"
     CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST: str = ""
 
+    # ── Operational source snapshots (D-024) ────────────────────────
+    # Inventory-certification freshness window for NAPCO / T-Mobile / Verizon /
+    # Red Pocket snapshots, measured from the SOURCE effective time.  This is
+    # NOT a monitoring-health threshold (lifecycle and activity are separate).
+    SOURCE_SNAPSHOT_FRESHNESS_DAYS: int = 7
+
     # ── AI Customer Operations Center / Support Center ─────────────
     # Caller-facing Tier-1 support workflow: identifier lookup → SMS-OTP
     # caller verification → temporary support session → triage → human

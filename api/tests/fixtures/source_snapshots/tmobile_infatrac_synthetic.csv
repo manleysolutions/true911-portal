@@ -1,0 +1,7 @@
+Partner, MSISDN, Status,Package, Last CDR date,Idle,"Unbilled Voice, min","Daily Voice, min","3-Day Voice, min","7-Day Voice, min","14-Day Voice, min","30-Day Voice, min",  Label
+Fictional Partner LLC,12025550701,Active,IoT Voice 500,2026-09-28 14:05:00,No,3,0,1,2,4,9,Restoration Hardware #147 Elevator 1
+Fictional Partner LLC,2025550702,Suspended,IoT Voice 500,2026-07-01 09:00:00,Yes,0,0,0,0,0,0,RH Austin #149
+Fictional Partner LLC,2025550703,Active,IoT Voice 500,2026-09-29 10:00:00,No,1,0,0,1,1,2,Unrelated Retail LLC
+Fictional Partner LLC,2025550704,Deactivated,IoT Voice 500,2025-05-01 00:00:00,Yes,0,0,0,0,0,0,Restoration Hardware #120 Emergency Phone
+Fictional Partner LLC,2025550606,Active,IoT Voice 500,2026-09-29 11:30:00,No,0,0,0,0,1,1,Line 6
+Fictional Partner LLC,2025550705,Porting,IoT Voice 500,,Yes,0,0,0,0,0,0,Restoration Hardware #168

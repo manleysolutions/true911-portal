@@ -1,0 +1,5 @@
+Unnamed: 0,Billing account name,Billing account number,Cost Center,Mobile number,Username,Wireless ID,Equipment Model,Upgrade date,Device ID,SIM ID,Service status,Suspended date
+0,Fictional Billing Co,BAN-SYNTH-0001,Restoration Hardware Dallas #168,202-555-0801,Pat Example,WID-SYNTH-0001,LM150,2027-01-01,359000000000201,8901000000000000201,Active,
+1,Fictional Billing Co,BAN-SYNTH-0001,Restoration Hardware Katy #645,2025550802,Sam Placeholder,WID-SYNTH-0002,LM150,,A0000000000202,8901000000000000202,Active,
+2,Fictional Billing Co,BAN-SYNTH-0001,Restoration Hardware Irvine #646,2025550803,Lee Sample,WID-SYNTH-0003,LM150,,359000000000203,8901000000000000203,Suspended,2026-08-15
+3,Fictional Billing Co,BAN-SYNTH-0001,Restoration Hardware Gilbert #642,2025550804,Kim Dummy,WID-SYNTH-0004,LM150,,359000000000204,8901000000000000204,Pending Port,
