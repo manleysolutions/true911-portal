@@ -232,7 +232,8 @@ class TestReadinessUnchanged:
         assert not OPS.get_operation(operation).is_sendable
 
     @pytest.mark.parametrize(
-        "operation", [o for o in READ_ONLY if o != "subscriber_inquiry"])
+        "operation", [o for o in READ_ONLY
+                      if o not in ("subscriber_inquiry", "query_network")])
     def test_the_unexercised_reads_are_still_mock_certified(self, operation):
         """No live run has happened for these, so nothing may claim otherwise."""
         assert (OPS.get_operation(operation).readiness

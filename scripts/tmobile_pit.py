@@ -41,6 +41,12 @@ whose ``subscriberStatus`` reconciles the ledger through
 ``reconcile_from_carrier_read``. That path, not a callback, is what moves an
 activation from ``activation_requested`` to ``active``.
 
+Which reads count is DECLARED, not inferred: only an operation whose registry
+entry sets ``lifecycle_evidence`` (today ``subscriber_inquiry`` and
+``query_network``, whose reconciled contracts return the carrier's own
+``subscriberStatus``) may settle the ledger. A usage or transaction-status
+response reconciles nothing even if it happens to carry a field of that name.
+
 ``reconcile`` replays a read that already happened, parsing the carrier's own
 recorded response out of its evidence bundle and through the same reconciler. It
 opens no socket. It exists so that rebuilding a local file never costs a real
@@ -109,6 +115,8 @@ from app.integrations.tmobile_operations import (  # noqa: E402
     blocked_operations,
     certification_blockers,
     get_operation,
+    is_lifecycle_evidence_operation,
+    lifecycle_evidence_operations,
     require_sendable,
     sendable_operations,
 )
@@ -855,10 +863,28 @@ def _reconcile_ledger_from_read(
 
     Returns None when the response gives nothing to reconcile against — a usage
     query carries no subscriberStatus, and silence is not evidence.
+
+    Only operations the registry DECLARES as lifecycle evidence may reconcile
+    (``Operation.lifecycle_evidence``). A response from any other read is
+    refused here even when it carries a ``subscriberStatus`` — eligibility is a
+    reviewed property of the operation's contract, never the accident of a
+    field being present.
     """
     status_raw = envelope.subscriber_status_raw
     if not iccid or not status_raw:
         return None
+
+    if not is_lifecycle_evidence_operation(operation):
+        reason = (
+            f"'{operation}' is not declared a lifecycle-evidence operation "
+            f"(declared: {', '.join(lifecycle_evidence_operations())}). Its "
+            "response carried a subscriberStatus, but that does not make it an "
+            "authoritative description of the carrier's record. Nothing was "
+            "reconciled."
+        )
+        print(f"\nLEDGER NOT RECONCILED — {reason}")
+        return {"reconciled": False, "reason": reason,
+                "carrier_status_raw": status_raw}
 
     previous = _load_state(iccid)
     try:

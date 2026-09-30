@@ -1,5 +1,12 @@
 # T-Mobile read-only certification and production go-live plan
 
+> **Update 2026-09-30.** Step 2 (QueryNetwork) **is live PIT certified.** At
+> T-Mobile Engineering's written request, exactly one re-test returned HTTP 200 /
+> `SUCCESS` / `100`; maturity `MOCK_CERTIFIED` → `PIT_TESTED`, authorization still
+> `SINGLE_RUN_ONLY`. The 09-01 GENS-0005 condition was not reproduced. Step 3
+> (Usage) has **still not been attempted** and needs its own explicit grant; it
+> inherits nothing. See `TMOBILE_PIT_CERTIFICATION_20260930.md`.
+
 > **Update 2026-09-01.** Step 2 (QueryNetwork) **was attempted once and did not
 > succeed**: OAuth returned HTTP 200 and the resource request returned HTTP 500
 > / `GENS-0005`. It is **NOT certified** and stays `MOCK_CERTIFIED`. **The
@@ -37,8 +44,8 @@ its own single-run PIT authorization. **One of the four has now been executed.**
 | # | Operation | Maturity | Status |
 |---|---|---|---|
 | 1 | SubscriberInquiry | **`PIT_TESTED`** | ✅ **live PIT certified 2026-08-28**, HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: Active` |
-| 2 | QueryNetwork | `MOCK_CERTIFIED` | ⚠️ **live attempted 2026-09-01 — carrier HTTP 500 / `GENS-0005`. NOT certified.** No retry; sequence paused here |
-| 3 | QuerySubscriberUsage | `MOCK_CERTIFIED` | ⏸️ **never sent live** — deliberately not attempted while step 2 is unexplained |
+| 2 | QueryNetwork | **`PIT_TESTED`** | ✅ **live PIT certified 2026-09-30** (carrier-directed re-test), HTTP 200 / `SUCCESS` / `100`, `subscriberStatus: ACTIVE`. History: 2026-09-01 attempt returned HTTP 500 / `GENS-0005` |
+| 3 | QuerySubscriberUsage | `MOCK_CERTIFIED` | ⏸️ **never sent live** — next in sequence; requires its own one-shot grant |
 | 4 | QueryTransactionStatus | `MOCK_CERTIFIED` | ⛔ **grant REFUSED** — `transactionId` semantics unresolved |
 
 **Step 2 did not advance anything.** A failed live attempt is not PIT
@@ -115,8 +122,9 @@ at step 3 while step 2 is unexplained** — a second uninterpreted result is wor
 than one, and step 2 must not be re-attempted with nothing changed either.
 Procedure for a structured carrier error: `TMOBILE_PIT_OPERATOR_RUNBOOK.md` §4.
 
-A read whose response carries a `subscriberStatus` also reconciles the operator
-ledger — that is how a line reaches `active` on class-C carrier-verified
+A read that is **declared lifecycle evidence** (`subscriber_inquiry`,
+`query_network` — D-026) and whose response carries a `subscriberStatus` also
+reconciles the operator ledger — that is how a line reaches `active` on class-C carrier-verified
 evidence. Check it afterwards with
 `python ../scripts/tmobile_pit.py state --iccid <ICCID>`. A `CONFLICT` there
 means two observations disagree and is a stop condition, not a warning.

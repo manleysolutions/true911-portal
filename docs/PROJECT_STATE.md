@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-09-30. Branch at time of writing:
-> `feat/source-snapshots`.
+> `feat/tmobile-network-profile-certified`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -196,7 +196,35 @@ Known likely audit findings to confirm on Render: ~16 approved buildings with no
 linked True911 monitoring record (the 29/45 protected gap — shown honestly as
 Unknown), pending registry review items, and store-number checks.
 
-## 0·⚠️ ATTEMPTED, NOT CERTIFIED — Network Profile live PIT run returned HTTP 500 / GENS-0005 [2026-09-01]
+## 0·IN REVIEW — T-Mobile Network Profile PIT certified after a carrier-directed re-test [2026-09-30]
+
+Branch `feat/tmobile-network-profile-certified` (PR open, **not merged**).
+Decision **D-026**; record `TMOBILE_PIT_CERTIFICATION_20260930.md`.
+
+- T-Mobile Engineering received the 09-01 failure's trace identifiers and asked
+  in writing for a re-test. **Exactly one** Network Profile request (one-shot
+  grant consumed and cleared) returned OAuth HTTP 200, resource **HTTP 200 /
+  `SUCCESS` / `100`**, `iccidStatus INUSE`, `subscriberStatus ACTIVE`,
+  `simNetworkType M2M`, for the approved subscriber `…2715`; parsed cleanly. No
+  retry, polling, mutation, Usage or Transaction Status request.
+- `query_network`: `MOCK_CERTIFIED` → **`PIT_TESTED`**; authorization unchanged,
+  **`SINGLE_RUN_ONLY`**. `query_usage` untouched (never sent live);
+  `query_transaction_status` still blocked; destructive operations unchanged;
+  reserve SIMs untouched.
+- The 09-01 Network Profile carrier question (§4) is resolved by observation —
+  GENS-0005 not reproduced; no claim about carrier-side changes.
+- **Reconciliation audit:** Network Profile reconciling the ledger was intended
+  (class-C evidence model) but eligibility had been inferred from the
+  `subscriberStatus` field's presence. Now an explicit per-operation declaration
+  (`Operation.lifecycle_evidence` = inquiry + network only, read-only enforced at
+  import); live and replay paths refuse undeclared operations. Today's result is
+  unchanged.
+- Private evidence (`tmobile-pit-evidence-20260930T183727Z.*`) is in the
+  operator's private Render-side store — not in git.
+
+## 0·HISTORY — ⚠️ ATTEMPTED, NOT CERTIFIED — Network Profile live PIT run returned HTTP 500 / GENS-0005 [2026-09-01]
+
+*(Superseded 2026-09-30 by the carrier-directed re-test above; kept as written.)*
 
 One controlled live request to `POST /wholesale/v1/subscriber/network-profile`
 for the carrier-provided PIT subscriber (`…2715`, independently confirmed

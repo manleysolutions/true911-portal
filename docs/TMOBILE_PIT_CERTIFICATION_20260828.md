@@ -136,7 +136,7 @@ claims. `python ../scripts/tmobile_pit.py state --iccid <ICCID>` prints both.
 |---|---|---|
 | A `request_submitted` | we sent something | `run <op>` |
 | B `carrier_sync_ack` | the carrier answered **our request** | 2xx whose body reads as an acceptance |
-| C `carrier_verified` | the carrier described **its own record** | `subscriber-inquiry` / `query-network` returning a known `subscriberStatus` |
+| C `carrier_verified` | the carrier described **its own record** | `subscriber-inquiry` / `query-network` returning a known `subscriberStatus` — since 2026-09-30 an explicit per-operation declaration (`Operation.lifecycle_evidence`, D-026), never inferred from the field being present |
 | D/E/F `callback_confirmed` | callback received, authenticated, correlated | callback path |
 | G `conflict` | two observations disagree | either reconciler |
 

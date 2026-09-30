@@ -17,6 +17,12 @@
 > see may now come from request validation, the lifecycle precondition policy, or
 > the operation registry — all three fail closed and all say *nothing was sent*.
 
+> **Update 2026-09-30.** At T-Mobile Engineering's request the Network Profile
+> read was re-tested once and returned HTTP 200 / `SUCCESS`; `query_network` is
+> now `PIT_TESTED` and still needs a one-shot grant per run. Only
+> `subscriber-inquiry` and `query-network` may reconcile the ledger (D-026).
+> Record: `TMOBILE_PIT_CERTIFICATION_20260930.md`.
+
 > **Update 2026-09-01.** The Network Profile read was attempted once and the
 > carrier returned HTTP 500 / `GENS-0005`; it is **not** certified and
 > `query_network` stays `MOCK_CERTIFIED`. Two things follow for operators:

@@ -1,5 +1,12 @@
 # T-Mobile PIT certification record — 2026-09-01 (Network Profile)
 
+> **Follow-up 2026-09-30.** After T-Mobile Engineering received this failure's
+> trace identifiers they asked for a re-test. Exactly one carrier-directed
+> request on 2026-09-30 returned HTTP 200 / `SUCCESS` / `100`; `query_network`
+> is now `PIT_TESTED` (still `SINGLE_RUN_ONLY`). The GENS-0005 condition below
+> was not reproduced. This record is kept exactly as written — see
+> `TMOBILE_PIT_CERTIFICATION_20260930.md`.
+
 > **Result: LIVE PIT ATTEMPTED · CARRIER ERROR · NOT CERTIFIED.** One controlled
 > live request to the Network Profile read operation. OAuth succeeded; the
 > resource request returned HTTP 500 / `GENS-0005`. `query_network` remains

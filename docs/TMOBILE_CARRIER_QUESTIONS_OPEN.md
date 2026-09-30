@@ -8,7 +8,7 @@
 | **Authority Level** | 3 — Execution |
 | **Created** | 2026-08-28 |
 | **Basis** | The 2026-08-28 PIT activation + readback — `TMOBILE_PIT_CERTIFICATION_20260828.md` · the 2026-09-01 Network Profile attempt — `TMOBILE_PIT_CERTIFICATION_20260901.md` |
-| **Last reviewed** | 2026-09-01, after the Network Profile live attempt returned HTTP 500 / GENS-0005 — **question 4 added; the set is now four** |
+| **Last reviewed** | 2026-09-30 — **question 4 RESOLVED / superseded**: the carrier-directed Network Profile re-test returned HTTP 200 / SUCCESS (`TMOBILE_PIT_CERTIFICATION_20260930.md`). Questions 1–3 unchanged. |
 | **Related** | `TMOBILE_OPERATION_READINESS.md` · `TMOBILE_READONLY_GO_LIVE_PLAN.md` |
 
 Each question below is one our own evidence and the authorized vendor
@@ -29,6 +29,11 @@ there at send time.
 ---
 
 ## 0. Ready-to-send draft
+
+> **2026-09-30:** question 4 is resolved — **remove it from the draft** before
+> sending. The 09-01 failure's trace identifiers were supplied to T-Mobile
+> Engineering, who asked for a re-test, and the re-test succeeded. Questions 1–3
+> are unaffected.
 
 Reviewed 2026-09-01 after the Network Profile live attempt returned HTTP 500 /
 GENS-0005. That run added **question 4**; the set below is now four. Paste as-is;
@@ -184,7 +189,16 @@ lifecycle operations where the synchronous answer is only an acceptance.
 
 ---
 
-## 4. Network Profile — HTTP 500 / GENS-0005 after a successful OAuth
+## 4. Network Profile — HTTP 500 / GENS-0005 after a successful OAuth — ✅ RESOLVED / SUPERSEDED 2026-09-30
+
+> **Resolution.** On 2026-09-30 the private trace identifiers of the 09-01
+> failure were supplied to T-Mobile Engineering, who asked in writing for a
+> re-test. Exactly one request returned **HTTP 200 / `SUCCESS` / `100`** for the
+> same approved PIT subscriber. **The prior GENS-0005 condition was not
+> reproduced during the T-Mobile-engineering-directed 2026-09-30 re-test.** We do
+> not know what, if anything, changed on the carrier side and do not claim it.
+> `query_network` is now `PIT_TESTED`, still `SINGLE_RUN_ONLY`. Record:
+> `TMOBILE_PIT_CERTIFICATION_20260930.md`. The history below is kept as written.
 
 > On 2026-09-01 we sent exactly one request to
 > `POST /wholesale/v1/subscriber/network-profile` for the carrier-provided PIT
