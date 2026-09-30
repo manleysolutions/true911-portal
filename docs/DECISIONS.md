@@ -466,7 +466,9 @@ side effect of bookkeeping rather than as a decision anybody made.
   4. Attributes are allow-listed; dealer and central-station contact/account
      numbers are never stored; a raw-row SHA-256 preserves provability.
   5. Freshness for inventory certification is 7 days from the source effective
-     time; it is not a monitoring-health threshold.
+     time; it is not a monitoring-health threshold. Effective time precedence:
+     operator `--effective-at` > authoritative source-native timestamp > file-name
+     timestamp only when its timezone is established > UNDATED (never fresh).
   6. Importing changes nothing else: no source-system writes, no canonical service,
      E911, registry or operator-decision changes.
 - **Consequences:** `app/services/source_snapshots/`,

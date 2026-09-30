@@ -76,7 +76,13 @@ def validate_identifier(kind: str, raw) -> tuple[Optional[str], Optional[str]]:
         return (n, None) if n else (None, "MSISDN_INVALID")
     x = nid(v)
     if kind == "imei":
-        return (x, None) if x.isdigit() and 14 <= len(x) <= 16 else (None, "IMEI_INVALID")
+        if x.isdigit() and 14 <= len(x) <= 16:
+            return x, None
+        # a 14-hex MEID (CDMA device id) is a real deterministic identifier -
+        # kept but flagged, never "repaired"
+        if re.fullmatch(r"[0-9A-F]{14}", x) and not x.isdigit():
+            return x, "IMEI_NONSTANDARD_MEID"
+        return None, "IMEI_INVALID"
     if kind == "iccid":
         if re.fullmatch(r"\d{18,22}F?", x):
             return x, None
@@ -116,7 +122,11 @@ class Adapter:
     label_fields: tuple = ()
     activity_fields: tuple = ()
     derived: Callable[[dict], dict] = lambda values: {}
+    # a timestamp embedded in the file name (naive) and whether the parser
+    # documentation establishes its timezone.  Unestablished -> reported as a
+    # candidate only and NEVER used as the effective time.
     effective_from_filename: Callable[[str], Optional[datetime]] = lambda name: None
+    filename_timezone_established: bool = False
     provisional: bool = False
     # headers that identify ANOTHER source's export - their presence rejects the
     # file, so e.g. a NAPCO RadioList can never be imported as a carrier file
@@ -170,6 +180,11 @@ class Adapter:
 
 
 # ── NAPCO StarLink RadioList ─────────────────────────────────────────
+# Actual export (28 columns): RadioNumber, ICCID, DealerId, SubscriberName,
+# DealerCompany, DealerEmail, LastSignalReceived, OnlineDate, SIMStatus,
+# FirmwareVer, DebounceTime, PollingRate, AutoEnrollCSTel, AutoEnrollCSAcct,
+# Primary/Backup/Duplicate/DuplicateBackup CS Receiver/Acct/ReceiverType, Plan,
+# GenTech.  Dealer and central-station contact / account columns are not read.
 
 def _napco_derived(values: dict) -> dict:
     def configured(v):
@@ -182,15 +197,21 @@ def _napco_derived(values: dict) -> dict:
     return out
 
 
-def _napco_effective(name: str) -> Optional[datetime]:
+def _napco_filename_timestamp(name: str) -> Optional[datetime]:
+    """Naive timestamp from "Radiolist-YYYYMMDDHHMMSS..."; its timezone is NOT
+    established, so it is only ever reported as a candidate."""
     m = re.search(r"radiolist[-_](\d{14})", name.lower())
     if not m:
         return None
     try:
-        return datetime.strptime(m.group(1), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        return datetime.strptime(m.group(1), "%Y%m%d%H%M%S")
     except ValueError:
         return None
 
+
+NAPCO_SIGNATURE = ("radionumber", "dealerid", "primarycsreceiver")
+INFATRAC_SIGNATURE = ("lastcdrdate", "unbilledvoicemin", "30dayvoicemin")
+VERIZON_SIGNATURE = ("billingaccountnumber", "servicestatus", "simid", "wirelessid")
 
 NAPCO_ADAPTER = Adapter(
     source_system=ST.NAPCO, source_label="NAPCO StarLink RadioList",
@@ -209,62 +230,56 @@ NAPCO_ADAPTER = Adapter(
     attribute_fields=("online_date", "firmware", "debounce", "polling", "plan", "gen_tech",
                       "primary_cs_type", "backup_cs_type"),
     label_fields=("label",), activity_fields=("activity",),
-    derived=_napco_derived, effective_from_filename=_napco_effective,
+    derived=_napco_derived, effective_from_filename=_napco_filename_timestamp,
+    filename_timezone_established=False,
+    foreign_headers=INFATRAC_SIGNATURE + VERIZON_SIGNATURE,
 )
 
-_ADDR = {"street": ("street", "streetaddress", "address", "siteaddress", "facilityaddress"),
-         "city": ("city", "sitecity", "facilitycity"),
-         "state": ("state", "sitestate", "facilitystate"),
-         "zip": ("zip", "zipcode", "sitezip", "postalcode", "facilityzipcode")}
-
-
-_NAPCO_SIGNATURE = ("radionumber", "dealerid", "primarycsreceiver")
-
-
-def _carrier_recognise(f: set) -> bool:
-    return bool(f & {"msisdn", "iccid", "imei"}) and bool(f & {"status", "label"})
-
-
-# ── T-Mobile / Infatrac (Genesis) ────────────────────────────────────
+# ── T-Mobile / Infatrac ──────────────────────────────────────────────
+# Actual CSV (13 columns; some headers carry leading whitespace): Partner,
+# MSISDN, Status, Package, Last CDR date, Idle, Unbilled Voice min, Daily /
+# 3-Day / 7-Day / 14-Day / 30-Day Voice min, Label.  Label is tenant-attribution
+# / location evidence ONLY - it never assigns a service type.
 TMOBILE_ADAPTER = Adapter(
     source_system=ST.T_MOBILE, source_label="T-Mobile / Infatrac inventory",
-    parser_name="tmobile_infatrac", parser_version="tmobile_infatrac.v1",
-    columns=dict({
-        "msisdn": ("msisdn", "phonenumber", "phone", "mdn", "subscribernumber", "did"),
-        "iccid": ("iccid", "simiccid", "sim", "simnumber"),
-        "imei": ("imei", "deviceimei"),
-        "status": ("status", "subscriberstatus", "activationstatus", "linestatus", "simstatus"),
-        "label": ("label", "description", "accountname", "sitename", "subscribername",
-                  "customername", "name", "locationname"),
-        "model": ("model", "devicemodel", "hardwaremodel"),
-        "plan": ("plan", "rateplan", "priceplan"),
-        "activation_date": ("activationdate", "activatedon", "activated"),
-        "activity": ("lastactivity", "lastusage", "lastseen", "lastconnection"),
-    }, **_ADDR),
-    key_order=("msisdn", "iccid", "imei"), recognise=_carrier_recognise,
-    attribute_fields=("model", "plan", "activation_date", "street", "city", "state", "zip"),
-    label_fields=("label",), activity_fields=("activity",), foreign_headers=_NAPCO_SIGNATURE,
+    parser_name="tmobile_infatrac", parser_version="tmobile_infatrac.v2",
+    columns={
+        "partner": ("partner",), "msisdn": ("msisdn",), "status": ("status",),
+        "package": ("package",), "activity": ("lastcdrdate",), "idle": ("idle",),
+        "voice_unbilled_min": ("unbilledvoicemin",),
+        "voice_daily_min": ("dailyvoicemin",), "voice_3day_min": ("3dayvoicemin",),
+        "voice_7day_min": ("7dayvoicemin",), "voice_14day_min": ("14dayvoicemin",),
+        "voice_30day_min": ("30dayvoicemin",), "label": ("label",),
+    },
+    key_order=("msisdn",),
+    recognise=lambda f: {"msisdn", "status", "label"} <= f,
+    attribute_fields=("partner", "package", "idle", "voice_unbilled_min", "voice_daily_min",
+                      "voice_3day_min", "voice_7day_min", "voice_14day_min",
+                      "voice_30day_min"),
+    label_fields=("label",), activity_fields=("activity",),
+    foreign_headers=NAPCO_SIGNATURE + VERIZON_SIGNATURE,
 )
 
-# ── Verizon ThingSpace ───────────────────────────────────────────────
+# ── Verizon ──────────────────────────────────────────────────────────
+# Actual export (13 columns): "Unnamed: 0" (a CSV index - ignored), Billing
+# account name, Billing account number, Cost Center, Mobile number, Username,
+# Wireless ID, Equipment Model, Upgrade date, Device ID, SIM ID, Service status,
+# Suspended date.  Billing account name / number, Username and Wireless ID are
+# never read or stored (no canonical need; privacy by default).
 VERIZON_ADAPTER = Adapter(
-    source_system=ST.VERIZON, source_label="Verizon ThingSpace inventory",
-    parser_name="verizon_thingspace", parser_version="verizon_thingspace.v1",
-    columns=dict({
-        "msisdn": ("mdn", "msisdn", "phonenumber", "mobilenumber"),
-        "iccid": ("iccid", "simiccid", "sim"),
-        "imei": ("imei", "imeimeid", "deviceimei"),
-        "status": ("state", "status", "linestate", "devicestate", "subscriptionstate"),
-        "label": ("costcentername", "costcenter", "devicename", "devicelabel", "groupname",
-                  "accountname", "customername", "label"),
-        "model": ("model", "devicemodel"),
-        "plan": ("serviceplan", "rateplan", "plan"),
-        "activation_date": ("lastactivationdate", "activationdate"),
-        "activity": ("lastconnectiondate", "lastconnectiontime", "lastactivitydate"),
-    }, **_ADDR),
-    key_order=("msisdn", "iccid", "imei"), recognise=_carrier_recognise,
-    attribute_fields=("model", "plan", "activation_date", "street", "city", "state", "zip"),
-    label_fields=("label",), activity_fields=("activity",), foreign_headers=_NAPCO_SIGNATURE,
+    source_system=ST.VERIZON, source_label="Verizon wireless inventory",
+    parser_name="verizon_inventory", parser_version="verizon_inventory.v2",
+    columns={
+        "msisdn": ("mobilenumber",), "imei": ("deviceid",), "iccid": ("simid",),
+        "status": ("servicestatus",), "label": ("costcenter",),
+        "model": ("equipmentmodel",), "upgrade_date": ("upgradedate",),
+        "suspended_date": ("suspendeddate",),
+    },
+    key_order=("msisdn", "iccid", "imei"),
+    recognise=lambda f: {"msisdn", "status"} <= f,
+    attribute_fields=("model", "upgrade_date", "suspended_date"),
+    label_fields=("label",),
+    foreign_headers=NAPCO_SIGNATURE + INFATRAC_SIGNATURE,
 )
 
 # ── Red Pocket (contract only until a production export is reviewed) ─
@@ -280,9 +295,10 @@ REDPOCKET_ADAPTER = Adapter(
         "plan": ("plan", "planname"),
         "expiry": ("expirationdate", "expiry", "renewaldate", "planexpiration"),
     },
-    key_order=("msisdn", "iccid", "imei"), recognise=_carrier_recognise,
+    key_order=("msisdn", "iccid", "imei"),
+    recognise=lambda f: bool(f & {"msisdn", "iccid", "imei"}) and bool(f & {"status", "label"}),
     attribute_fields=("plan", "expiry"), label_fields=("label",), provisional=True,
-    foreign_headers=_NAPCO_SIGNATURE,
+    foreign_headers=NAPCO_SIGNATURE + INFATRAC_SIGNATURE + VERIZON_SIGNATURE,
 )
 
 ADAPTERS = {a.source_system: a for a in (NAPCO_ADAPTER, TMOBILE_ADAPTER, VERIZON_ADAPTER,

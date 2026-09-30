@@ -37,9 +37,11 @@ Decision **D-024**; spec `docs/customer/SOURCE_SNAPSHOTS.md`.
 - Migration **055**: `source_snapshots`, `source_snapshot_records` (immutable,
   SHA-256 de-duplicated, fail-loud on pre-existing tables).
 - `app/services/source_snapshots/`: versioned status maps (unmapped -> UNKNOWN),
-  CSV/XLSX reader, adapters NAPCO `napco_radiolist.v1` (checked against the real
-  RadioList structure), T-Mobile/Infatrac `tmobile_infatrac.v1`, Verizon
-  `verizon_thingspace.v1`, Red Pocket `redpocket.v0-provisional`; tenant
+  CSV/XLSX reader, adapters built to the ACTUAL production export structures -
+  NAPCO `napco_radiolist.v1`, Infatrac `tmobile_infatrac.v2`, Verizon
+  `verizon_inventory.v2` (index / billing / username columns dropped) - and Red
+  Pocket `redpocket.v0-provisional`; effective time OPERATOR > SOURCE > FILENAME
+  (only with an established timezone) > UNDATED; tenant
   attribution (exact identifier HIGH / RH label rule MEDIUM / ambiguous never
   stored); allow-listed private attributes; 7-day freshness helper.
 - `scripts.source_snapshot_import` (dry-run default; `--apply --imported-by`;

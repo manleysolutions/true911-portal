@@ -10,12 +10,14 @@ operator decisions.  The export must live OUTSIDE the repository (e.g. /tmp on
 the Render shell) and should be deleted after a verified ``--apply`` - the
 database snapshot and its SHA-256 remain.
 
-Sources: NAPCO (StarLink RadioList), T_MOBILE (Infatrac/Genesis), VERIZON
-(ThingSpace export), RED_POCKET (provisional contract).
+Sources: NAPCO (StarLink RadioList), T_MOBILE (Infatrac inventory CSV), VERIZON
+(wireless inventory export), RED_POCKET (provisional contract).
+Always pass --effective-at (export time WITH timezone): a file-name timestamp is
+used only when its timezone is established, otherwise the snapshot is UNDATED.
 
 Usage (Render shell, api service):
-    python -m scripts.source_snapshot_import --tenant restoration-hardware --source NAPCO --file /tmp/Radiolist-20260930122903.xlsx
-    python -m scripts.source_snapshot_import --tenant restoration-hardware --source NAPCO --file /tmp/Radiolist-20260930122903.xlsx --apply --imported-by you@example.com
+    python -m scripts.source_snapshot_import --tenant restoration-hardware --source NAPCO --file /tmp/Radiolist-20260930122903.xlsx --effective-at 2026-09-30T12:29:03-04:00
+    python -m scripts.source_snapshot_import --tenant restoration-hardware --source NAPCO --file /tmp/Radiolist-20260930122903.xlsx --effective-at 2026-09-30T12:29:03-04:00 --apply --imported-by you@example.com
     python -m scripts.source_snapshot_import --tenant restoration-hardware --list
     python -m scripts.source_snapshot_import --tenant restoration-hardware --show 12
 Exit: 0 ok · 3 error
@@ -37,7 +39,11 @@ def _parse_effective(v):
     if not v:
         return None
     d = datetime.fromisoformat(v)
-    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    if d.tzinfo is None:
+        # never silently assume UTC for a local-looking time
+        raise ValueError("--effective-at must include a timezone offset, e.g. "
+                         "2026-09-30T12:29:03-04:00 or 2026-09-30T16:29:03+00:00")
+    return d.astimezone(timezone.utc)
 
 
 def render_plan(plan: dict) -> str:
@@ -53,6 +59,9 @@ def render_plan(plan: dict) -> str:
              "  [PROVISIONAL ADAPTER]" if s["provisional_adapter"] else ""),
          "source_effective_at=%s (basis=%s)" % (plan["source_effective_at"],
                                                 plan["effective_at_basis"]),
+         "filename timestamp candidate=%s (timezone established: %s)" % (
+             s.get("filename_timestamp_candidate") or "-",
+             "yes" if s.get("filename_timezone_established") else "NO - not used"),
          "sheet=%s recognised fields=%s" % (s["sheet"], ",".join(s["recognised_fields"])),
          "",
          "rows total=%d attributed=%d excluded=%d ambiguous=%d invalid=%d" % (
@@ -64,6 +73,9 @@ def render_plan(plan: dict) -> str:
          "raw status (attributed): %s" % json.dumps(s["raw_status"], sort_keys=True),
          "identifier issues: %s" % json.dumps(s["identifier_issues"], sort_keys=True),
          "duplicate keys within file: %d" % s["duplicate_keys"]]
+    if plan["effective_at_basis"] == "UNDATED":
+        L.append("WARNING: UNDATED - this snapshot can never establish freshness; "
+                 "supply --effective-at <export time with timezone>")
     if not s["status_column_present"]:
         L.append("WARNING: no status column - every record interprets as UNKNOWN lifecycle")
     if s["ambiguous"]:
@@ -141,7 +153,7 @@ def main() -> None:
     p.add_argument("--tenant", required=True)
     p.add_argument("--source", help="NAPCO | T_MOBILE | VERIZON | RED_POCKET")
     p.add_argument("--file", help="export file OUTSIDE the repository (.csv / .xlsx)")
-    p.add_argument("--effective-at", help="source effective time (ISO-8601) if not in the filename")
+    p.add_argument("--effective-at", help="source export time, ISO-8601 WITH timezone (overrides any filename timestamp)")
     p.add_argument("--apply", action="store_true")
     p.add_argument("--imported-by")
     p.add_argument("--list", action="store_true", help="list this tenant's snapshots")

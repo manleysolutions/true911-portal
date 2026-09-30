@@ -31,16 +31,17 @@ STATUS_MAPS: dict[str, tuple[str, dict[str, str]]] = {
         "suspend": _S, "suspended": _S,
         "terminate": _D, "terminated": _D,
     }),
-    # T-Mobile / Infatrac (Genesis) subscriber status
+    # T-Mobile / Infatrac "Status" (observed: Active / Deactivated / Suspended)
     T_MOBILE: ("tmobile.infatrac.v1", {
         "active": _C, "activated": _C,
         "suspend": _S, "suspended": _S,
         "deactivated": _D, "deactive": _D, "cancelled": _D, "canceled": _D,
         "terminated": _D, "disconnected": _D,
     }),
-    # Verizon ThingSpace subscription state.  Connection words ("connected") are
-    # activity, not lifecycle, and pre-activation states are not current.
-    VERIZON: ("verizon.thingspace.v1", {
+    # Verizon inventory "Service status" (observed: Active).  Connection words
+    # ("connected") are activity, not lifecycle; pre-activation states are not
+    # current; anything unseen stays UNKNOWN.
+    VERIZON: ("verizon.servicestatus.v1", {
         "active": _C, "activated": _C,
         "suspend": _S, "suspended": _S,
         "deactive": _D, "deactivated": _D, "terminated": _D,

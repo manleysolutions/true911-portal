@@ -40,7 +40,7 @@ OTHER = "other-tenant"
 FIX = os.path.join(os.path.dirname(__file__), "fixtures", "source_snapshots")
 NAPCO_FILE = os.path.join(FIX, "Radiolist-20260901120000-synthetic.csv")
 TMO_FILE = os.path.join(FIX, "tmobile_infatrac_synthetic.csv")
-VZ_FILE = os.path.join(FIX, "verizon_thingspace_synthetic.csv")
+VZ_FILE = os.path.join(FIX, "verizon_inventory_synthetic.csv")
 RP_FILE = os.path.join(FIX, "redpocket_synthetic.csv")
 
 WATCHED = [Device, Line, Sim, Site, PortfolioBuilding, PortfolioDeviceMapping,
@@ -109,11 +109,76 @@ def test_unknown_or_empty_status_is_never_current(raw):
 
 # ── parsers ──────────────────────────────────────────────────────────
 
-def test_napco_file_is_never_accepted_as_a_carrier_file():
-    with pytest.raises(reader.ReadError):
-        reader.read_table(NAPCO_FILE, A.TMOBILE_ADAPTER.accepts)
-    with pytest.raises(reader.ReadError):
-        reader.read_table(NAPCO_FILE, A.VERIZON_ADAPTER.accepts)
+NAPCO_HEADERS = [
+    "RadioNumber", "ICCID", "DealerId", "SubscriberName", "DealerCompany", "DealerEmail",
+    "LastSignalReceived", "OnlineDate", "SIMStatus", "FirmwareVer", "DebounceTime",
+    "PollingRate", "AutoEnrollCSTel", "AutoEnrollCSAcct", "PrimaryCSReceiver", "PrimaryCSAcct",
+    "PrimaryCSReceiverType", "BackupCSReceiver", "BackupCSAcct", "BackupCSReceiverType",
+    "DuplicateCSReceiver", "DuplicateCSAcct", "DuplicateCSReceiverType",
+    "DuplicateBackupCSReceiver", "DuplicateBackupCSAcct", "DuplicateBackupCSReceiverType",
+    "Plan", "GenTech"]
+INFATRAC_HEADERS = [
+    "Partner", "MSISDN", "Status", "Package", "Last CDR date", "Idle", "Unbilled Voice, min",
+    "Daily Voice, min", "3-Day Voice, min", "7-Day Voice, min", "14-Day Voice, min",
+    "30-Day Voice, min", "Label"]
+VERIZON_HEADERS = [
+    "Unnamed: 0", "Billing account name", "Billing account number", "Cost Center",
+    "Mobile number", "Username", "Wireless ID", "Equipment Model", "Upgrade date", "Device ID",
+    "SIM ID", "Service status", "Suspended date"]
+
+
+def test_actual_napco_header_set_parses():
+    cmap = A.NAPCO_ADAPTER.column_map(NAPCO_HEADERS)
+    assert A.NAPCO_ADAPTER.accepts(NAPCO_HEADERS)
+    assert {"napco_radio", "iccid", "status", "activity", "label"} <= set(cmap)
+    assert cmap["status"] == NAPCO_HEADERS.index("SIMStatus")
+    # dealer + central-station contact / account columns are never mapped
+    mapped = {NAPCO_HEADERS[i] for i in cmap.values()}
+    assert not mapped & {"DealerId", "DealerEmail", "DealerCompany", "AutoEnrollCSTel",
+                         "AutoEnrollCSAcct", "PrimaryCSAcct", "BackupCSAcct"}
+
+
+def test_actual_infatrac_header_set_parses():
+    cmap = A.TMOBILE_ADAPTER.column_map(INFATRAC_HEADERS)
+    assert A.TMOBILE_ADAPTER.accepts(INFATRAC_HEADERS)
+    assert len(cmap) == 13                       # every actual column is recognised
+    assert cmap["msisdn"] == 1 and cmap["status"] == 2 and cmap["activity"] == 4
+    assert cmap["label"] == 12
+
+
+def test_header_whitespace_is_normalised_for_matching_only():
+    padded = ["  %s " % h for h in INFATRAC_HEADERS]
+    assert A.TMOBILE_ADAPTER.column_map(padded) == A.TMOBILE_ADAPTER.column_map(INFATRAC_HEADERS)
+    padded_v = [" %s  " % h for h in VERIZON_HEADERS]
+    assert A.VERIZON_ADAPTER.column_map(padded_v) == A.VERIZON_ADAPTER.column_map(VERIZON_HEADERS)
+
+
+def test_actual_verizon_header_set_parses_and_ignores_index_and_private_columns():
+    cmap = A.VERIZON_ADAPTER.column_map(VERIZON_HEADERS)
+    assert A.VERIZON_ADAPTER.accepts(VERIZON_HEADERS)
+    assert cmap == {"label": 3, "msisdn": 4, "model": 7, "upgrade_date": 8, "imei": 9,
+                    "iccid": 10, "status": 11, "suspended_date": 12}
+    mapped = {VERIZON_HEADERS[i] for i in cmap.values()}
+    assert not mapped & {"Unnamed: 0", "Billing account name", "Billing account number",
+                         "Username", "Wireless ID"}
+
+
+@pytest.mark.parametrize("fixture,owner", [
+    (NAPCO_FILE, ST.NAPCO), (TMO_FILE, ST.T_MOBILE), (VZ_FILE, ST.VERIZON),
+])
+def test_cross_source_header_rejection(fixture, owner):
+    for source, adapter in A.ADAPTERS.items():
+        if source == owner:
+            reader.read_table(fixture, adapter.accepts)
+        else:
+            with pytest.raises(reader.ReadError):
+                reader.read_table(fixture, adapter.accepts)
+
+
+def test_actual_header_sets_are_accepted_only_by_their_own_adapter():
+    for headers, owner in ((NAPCO_HEADERS, ST.NAPCO), (INFATRAC_HEADERS, ST.T_MOBILE),
+                           (VERIZON_HEADERS, ST.VERIZON)):
+        assert [s for s, a in A.ADAPTERS.items() if a.accepts(headers)] == [owner]
 
 
 @pytest.mark.parametrize("kind,raw,value,issue", [
@@ -121,6 +186,7 @@ def test_napco_file_is_never_accepted_as_a_carrier_file():
     ("msisdn", "555-0101", None, "MSISDN_INVALID"),
     ("imei", "3.59E+14", None, "IMEI_MANGLED"),
     ("imei", "3590000", None, "IMEI_INVALID"),
+    ("imei", "A0000000000202", "A0000000000202", "IMEI_NONSTANDARD_MEID"),
     ("iccid", "8901000000000000011", "8901000000000000011", None),
     ("iccid", "A1B2C3D4E5F6A7B8C9D0", "A1B2C3D4E5F6A7B8C9D0", "ICCID_NONSTANDARD"),
     ("iccid", "123", None, "ICCID_INVALID"),
@@ -134,8 +200,12 @@ def test_napco_plan_parses_interprets_and_attributes():
     async def go():
         S = await make_db()
         p = await plan(S, ST.NAPCO, NAPCO_FILE)
-        assert p["source_effective_at"] == datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
-        assert p["effective_at_basis"] == importer.EFFECTIVE_FILENAME
+        # the RadioList file-name timestamp has no established timezone: it is a
+        # recorded candidate only, never the effective time
+        assert p["source_effective_at"] is None
+        assert p["effective_at_basis"] == importer.EFFECTIVE_UNDATED
+        assert p["summary"]["filename_timestamp_candidate"] == "2026-09-01T12:00:00"
+        assert p["summary"]["filename_timezone_established"] is False
         assert (p["row_count_total"], p["row_count_invalid"]) == (10, 1)
         keys = {r["source_record_key"] for r in p["records"]}
         assert keys == {"99000001", "99000002", "99000006", "99000008", "99000009"}
@@ -148,6 +218,8 @@ def test_napco_plan_parses_interprets_and_attributes():
         r8 = rec(p, "99000008")
         assert (r8["source_status_raw"], r8["lifecycle_interpretation"]) == \
             ("Pending Activation", V.UNKNOWN)
+        assert rec(p, "99000001")["lifecycle_interpretation"] == V.CURRENT
+        assert rec(p, "99000002")["lifecycle_interpretation"] == V.SUSPENDED
         r9 = rec(p, "99000009")
         assert r9["lifecycle_interpretation"] == V.DECOMMISSIONED
         assert r9["attributes"]["identifier_issues"] == ["ICCID_NONSTANDARD"]
@@ -156,6 +228,51 @@ def test_napco_plan_parses_interprets_and_attributes():
         amb = {a["reason"] for a in p["summary"]["ambiguous"]}
         assert amb == {"LABEL:SHORT_TOKEN_ONLY", "LABEL_VS_OTHER_TENANT_IDENTIFIER"}
         assert p["summary"]["verdicts"]["EXCLUDED"] == 2
+    asyncio.run(go())
+
+
+# ── effective-time precedence ────────────────────────────────────────
+
+def test_operator_effective_at_overrides_a_filename_timestamp():
+    async def go():
+        S = await make_db()
+        op = datetime(2026, 9, 1, 16, 0, tzinfo=timezone.utc)
+        p = await plan(S, ST.NAPCO, NAPCO_FILE, effective_at=op)
+        assert (p["source_effective_at"], p["effective_at_basis"]) == \
+            (op, importer.EFFECTIVE_OPERATOR)
+        assert p["summary"]["filename_timestamp_candidate"] == "2026-09-01T12:00:00"
+    asyncio.run(go())
+
+
+def test_effective_time_precedence_rules():
+    import dataclasses
+    name = "Radiolist-20260901120000.xlsx"
+    op = datetime(2026, 9, 1, 16, 0, tzinfo=timezone.utc)
+    # 1 operator wins
+    assert importer.resolve_effective_at(A.NAPCO_ADAPTER, name, op)[:2] == \
+        (op, importer.EFFECTIVE_OPERATOR)
+    # 3 a file-name timestamp is used only when its timezone is established
+    assert importer.resolve_effective_at(A.NAPCO_ADAPTER, name)[:2] == \
+        (None, importer.EFFECTIVE_UNDATED)
+    established = dataclasses.replace(A.NAPCO_ADAPTER, filename_timezone_established=True)
+    eff, basis, _c = importer.resolve_effective_at(established, name)
+    assert (eff, basis) == (datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
+                            importer.EFFECTIVE_FILENAME)
+    # 4 otherwise UNDATED
+    assert importer.resolve_effective_at(A.TMOBILE_ADAPTER, "infatrac.csv") == \
+        (None, importer.EFFECTIVE_UNDATED, None)
+
+
+def test_undated_snapshot_can_be_stored_but_is_never_fresh():
+    async def go():
+        S = await make_db()
+        p = await plan(S, ST.NAPCO, NAPCO_FILE)
+        async with S() as db:
+            sid, created = await importer.apply_import(db, p, imported_by="op")
+            snap = (await db.execute(select(SourceSnapshot).where(
+                SourceSnapshot.id == sid))).scalar_one()
+        assert created and snap.effective_at_basis == importer.EFFECTIVE_UNDATED
+        assert importer.freshness(snap) == importer.UNDATED
     asyncio.run(go())
 
 
@@ -198,33 +315,98 @@ def test_xlsx_sheet_selection(tmp_path):
     asyncio.run(go())
 
 
-def test_tmobile_plan():
+def test_infatrac_plan():
     async def go():
         S = await make_db()
         p = await plan(S, ST.T_MOBILE, TMO_FILE)
+        assert p["parser_version"] == "tmobile_infatrac.v2"
+        assert len(p["summary"]["recognised_fields"]) == 13
         keys = {r["source_record_key"]: r for r in p["records"]}
-        assert set(keys) == {"2025550701", "2025550702", "2025550704", "2025550606"}
-        assert keys["2025550701"]["lifecycle_interpretation"] == V.CURRENT
-        assert keys["2025550702"]["lifecycle_interpretation"] == V.UNKNOWN      # Hotlined
-        assert keys["2025550704"]["lifecycle_interpretation"] == V.DECOMMISSIONED
-        assert keys["2025550704"]["imei"] is None                             # sci-notation
-        assert "IMEI_MANGLED" in keys["2025550704"]["attributes"]["identifier_issues"]
+        assert set(keys) == {"2025550701", "2025550702", "2025550704", "2025550606",
+                             "2025550705"}                      # 703 is another customer
+        lc = {k: r["lifecycle_interpretation"] for k, r in keys.items()}
+        assert lc == {"2025550701": V.CURRENT, "2025550702": V.SUSPENDED,
+                      "2025550704": V.DECOMMISSIONED, "2025550606": V.CURRENT,
+                      "2025550705": V.UNKNOWN}                  # "Porting" is unmapped
+        assert keys["2025550705"]["source_status_raw"] == "Porting"
         assert keys["2025550606"]["attribution_basis"] == "IDENTIFIER_MATCH:PHONE"
-        assert keys["2025550701"]["attributes"]["city"] == "Chicago"
+        assert keys["2025550701"]["activity_at"] == datetime(2026, 9, 28, 14, 5,
+                                                             tzinfo=timezone.utc)
+        a = keys["2025550701"]["attributes"]
+        assert (a["package"], a["idle"], a["voice_30day_min"], a["partner"]) == \
+            ("IoT Voice 500", "No", "9", "Fictional Partner LLC")
     asyncio.run(go())
 
 
-def test_verizon_plan_and_connection_state_is_not_lifecycle():
+def test_infatrac_label_never_assigns_a_service_type():
+    async def go():
+        S = await make_db()
+        p = await plan(S, ST.T_MOBILE, TMO_FILE)
+        for r in p["records"]:
+            assert not any("service" in k or "classif" in k for k in r)
+            assert not any("service" in k or "classif" in k or "type" == k
+                           for k in r["attributes"])
+            assert r["identifier_type"] == A.MSISDN
+        r1 = next(r for r in p["records"] if r["source_record_key"] == "2025550701")
+        # "Elevator 1" in the label is location / attribution evidence only
+        assert r1["location_hint"] == "Restoration Hardware #147 Elevator 1"
+        assert "Elevator" not in json.dumps(r1["attributes"])
+        assert r1["lifecycle_interpretation"] == V.CURRENT
+    asyncio.run(go())
+
+
+def test_verizon_plan_drops_private_and_index_columns():
     async def go():
         S = await make_db()
         p = await plan(S, ST.VERIZON, VZ_FILE)
+        assert p["parser_version"] == "verizon_inventory.v2"
         lc = {r["source_record_key"]: r["lifecycle_interpretation"] for r in p["records"]}
-        assert lc == {"2025550801": V.CURRENT, "2025550802": V.UNKNOWN,
-                      "2025550803": V.DECOMMISSIONED, "2025550804": V.UNKNOWN}
-        r = next(r for r in p["records"] if r["source_record_key"] == "2025550801")
-        assert r["activity_at"] == datetime(2026, 9, 29, 8, 0, tzinfo=timezone.utc)
-        assert p["effective_at_basis"] == importer.EFFECTIVE_UNKNOWN
+        assert lc == {"2025550801": V.CURRENT, "2025550802": V.CURRENT,
+                      "2025550803": V.SUSPENDED, "2025550804": V.UNKNOWN}
+        by = {r["source_record_key"]: r for r in p["records"]}
+        assert by["2025550801"]["imei"] == "359000000000201"
+        assert by["2025550801"]["iccid"] == "8901000000000000201"
+        assert by["2025550802"]["imei"] == "A0000000000202"
+        assert by["2025550802"]["attributes"]["identifier_issues"] == ["IMEI_NONSTANDARD_MEID"]
+        assert by["2025550803"]["attributes"]["suspended_date"] == "2026-08-15"
+        assert by["2025550801"]["attributes"]["model"] == "LM150"
+        assert by["2025550801"]["location_hint"] == "Restoration Hardware Dallas #168"
+        blob = json.dumps(p["records"], default=str)
+        for private in ("BAN-SYNTH", "Pat Example", "Sam Placeholder", "WID-SYNTH",
+                        "Fictional Billing Co"):
+            assert private not in blob
+        for r in p["records"]:
+            assert set(r["attributes"]) <= {"model", "upgrade_date", "suspended_date",
+                                            "identifier_issues"}
+        assert p["effective_at_basis"] == importer.EFFECTIVE_UNDATED
     asyncio.run(go())
+
+
+def test_verizon_private_columns_are_never_persisted():
+    async def go():
+        S = await make_db()
+        p = await plan(S, ST.VERIZON, VZ_FILE)
+        async with S() as db:
+            await importer.apply_import(db, p, imported_by="op")
+            rows = (await db.execute(select(SourceSnapshotRecord))).scalars().all()
+            snap = (await db.execute(select(SourceSnapshot))).scalar_one()
+        stored = json.dumps([{c.name: getattr(r, c.name) for c in r.__table__.columns}
+                             for r in rows], default=str) + (snap.summary or "")
+        for private in ("BAN-SYNTH", "Pat Example", "Sam Placeholder", "Lee Sample",
+                        "Kim Dummy", "WID-SYNTH", "Fictional Billing Co"):
+            assert private not in stored
+    asyncio.run(go())
+
+
+def test_fixtures_and_tests_contain_only_synthetic_identifiers():
+    import re
+    allowed = ("990000", "8901000000000000", "359000", "202555", "1202555", "555000",
+               "000000", "2024", "2025", "2026", "2027")
+    paths = [os.path.join(FIX, f) for f in os.listdir(FIX)] + [__file__]
+    for path in paths:
+        text = open(path, encoding="utf-8").read()
+        for run in re.findall(r"\d{7,}", text):
+            assert run.startswith(allowed), (os.path.basename(path), run)
 
 
 def test_red_pocket_contract_is_provisional():
@@ -454,3 +636,11 @@ def test_cli_dry_run_apply_show_and_list(tmp_path, monkeypatch, capsys):
     assert "OK" in out
     # identifiers in the report are masked except telephone numbers
     assert "8901000000000000011" not in out
+
+
+def test_cli_effective_at_requires_a_timezone():
+    from scripts import source_snapshot_import as cli
+    with pytest.raises(ValueError, match="timezone"):
+        cli._parse_effective("2026-09-30T12:29:03")
+    assert cli._parse_effective("2026-09-30T12:29:03-04:00") == \
+        datetime(2026, 9, 30, 16, 29, 3, tzinfo=timezone.utc)

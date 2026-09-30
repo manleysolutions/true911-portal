@@ -1,6 +1,7 @@
-MSISDN,ICCID,IMEI,Status,Account Name,Model,Rate Plan,Activation Date,Street Address,City,State,Zip
-(202) 555-0701,8901000000000000101,359000000000101,Active,Restoration Hardware #147 Chicago,MS130v4,IoT 5GB,2026-01-10,1 Test St,Chicago,IL,60601
-2025550702,8901000000000000102,359000000000102,Hotlined,Restoration Hardware #149 Austin,MS130v4,IoT 5GB,2026-01-11,8 Test Ave,Austin,TX,78701
-2025550703,8901000000000000103,359000000000103,Active,Unrelated Retail LLC,MS130v4,IoT 5GB,2026-01-12,,,,
-2025550704,8901000000000000104,3.59E+14,Deactivated,Restoration Hardware #120 Cleveland,MS130v4,IoT 5GB,2025-05-01,3 Test Rd,Cleveland,OH,44101
-2025550606,8901000000000000106,359000000000106,Active,Customer Line 6,MS130v4,IoT 5GB,2026-02-01,,,,
+Partner, MSISDN, Status,Package, Last CDR date,Idle,"Unbilled Voice, min","Daily Voice, min","3-Day Voice, min","7-Day Voice, min","14-Day Voice, min","30-Day Voice, min",  Label
+Fictional Partner LLC,12025550701,Active,IoT Voice 500,2026-09-28 14:05:00,No,3,0,1,2,4,9,Restoration Hardware #147 Elevator 1
+Fictional Partner LLC,2025550702,Suspended,IoT Voice 500,2026-07-01 09:00:00,Yes,0,0,0,0,0,0,RH Austin #149
+Fictional Partner LLC,2025550703,Active,IoT Voice 500,2026-09-29 10:00:00,No,1,0,0,1,1,2,Unrelated Retail LLC
+Fictional Partner LLC,2025550704,Deactivated,IoT Voice 500,2025-05-01 00:00:00,Yes,0,0,0,0,0,0,Restoration Hardware #120 Emergency Phone
+Fictional Partner LLC,2025550606,Active,IoT Voice 500,2026-09-29 11:30:00,No,0,0,0,0,1,1,Line 6
+Fictional Partner LLC,2025550705,Porting,IoT Voice 500,,Yes,0,0,0,0,0,0,Restoration Hardware #168

@@ -22,7 +22,26 @@ from app.services.source_snapshots import attribution as AT
 from app.services.source_snapshots import reader
 from app.services.source_snapshots import status as ST
 
-EFFECTIVE_OPERATOR, EFFECTIVE_FILENAME, EFFECTIVE_UNKNOWN = "OPERATOR", "FILENAME", "UNKNOWN"
+# Effective-time precedence (never guessed):
+#   1. OPERATOR   explicit --effective-at
+#   2. SOURCE     a source-native, timezone-aware timestamp the parser documents as
+#                 authoritative (none of the current adapters has one)
+#   3. FILENAME   a file-name timestamp ONLY when the parser establishes its timezone
+#   4. UNDATED    otherwise - stored, but can never establish freshness
+EFFECTIVE_OPERATOR, EFFECTIVE_SOURCE, EFFECTIVE_FILENAME, EFFECTIVE_UNDATED = (
+    "OPERATOR", "SOURCE", "FILENAME", "UNDATED")
+
+
+def resolve_effective_at(adapter, basename: str, operator_value=None):
+    """-> (effective_at, basis, filename_candidate_iso)."""
+    candidate = adapter.effective_from_filename(basename)
+    cand_iso = candidate.isoformat() if candidate else None
+    if operator_value is not None:
+        return operator_value, EFFECTIVE_OPERATOR, cand_iso
+    if candidate is not None and adapter.filename_timezone_established:
+        eff = candidate if candidate.tzinfo else candidate.replace(tzinfo=timezone.utc)
+        return eff, EFFECTIVE_FILENAME, cand_iso
+    return None, EFFECTIVE_UNDATED, cand_iso
 
 
 def file_sha256(path: str) -> str:
@@ -59,11 +78,7 @@ async def plan_import(db, tenant_id: str, source_system: str, path: str, *,
     ix = index if index is not None else await AT.build_index(db)
 
     basename = os.path.basename(path)
-    if effective_at is not None:
-        eff, basis = effective_at, EFFECTIVE_OPERATOR
-    else:
-        eff = adapter.effective_from_filename(basename)
-        basis = EFFECTIVE_FILENAME if eff else EFFECTIVE_UNKNOWN
+    eff, basis, filename_candidate = resolve_effective_at(adapter, basename, effective_at)
 
     records, ambiguous, invalid = [], [], []
     verdicts, bases, lifecycles, raw_status = Counter(), Counter(), Counter(), Counter()
@@ -108,6 +123,10 @@ async def plan_import(db, tenant_id: str, source_system: str, path: str, *,
         "ambiguous": ambiguous, "invalid": invalid,
         "provisional_adapter": adapter.provisional,
         "status_column_present": "status" in cmap,
+        # a file-name timestamp whose timezone is not established is recorded for
+        # the operator but is never the effective time
+        "filename_timestamp_candidate": filename_candidate,
+        "filename_timezone_established": adapter.filename_timezone_established,
     }
     return {
         "tenant_id": tenant_id, "source_system": source_system,
