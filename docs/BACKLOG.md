@@ -13,7 +13,23 @@
 
 ---
 
-## ⭐ NEXT (RH) — Canonical service inventory: PR #186a review → production DRY-RUN → decisions → #186b [2026-09-30]
+## ⭐ PRIMARY (RH) — RH Customer Completion Program: #187 → #193 [2026-09-30]
+
+Program: `docs/customer/RH_COMPLETION_PROGRAM.md` (D-025). Do not invite Judy; do
+not enable the canonical read model for her.
+- **#187 (IN REVIEW):** source snapshot store + importers (D-024). After merge:
+  import NAPCO, Infatrac/T-Mobile, Verizon exports (Red Pocket when available).
+- **#188:** lifecycle + carrier reconciliation; preview Jacksonville decisions,
+  record only with explicit operator authorisation.
+- **#189:** building certification (Edina #159, Raleigh #178, Leawood, Beverly
+  Modern / Hollywood, San Rafael, Memphis, Roseville / Dawsonville / Long Beach).
+- **#190:** canonical geocoding (certified address first).
+- **#191:** E911 completion + safety fixes; SUPER_ADMIN launch exceptions (max 30 days).
+- **#192:** canonical customer read model + one-marker map (flag-gated).
+- **#193:** RH Customer Acceptance Audit + RH Test (`test@manleysolutions.com`,
+  verify in production first) + invite guard.
+
+## (superseded by the program above) NEXT (RH) — Canonical service inventory: PR #186a review → production DRY-RUN → decisions → #186b [2026-09-30]
 
 - **#186a (IN REVIEW, branch `feat/canonical-foundation`):** migration 054,
   canonical engine, operator-decision ledger, dry-run backfill, customer relabel

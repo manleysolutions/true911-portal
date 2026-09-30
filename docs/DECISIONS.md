@@ -444,3 +444,50 @@ side effect of bookkeeping rather than as a decision anybody made.
   and `canonical_operator_decisions`; flags `FEATURE_CANONICAL_SERVICE_MODEL` +
   `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST` reserved (off). E911 untouched. Spec:
   `docs/customer/CANONICAL_SERVICE_MODEL.md`.
+
+### D-024 — Operational source snapshots are immutable, tenant-attributed evidence
+- **Date:** 2026-09-30 · **Status:** Accepted (PR #187)
+- **Context:** Lifecycle reconciliation for RH needs NAPCO, T-Mobile/Infatrac,
+  Verizon and Red Pocket inventory evidence. Every existing ingestion path
+  (NAPCO portal import, Verizon sync, Zoho staging) overwrites live rows in place;
+  T-Mobile and Red Pocket had no inventory ingestion at all. Carrier and dealer
+  exports contain many customers.
+- **Decision:**
+  1. An export is imported as an **immutable snapshot** (migration `055`):
+     dry-run by default, explicit `--apply`, SHA-256 de-duplicated per (tenant,
+     source), never updated or deleted; newer exports are new snapshots.
+  2. Each record stores the **raw source status** beside the interpreted lifecycle
+     and the versioned rule; **unmapped statuses are UNKNOWN, never active**.
+     Parser, status-map and attribution-rule versions are recorded per snapshot.
+  3. A row is stored for a tenant only on an exact identifier match unique to that
+     tenant (HIGH) or an explicit, specific tenant-profile label rule (MEDIUM);
+     ambiguous rows are reported, never stored; a label never establishes a
+     building.
+  4. Attributes are allow-listed; dealer and central-station contact/account
+     numbers are never stored; a raw-row SHA-256 preserves provability.
+  5. Freshness for inventory certification is 7 days from the source effective
+     time; it is not a monitoring-health threshold.
+  6. Importing changes nothing else: no source-system writes, no canonical service,
+     E911, registry or operator-decision changes.
+- **Consequences:** `app/services/source_snapshots/`,
+  `scripts.source_snapshot_import`, `SOURCE_SNAPSHOT_FRESHNESS_DAYS`. Spec:
+  `docs/customer/SOURCE_SNAPSHOTS.md`. Consumed by #188.
+
+### D-025 — RH Customer Completion Program: reference-customer gates
+- **Date:** 2026-09-30 · **Status:** Accepted
+- **Context:** The objective moved from "make the RH portal usable" to "make RH the
+  reference customer implementation". D-021 treated E911 confirmation as a
+  post-login customer action that never blocks an invite.
+- **Decision:** RH launches only through the program in
+  `docs/customer/RH_COMPLETION_PROGRAM.md` (PRs #187–#193) and its strict
+  READY_FOR_CUSTOMER gate. **This supersedes the D-021 consequence that E911 never
+  blocks an invite:** every applicable current line must be VERIFIED from
+  authoritative provider evidence (legacy "validated"/"confirmed" is insufficient)
+  or covered by an unexpired SUPER_ADMIN `E911_LAUNCH_EXCEPTION` (max 30 days,
+  never displayed as VERIFIED). E911 applicability, geocoding, monitoring, RH Test
+  and Jacksonville rules are recorded in the program document. Operator knowledge
+  is persisted only through the governed decision ledger with explicit
+  authorisation, never as an engine rule. 45 locations is not a target.
+- **Consequences:** Judy is not invited and the canonical read model is not enabled
+  for her until READY_FOR_CUSTOMER + RH Test acceptance + explicit approval; a
+  fresh invitation is then generated.

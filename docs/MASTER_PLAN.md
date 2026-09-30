@@ -65,6 +65,14 @@ health (not device counts); Operations approve/override/merge/split classificati
 (append-only audit, CUSTOMER_* isolated). Spec:
 `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md`.
 
+**RH Customer Completion Program (D-025).** RH becomes the reference customer
+implementation: operational source evidence (#187, D-024) → lifecycle/carrier
+reconciliation (#188) → building certification (#189) → canonical geocoding
+(#190) → E911 completion (#191) → canonical customer read model + map (#192) →
+acceptance gate (#193). Only after READY_FOR_CUSTOMER and launch is the process
+generalised into Customer Portfolio Certification. Spec:
+`docs/customer/RH_COMPLETION_PROGRAM.md`.
+
 **Canonical service inventory (D-023, PR #186a/#186b).** Before any service or
 connection total is shown to a customer, the portfolio is reconciled into the
 canonical Building → Service → Connection → Asset model with operator ground
