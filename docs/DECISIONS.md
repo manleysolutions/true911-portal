@@ -378,3 +378,32 @@ side effect of bookkeeping rather than as a decision anybody made.
   audit distinguishes SYSTEM BLOCKERS from CUSTOMER ACTIONS, so legitimate
   post-login customer work (E911 confirmation, contacts) never blocks an invite.
 
+### D-022 — Customer trust rule: UNKNOWN ≠ FAILED, UNKNOWN ≠ PROTECTED
+- **Date:** 2026-09-30 · **Status:** Accepted
+- **Context:** Reviewed from the RH customer admin's seat, the portal showed
+  "29 of 45 protected", "0% E911 verified" and a ~45/100 health score. A reasonable
+  customer would read that as "most of our life-safety infrastructure is broken",
+  but the data only says True911 lacks monitoring linkage, documentation or
+  verification evidence for part of the portfolio.
+- **Decision:**
+  1. Every customer-facing status is one of three evidence classes:
+     **KNOWN GOOD** (evidence-backed Protected → "Monitored"), **KNOWN PROBLEM**
+     (Critical / Attention Needed → "Needs attention"), **UNKNOWN** (no linked
+     monitoring → "Being reconciled"; anything else unconfirmed → "Status being
+     confirmed"). UNKNOWN renders neutral — never red, never green.
+     (`serialize.operational_state`.)
+  2. A known problem always wins, even for a location without a monitoring link;
+     failures are never hidden.
+  3. Customers see **separate dimensions** — service status, monitoring coverage,
+     E911 readiness, portfolio setup — never a blended health/completeness score as
+     if it were service health. Internal views keep the composite scores.
+  4. Work is labelled by **owner**: customer actions (confirm E911, add contacts,
+     answer a request) vs True911 / operations actions (prepare E911 records,
+     reconcile monitoring, resolve reviews). The customer is never made
+     responsible for True911's reconciliation work.
+- **Consequences:** Additive API fields (`operational_state`, `monitoring_linked`,
+  `operational_states`, `e911_verified_locations`, action-center `tiers` +
+  `being_reconciled`); the six-label vocabulary (D-005) is unchanged underneath —
+  this is the customer presentation layer over it. No scoring, E911, registry or
+  ownership-boundary change.
+

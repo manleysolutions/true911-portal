@@ -571,6 +571,16 @@ The "never guess a header name" rule (#165 PoP claims, #167 signed `sender-id`,
   RH buildings to monitoring records · E911ChangeLog draft from an approved
   correction · request SLA timers · document/photo storage.
 
+### Phase 3.18 — Calm customer experience / trust rule (IN REVIEW; branch `feat/rh-customer-calm-ux`, PR open)
+- **RH-P3.18-CALM — UNKNOWN ≠ FAILED ≠ PROTECTED (D-022).** Portfolio hero with
+  separate dimensions (no blended health score), tiered + owned Action Center,
+  location page in four places (Overview · Connections · Compliance · Records) with
+  ≤2 primary actions. Presentation only; no scoring / E911 / registry change.
+- **Follow-ups:** link the ~16 unlinked RH buildings to monitoring (turns "Being
+  reconciled" into evidence) · supply the 10 missing E911 dispatch addresses ·
+  internal UI for the request queue · a browser-level test harness (Playwright) for
+  customer screens · marker clustering.
+
 ### Phase 4 — Launch
 - **RH-P4.0 — Go-live audit gate.** `rh_customer_go_live_audit` verdict `READY` or
   `READY_WITH_CUSTOMER_ACTIONS` (zero SYSTEM BLOCKERS) before the invite.

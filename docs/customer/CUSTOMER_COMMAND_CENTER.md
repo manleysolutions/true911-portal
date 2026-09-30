@@ -222,6 +222,38 @@ being prepared separately; it never calls a record with no address a
 currently protected" banner now requires `locations_protected == locations_total`
 — previously the missing keys rendered it green at 29/45 (a false green).
 
+## 8g. Calm go-live experience (customer trust rule — D-022)
+
+**UNKNOWN ≠ FAILED. UNKNOWN ≠ PROTECTED.** Every customer status is KNOWN GOOD,
+KNOWN PROBLEM or UNKNOWN; unknown renders neutral (hollow grey), never red, never
+green.
+
+| Customer label | Evidence | Tone | Source |
+|---|---|---|---|
+| **Monitored** — "No known service issues." | evidence-backed Protected | green | assurance label |
+| **Needs attention** — "A service issue is being worked on." | Critical / Attention Needed | amber (red when Critical) | assurance label |
+| **Being reconciled** — "True911 is connecting this location's monitoring record." | no linked monitoring record | neutral | registry linkage |
+| **Status being confirmed** | anything else unconfirmed | neutral | — |
+
+The word *Protected* no longer appears in the customer portfolio view, and
+nothing is ever called *Unprotected*.
+
+**Dashboard hierarchy (before → after).**
+
+| Before | After |
+|---|---|
+| Green/grey banner "29 of 45 locations protected · Continuously monitored" | **Portfolio hero**: name · 45 locations · 73 physical devices · 28 telephone connections |
+| Ten equal tiles incl. "Locations Protected 29/45", "Monthly Health 45/100", "E911 Verified 0%", "Service Availability" | Four separate dimensions: **Service status** ("No known service issues") · **Monitoring coverage** ("29 of 45 locations monitored · 16 being reconciled by True911") · **E911 readiness** ("0 verified · 35 ready for your confirmation · 10 being prepared by True911") · **Portfolio setup** ("Contacts on file for 1 of 45") |
+| — | **For you** vs **True911 is working on** lines |
+| Flat Action Center (contacts at the same level as problems) | Tiered: **Urgent** (known problems only) · **Action needed** (E911 confirmations, replies) · **In progress** (True911: records being prepared, monitoring being reconciled, requests) · **Portfolio setup** (site contacts — collapsed, low priority) |
+| Location list status "Unknown" | "Monitored" / "Needs attention" / "Being reconciled" / "Status being confirmed" |
+
+No blended health score is shown to customers — documentation / data completeness
+is *Portfolio setup*, never service health. The API still returns
+`monthly_health_score` for internal consumers. All numbers are derived from
+`/customer/portfolio/summary` (`operational_states`, `e911_verified_locations`) and
+`/customer/action-center` (`tiers`, `being_reconciled`) — nothing is hard-coded.
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),

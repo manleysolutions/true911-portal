@@ -245,3 +245,33 @@ Building (Portfolio Registry)
 "Life Safety Services" counts services; "Life-Safety Connections" counts lines.
 One Elevator service plus an unattached registry number is **1 service and 2
 connections** — correct, and labelled that way.
+
+## 14. Customer location page — four places, one per subject (D-022)
+
+The customer location page (`LocationCommandCenter.jsx`) replaces the long
+Building Workspace scroll with four sections. Each subject lives in exactly one
+of them (`selfService.LOCATION_TABS`):
+
+| Section | Contains |
+|---|---|
+| **Overview** | address / type / store # / devices · Status (service status, E911, Portfolio setup = Operational Readiness tier) · "Your to-do here" · Requests |
+| **Connections** | Service → Connection → Device; lines not yet linked to a service in their own group; per-connection *Manage* |
+| **Compliance** | E911 record (address, state, provenance, endpoints, history) · Inspections · Emergency procedures |
+| **Records** | Contacts · Notes · Activity · one compact "Documents, photos and billing are coming soon" row (disabled controls) · support link |
+
+**Header:** name · evidence-based status line ("No known service issues" /
+"Being reconciled — …") · "1 monitored life-safety service · 2 telephone
+connections · E911: Confirmation needed" · at most **two** primary actions —
+**Confirm E911** (only when there is something to confirm) and **Manage Location** —
+plus a **More** menu (Add Service · Request Service Change · Report a Problem ·
+Update Contacts). E911, contacts and requests each have one control, not three.
+The composite "Overall building health N/100" and its factors are no longer shown
+to customers (they remain in the API for internal use).
+
+**Before:** Manage-this-location panel (7 buttons + outstanding actions + E911 card
++ connections + contacts + requests + activity) followed by Building Summary /
+Operations / Compliance / Administration (a second E911 card with its own
+confirm/correct buttons, a second contacts list, a second requests list, a
+second activity list, documents/photos/billing placeholders and a photo box).
+With self-service off, the older confirm / request-correction E911 controls and
+append-only contributions still appear in their one place.

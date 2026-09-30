@@ -2,56 +2,53 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import {
-  Shield, Building2, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck,
-  MapPin, ChevronRight, Search, List as ListIcon, Map as MapIcon, Cpu,
-  PhoneCall, Activity, Wrench, Gauge,
+  Shield, RefreshCw, MapPin, ChevronRight, Search, List as ListIcon, Map as MapIcon,
+  UserCheck, Wrench,
 } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import LocationCommandCenter from "@/components/customer/LocationCommandCenter";
 import ActionCenter from "@/components/customer/ActionCenter";
-import { protectionBanner } from "@/components/customer/selfService";
+import { portfolioHero, locationOperational } from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
-// CustomerAssuranceView — the Customer Command Center (Phase 1/2/3).
+// CustomerAssuranceView — the customer's portfolio home.
 //
-// Sourced entirely from the read-only /api/customer Command Center API:
-//   GET /customer/portfolio/summary  — executive metrics + health score
-//   GET /customer/locations          — location list + map points
-//   GET /customer/search             — enterprise search
-// Life-safety first: an enterprise customer understands their whole portfolio
-// in <30s without ever thinking about devices.
+// Answers, in order: (1) what is the operational condition of my portfolio,
+// (2) is anything KNOWN to be wrong, (3) what do I need to do, (4) what is
+// True911 still working on, (5) where do I drill in.
+//
+// Customer trust rule (DECISIONS D-022): KNOWN GOOD · KNOWN PROBLEM · UNKNOWN.
+// A location without linked monitoring is "Being reconciled" (neutral) — never
+// "unprotected"; nothing is green without evidence.  No blended health score is
+// shown to customers: service status, monitoring coverage, E911 readiness and
+// portfolio setup are separate dimensions.
+//
+// Data: GET /customer/portfolio/summary, /customer/locations, /customer/search,
+// and (self-service) /customer/action-center — 404 there just hides actions.
 // ════════════════════════════════════════════════════════════════════
 
-const STATUS_STYLE = {
-  "Protected":        { dot: "bg-emerald-500", text: "text-emerald-700", hex: "#10b981" },
-  "Attention Needed": { dot: "bg-amber-500",   text: "text-amber-700",   hex: "#f59e0b" },
-  "Critical":         { dot: "bg-red-500",     text: "text-red-700",     hex: "#ef4444" },
-  "Pending Install":  { dot: "bg-blue-500",    text: "text-blue-700",    hex: "#3b82f6" },
-  "Inactive":         { dot: "bg-slate-400",   text: "text-slate-600",   hex: "#94a3b8" },
-  "Unknown":          { dot: "bg-slate-400",   text: "text-slate-600",   hex: "#94a3b8" },
+const TONE = {
+  good:    { dot: "bg-emerald-500", text: "text-emerald-700", hex: "#10b981", ring: "" },
+  problem: { dot: "bg-amber-500",   text: "text-amber-700",   hex: "#f59e0b", ring: "" },
+  urgent:  { dot: "bg-red-500",     text: "text-red-700",     hex: "#ef4444", ring: "" },
+  // neutral = unknown / incomplete evidence: hollow grey, never red or green
+  neutral: { dot: "bg-white border border-slate-400", text: "text-slate-500", hex: "#cbd5e1", ring: "#94a3b8" },
 };
-const styleFor = (s) => STATUS_STYLE[s] || STATUS_STYLE.Unknown;
-const e911Text = (state) => (state === "Verified" ? "text-emerald-600" : "text-amber-600");
-const MAP_LEGEND = ["Protected", "Attention Needed", "Critical", "Pending Install", "Unknown"];
+const MAP_LEGEND = [["Monitored", "good"], ["Needs attention", "problem"], ["Being reconciled / confirming", "neutral"]];
+const e911Text = (state) => (state === "Verified" ? "text-emerald-700" : "text-slate-500");
 
-// Backend caps /customer/locations page_size at 100.  Fetch every page (100 at a
-// time) and accumulate, so portfolios larger than one page load fully — RH has
-// 42, but this stays correct for any size.  Requesting >100 returns a 422 and
-// blanks the dashboard (the bug this fixes).
+// Backend caps /customer/locations page_size at 100 — fetch every page.
 const LOCATIONS_PAGE_SIZE = 100;
 
-// Normalize a location/building item to one shape the UI reads, so the same
-// components render whether the backend is in legacy-Site mode (location_ref /
-// location) or registry-backed mode (building_ref / display_name).  Registry-backed
-// items already carry customer-safe names only — no source-system internals.
+// Normalize legacy-Site and registry-backed items to one shape.
 function normLocation(it) {
   return {
     ...it,
     location_ref: it.building_ref || it.location_ref,
     location: it.display_name || it.canonical_name || it.location,
-    emergency_address_state: it.emergency_address_state,
+    op: locationOperational(it),
   };
 }
 
@@ -73,40 +70,65 @@ async function fetchAllLocations() {
   return items.map(normLocation);
 }
 
-function Metric({ label, value, sub, tone = "slate", icon: Icon }) {
-  const toneMap = {
-    slate: "border-slate-200 bg-white", emerald: "border-emerald-200 bg-emerald-50/50",
-    amber: "border-amber-200 bg-amber-50/50", red: "border-red-200 bg-red-50/50",
-    blue: "border-blue-200 bg-blue-50/50",
-  };
+// ── Portfolio hero ───────────────────────────────────────────────────
+const DIM_TONE = {
+  good: "border-emerald-200 bg-emerald-50/40",
+  problem: "border-amber-300 bg-amber-50/60",
+  neutral: "border-slate-200 bg-white",
+};
+
+function PortfolioHero({ name, summary, actionCenter }) {
+  const hero = portfolioHero(summary, actionCenter);
   return (
-    <div className={`rounded-xl border px-4 py-3.5 ${toneMap[tone] || toneMap.slate}`}>
-      <div className="flex items-center gap-1.5 mb-2">
-        {Icon && <Icon className="w-3.5 h-3.5 text-slate-400" />}
-        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.07em]">{label}</p>
+    <section aria-label="Portfolio overview" className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+        <div className="min-w-[200px]">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.08em]">Life-Safety Portfolio</p>
+          <h1 className="text-[18px] font-semibold text-slate-900 leading-tight">{name}</h1>
+        </div>
+        <dl className="flex flex-wrap gap-x-8 gap-y-2">
+          {hero.facts.map((f) => (
+            <div key={f.key}>
+              <dt className="text-[11px] text-slate-500">{f.label}</dt>
+              <dd className="text-[22px] font-semibold text-slate-900 tabular-nums leading-none">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
-      <p className="text-[24px] font-semibold text-slate-900 tabular-nums leading-none">{value ?? "—"}</p>
-      {sub && <p className="text-[10.5px] text-slate-400 mt-1">{sub}</p>}
-    </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {hero.dimensions.map((d) => (
+          <div key={d.key} className={`rounded-lg border px-3.5 py-3 ${DIM_TONE[d.tone] || DIM_TONE.neutral}`}>
+            <p className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.07em]">{d.title}</p>
+            <p className={`text-[14px] font-semibold mt-1 ${d.tone === "problem" ? "text-amber-800" : d.tone === "good" ? "text-emerald-800" : "text-slate-900"}`}>{d.value}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">{d.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      {(hero.customerActions.length > 0 || hero.operationsActions.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+          <div className="flex items-start gap-2.5">
+            <UserCheck className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-[12px] font-semibold text-slate-800">For you</p>
+              <p className="text-[12px] text-slate-600">{hero.customerActions.map((a) => a.text).join(" · ") || "Nothing right now."}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2.5">
+            <Wrench className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-[12px] font-semibold text-slate-800">True911 is working on</p>
+              <p className="text-[12px] text-slate-600">{hero.operationsActions.map((a) => a.text).join(" · ") || "Nothing outstanding."}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
-function HealthGauge({ health }) {
-  if (!health) return null;
-  const { score, confidence, grade } = health;
-  const toneMap = { Excellent: "text-emerald-600", Good: "text-emerald-600", Fair: "text-amber-600", "Needs attention": "text-red-600", Unknown: "text-slate-500" };
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5">
-      <div className="flex items-center gap-1.5 mb-2"><Gauge className="w-3.5 h-3.5 text-slate-400" /><p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.07em]">Monthly Health</p></div>
-      <p className={`text-[24px] font-semibold tabular-nums leading-none ${toneMap[grade] || "text-slate-900"}`}>
-        {score != null ? score : "—"}<span className="text-[13px] text-slate-400">{score != null ? "/100" : ""}</span>
-      </p>
-      <p className="text-[10.5px] text-slate-400 mt-1">{grade}{confidence != null ? ` · ${confidence}% confidence` : ""}</p>
-    </div>
-  );
-}
-
-// Fit the map to all pins whenever the set changes.
+// ── Map ──────────────────────────────────────────────────────────────
 function FitBounds({ points }) {
   const map = useMap();
   useEffect(() => {
@@ -132,24 +154,24 @@ function PortfolioMap({ locations, highlightRef, onSelect, onHover }) {
             <FitBounds points={points} />
             {mappable.map((l) => {
               const hl = highlightRef === l.location_ref;
+              const t = TONE[l.op.tone];
               return (
                 <CircleMarker key={l.location_ref} center={[l.map_point.lat, l.map_point.lng]}
                   radius={hl ? 12 : 8}
-                  pathOptions={{ fillColor: styleFor(l.protection?.status).hex, color: hl ? "#1f2937" : "#fff", weight: hl ? 3 : 2, fillOpacity: 0.9 }}
+                  pathOptions={{ fillColor: t.hex, color: hl ? "#1f2937" : (t.ring || "#fff"), weight: hl ? 3 : 2, fillOpacity: 0.9 }}
                   eventHandlers={{ click: () => onSelect({ ref: l.location_ref, name: l.location }), mouseover: () => onHover(l.location_ref), mouseout: () => onHover(null) }}>
                   <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                    <div style={{ fontFamily: "inherit", fontSize: 12 }}><strong>{l.location}</strong><br /><span style={{ color: "#6b7280" }}>{[l.city, l.state].filter(Boolean).join(", ")}</span></div>
+                    <div style={{ fontFamily: "inherit", fontSize: 12 }}><strong>{l.location}</strong><br /><span style={{ color: "#6b7280" }}>{l.op.label}</span></div>
                   </Tooltip>
                 </CircleMarker>
               );
             })}
           </MapContainer>
         )}
-        {/* Legend */}
         <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur rounded-lg border border-slate-200 shadow-sm px-3 py-2" style={{ zIndex: 500 }}>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {MAP_LEGEND.map((s) => (
-              <span key={s} className="inline-flex items-center gap-1 text-[10px] text-slate-600"><span className="w-2 h-2 rounded-full" style={{ background: styleFor(s).hex }} />{s}</span>
+            {MAP_LEGEND.map(([label, tone]) => (
+              <span key={label} className="inline-flex items-center gap-1 text-[10px] text-slate-600"><span className={`w-2 h-2 rounded-full ${TONE[tone].dot}`} />{label}</span>
             ))}
           </div>
         </div>
@@ -162,6 +184,7 @@ function PortfolioMap({ locations, highlightRef, onSelect, onHover }) {
 export default function CustomerAssuranceView() {
   const { user } = useAuth();
   const [summary, setSummary] = useState(null);
+  const [actionCenter, setActionCenter] = useState(null);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -175,8 +198,7 @@ export default function CustomerAssuranceView() {
   const searchAbort = useRef(0);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Permanent, shareable, customer-safe deep-link: ?location=<ref> opens the
-  // Location Workspace; the ref is opaque (HMAC-signed, no raw ids).
+  // Permanent, shareable, customer-safe deep-link: ?location=<ref>.
   const openLocation = useCallback((loc) => {
     setDrawer(loc);
     const next = new URLSearchParams(searchParams);
@@ -184,22 +206,17 @@ export default function CustomerAssuranceView() {
     setSearchParams(next, { replace: false });
   }, [searchParams, setSearchParams]);
 
-  const closeLocation = useCallback(() => {
-    setDrawer(null);
-    const next = new URLSearchParams(searchParams);
-    next.delete("location");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
-
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const [s, items] = await Promise.all([
+      const [s, items, ac] = await Promise.all([
         apiFetch("/customer/portfolio/summary"),
         fetchAllLocations(),
+        apiFetch("/customer/action-center").then((r) => r.data).catch(() => null),
       ]);
       setSummary(s.data);
       setLocations(items);
+      setActionCenter(ac);
     } catch (e) {
       setError(e.status === 404 ? "Your portal is being finalized. Please check back shortly." : (e.message || "Unable to load your dashboard right now."));
     } finally {
@@ -207,13 +224,20 @@ export default function CustomerAssuranceView() {
     }
   }, []);
 
+  const closeLocation = useCallback(() => {
+    setDrawer(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("location");
+    setSearchParams(next, { replace: true });
+    fetchData();                       // reflect anything done in the location
+  }, [searchParams, setSearchParams, fetchData]);
+
   useEffect(() => {
     fetchData();
     const t = setInterval(fetchData, 60000);
     return () => clearInterval(t);
   }, [fetchData]);
 
-  // Open the workspace from a shared/deep-linked ?location=<ref> URL.
   useEffect(() => {
     const ref = searchParams.get("location");
     if (ref) {
@@ -223,7 +247,6 @@ export default function CustomerAssuranceView() {
     }
   }, [searchParams, locations]);
 
-  // Enterprise search (debounced) — server-side across name/city/state/phone/service.
   useEffect(() => {
     const q = search.trim();
     if (q.length < 2) { setSearchResults(null); return; }
@@ -237,11 +260,10 @@ export default function CustomerAssuranceView() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const statusOptions = useMemo(() => Array.from(new Set(locations.map((l) => l.protection?.status).filter(Boolean))).sort(), [locations]);
+  const statusOptions = useMemo(() => Array.from(new Set(locations.map((l) => l.op.label))).sort(), [locations]);
   const e911Options = useMemo(() => Array.from(new Set(locations.map((l) => l.emergency_address_state).filter(Boolean))).sort(), [locations]);
-
   const filtered = useMemo(() => locations.filter((l) => {
-    if (statusFilter !== "all" && l.protection?.status !== statusFilter) return false;
+    if (statusFilter !== "all" && l.op.label !== statusFilter) return false;
     if (e911Filter !== "all" && l.emergency_address_state !== e911Filter) return false;
     return true;
   }), [locations, statusFilter, e911Filter]);
@@ -257,30 +279,23 @@ export default function CustomerAssuranceView() {
   }
 
   const m = summary || {};
-  const health = m.monthly_health_score;
-  // Green only when every location is Protected — an absent attention/critical
-  // count must never read as "all good" (no green without evidence).
-  const banner = protectionBanner(m);
-  const allProtected = banner.allProtected;
+  const selectCls = "px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300";
 
   return (
     <PageWrapper>
       <div className="min-h-screen bg-slate-50">
-        <div className="px-5 lg:px-8 py-6 lg:py-8 max-w-[1240px] mx-auto space-y-6">
+        <div className="px-5 lg:px-8 py-6 lg:py-8 max-w-[1240px] mx-auto space-y-5">
 
-          {/* Header + enterprise search */}
+          {/* Toolbar: welcome + enterprise search */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shadow-sm ring-1 ring-slate-700/40"><Shield className="w-5 h-5 text-white" /></div>
-              <div>
-                <h1 className="text-[17px] font-semibold text-slate-900 leading-tight">{m.portfolio_name || "Your Portfolio"}</h1>
-                <p className="text-[11.5px] text-slate-500 mt-0.5">Life-Safety Command Center · Welcome, {user?.name}</p>
-              </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center"><Shield className="w-4 h-4 text-white" /></div>
+              <p className="text-[12px] text-slate-500">Welcome, {user?.name}</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                <input type="text" placeholder="Search locations, phone #, service…" value={search} onChange={(e) => setSearch(e.target.value)}
+                <input type="text" aria-label="Search locations" placeholder="Search locations, phone #, service…" value={search} onChange={(e) => setSearch(e.target.value)}
                   className="w-64 pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300" />
                 {searchResults != null && (
                   <div className="absolute z-30 mt-1 w-80 right-0 bg-white rounded-lg border border-slate-200 shadow-lg max-h-72 overflow-y-auto">
@@ -304,63 +319,19 @@ export default function CustomerAssuranceView() {
 
           {!error && (
             <>
-              {/* Headline banner */}
-              <div className={`rounded-xl border p-5 ${allProtected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${allProtected ? "bg-emerald-100" : "bg-slate-100"}`}>
-                    {allProtected ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Building2 className="w-5 h-5 text-slate-400" />}
-                  </div>
-                  <div>
-                    <p className={`text-[15px] font-semibold ${allProtected ? "text-emerald-800" : "text-slate-800"}`}>
-                      {banner.text}
-                    </p>
-                    <p className={`text-[13px] mt-0.5 ${allProtected ? "text-emerald-700" : "text-slate-500"}`}>Continuously monitored.</p>
-                  </div>
-                </div>
-              </div>
+              <PortfolioHero name={m.portfolio_name || "Your Portfolio"} summary={m} actionCenter={actionCenter} />
 
-              {/* Executive metrics */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                <Metric label="Locations Protected" value={`${m.locations_protected ?? 0}/${m.locations_total ?? 0}`} icon={Building2} tone={allProtected ? "emerald" : "slate"} />
-                <Metric label="Life Safety Services" value={m.life_safety_services ?? 0} sub={`${m.protected_services ?? 0} protected`} icon={ShieldCheck} />
-                <Metric label="Requires Attention" value={m.sites_requiring_attention ?? 0} icon={AlertTriangle} tone={(m.sites_requiring_attention || 0) > 0 ? "amber" : "slate"} />
-                <Metric label="Critical Sites" value={m.critical_sites ?? 0} icon={AlertTriangle} tone={(m.critical_sites || 0) > 0 ? "red" : "slate"} />
-                <HealthGauge health={health} />
-                <Metric label="Devices" value={m.devices ?? m.total_devices ?? 0} icon={Cpu} />
-                <Metric label="Telephone Numbers" value={m.total_phone_numbers ?? 0} icon={PhoneCall} />
-                <Metric label="E911 Verified" value={m.e911_verification_pct != null ? `${m.e911_verification_pct}%` : "—"} icon={CheckCircle2} />
-                <Metric label="Service Availability" value={m.service_availability_pct != null ? `${m.service_availability_pct}%` : "—"} icon={Activity} />
-                <Metric label="Upcoming Maintenance" value={(m.upcoming_maintenance || []).length} icon={Wrench} />
-              </div>
+              <ActionCenter data={actionCenter} onOpenLocation={openLocation} />
 
-              {/* Action Center — "what do I need to do?" (self-service; hidden when off) */}
-              <ActionCenter onOpenLocation={openLocation} refreshKey={drawer ? null : "closed"} />
-
-              {/* Recent activity */}
-              {(m.recent_activity || []).length > 0 && (
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-100"><h2 className="text-[13px] font-semibold text-slate-900">Recent Activity</h2></div>
-                  <div className="divide-y divide-slate-100">
-                    {m.recent_activity.map((it, i) => (
-                      <div key={i} className="flex items-center gap-3 px-5 py-2.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${it.kind === "e911_verified" ? "bg-emerald-500" : "bg-slate-300"}`} />
-                        <p className="text-[12.5px] text-slate-800 flex-1">{it.title}</p>
-                        <span className="text-[11px] text-slate-400 tabular-nums">{it.when} · {it.by}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Locations — filters + list|map (map synced with list highlight) */}
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              {/* Locations — drill-down */}
+              <section aria-label="Locations" className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
                   <h2 className="text-[13px] font-semibold text-slate-900">Locations</h2>
                   <div className="flex items-center gap-2">
-                    <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300">
+                    <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
                       <option value="all">All statuses</option>{statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    <select value={e911Filter} onChange={(e) => setE911Filter(e.target.value)} className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300">
+                    <select aria-label="Filter by E911" value={e911Filter} onChange={(e) => setE911Filter(e.target.value)} className={selectCls}>
                       <option value="all">All E911</option>{e911Options.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                     <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-400 tabular-nums">{filtered.length}/{locations.length}</span>
@@ -379,13 +350,13 @@ export default function CustomerAssuranceView() {
                     {filtered.map((loc) => (
                       <button key={loc.location_ref} type="button" onClick={() => openLocation({ ref: loc.location_ref, name: loc.location })}
                         onMouseEnter={() => setHighlightRef(loc.location_ref)} onMouseLeave={() => setHighlightRef(null)}
-                        className={`w-full flex items-center gap-3 px-5 py-3.5 transition-colors text-left ${highlightRef === loc.location_ref ? "bg-slate-50" : "hover:bg-slate-50"}`}>
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${styleFor(loc.protection?.status).dot}`} />
+                        className={`w-full flex items-center gap-3 px-5 py-3 transition-colors text-left ${highlightRef === loc.location_ref ? "bg-slate-50" : "hover:bg-slate-50"}`}>
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TONE[loc.op.tone].dot}`} aria-hidden="true" />
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-medium text-slate-900 truncate leading-tight">{loc.location}</p>
                           <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
                             {(loc.city || loc.state) && <span>{[loc.city, loc.state].filter(Boolean).join(", ")}</span>}
-                            <span className={styleFor(loc.protection?.status).text}>{loc.protection?.status || "Unknown"}</span>
+                            <span className={TONE[loc.op.tone].text}>{loc.op.label}</span>
                             {loc.emergency_address_state && <span className={e911Text(loc.emergency_address_state)}>E911: {loc.emergency_address_state}</span>}
                           </div>
                         </div>
@@ -394,7 +365,7 @@ export default function CustomerAssuranceView() {
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
             </>
           )}
         </div>

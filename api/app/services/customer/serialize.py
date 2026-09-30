@@ -184,9 +184,59 @@ def location_summary(site, *, protection: dict) -> dict:
         "city": site.e911_city,
         "state": site.e911_state,
         "protection": protection,
+        "operational_state": operational_state((protection or {}).get("status"), linked=True),
         "emergency_address_state": e911_state_label(site),
         "map_point": _map_point(site),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Customer trust rule — KNOWN GOOD · KNOWN PROBLEM · UNKNOWN (DECISIONS D-022).
+# The customer-facing OPERATIONAL state of a location.  Missing evidence is
+# never presented as a failure (UNKNOWN != FAILED) and never as green
+# (UNKNOWN != PROTECTED).  Only an evidence-backed assurance label can produce
+# "monitored" or "attention_required".
+# ══════════════════════════════════════════════════════════════════════
+OPERATIONAL_STATES = {
+    # state: (label, one-line customer summary, evidence class)
+    "attention_required": ("Needs attention", "A service issue is being worked on.", "known_problem"),
+    "monitored": ("Monitored", "No known service issues.", "known_good"),
+    "being_reconciled": ("Being reconciled", "True911 is connecting this location's monitoring record.",
+                         "unknown"),
+    "not_yet_confirmed": ("Status being confirmed", "True911 is confirming this location's status.",
+                          "unknown"),
+}
+_KNOWN_PROBLEM_STATUSES = frozenset({"Critical", "Attention Needed"})
+
+
+def operational_state(status, *, linked: bool = True) -> dict:
+    """Map an assurance label + monitoring linkage to the customer state.
+
+    * Critical / Attention Needed (evidence of a problem) -> ``attention_required``
+      — always wins, so a known failure is never hidden.
+    * no linked monitoring record -> ``being_reconciled`` (True911's work — NOT
+      "unprotected").
+    * Protected (evidence-backed; see D-016) -> ``monitored``.
+    * anything else (Unknown / Pending Install / Inactive) -> ``not_yet_confirmed``.
+    """
+    if status in _KNOWN_PROBLEM_STATUSES:
+        key = "attention_required"
+    elif not linked:
+        key = "being_reconciled"
+    elif status == "Protected":
+        key = "monitored"
+    else:
+        key = "not_yet_confirmed"
+    label, summary, evidence = OPERATIONAL_STATES[key]
+    return {"state": key, "label": label, "summary": summary, "evidence": evidence,
+            "urgent": status == "Critical"}
+
+
+def operational_state_counts(states) -> dict:
+    counts = {k: 0 for k in OPERATIONAL_STATES}
+    for st in states:
+        counts[st["state"]] = counts.get(st["state"], 0) + 1
+    return counts
 
 
 def equipment_from_device(device, *, protection: dict, preview: bool = False) -> dict:
@@ -612,7 +662,8 @@ def health_score(components: dict) -> dict:
 
 def portfolio_summary(*, company, counts, services, protected_services,
                       devices, phone_numbers, e911_verified, e911_with_address,
-                      health, recent_activity, upcoming_maintenance, as_of) -> dict:
+                      health, recent_activity, upcoming_maintenance, as_of,
+                      operational_states=None) -> dict:
     """Executive portfolio metrics (Command Center header).  All values are
     aggregates over customer-safe data; no raw operational field is exposed."""
     total = counts.get("total", 0)
@@ -628,6 +679,8 @@ def portfolio_summary(*, company, counts, services, protected_services,
         "devices": devices,
         "total_phone_numbers": phone_numbers,
         "e911_verification_pct": _pct(e911_verified, e911_with_address or total),
+        "e911_verified_locations": e911_verified,
+        "operational_states": operational_states or {},
         "service_availability_pct": _pct(protected_services, services),
         "monthly_health_score": health,
         "recent_activity": recent_activity or [],
@@ -844,6 +897,9 @@ def portfolio_building(b: dict) -> dict:
         "map_point": b.get("map_point"),
         "confidence": confidence_bucket(b.get("confidence")),
         "protection": protection,
+        "monitoring_linked": bool(b.get("monitoring_linked", True)),
+        "operational_state": operational_state(protection.get("status"),
+                                               linked=bool(b.get("monitoring_linked", True))),
         "life_safety_services": b.get("services") or [],
         "life_safety_services_count": len(b.get("services") or []),
         "equipment_count": b.get("equipment_count", 0),
@@ -863,5 +919,6 @@ def portfolio_building_summary(b: dict) -> dict:
     return {k: full[k] for k in (
         "building_ref", "canonical_name", "display_name", "store_number", "site_type",
         "building_category", "status", "customer_visible_status", "city", "state",
-        "map_point", "confidence", "protection", "life_safety_services_count",
+        "map_point", "confidence", "protection", "monitoring_linked", "operational_state",
+        "life_safety_services_count",
         "equipment_count", "device_count", "phone_number_count", "emergency_address_state")}
