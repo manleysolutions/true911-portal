@@ -27,3 +27,13 @@ def require_customer_api(current_user: User = Depends(get_current_user)) -> User
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return current_user
+
+
+def require_customer_self_service(current_user: User = Depends(require_customer_api)) -> User:
+    """Customer API gate + the self-service gate (FEATURE_CUSTOMER_SELF_SERVICE,
+    tenant allowlist, optional user allowlist).  404 when off, so the write
+    surface is indistinguishable from "not built" for everyone else."""
+    from app.services.customer.self_service import self_service_enabled
+    if not self_service_enabled(current_user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return current_user

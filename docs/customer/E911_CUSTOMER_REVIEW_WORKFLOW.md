@@ -87,6 +87,16 @@ Existing E911 APIs (`GET/POST /api/e911-changes`, `/gaps`) are unchanged (additi
 - UI: `web/src/components/customer/LocationCommandCenter.jsx` (E911 section).
 - Tests: `api/tests/test_e911_review.py`.
 
+## 7a. Self-service attestation feeds this queue
+
+The Customer Operations Console's *Verify E911* (`CUSTOMER_SELF_SERVICE.md` §3)
+records a full attestation (numbers, dispatch address, building, suite / floor /
+callback, attested-by/at) as an `e911_verification` request **and** writes the
+matching `e911_customer_confirm` / `e911_correction_request` event here for
+site-backed locations — so operators keep one queue. It is gated on the new
+`CUSTOMER_ATTEST_E911` (CUSTOMER_ADMIN only); the existing confirm / correction
+endpoints are unchanged.
+
 ## 8. Roadmap
 
 Operator apply → auto-create an `E911ChangeLog` draft from an approved correction;

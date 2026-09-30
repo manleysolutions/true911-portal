@@ -801,9 +801,16 @@ def building_display_name(canonical_name, store_number, city, site_type) -> str:
         name = base if label.lower() in base.lower() else f"{base} {label}"
     else:
         name = label
-    if store_number and str(store_number).isdigit():
+    if valid_store_number(store_number):
         name = f"{name} #{store_number}"
     return name
+
+
+def valid_store_number(store_number) -> bool:
+    """A real store number is all digits and not zero — a ``0`` / ``000`` is a
+    source placeholder (the RH "Hollywood #0" defect) and is never displayed."""
+    s = str(store_number or "").strip()
+    return s.isdigit() and int(s) > 0
 
 
 def portfolio_building(b: dict) -> dict:
@@ -811,7 +818,7 @@ def portfolio_building(b: dict) -> dict:
     approved-registry identity + derived operational/E911/health facts; no
     source-system internals ever."""
     site_type = b.get("site_type")
-    store = b.get("store_number")
+    store = b.get("store_number") if valid_store_number(b.get("store_number")) else None
     city = b.get("city")
     display = b.get("display_name") or building_display_name(b.get("canonical_name"), store, city, site_type)
     pending = bool(b.get("pending"))
@@ -837,6 +844,8 @@ def portfolio_building(b: dict) -> dict:
         "life_safety_services": b.get("services") or [],
         "life_safety_services_count": len(b.get("services") or []),
         "equipment_count": b.get("equipment_count", 0),
+        # physical devices (identifiers such as SIMs / numbers are never counted)
+        "device_count": b.get("physical_device_count", b.get("equipment_count", 0)),
         "phone_number_count": b.get("phone_count", 0),
         "emergency_address_state": b.get("e911_state") or "Verification Pending",
         "building_health": b.get("separated_health"),
@@ -852,4 +861,4 @@ def portfolio_building_summary(b: dict) -> dict:
         "building_ref", "canonical_name", "display_name", "store_number", "site_type",
         "building_category", "status", "customer_visible_status", "city", "state",
         "map_point", "confidence", "protection", "life_safety_services_count",
-        "equipment_count", "phone_number_count", "emergency_address_state")}
+        "equipment_count", "device_count", "phone_number_count", "emergency_address_state")}

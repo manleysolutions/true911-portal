@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.services.customer import command_center as cc
+from app.services.customer import physical_devices as pdev
 from app.services.customer import portfolio as cportfolio
 from app.services.customer import serialize as cs
 from app.services.customer.refs import decode_ref, encode_ref
@@ -105,6 +106,37 @@ async def _link_indexes(db, tenant_id, sites_portfolio):
     return site_by_id, by_store, by_addr, dev_site
 
 
+async def _identity_evidence(db, tenant_id):
+    """Physical-device evidence for the Devices KPI (read-only, tenant-scoped):
+    active registry device mappings by building, the fused device groups from
+    APPROVED review payloads, and True911 ``Device`` rows by site.  See
+    ``physical_devices`` for why identifiers are grouped rather than counted."""
+    import json
+
+    from app.models.device import Device
+    from app.models.portfolio_registry import PortfolioDeviceMapping, PortfolioReviewItem
+
+    by_building: dict = {}
+    for m in (await db.execute(select(PortfolioDeviceMapping).where(
+            PortfolioDeviceMapping.tenant_id == tenant_id))).scalars().all():
+        by_building.setdefault(m.building_id, []).append(m)
+    fused = []
+    for item in (await db.execute(select(PortfolioReviewItem).where(
+            PortfolioReviewItem.tenant_id == tenant_id,
+            PortfolioReviewItem.status == "approved"))).scalars().all():
+        try:
+            cand = json.loads(item.payload) if item.payload else None
+        except (TypeError, ValueError):
+            cand = None
+        if isinstance(cand, dict):
+            fused.extend(pdev.fused_device_groups(cand.get("devices") or []))
+    devices_by_site: dict = {}
+    for d in (await db.execute(select(Device).where(Device.tenant_id == tenant_id))).scalars().all():
+        if d.site_id:
+            devices_by_site.setdefault(d.site_id, []).append(d)
+    return by_building, fused, devices_by_site
+
+
 def cs_norm_addr(site) -> str:
     import re
     return re.sub(r"[^a-z0-9]+", " ",
@@ -146,12 +178,21 @@ async def load_customer_buildings(db: AsyncSession, tenant_id: str, now):
 
     sites_portfolio = await cportfolio.load_portfolio(db, tenant_id, now)
     site_by_id, by_store, by_addr, dev_site = await _link_indexes(db, tenant_id, sites_portfolio)
+    mappings_by_building, fused_groups, devices_by_site = await _identity_evidence(db, tenant_id)
 
     records = []
     for b, pending in rows:
         site_ids = _resolve_building_site_ids(b, by_store, by_addr, dev_site)
         linked = [site_by_id[sid] for sid in site_ids if sid in site_by_id]
-        records.append(await _aggregate_building(db, tenant_id, b, pending, linked, now))
+        rec = await _aggregate_building(db, tenant_id, b, pending, linked, now)
+        mappings = mappings_by_building.get(b.id, [])
+        site_devices = [d for s, _p in linked for d in devices_by_site.get(s.site_id, [])]
+        rec["physical_device_count"] = pdev.building_physical_devices(
+            mappings, site_devices, fused_groups)
+        service_phones = [ph for svc in rec["services"] for ph in (svc.get("phone_numbers") or [])]
+        rec["connection_numbers"] = pdev.building_phone_numbers(mappings, service_phones)
+        rec["phone_count"] = len(rec["connection_numbers"])
+        records.append(rec)
     return records
 
 
@@ -271,8 +312,11 @@ def summary(records: list[dict], company, now) -> dict:
                    else len(r["services"]) for r in records)
     protected_services = sum(sum(1 for s in r["services"]
                                  if s.get("status", {}).get("status") == "Protected") for r in records)
-    devices = sum(r["equipment_count"] for r in records)
+    # Physical devices (radios / communicators / True911 devices), each counted
+    # once across every identifier it carries — never ICCIDs / numbers.
+    devices = sum(r.get("physical_device_count", 0) for r in records)
     phones = sum(r["phone_count"] for r in records)
+    counts = cs.portfolio_counts([r["protection"].get("status") for r in records])
     e911_verified = sum(1 for r in records if r["e911_verified"])
     e911_with_addr = sum(1 for r in records if r.get("address") or r["_site_ids"])
     health = cs.health_score({
@@ -283,8 +327,13 @@ def summary(records: list[dict], company, now) -> dict:
         "portfolio_name": company,
         "locations_total": total,
         "locations_protected": protected,
+        # same keys as the legacy summary (the dashboard reads these; their
+        # absence rendered 0 attention/critical and a false all-protected banner)
+        "sites_requiring_attention": counts["attention_needed"],
+        "critical_sites": counts["critical"],
         "life_safety_services": services,
         "protected_services": protected_services,
+        "devices": devices,
         "total_devices": devices,
         "total_phone_numbers": phones,
         "e911_verification_pct": cs._pct(e911_verified, total) if total else None,

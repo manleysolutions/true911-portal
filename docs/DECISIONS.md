@@ -346,3 +346,35 @@ side effect of bookkeeping rather than as a decision anybody made.
 - A certification blocker outranks both maturity and route, at any state.
 - Enforced at import by `_validate_authorization_policy()`; pinned by
   `api/tests/test_tmobile_send_authorization_matrix.py`.
+
+### D-021 — Customers own an operational overlay; provisioning, identity and E911 stay governed
+- **Date:** 2026-09-30 · **Status:** Accepted
+- **Context:** RH is approaching go-live on the registry-backed Command Center, but
+  every routine change (a contact, a connection's purpose, "this is our elevator
+  line") still meant emailing Manley. The customer needs to administer their own
+  portfolio without being able to touch carrier / device / network provisioning or
+  assert life-safety verification.
+- **Decision:**
+  1. **Three classes of data** (`customer/CUSTOMER_SELF_SERVICE.md` §2):
+     *customer-managed* (written directly, audited old/new), *request-based*
+     (creates a governed `CustomerServiceRequest`; nothing changes until
+     operations act), *system-managed* (refused with 403; a mixed payload is
+     refused whole).
+  2. Customer-managed values live in an **overlay** (`customer_managed_fields`)
+     beside the system records — never inside them. The Portfolio Registry
+     building remains the canonical identity; a customer display name is a
+     preference layered on top.
+  3. **E911 is never customer-asserted.** An attestation is stored with
+     provenance and routed to the existing E911 review queue; `verified` derives
+     only from the official record; completing an E911 request does not verify.
+  4. The E911 **attestation** is reserved to `CUSTOMER_ADMIN`; `CUSTOMER_MANAGER`
+     keeps contacts + requests; read-only roles stay read-only.
+  5. Everything ships behind `FEATURE_CUSTOMER_SELF_SERVICE` + tenant allowlist +
+     optional user allowlist (default off).
+- **Consequences:** A new migration (`053`, three tables, off the single head
+  `052`). Every customer mutation and request transition is an append-only
+  `customer_activity_events` row mirrored into `ActionAudit`. Operations work the
+  queue through `/api/customer-requests` (API only in this slice). The go-live
+  audit distinguishes SYSTEM BLOCKERS from CUSTOMER ACTIONS, so legitimate
+  post-login customer work (E911 confirmation, contacts) never blocks an invite.
+

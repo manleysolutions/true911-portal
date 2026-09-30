@@ -177,6 +177,18 @@ Location/Building Workspace render from the registry (canonical buildings, not r
 Site rows) behind `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY` — see
 `CUSTOMER_COMMAND_CENTER.md` §8e and `RH_GO_LIVE_RUNBOOK.md` §4e for the go-live gate.
 
+### 7a. Approved mappings feed the customer Devices KPI (read-only)
+
+The customer registry view now counts **physical devices** per building from the
+approved evidence: `napco_radio` / `imei` mappings are device anchors;
+`iccid` / `genesis_msisdn` / `phone` are identifiers that attach to an anchor;
+the fused device groups stored in **approved** review payloads merge identifiers
+seen together across sources; True911 Device rows on linked sites count once each.
+One Napco radio seen in Zoho, Napco and True911 with its SIM and number is one
+device; a lone ICCID or number is none (`services/customer/physical_devices.py`).
+Nothing here writes the registry. Operators can check the result with
+`python -m scripts.rh_customer_go_live_audit` ("Physical devices").
+
 ## 8. Guarantees
 
 - **Read-only** — never writes Zoho, Napco, Genesis, True911, carrier APIs, or the

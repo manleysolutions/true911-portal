@@ -1,7 +1,7 @@
 # True911+ — BACKLOG
 
 > Living document. Categorized by urgency, then ranked within category by the
-> **priority order in `CONSTITUTION.md` §3**. Last reviewed: 2026-06-23.
+> **priority order in `CONSTITUTION.md` §3**. Last reviewed: 2026-09-30.
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`. The
 > standing "never build" vetoes are authoritative in `CONSTITUTION.md` §7
@@ -557,7 +557,23 @@ The "never guess a header name" rule (#165 PoP claims, #167 signed `sender-id`,
   `--apply`; never Site/Device/E911/Zoho/Napco/Genesis; E911 never verified. Tests:
   `test_rh_registry_approve_from_review.py` (13). Docs: `RH_GO_LIVE_RUNBOOK.md` §4e step 3.
 
+### Phase 3.17 — Customer Operations Console / self-service (IN REVIEW; branch `feat/rh-customer-self-service`, PR open)
+- **RH-P3.17-SELF-SERVICE — Customer-owned layer + governed requests + E911 attestation.**
+  Overlay for contacts/notes/connection labels; `CustomerServiceRequest` lifecycle;
+  E911 self-service states (never self-certified); Action Center; internal queue
+  `/api/customer-requests`; migration `053`; flags `FEATURE_CUSTOMER_SELF_SERVICE`
+  (+ tenant / user allowlists). Spec `customer/CUSTOMER_SELF_SERVICE.md`, D-021.
+- **RH-P3.17-DEVICES — Devices KPI = 0 + false-green banner (fixed in the same PR).**
+- **RH-P3.17-AUDIT — `scripts/rh_customer_go_live_audit.py`.** Run on Render after
+  deploy; resolve SYSTEM BLOCKERS before the invite.
+- **Follow-ups (not in the slice):** internal UI for the request queue (API only
+  today) · notification delivery for stored preferences · link the ~16 unlinked
+  RH buildings to monitoring records · E911ChangeLog draft from an approved
+  correction · request SLA timers · document/photo storage.
+
 ### Phase 4 — Launch
+- **RH-P4.0 — Go-live audit gate.** `rh_customer_go_live_audit` verdict `READY` or
+  `READY_WITH_CUSTOMER_ACTIONS` (zero SYSTEM BLOCKERS) before the invite.
 - **RH-P4.1 — Judy onboarding.** Create Judy user, assign `CUSTOMER_ADMIN`, RH tenant scope.
 - **RH-P4.2 — Go-live validation.** Run the §6 operational checklist + §5 gates in
   `FEATURE_CUSTOMER_API_ROLLOUT.md`; serialization safety net + 403/404 matrix green.
