@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-09-30. Branch at time of writing:
-> `fix/rh-go-live-ux-semantics`.
+> `feat/rh-customer-calm-ux`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -24,7 +24,33 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — RH go-live UX / action-semantics pass [2026-09-30]
+## 0·IN REVIEW — Calm customer experience: trust rule UNKNOWN ≠ FAILED ≠ PROTECTED [2026-09-30]
+
+Branch `feat/rh-customer-calm-ux` (PR open, **not merged**). PR #184 is **MERGED**
+(`4eb822f`) and the RH Test production smoke test passed. Reviewed from the RH
+customer admin's seat, the portal read as "mostly broken" (29/45 "protected", 0%
+E911, ~45/100 health) although the data only shows missing linkage / verification
+evidence. Presentation-only pass (decision **D-022**):
+
+- **Trust rule:** KNOWN GOOD ("Monitored") · KNOWN PROBLEM ("Needs attention") ·
+  UNKNOWN ("Being reconciled" when no monitoring link, "Status being confirmed"
+  otherwise) — neutral, never red or green; a known problem always wins.
+  `serialize.operational_state`; API adds `operational_state`,
+  `monitoring_linked`, `operational_states`, `e911_verified_locations`,
+  action-center `tiers` + `being_reconciled`, workspace
+  `monitored_service_count`.
+- **Dashboard:** portfolio hero (locations · physical devices · connections) +
+  four separate dimensions; **no blended health score** for customers; "For you"
+  vs "True911 is working on"; Action Center tiered Urgent / Action needed / In
+  progress / Portfolio setup (contacts collapsed, never at problem severity).
+- **Location page:** four places (Overview · Connections · Compliance · Records),
+  ≤2 primary actions + More; E911, contacts, requests, activity each in one place
+  (previously up to 4×); composite building-health score removed from the
+  customer view; roadmap items compacted to one disabled row.
+- Tests: `test_customer_trust_rule.py` (17) + web helper tests (25 total). Full
+  backend suite **4768**; build + eslint clean. No screenshots (no local stack).
+
+## 0·DONE — RH go-live UX / action-semantics pass (PR #184, MERGED `4eb822f`) [2026-09-30]
 
 Branch `fix/rh-go-live-ux-semantics` (PR open, **not merged**). PR #183 is
 **MERGED** (`bf068ff`) and deployed; production RH Test showed 45 buildings,

@@ -259,6 +259,26 @@ older append-only *Add Contact* and *Create Request* controls are replaced by
 Update Contacts and the governed requests, so there is one path for each. Billing
 remains a *Soon* section with no control.
 
+## 13. Presentation: calm, owned, evidence-based (D-022)
+
+The console presents its data under the customer trust rule — **UNKNOWN ≠ FAILED,
+UNKNOWN ≠ PROTECTED** — and by owner:
+
+- **For you (customer actions):** E911 confirmations ready · requests waiting on
+  you · site contacts (low priority, "Portfolio setup").
+- **True911 is working on:** E911 records being prepared (no dispatch address
+  yet) · monitoring relationships being reconciled · requests in progress.
+- **Urgent** is reserved for evidence-backed service problems.
+
+The Action Center returns `tiers` (urgent / action_needed / in_progress /
+informational, each with its lists and owner) and a `being_reconciled` list;
+the location workspace returns `operational_state` and
+`monitored_service_count`. Presentation rules live in the pure, unit-tested
+`web/src/components/customer/selfService.js` (`portfolioHero`,
+`actionCenterTiers`, `locationActions`, `LOCATION_TABS`, `statusWord`,
+`operationalView`). The location page and dashboard are described in
+`LOCATION_DIGITAL_TWIN.md` §14 and `CUSTOMER_COMMAND_CENTER.md` §8g.
+
 ## 11. Not in this slice (roadmap)
 
 Notification delivery for the stored preferences · document / photo storage ·

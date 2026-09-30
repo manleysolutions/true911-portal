@@ -282,6 +282,9 @@ async def _aggregate_building(db, tenant_id, b, pending, linked, now) -> dict:
         # wizard and the go-live audit all read (official E911 record on a linked
         # site first, else the canonical service address)
         "dispatch_address": dispatch_address,
+        # linked to a True911 monitoring record?  False means "being reconciled"
+        # by True911 — never "unprotected" (customer trust rule, D-022).
+        "monitoring_linked": bool(linked),
         "_site_ids": [s.site_id for s, _ in linked],
     }
 
@@ -374,6 +377,11 @@ def summary(records: list[dict], company, now) -> dict:
         "total_devices": devices,
         "total_phone_numbers": phones,
         "e911_verification_pct": cs._pct(e911_verified, total) if total else None,
+        "e911_verified_locations": e911_verified,
+        # the customer operational picture (KNOWN GOOD / KNOWN PROBLEM / UNKNOWN)
+        "operational_states": cs.operational_state_counts(
+            cs.operational_state((r.get("protection") or {}).get("status"),
+                                 linked=bool(r.get("monitoring_linked", True))) for r in records),
         "service_availability_pct": cs._pct(protected_services, services) if services else None,
         "monthly_health_score": health,
         "upcoming_maintenance": [],

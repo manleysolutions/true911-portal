@@ -6,7 +6,8 @@ import {
   contactPayload, changedFields, containsInternalTerm, errorText, actionCenterHeadline,
   PURPOSES, actionCenterSections, TWIN_LABELS, healthFactorLabel, healthFactorWeight,
   readinessProgress, contributionControl, connectionServiceLabel, servicesConnectionsSummary,
-  protectionBanner,
+  protectionBanner, operationalView, locationOperational, statusWord, portfolioHero,
+  actionCenterTiers, locationActions, LOCATION_TABS, groupConnectionsByService,
 } from "./selfService.js";
 
 const ADMIN = { enabled: true, can_manage_location: true, can_manage_contacts: true,
@@ -150,4 +151,132 @@ test("29/45 is never a green all-protected banner", () => {
   assert.equal(protectionBanner({ locations_total: 0, locations_protected: 0 }).allProtected, false);
   // missing attention/critical keys do not matter any more
   assert.equal(protectionBanner({ locations_total: 45, locations_protected: 29, critical_sites: undefined }).allProtected, false);
+});
+
+// ══ Customer trust rule: KNOWN GOOD · KNOWN PROBLEM · UNKNOWN (D-022) ══
+// RH production shape (values change over time — these are fixtures, not constants).
+const RH_SUMMARY = { locations_total: 45, locations_protected: 29, devices: 73, total_phone_numbers: 28,
+  e911_verified_locations: 0, e911_verification_pct: 0, monthly_health_score: { score: 45 },
+  operational_states: { monitored: 29, attention_required: 0, being_reconciled: 16, not_yet_confirmed: 0 } };
+const RH_AC = {
+  counts: { e911_confirmation_required: 35, e911_not_ready: 10, e911_attention: 45,
+    missing_contact_information: 44, needs_attention: 0, being_reconciled: 16 },
+  e911_confirmation_required: [{ location_ref: "b1", location: "Chicago Gallery #147", action: "verify_e911" }],
+  e911_not_ready: [{ location_ref: "b2", location: "Nashville Gallery", action: null }],
+  missing_contact_information: [{ location_ref: "b3", location: "Austin Gallery #149" }],
+  being_reconciled: [{ location_ref: "b4", location: "Tulsa Gallery" }],
+  needs_attention: [], awaiting_your_response: [], service_change_requests: [], open_problems: [],
+  recently_updated: [{ by: "Judy", summary: "Updated emergency contact" }],
+};
+
+test("unknown monitoring is neither 'unprotected' nor green", () => {
+  const reconciling = locationOperational({ protection: { status: "Unknown" }, monitoring_linked: false });
+  assert.equal(reconciling.label, "Being reconciled");
+  assert.equal(reconciling.tone, "neutral");
+  const unknown = locationOperational({ protection: { status: "Unknown" } });
+  assert.equal(unknown.tone, "neutral");
+  for (const v of [reconciling, unknown, statusWord("Unknown"), statusWord(undefined)]) {
+    assert.notEqual(v.tone, "good"); assert.notEqual(v.tone, "problem"); assert.notEqual(v.tone, "urgent");
+    assert.ok(!/unprotected|fail|offline|protected/i.test(v.label), v.label);
+  }
+});
+
+test("known failures stay prominent, even without a monitoring link", () => {
+  assert.equal(statusWord("Critical").tone, "urgent");
+  assert.equal(statusWord("Attention Needed").tone, "problem");
+  const crit = locationOperational({ protection: { status: "Critical" }, monitoring_linked: false });
+  assert.equal(crit.label, "Needs attention"); assert.equal(crit.tone, "urgent");
+  assert.equal(operationalView({ state: "attention_required" }).tone, "problem");
+  const hero = portfolioHero({ ...RH_SUMMARY, operational_states: { ...RH_SUMMARY.operational_states, attention_required: 2 } }, RH_AC);
+  const svc = hero.dimensions.find((d) => d.key === "service_status");
+  assert.equal(svc.tone, "problem"); assert.equal(svc.value, "2 locations need attention");
+});
+
+test("RH portfolio hero states facts without implying failure", () => {
+  const hero = portfolioHero(RH_SUMMARY, RH_AC);
+  assert.deepEqual(hero.facts.map((f) => f.value), [45, 73, 28]);
+  const dim = Object.fromEntries(hero.dimensions.map((d) => [d.key, d]));
+  assert.equal(dim.service_status.value, "No known service issues");
+  assert.equal(dim.monitoring.value, "29 of 45 locations monitored");
+  assert.ok(dim.monitoring.detail.includes("16 being reconciled by True911"));
+  assert.equal(dim.monitoring.tone, "neutral");                 // a coverage gap is not a failure
+  assert.ok(dim.e911.detail.includes("35 ready for your confirmation"));
+  assert.ok(dim.e911.detail.includes("10 being prepared by True911"));
+  assert.equal(dim.setup.value, "Contacts on file for 1 of 45");
+  const all = JSON.stringify(hero);
+  assert.ok(!/unprotected|failed|critical/i.test(all), all);
+  // no blended composite score is presented as service health
+  assert.ok(!/\/100|health score|45%/i.test(all), all);
+  assert.ok(!hero.dimensions.some((d) => /health/i.test(d.title)));
+});
+
+test("customer actions and True911 actions are separated", () => {
+  const hero = portfolioHero(RH_SUMMARY, RH_AC);
+  const mine = hero.customerActions.map((a) => a.text).join(" | ");
+  const ours = hero.operationsActions.map((a) => a.text).join(" | ");
+  assert.ok(mine.includes("35 E911 confirmations ready") && mine.includes("44 locations need contacts"), mine);
+  assert.ok(ours.includes("10 E911 records being prepared") && ours.includes("16 monitoring relationships being reconciled"), ours);
+  assert.ok(!/prepared|reconcil/i.test(mine), "True911 work is never listed as the customer task");
+  assert.ok(!/confirmation|contacts/i.test(ours));
+});
+
+test("action center tiers: urgent = known problems only; contacts are low-priority setup", () => {
+  const tiers = actionCenterTiers(RH_AC);
+  const where = {};
+  for (const t of tiers) for (const s of t.sections) where[s.key] = t;
+  assert.equal(where.e911_confirmation_required.tier, "action_needed");
+  assert.equal(where.e911_confirmation_required.owner, "customer");
+  for (const k of ["e911_not_ready", "being_reconciled"]) {
+    assert.equal(where[k].tier, "in_progress", k); assert.equal(where[k].owner, "true911", k);
+  }
+  assert.equal(where.missing_contact_information.tier, "informational");
+  assert.equal(where.missing_contact_information.open, false);        // collapsed by default
+  assert.ok(!tiers.some((t) => t.tier === "urgent"));                // nothing known broken
+  const withIssue = actionCenterTiers({ ...RH_AC, needs_attention: [{ location_ref: "x", location: "Dallas", status: "Critical", label: "Needs attention" }] });
+  assert.equal(withIssue[0].tier, "urgent");                         // a real problem leads
+  assert.equal(withIssue[0].sections[0].key, "needs_attention");
+});
+
+const ADMIN_CAPS = { enabled: true, can_manage_location: true, can_manage_contacts: true,
+  can_submit_requests: true, can_attest_e911: true, can_view_requests: true };
+
+test("location header: at most two primary actions, E911 and contacts exactly once", () => {
+  const ws = { e911: { state: "customer_confirmation_required" } };
+  const { primary, more } = locationActions(ws, ADMIN_CAPS);
+  assert.deepEqual(primary.map((a) => a.label), ["Confirm E911", "Manage Location"]);
+  const all = [...primary, ...more].map((a) => a.key);
+  assert.equal(all.filter((k) => k === "verify_e911").length, 1);
+  assert.equal(all.filter((k) => k === "update_contacts").length, 1);
+  assert.equal(new Set(all).size, all.length);                        // no duplicates at all
+  // nothing to confirm -> no E911 action anywhere
+  for (const st of ["not_verified", "customer_submitted", "verification_pending", "verified"]) {
+    const a = locationActions({ e911: { state: st } }, ADMIN_CAPS);
+    assert.ok(![...a.primary, ...a.more].some((x) => x.key === "verify_e911"), st);
+  }
+  assert.deepEqual(locationActions(ws, { enabled: true, can_view_requests: true }), { primary: [], more: [] });
+  assert.deepEqual(locationActions(ws, { ...ADMIN_CAPS, enabled: false }), { primary: [], more: [] });
+});
+
+test("location sections: each subject lives in exactly one place", () => {
+  const sections = LOCATION_TABS.flatMap((t) => t.sections);
+  assert.equal(new Set(sections).size, sections.length);
+  const home = Object.fromEntries(LOCATION_TABS.flatMap((t) => t.sections.map((s) => [s, t.key])));
+  assert.equal(home.e911, "compliance");
+  assert.equal(home.contacts, "records");
+  assert.equal(home.requests, "overview");
+  assert.equal(home.activity, "records");
+  assert.deepEqual(LOCATION_TABS.map((t) => t.label), ["Overview", "Connections", "Compliance", "Records"]);
+});
+
+test("service -> connection -> device grouping keeps unlinked lines out of services", () => {
+  const services = [{ service_ref: "svc_1", service: "Elevator", status: { status: "Protected" }, equipment: [{ equipment: "Communicator" }] }];
+  const connections = [
+    { connection_ref: "c1", service_ref: "svc_1", name: "Elevator", service: "Elevator" },
+    { connection_ref: "c2", service_ref: null, name: "Additional line", service: null },
+  ];
+  const g = groupConnectionsByService(services, connections);
+  assert.equal(g.length, 2);
+  assert.equal(g[0].service, "Elevator"); assert.deepEqual(g[0].connections.map((c) => c.connection_ref), ["c1"]);
+  assert.equal(g[0].equipment.length, 1);
+  assert.equal(g[1].service, null); assert.deepEqual(g[1].connections.map((c) => c.connection_ref), ["c2"]);
 });

@@ -1,26 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  Settings2, PhoneCall, ShieldCheck, PlusCircle, Repeat, AlertOctagon, Users, X,
-  CheckCircle2, AlertTriangle, Clock, Edit3, History, ClipboardList, MapPin, LifeBuoy,
-} from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import {
-  visibleActions, CHANGE_REQUEST_TYPES, PURPOSES, CONTACT_ROLES, canVerifyE911,
-  e911FormProblems, e911Tone, contactProblems, contactPayload, changedFields, requestTone,
-  errorText, connectionServiceLabel, servicesConnectionsSummary,
+  CHANGE_REQUEST_TYPES, PURPOSES, CONTACT_ROLES, e911FormProblems, contactProblems,
+  contactPayload, changedFields, errorText,
 } from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
-// LocationOperations — the customer's operations console for ONE location.
+// Location self-service building blocks — the data hook and the action
+// modals used by the location page (LocationCommandCenter).
 //
-// Sourced from GET /customer/locations/{ref}/workspace (self-service, flag-gated:
-// a 404 means the feature is off for this user and the component renders
-// nothing, leaving the existing read-only workspace exactly as it was).
-//
-// Customer-owned details (names, purpose, notes, contacts) save directly.
-// Anything that touches provisioning, identity or E911 is submitted as a
-// request that the operations team reviews — the UI says so plainly.  Support
-// stays available as a secondary escalation, never the primary path.
+// Data: GET /customer/locations/{ref}/workspace (self-service, flag-gated; a
+// 404 means the console is off for this user and the page stays read-only).
+// Customer-owned details save directly; anything touching provisioning,
+// identity or E911 is submitted as a request operations review.
 // ════════════════════════════════════════════════════════════════════
 
 const TONE = {
@@ -29,15 +22,14 @@ const TONE = {
   pending: "bg-blue-50 border-blue-200 text-blue-800",
   bad: "bg-red-50 border-red-200 text-red-800",
   muted: "bg-slate-50 border-slate-200 text-slate-600",
-};
-const STATUS_TONE = { Protected: "ok", "Attention Needed": "action", Critical: "bad" };
-const ICONS = {
-  manage_location: Settings2, manage_connections: PhoneCall, verify_e911: ShieldCheck,
-  add_service: PlusCircle, service_change: Repeat, report_problem: AlertOctagon,
-  update_contacts: Users,
+  // trust-rule tones (selfService.statusWord / operationalView)
+  good: "bg-emerald-50 border-emerald-200 text-emerald-800",
+  problem: "bg-amber-50 border-amber-200 text-amber-800",
+  urgent: "bg-red-50 border-red-200 text-red-800",
+  neutral: "bg-white border-slate-300 text-slate-600",
 };
 
-const Pill = ({ tone = "muted", children }) => (
+export const Pill = ({ tone = "muted", children }) => (
   <span className={`inline-flex items-center text-[10.5px] font-medium px-2 py-0.5 rounded-full border ${TONE[tone]}`}>{children}</span>
 );
 
@@ -69,7 +61,7 @@ function Modal({ title, onClose, children, footer }) {
   );
 }
 
-const Btn = ({ primary, disabled, onClick, children }) => (
+export const Btn = ({ primary, disabled, onClick, children }) => (
   <button type="button" disabled={disabled} onClick={onClick}
     className={`text-[12px] font-medium px-3 py-1.5 rounded-lg border disabled:opacity-50 ${primary ? "bg-slate-800 border-slate-800 text-white hover:bg-slate-700" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
     {children}
@@ -328,203 +320,41 @@ function ConnectionForm({ conn, onClose, onDone, patchConn }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-export default function LocationOperations({ locationRef, intent }) {
+// Data hook: the self-service workspace + the mutation helpers the modals use.
+// ══════════════════════════════════════════════════════════════════════
+export function useLocationWorkspace(locationRef) {
   const [ws, setWs] = useState(null);
   const [off, setOff] = useState(false);
-  const [modal, setModal] = useState(null);
-  const [flash, setFlash] = useState(null);
-  const [busyRef, setBusyRef] = useState(null);
   const enc = encodeURIComponent(locationRef);
 
-  const load = useCallback(async () => {
+  const reload = useCallback(async () => {
     try {
       const r = await apiFetch(`/customer/locations/${enc}/workspace`);
       setWs(r.data); setOff(false);
     } catch (e) {
-      if (e.status === 404) setOff(true);
+      if (e.status === 404) { setOff(true); setWs(null); }
     }
   }, [enc]);
-  useEffect(() => { load(); }, [load]);
-
-  // Opened from an Action Center row: go straight into the task, once, and only
-  // if the task is actually available (e.g. never Verify E911 on a record that
-  // has no dispatch address yet).
-  const intentDone = useRef(false);
-  useEffect(() => {
-    if (!ws || !intent || intentDone.current) return;
-    intentDone.current = true;
-    const caps = ws.capabilities || {};
-    if (intent === "verify_e911" && canVerifyE911(caps, ws.e911)) setModal({ type: "verify_e911" });
-    else if (intent === "update_contacts" && caps.can_manage_contacts) setModal({ type: "update_contacts" });
-  }, [ws, intent]);
+  useEffect(() => { reload(); }, [reload]);
 
   const call = (method) => (path, body) => apiFetch(`/customer/locations/${enc}${path}`, { method, body: JSON.stringify(body) }).then((r) => r.data);
-  const post = call("POST"); const patch = call("PATCH"); const put = call("PUT");
-  const patchConn = (ref, body) => apiFetch(`/customer/locations/${enc}/connections/${encodeURIComponent(ref)}`, { method: "PATCH", body: JSON.stringify(body) }).then((r) => r.data);
-  const done = async (text) => { setModal(null); setFlash({ ok: true, text }); await load(); };
-
-  const requestAction = async (ref, verb) => {
-    setBusyRef(ref);
-    try {
-      const notes = verb === "respond" ? window.prompt("Your response to the operations team:") : null;
-      if (verb === "respond" && !notes) return;
-      await apiFetch(`/customer/requests/${encodeURIComponent(ref)}/${verb}`, { method: "POST", body: JSON.stringify({ notes }) });
-      await done(verb === "cancel" ? "Request cancelled." : "Response sent.");
-    } catch (x) { setFlash({ ok: false, text: errorText(x) }); } finally { setBusyRef(null); }
+  const api = {
+    post: call("POST"), patch: call("PATCH"), put: call("PUT"),
+    patchConn: (ref, body) => apiFetch(`/customer/locations/${enc}/connections/${encodeURIComponent(ref)}`, { method: "PATCH", body: JSON.stringify(body) }).then((r) => r.data),
+    requestAction: (ref, verb, notes) => apiFetch(`/customer/requests/${encodeURIComponent(ref)}/${verb}`, { method: "POST", body: JSON.stringify({ notes }) }),
   };
+  return { ws, off, reload, api };
+}
 
-  if (off || !ws) return null;
-  const caps = ws.capabilities || {};
-  const actions = visibleActions(caps);
-  const e = ws.e911;
-  const open = (key) => {
-    const a = actions.find((x) => x.key === key);
-    if (key === "manage_connections") { document.getElementById("ops-connections")?.scrollIntoView({ behavior: "smooth" }); return; }
-    setModal(a?.requestType ? { type: "request", requestType: a.requestType } : { type: key });
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Outstanding actions + primary actions */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
-        <div className="flex items-center gap-2"><ClipboardList className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Manage this location</h3></div>
-        {ws.location.outstanding_actions.length > 0 ? (
-          <ul className="space-y-1.5">
-            {ws.location.outstanding_actions.map((a, i) => (
-              <li key={i} className="flex items-center gap-2 text-[12.5px] text-slate-700">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                <span className="flex-1">{a.label}<span className="text-slate-400"> — {a.reason}</span></span>
-                {a.action === "verify_e911" && canVerifyE911(caps, e) && <button className="text-[11.5px] font-medium text-slate-800 underline" onClick={() => setModal({ type: "verify_e911" })}>Start</button>}
-                {a.action === "update_contacts" && caps.can_manage_contacts && <button className="text-[11.5px] font-medium text-slate-800 underline" onClick={() => setModal({ type: "update_contacts" })}>Add</button>}
-                {a.action === "respond_request" && caps.can_submit_requests && <button className="text-[11.5px] font-medium text-slate-800 underline" onClick={() => requestAction(a.request_ref, "respond")}>Respond</button>}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="text-[12px] text-emerald-700 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" />Nothing needs your attention here.</p>}
-        {actions.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {actions.map((a) => {
-              const Icon = ICONS[a.key];
-              const disabled = a.key === "verify_e911" && !canVerifyE911(caps, e);
-              return (
-                <button key={a.key} type="button" disabled={disabled} onClick={() => open(a.key)}
-                  className="inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40">
-                  {Icon && <Icon className="w-3.5 h-3.5" />}{a.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {flash && <p className={`text-[12px] ${flash.ok ? "text-emerald-700" : "text-red-700"}`}>{flash.text}</p>}
-      </div>
-
-      {/* E911 */}
-      <div className="rounded-xl border border-slate-200 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">E911</h3></div>
-          <Pill tone={e911Tone(e.state)}>{e.label}</Pill>
-        </div>
-        <p className="text-[12px] text-slate-600 mt-2 flex items-start gap-1.5"><MapPin className="w-3.5 h-3.5 mt-0.5 text-slate-400" />{e.dispatch_address || "No dispatch address on file yet"}</p>
-        {e.reason && <p className="text-[11.5px] text-slate-500 mt-1">{e.reason}</p>}
-        {e.provenance?.verification_method === "customer_attestation" && (
-          <p className="text-[11px] text-slate-400 mt-1">Confirmed by {e.provenance.attested_by} · awaiting official verification</p>
-        )}
-        {canVerifyE911(caps, e) && <div className="mt-3"><Btn primary onClick={() => setModal({ type: "verify_e911" })}>Verify E911</Btn></div>}
-      </div>
-
-      {/* Connections */}
-      <div id="ops-connections" className="rounded-xl border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2"><PhoneCall className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Life-Safety Connections</h3><span className="text-[11px] text-slate-400">{servicesConnectionsSummary(ws.location)}</span></div>
-        {ws.connections.length === 0 && <p className="px-4 py-4 text-[12px] text-slate-400">No connections on file yet.</p>}
-        <div className="divide-y divide-slate-100">
-          {ws.connections.map((c) => (
-            <div key={c.connection_ref} className="px-4 py-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-slate-900">{c.name}</p>
-                  <p className="text-[12px] text-slate-600 tabular-nums">{c.phone_number || "No number on file"}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Service: {connectionServiceLabel(c)} · Purpose: {c.purpose_label}{c.device_association ? ` · ${c.device_association}` : ""}{c.e911_state ? ` · E911: ${c.e911_state}` : ""}</p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <Pill tone={STATUS_TONE[c.status?.status] || "muted"}>{c.status?.status === "Protected" ? "Protected" : c.status?.status === "Unknown" ? "Status being confirmed" : c.status?.status}</Pill>
-                  {caps.can_manage_location && <button className="text-[11px] text-slate-600 hover:text-slate-900 inline-flex items-center gap-1" onClick={() => setModal({ type: "connection", conn: c })}><Edit3 className="w-3 h-3" />Manage</button>}
-                </div>
-              </div>
-              {c.open_requests.length > 0 && <p className="text-[11px] text-blue-700 mt-1 flex items-center gap-1"><Clock className="w-3 h-3" />{c.open_requests.map((r) => `${r.request_label}: ${r.status_label}`).join(" · ")}</p>}
-              {c.customer_notes && <p className="text-[11.5px] text-slate-500 mt-1">{c.customer_notes}</p>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Contacts + notes */}
-      <div className="rounded-xl border border-slate-200 p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2"><Users className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Contacts</h3></div>
-          {caps.can_manage_contacts && <button className="text-[11.5px] text-slate-600 hover:text-slate-900" onClick={() => setModal({ type: "update_contacts" })}>Edit</button>}
-        </div>
-        {CONTACT_ROLES.map((r) => {
-          const c = ws.contacts.contacts[r.value];
-          return (
-            <div key={r.value} className="text-[12px]">
-              <span className="text-slate-500">{r.label}: </span>
-              {c ? <span className="text-slate-800">{[c.name, c.title, c.phone, c.email].filter(Boolean).join(" · ")}</span> : <span className="text-amber-700">Not provided</span>}
-            </div>
-          );
-        })}
-        {(ws.profile.location_notes || ws.profile.access_notes) && (
-          <div className="pt-2 border-t border-slate-100 space-y-1">
-            {ws.profile.location_notes && <p className="text-[12px] text-slate-700"><span className="text-slate-500">Notes: </span>{ws.profile.location_notes}</p>}
-            {ws.profile.access_notes && <p className="text-[12px] text-slate-700"><span className="text-slate-500">Access: </span>{ws.profile.access_notes}</p>}
-          </div>
-        )}
-      </div>
-
-      {/* Requests */}
-      {caps.can_view_requests && (
-        <div className="rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2"><Repeat className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Requests</h3></div>
-          {ws.requests.length === 0 ? <p className="px-4 py-4 text-[12px] text-slate-400">No requests yet.</p> : (
-            <div className="divide-y divide-slate-100">
-              {ws.requests.map((r) => (
-                <div key={r.request_ref} className="px-4 py-2.5 flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12.5px] text-slate-800">{r.request_label}</p>
-                    <p className="text-[11px] text-slate-400">{new Date(r.requested_at).toLocaleDateString()} · {r.requested_by}{r.resolution_notes ? ` · ${r.resolution_notes}` : ""}</p>
-                  </div>
-                  <Pill tone={requestTone(r.status)}>{r.status_label}</Pill>
-                  {caps.can_submit_requests && r.status === "waiting_customer" && <button disabled={busyRef === r.request_ref} className="text-[11px] underline text-slate-700" onClick={() => requestAction(r.request_ref, "respond")}>Respond</button>}
-                  {caps.can_submit_requests && ["submitted", "under_review", "waiting_customer"].includes(r.status) && <button disabled={busyRef === r.request_ref} className="text-[11px] text-slate-500 hover:text-slate-800" onClick={() => requestAction(r.request_ref, "cancel")}>Cancel</button>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Activity */}
-      <div className="rounded-xl border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2"><History className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Activity</h3></div>
-        {ws.activity.length === 0 ? <p className="px-4 py-4 text-[12px] text-slate-400">No activity yet.</p> : (
-          <div className="divide-y divide-slate-100">
-            {ws.activity.map((a, i) => (
-              <div key={i} className="px-4 py-2 flex items-center gap-2 text-[12px]">
-                <span className="text-slate-800 flex-1">{a.by} · {a.summary}</span>
-                <span className="text-[11px] text-slate-400 tabular-nums">{a.when ? new Date(a.when).toLocaleString() : ""}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Support — a secondary escalation, not the primary path */}
-      <p className="text-[11px] text-slate-400 flex items-center gap-1.5"><LifeBuoy className="w-3 h-3" />Urgent or unsure? <a className="underline hover:text-slate-600" href="mailto:support@manleysolutions.com">Contact support</a></p>
-
-      {modal?.type === "verify_e911" && <E911Wizard ws={ws} post={post} onClose={() => setModal(null)} onDone={done} />}
-      {modal?.type === "request" && <RequestForm ws={ws} initialType={modal.requestType} post={post} onClose={() => setModal(null)} onDone={done} />}
-      {modal?.type === "manage_location" && <LocationForm ws={ws} patch={patch} onClose={() => setModal(null)} onDone={done} />}
-      {modal?.type === "update_contacts" && <ContactsForm ws={ws} put={put} onClose={() => setModal(null)} onDone={done} />}
-      {modal?.type === "connection" && <ConnectionForm conn={modal.conn} patchConn={patchConn} onClose={() => setModal(null)} onDone={done} />}
-    </div>
-  );
+// The one place every self-service modal is mounted.  `modal` = { type, ... }.
+export function LocationModals({ modal, ws, api, onClose, onDone }) {
+  if (!modal || !ws) return null;
+  switch (modal.type) {
+    case "verify_e911": return <E911Wizard ws={ws} post={api.post} onClose={onClose} onDone={onDone} />;
+    case "request": return <RequestForm ws={ws} initialType={modal.requestType} post={api.post} onClose={onClose} onDone={onDone} />;
+    case "manage_location": return <LocationForm ws={ws} patch={api.patch} onClose={onClose} onDone={onDone} />;
+    case "update_contacts": return <ContactsForm ws={ws} put={api.put} onClose={onClose} onDone={onDone} />;
+    case "connection": return <ConnectionForm conn={modal.conn} patchConn={api.patchConn} onClose={onClose} onDone={onDone} />;
+    default: return null;
+  }
 }

@@ -943,7 +943,7 @@ def build_connections(location_key: str, services: list, extra_numbers: list,
             open_by_conn.setdefault(r.connection_key, []).append(r)
     out, seen_numbers = [], set()
 
-    def make(key, service, default_name, number, status, equipment, attention):
+    def make(key, service, default_name, number, status, equipment, attention, service_ref=None):
         ov = overlay.get(key, {})
         purpose = ov.get("purpose") or _SERVICE_PURPOSE.get(service, "other")
         pending = open_by_conn.get(key, [])
@@ -952,6 +952,7 @@ def build_connections(location_key: str, services: list, extra_numbers: list,
             action.append("E911 verification needed")
         return {
             "connection_ref": encode_connection_ref(location_key, key),
+            "service_ref": service_ref,
             # the Life-Safety Service this connection belongs to; None when the
             # number is known but not yet linked to a monitored service
             "service": service,
@@ -984,7 +985,7 @@ def build_connections(location_key: str, services: list, extra_numbers: list,
             name = f"{base} Line {i + 1}" if len(numbers) > 1 else base
             out.append(make(f"s:{raw}:{n or '-'}"[:120], svc.get("service") or "Life Safety Service",
                             name, n, svc.get("status") or cs.status_object("Unknown"), equipment,
-                            svc.get("attention_items")))
+                            svc.get("attention_items"), service_ref=svc.get("service_ref")))
     for n in extra_numbers or []:
         n = pdev.norm_phone(n)
         if not n or n in seen_numbers:
@@ -1069,6 +1070,11 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
             # one service may have several connections (lines / numbers), and a
             # connection may exist before it is linked to a service.
             "service_count": len(services),
+            "monitored_service_count": sum(1 for s in services
+                                           if (s.get("status") or {}).get("status") == "Protected"),
+            "operational_state": cs.operational_state(
+                (protection or {}).get("status"),
+                linked=(ctx.record or {}).get("monitoring_linked", True) if ctx.mode == "registry" else True),
             "connection_count": len(connections),
             "unlinked_connection_count": sum(1 for c in connections if c["service"] is None),
             "outstanding_actions": outstanding,
@@ -1118,18 +1124,34 @@ async def _portfolio_locations(db, tenant_id, now) -> list[dict]:
             b = cs.portfolio_building(r)
             out.append({"ref": r["building_ref"], "key": f"bldg:{r['id']}",
                         "name": b["display_name"], "protection": r.get("protection") or {},
+                        "monitoring_linked": bool(r.get("monitoring_linked", True)),
                         "has_address": bool(r.get("dispatch_address")),
                         "official_verified": bool(r.get("e911_verified")), "site": None,
                         "site_contact": False})
         return out
     for site, protection in await cportfolio.load_portfolio(db, tenant_id, now):
         out.append({"ref": encode_ref("loc", site.id), "key": f"site:{site.site_id}",
-                    "name": site.site_name, "protection": protection,
+                    "name": site.site_name, "protection": protection, "monitoring_linked": True,
                     "has_address": bool(site.e911_street),
                     "official_verified": (site.e911_status or "").lower() in _E911_VERIFIED,
                     "site": site,
                     "site_contact": bool(site.poc_name or site.poc_phone or site.poc_email)})
     return out
+
+
+# Action Center tiers: URGENT (known service problems) · ACTION NEEDED (tasks the
+# customer can do now) · IN PROGRESS (True911 / operations own it) ·
+# INFORMATIONAL (low-priority portfolio completion).  Missing contacts are setup,
+# never shown at the severity of a service problem.
+ACTION_CENTER_TIERS = [
+    {"tier": "urgent", "owner": "true911", "lists": ["needs_attention"]},
+    {"tier": "action_needed", "owner": "customer",
+     "lists": ["awaiting_your_response", "e911_confirmation_required"]},
+    {"tier": "in_progress", "owner": "true911",
+     "lists": ["e911_not_ready", "being_reconciled", "service_change_requests", "open_problems"]},
+    {"tier": "informational", "owner": "customer",
+     "lists": ["missing_contact_information", "recently_updated"]},
+]
 
 
 async def action_center(db, user, now) -> dict:
@@ -1144,13 +1166,21 @@ async def action_center(db, user, now) -> dict:
              for loc in locations}
     refs = {loc["key"]: loc["ref"] for loc in locations}
 
+    from app.services.customer import serialize as cs
+
     needs_attention, e911_confirm, e911_not_ready, missing_contacts = [], [], [], []
+    being_reconciled = []
     for loc in locations:
         name, ref = names[loc["key"]], loc["ref"]
         st = (loc["protection"] or {}).get("status")
-        if st in ("Critical", "Attention Needed"):
+        op = cs.operational_state(st, linked=loc["monitoring_linked"])
+        if op["state"] == "attention_required":       # evidence-backed problems only
             needs_attention.append({"location_ref": ref, "location": name, "status": st,
+                                    "label": op["label"], "urgent": op["urgent"],
                                     "reason": (loc["protection"] or {}).get("reason")})
+        elif op["state"] == "being_reconciled":       # True911's work, not the customer's
+            being_reconciled.append({"location_ref": ref, "location": name,
+                                     "label": op["label"], "reason": op["summary"]})
         e = e911_state(official_verified=loc["official_verified"], has_address=loc["has_address"],
                        latest_request=_latest_e911_request(req_by_loc.get(loc["key"], [])))
         row = {"location_ref": ref, "location": name, "state": e["state"], "label": e["label"],
@@ -1182,13 +1212,18 @@ async def action_center(db, user, now) -> dict:
         "service_change_requests": [req_item(r) for r in open_reqs
                                     if r.request_type in CHANGE_REQUEST_TYPES],
         "open_problems": [req_item(r) for r in open_reqs if r.request_type == "support_request"],
+        "being_reconciled": being_reconciled,
         "recently_updated": await load_activity(db, user.tenant_id, limit=10),
+        # Who owns what, and how urgent it is (customer trust rule, D-022).  The UI
+        # renders these tiers in order; nothing in "operations" is the customer's job.
+        "tiers": ACTION_CENTER_TIERS,
         "counts": {"locations": len(locations), "needs_attention": len(needs_attention),
                    "e911_confirmation_required": len(e911_confirm),
                    "e911_not_ready": len(e911_not_ready),
                    "e911_attention": len(e911_confirm) + len(e911_not_ready),
                    "e911_verification_required": len(e911_confirm) + len(e911_not_ready),
                    "missing_contact_information": len(missing_contacts),
-                   "open_requests": len(open_reqs)},
+                   "open_requests": len(open_reqs),
+                   "being_reconciled": len(being_reconciled)},
         "capabilities": capabilities(user),
     }

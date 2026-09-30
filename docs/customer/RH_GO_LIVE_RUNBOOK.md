@@ -328,6 +328,25 @@ E911 verification). Spec: `docs/customer/CUSTOMER_SELF_SERVICE.md`.
    resulting requests and apply E911 through the existing `UPDATE_E911` flow.
    Brief her: "Verified" appears only after the verification team completes it.
 
+**Calm-experience check (after the D-022 pass)** — as RH Test, confirm:
+- The dashboard opens with the **portfolio hero** (locations · physical devices ·
+  telephone connections) and four dimensions — *Service status* "No known service
+  issues", *Monitoring coverage* "29 of 45 locations monitored · 16 being
+  reconciled by True911", *E911 readiness* "0 verified · 35 ready for your
+  confirmation · 10 being prepared by True911", *Portfolio setup*. No
+  "protected/unprotected", no health score, no 0% tile.
+- "For you" lists only customer tasks; "True911 is working on" lists records being
+  prepared and monitoring being reconciled.
+- Action Center tiers: no *Urgent* tier unless a real service problem exists;
+  *Portfolio setup* (site contacts) is collapsed.
+- Location list: unlinked locations read **Being reconciled** in neutral grey.
+- Chicago #147: header shows "No known service issues · 1 monitored life-safety
+  service · 2 telephone connections · E911: …", at most two buttons + More, and four
+  sections (Overview · Connections · Compliance · Records) with E911, contacts and
+  requests each in one place.
+- Re-run the smoke flows (contact, notes, rename, request, E911 confirm) — same
+  results as before.
+
 **What the RH Test smoke test should show** (after the go-live semantics pass):
 - Action Center headline like "35 E911 confirmations needed · 45 locations missing
   contacts · 10 E911 records being prepared" — confirmations and records being

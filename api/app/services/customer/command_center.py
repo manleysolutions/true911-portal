@@ -92,7 +92,9 @@ async def load_portfolio_summary(db: AsyncSession, tenant_id: str, now) -> dict:
         phone_numbers=len(numbers), e911_verified=e911_verified,
         e911_with_address=e911_with_address, health=health,
         recent_activity=recent_activity, upcoming_maintenance=[],
-        as_of=now.isoformat())
+        as_of=now.isoformat(),
+        operational_states=cs.operational_state_counts(
+            cs.operational_state(p["status"], linked=True) for _s, p in portfolio))
 
 
 async def load_portfolio_health(db: AsyncSession, tenant_id: str, now) -> dict:
