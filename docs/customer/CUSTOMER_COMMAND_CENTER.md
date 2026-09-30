@@ -207,6 +207,15 @@ one-line secondary escalation. Gated by `FEATURE_CUSTOMER_SELF_SERVICE` + tenant
 allowlist (+ optional user allowlist); off = unchanged. Full spec:
 `CUSTOMER_SELF_SERVICE.md`.
 
+**Action Center buckets (go-live semantics pass):** *Waiting on you* · *Needs
+attention* · **E911 confirmations needed** (actionable; each row opens the
+location into Verify E911) · *Missing contact information* (opens Update Contacts)
+· *Service change requests* · *Open problems* · **E911 records being prepared**
+(informational — no dispatch address on file yet; nothing for the customer to
+confirm) · *Recently updated*. The headline counts confirmations and records
+being prepared separately; it never calls a record with no address a
+"confirmation". See `CUSTOMER_SELF_SERVICE.md` §12.
+
 **KPI fixes shipped with it (registry mode):** the summary now returns `devices`
 (physical devices, one per radio / communicator, never per SIM or number) plus
 `critical_sites` / `sites_requiring_attention`; the "All listed locations are

@@ -75,8 +75,8 @@ authority, not two.
 
 | State | Label (customer) | Reached when |
 |---|---|---|
-| `not_verified` | Not yet verified | no dispatch address on file, nothing submitted |
-| `customer_confirmation_required` | Your confirmation needed | address on file, nothing submitted — or operations asked the customer to re-confirm |
+| `not_verified` | E911 record being prepared | no dispatch address on file, nothing submitted — **not a customer action** (§12) |
+| `customer_confirmation_required` | Confirmation needed | address on file, nothing submitted — or operations asked the customer to re-confirm |
 | `customer_submitted` | Submitted — awaiting verification | attestation submitted, no corrections |
 | `requires_review` | Correction under review | attestation carried corrections (address, suite, floor, callback …) |
 | `verification_pending` | Verification in progress | operations are working it (also after they complete the request, until the official record changes) |
@@ -217,6 +217,47 @@ phone number on its own is **zero**.
 - Tests: `test_customer_self_service.py` (real SQLite DB via
   `tests/_customer_db.py`), `test_customer_physical_devices.py`,
   `test_rh_customer_go_live_audit.py`, `test_customer_rbac_posture.py`.
+
+## 12. Customer semantics (go-live pass, 2026-09-30)
+
+**E911 — action vs state.** Only `customer_confirmation_required` and `failed`
+are customer actions (`customer_action = "verify_e911"`); Verify E911 is offered
+only there. `not_verified` means *no dispatch address on file*: there is nothing
+to confirm, so it is labelled **"E911 record being prepared"**, carries no action,
+and is reported to operations as a system warning by the go-live audit. The
+Action Center therefore shows two buckets — **E911 confirmations needed** (each
+row opens the location straight into Verify E911) and **E911 records being
+prepared** (informational) — and the headline counts them separately
+("35 E911 confirmations needed · … · 10 E911 records being prepared"). The
+combined figure stays available as `counts.e911_attention`. (Before this pass the
+two were one list headlined "45 E911 confirmations", and Verify E911 was offered
+on records with no address.)
+
+**One dispatch address.** The registry read model computes a single
+`dispatch_address` per building (official E911 record on a linked site first, else
+the canonical service address). The dashboard, the location page, the E911 wizard
+and the go-live audit all read it, so a location is never "being prepared" on one
+screen and "confirmation needed" on another.
+
+**Building → Life-Safety Service → Connection → Device → Carrier.** A service
+(Elevator, Fire Alarm …) may have several connections (lines / numbers); a
+connection may be known — e.g. a registry telephone number — before it is linked
+to a monitored service. Such a connection is named **"Additional line"**, its
+service reads **"Not yet linked to a life-safety service"**, and its status stays
+Unknown. The workspace reports `service_count`, `connection_count` and
+`unlinked_connection_count` ("2 connections across 1 service · 1 not yet linked to
+a service"). Devices are counted separately (§9) and never per connection.
+
+**Data Completeness vs Operational Readiness.** See `LOCATION_DIGITAL_TWIN.md`
+§12. Contacts the customer supplies through the console count toward the
+readiness item *Site contacts*.
+
+**Workspace controls.** Upload Photo / Upload Document render disabled with a
+*Soon* badge (no file storage yet; they cannot open a form). Add Procedure,
+Record Inspection and Add Note are real text records. With self-service on, the
+older append-only *Add Contact* and *Create Request* controls are replaced by
+Update Contacts and the governed requests, so there is one path for each. Billing
+remains a *Soon* section with no control.
 
 ## 11. Not in this slice (roadmap)
 

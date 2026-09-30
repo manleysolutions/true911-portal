@@ -149,15 +149,28 @@ CUSTOMER_CANCELLABLE = frozenset({"submitted", "under_review", "waiting_customer
 
 # E911 self-service states (the customer never reaches "verified" on their own).
 E911_STATE_LABELS = {
-    "not_verified": "Not yet verified",
-    "customer_confirmation_required": "Your confirmation needed",
+    "not_verified": "E911 record being prepared",
+    "customer_confirmation_required": "Confirmation needed",
     "customer_submitted": "Submitted — awaiting verification",
     "verification_pending": "Verification in progress",
     "requires_review": "Correction under review",
     "failed": "Needs correction",
     "verified": "Verified",
 }
+# The ONLY states in which the customer can act (Verify E911).  ``not_verified``
+# means there is no dispatch address on file yet: there is nothing for the
+# customer to confirm, so it is never presented as a confirmation — operations
+# prepare the record first (the go-live audit reports it as a system warning).
 E911_CUSTOMER_ACTION_STATES = frozenset({"customer_confirmation_required", "failed"})
+E911_STATE_REASONS = {
+    "not_verified": "No dispatch address on file yet — the verification team is preparing this record.",
+    "customer_confirmation_required": "Review the dispatch address and numbers, then confirm.",
+    "customer_submitted": "Thank you — the verification team will complete verification.",
+    "requires_review": "Your correction is being reviewed.",
+    "verification_pending": "The verification team is completing verification.",
+    "failed": "The verification team could not verify this record — please review and resubmit.",
+    "verified": "Verified on the official emergency record.",
+}
 _E911_VERIFIED = frozenset({"validated", "verified", "confirmed"})
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -774,8 +787,11 @@ def e911_state(*, official_verified: bool, has_address: bool,
                           "verification_method": "customer_attestation",
                           "source": "Customer attestation — pending official verification",
                           "request_ref": latest_request.request_ref}
+    actionable = state in E911_CUSTOMER_ACTION_STATES
     return {"state": state, "label": E911_STATE_LABELS[state], "verified": state == "verified",
-            "customer_action_required": state in E911_CUSTOMER_ACTION_STATES,
+            "customer_action_required": actionable,
+            "customer_action": "verify_e911" if actionable else None,
+            "reason": E911_STATE_REASONS[state],
             "provenance": provenance}
 
 
@@ -793,6 +809,8 @@ def _official_verified(ctx: LocationContext) -> bool:
 def _dispatch_address(ctx: LocationContext) -> Optional[str]:
     """The registered dispatch address: the official emergency record on the
     linked site when one exists, else the canonical service address on file."""
+    if ctx.record is not None:            # registry mode: the read model's single source
+        return ctx.record.get("dispatch_address")
     site = ctx.site
     if site is not None and getattr(site, "e911_street", None):
         street, city, state, zp = site.e911_street, site.e911_city, site.e911_state, site.e911_zip
@@ -934,7 +952,10 @@ def build_connections(location_key: str, services: list, extra_numbers: list,
             action.append("E911 verification needed")
         return {
             "connection_ref": encode_connection_ref(location_key, key),
+            # the Life-Safety Service this connection belongs to; None when the
+            # number is known but not yet linked to a monitored service
             "service": service,
+            "service_label": service or "Not yet linked to a life-safety service",
             "name": ov.get("friendly_name") or default_name,
             "default_name": default_name,
             "purpose": purpose,
@@ -969,8 +990,11 @@ def build_connections(location_key: str, services: list, extra_numbers: list,
         if not n or n in seen_numbers:
             continue
         seen_numbers.add(n)
-        status = cs.status_object("Unknown", reason="We're confirming this connection's status.")
-        out.append(make(f"n:{n}", "Life Safety Line", "Life Safety Line", n, status, None, None))
+        # A number on file for the building that is not (yet) attached to a
+        # monitored service: a CONNECTION, not a second service.  Named neutrally
+        # so it never reads as a service of its own.
+        status = cs.status_object("Unknown", reason="We're confirming which service this line supports.")
+        out.append(make(f"n:{n}", None, "Additional line", n, status, None, None))
     return out
 
 
@@ -1041,7 +1065,12 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
             "building_type": category,
             "protection": protection,
             "device_count": device_count,
+            # Building → Life-Safety Service → Connection → Device → Carrier:
+            # one service may have several connections (lines / numbers), and a
+            # connection may exist before it is linked to a service.
+            "service_count": len(services),
             "connection_count": len(connections),
+            "unlinked_connection_count": sum(1 for c in connections if c["service"] is None),
             "outstanding_actions": outstanding,
         },
         "profile": _profile_view(loc_overlay),
@@ -1089,7 +1118,7 @@ async def _portfolio_locations(db, tenant_id, now) -> list[dict]:
             b = cs.portfolio_building(r)
             out.append({"ref": r["building_ref"], "key": f"bldg:{r['id']}",
                         "name": b["display_name"], "protection": r.get("protection") or {},
-                        "has_address": bool(r.get("address")),
+                        "has_address": bool(r.get("dispatch_address")),
                         "official_verified": bool(r.get("e911_verified")), "site": None,
                         "site_contact": False})
         return out
@@ -1115,7 +1144,7 @@ async def action_center(db, user, now) -> dict:
              for loc in locations}
     refs = {loc["key"]: loc["ref"] for loc in locations}
 
-    needs_attention, e911_needed, missing_contacts = [], [], []
+    needs_attention, e911_confirm, e911_not_ready, missing_contacts = [], [], [], []
     for loc in locations:
         name, ref = names[loc["key"]], loc["ref"]
         st = (loc["protection"] or {}).get("status")
@@ -1124,9 +1153,12 @@ async def action_center(db, user, now) -> dict:
                                     "reason": (loc["protection"] or {}).get("reason")})
         e = e911_state(official_verified=loc["official_verified"], has_address=loc["has_address"],
                        latest_request=_latest_e911_request(req_by_loc.get(loc["key"], [])))
-        if e["customer_action_required"] or e["state"] == "not_verified":
-            e911_needed.append({"location_ref": ref, "location": name, "state": e["state"],
-                                "label": e["label"]})
+        row = {"location_ref": ref, "location": name, "state": e["state"], "label": e["label"],
+               "reason": e["reason"], "action": e["customer_action"]}
+        if e["customer_action_required"]:
+            e911_confirm.append(row)          # the customer can act now (Verify E911)
+        elif e["state"] == "not_verified":
+            e911_not_ready.append(row)        # nothing to confirm yet — informational
         loc_ov = overlay.get(loc["key"], {}).get("", {})
         if not any(loc_ov.get(f"contact.{r}") for r in CONTACT_ROLES) and not loc["site_contact"]:
             missing_contacts.append({"location_ref": ref, "location": name})
@@ -1139,7 +1171,12 @@ async def action_center(db, user, now) -> dict:
     needs_attention.sort(key=lambda x: 0 if x["status"] == "Critical" else 1)
     return {
         "needs_attention": needs_attention,
-        "e911_verification_required": e911_needed,
+        # Actionable confirmations and not-yet-ready records are SEPARATE lists —
+        # a record with no dispatch address is never called a "confirmation".
+        "e911_confirmation_required": e911_confirm,
+        "e911_not_ready": e911_not_ready,
+        # combined E911 attention (kept for compatibility; rows carry ``action``)
+        "e911_verification_required": e911_confirm + e911_not_ready,
         "missing_contact_information": missing_contacts,
         "awaiting_your_response": [req_item(r) for r in open_reqs if r.status == "waiting_customer"],
         "service_change_requests": [req_item(r) for r in open_reqs
@@ -1147,7 +1184,10 @@ async def action_center(db, user, now) -> dict:
         "open_problems": [req_item(r) for r in open_reqs if r.request_type == "support_request"],
         "recently_updated": await load_activity(db, user.tenant_id, limit=10),
         "counts": {"locations": len(locations), "needs_attention": len(needs_attention),
-                   "e911_verification_required": len(e911_needed),
+                   "e911_confirmation_required": len(e911_confirm),
+                   "e911_not_ready": len(e911_not_ready),
+                   "e911_attention": len(e911_confirm) + len(e911_not_ready),
+                   "e911_verification_required": len(e911_confirm) + len(e911_not_ready),
                    "missing_contact_information": len(missing_contacts),
                    "open_requests": len(open_reqs)},
         "capabilities": capabilities(user),

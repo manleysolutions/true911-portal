@@ -8,6 +8,9 @@ import {
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import LocationOperations from "@/components/customer/LocationOperations";
+import {
+  TWIN_LABELS, healthFactorLabel, healthFactorWeight, readinessProgress, contributionControl,
+} from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
 // LocationCommandCenter — the collaborative Building Workspace (Digital Twin).
@@ -75,7 +78,7 @@ function Section({ title, icon: Icon, children, soon, count, action }) {
 function MaturityBadge({ maturity }) {
   if (!maturity) return null;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10.5px] font-semibold ${TIER_STYLE[maturity.tier] || TIER_STYLE.Bronze}`}>
+    <span title={`${TWIN_LABELS.readinessTitle}: ${maturity.tier}`} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10.5px] font-semibold ${TIER_STYLE[maturity.tier] || TIER_STYLE.Bronze}`}>
       <Award className="w-3 h-3" />{maturity.tier}
     </span>
   );
@@ -87,12 +90,12 @@ function MaturityCard({ maturity }) {
   return (
     <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[11.5px] font-medium text-slate-600 inline-flex items-center gap-1.5"><Award className="w-3.5 h-3.5 text-slate-400" />Digital Twin maturity</span>
+        <span className="text-[11.5px] font-medium text-slate-600 inline-flex items-center gap-1.5"><Award className="w-3.5 h-3.5 text-slate-400" />{TWIN_LABELS.readinessTitle}</span>
         <MaturityBadge maturity={maturity} />
       </div>
       <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: `${maturity.score}%` }} /></div>
       <p className="text-[10.5px] text-slate-400 mt-1">
-        {maturity.met} of {maturity.total} complete
+        {readinessProgress(maturity.met, maturity.total)}
         {(maturity.next_steps || []).length ? ` · Next: ${maturity.next_steps.join(", ")}` : ""}
       </p>
     </div>
@@ -119,12 +122,12 @@ function SeparatedHealth({ data, fallback }) {
   const { composite, confidence, factors } = data;
   return (
     <div className="rounded-lg border border-slate-200 p-3 space-y-3">
-      <p className="text-[10.5px] text-slate-400">Building health is made up of these factors — the overall score follows.</p>
+      <p className="text-[10.5px] text-slate-400">Building health is made up of these weighted factors — the overall score follows. {TWIN_LABELS.dataCompleteness} is how completely True911 knows this building's technical record.</p>
       <div className="space-y-2">
         {(factors || []).map((f) => (
           <div key={f.key}>
             <div className="flex items-center justify-between text-[11.5px]">
-              <span className="text-slate-600">{f.label} <span className="text-slate-300">· {f.weight}%</span></span>
+              <span className="text-slate-600">{healthFactorLabel(f)} <span className="text-slate-300">· {healthFactorWeight(f.weight)}</span></span>
               <span className="tabular-nums text-slate-800">{f.known ? `${f.value}/100` : "—"}</span>
             </div>
             <div className="mt-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">{f.known && <div className={`h-full ${barTone(f.value)}`} style={{ width: `${f.value}%` }} />}</div>
@@ -148,19 +151,31 @@ const CONTRIB = {
   inspection:      { label: "Record Inspection", fields: [["date", "Date"], ["kind", "Inspection type"]], noteLabel: "Findings / notes" },
   photo:           { label: "Upload Photo",    fields: [["filename", "File name"], ["caption", "Caption"]], noteLabel: "Note (optional)", hint: "Photo details are recorded now; file upload arrives soon." },
   document:        { label: "Upload Document", fields: [["filename", "File name"], ["category", "Category"]], noteLabel: "Note (optional)", hint: "Document details are recorded now; file upload arrives soon." },
-  procedure:       { label: "Upload Procedure", fields: [["title", "Procedure title"]], noteLabel: "Details", hint: "Procedure details are recorded now; file upload arrives soon." },
+  procedure:       { label: "Add Procedure",   fields: [["title", "Procedure title"]], noteLabel: "Procedure steps" },
   note:            { label: "Add Note",        fields: [], noteLabel: "Note", noteOnly: true },
   service_request: { label: "Create Request",  fields: [["summary", "What do you need?"]], noteLabel: "Details" },
 };
 
-function Contribute({ type, canContribute, onSubmit }) {
+function Contribute({ type, canContribute, selfService, onSubmit }) {
   const cfg = CONTRIB[type];
+  const control = contributionControl(type, { selfService });
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({});
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(null);
-  if (!canContribute || !cfg) return null;
+  if (!canContribute || !cfg || control === "hidden" || control === "replaced") return null;
+  if (control === "coming_soon") {
+    // Not built yet (no file storage): a visibly disabled control, never one
+    // that looks active and dead-ends.  It cannot open a form or submit.
+    return (
+      <span aria-disabled="true" title="Coming soon"
+        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg border border-slate-100 text-slate-300 cursor-not-allowed select-none">
+        <Plus className="w-3 h-3" />{cfg.label}
+        <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400 bg-slate-100 rounded px-1 py-px">Soon</span>
+      </span>
+    );
+  }
 
   const submit = async () => {
     setBusy(true); setFlash(null);
@@ -227,7 +242,7 @@ function Pending({ items, render }) {
   );
 }
 
-export default function LocationCommandCenter({ locationRef, locationName, onClose }) {
+export default function LocationCommandCenter({ locationRef, locationName, intent, onClose }) {
   const { can } = useAuth();
   const canSubmit = typeof can === "function" && can("CUSTOMER_SUBMIT_E911_REVIEW");
   const canContribute = typeof can === "function" && can("CUSTOMER_CONTRIBUTE");
@@ -239,6 +254,14 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
   const [form, setForm] = useState({});
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(null);
+  // Self-service on for this user?  (404 = off.)  When on, the governed
+  // workflows replace the older append-only contact / service-request controls.
+  const [selfServiceOn, setSelfServiceOn] = useState(false);
+  useEffect(() => {
+    apiFetch("/customer/self-service/capabilities")
+      .then((r) => setSelfServiceOn(Boolean(r.data?.enabled)))
+      .catch(() => setSelfServiceOn(false));
+  }, []);
 
   const enc = encodeURIComponent(locationRef);
   const get = (p) => apiFetch(`/customer/locations/${enc}${p}`).then((r) => r.data).catch(() => null);
@@ -355,7 +378,7 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
 
           {/* ══ OPERATIONS — the customer's actions for this location (self-service;
               renders nothing when the console is off for this user) ══ */}
-          {detail && <LocationOperations locationRef={locationRef} />}
+          {detail && <LocationOperations locationRef={locationRef} intent={intent} />}
 
           {detail && (
             <>
@@ -363,7 +386,7 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               <Group title="Building Summary" />
 
               <Section title="Overview" icon={MapPin}
-                action={<Contribute type="photo" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="photo" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 h-24 flex items-center justify-center mb-3">
                   <div className="text-center text-slate-400"><ImageIcon className="w-5 h-5 mx-auto mb-1" /><p className="text-[11px]">Location photo — coming soon</p></div>
                 </div>
@@ -381,7 +404,7 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
 
               {/* Life Safety Services — the primary objects (Phase 5) */}
               <Section title="Life Safety Services" icon={ShieldCheck} count={services?.services?.length}
-                action={<Contribute type="service_request" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="service_request" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 {!services || services.services?.length === 0 ? (
                   <p className="text-[12px] text-slate-400">No life-safety services on file yet.</p>
                 ) : (
@@ -452,14 +475,16 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               </details>
 
               <Section title="Service Requests" icon={Wrench} count={contribOf("service_request").length || null}
-                action={<Contribute type="service_request" canContribute={canContribute} onSubmit={submitContribution} />}>
-                {contribOf("service_request").length === 0
+                action={<Contribute type="service_request" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
+                {selfServiceOn
+                  ? <p className="text-[12px] text-slate-500">Requests you submit are tracked under <strong>Manage this location → Requests</strong> above.</p>
+                  : contribOf("service_request").length === 0
                   ? <p className="text-[12px] text-slate-400">No open service requests.</p>
                   : <Pending items={contribOf("service_request")} render={(c) => c.payload?.summary || c.note || "Service request"} />}
               </Section>
 
               <Section title="Recent Activity" icon={Clock} count={(timeline?.timeline || []).length}
-                action={<Contribute type="note" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="note" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 {!timeline || timeline.timeline?.length === 0 ? (
                   <p className="text-[12px] text-slate-400">No recorded activity yet.</p>
                 ) : (
@@ -546,7 +571,7 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               </Section>
 
               <Section title="Inspection History" icon={ClipboardCheck} count={(inspections?.items || []).length || null}
-                action={<Contribute type="inspection" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="inspection" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 {(inspections?.items || []).length === 0 ? (
                   <p className="text-[12px] text-slate-400">No inspections recorded yet.</p>
                 ) : (
@@ -556,7 +581,7 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               </Section>
 
               <Section title="Emergency Procedures" icon={LifeBuoy}
-                action={<Contribute type="procedure" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="procedure" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 {contribOf("procedure").length === 0
                   ? <p className="text-[12px] text-slate-400">Building emergency procedures will appear here.</p>
                   : <Pending items={contribOf("procedure")} render={(c) => c.payload?.title || c.note || "Procedure"} />}
@@ -566,7 +591,8 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               <Group title="Administration" />
 
               <Section title="Site Contacts" icon={Users} count={(contacts?.contacts || []).length || null}
-                action={<Contribute type="contact" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="contact" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
+                {selfServiceOn && <p className="text-[11.5px] text-slate-500 mb-1.5">Facility, emergency and property-manager contacts are managed under <strong>Manage this location → Contacts</strong>. Shown here: the site contact on file.</p>}
                 {!(contacts?.contacts || []).length && !contribOf("contact").length ? (
                   <p className="text-[12px] text-slate-400">No site contact on file.</p>
                 ) : (
@@ -583,7 +609,7 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               </Section>
 
               <Section title="Documents" icon={FileText} count={contribOf("document").length || null}
-                action={<Contribute type="document" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="document" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 <div className="flex flex-wrap gap-1.5">
                   {(documents?.categories || ["permit", "floor_plan", "inspection_report", "photo", "carrier_paperwork", "service_contract", "e911_documentation"]).map((c) => (
                     <span key={c} className="text-[10.5px] text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">{c.replace(/_/g, " ")}</span>
@@ -594,14 +620,14 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
               </Section>
 
               <Section title="Photos" icon={ImageIcon} count={contribOf("photo").length || null}
-                action={<Contribute type="photo" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="photo" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 {contribOf("photo").length === 0
                   ? <p className="text-[12px] text-slate-400">Site and equipment photos will appear here.</p>
                   : <Pending items={contribOf("photo")} render={(c) => c.payload?.caption || c.payload?.filename || c.note || "Photo"} />}
               </Section>
 
               <Section title="Notes" icon={StickyNote} count={contribOf("note").length || null}
-                action={<Contribute type="note" canContribute={canContribute} onSubmit={submitContribution} />}>
+                action={<Contribute type="note" canContribute={canContribute} selfService={selfServiceOn} onSubmit={submitContribution} />}>
                 {contribOf("note").length === 0
                   ? <p className="text-[12px] text-slate-400">No notes for this location.</p>
                   : <Pending items={contribOf("note")} render={(c) => c.note || "Note"} />}

@@ -211,7 +211,9 @@ def evaluate(f: dict) -> dict:
                         "record and show as Unknown: " + ", ".join(f["unlinked_buildings"][:12])
                         + ("…" if len(f["unlinked_buildings"]) > 12 else ""))
     if f["e911_no_address"]:
-        warnings.append(f"{f['e911_no_address']} location(s) have no dispatch address on file.")
+        warnings.append(f"{f['e911_no_address']} location(s) have no dispatch address on file — "
+                        "their E911 record is 'being prepared' (not a customer confirmation); "
+                        "operations must supply the address.")
 
     kb, kw, _results = check_known_locations(f["buildings"])
     blockers.extend(kb)
@@ -282,7 +284,7 @@ async def gather(db, tenant: str, now=None) -> dict:
     for r in visible:
         key = f"bldg:{r['id']}"
         st = ss.e911_state(official_verified=bool(r.get("e911_verified")),
-                           has_address=bool(r.get("address")),
+                           has_address=bool(r.get("dispatch_address")),
                            latest_request=ss._latest_e911_request(req_by_loc.get(key, [])))
         e911_states[st["state"]] += 1
         if st["customer_action_required"]:
@@ -363,6 +365,7 @@ def render(out: dict) -> str:
         ("Telephone numbers / connections", f["telephone_numbers"]),
         ("E911 verified", f["e911_verified"]),
         ("E911 requiring customer confirmation", f["e911_customer_confirmation"]),
+        ("E911 records being prepared (no address)", f["e911_no_address"]),
         ("E911 states", ", ".join(f"{k}={v}" for k, v in sorted(f["e911_states"].items())) or "—"),
         ("Pending registry reviews", f["pending_reviews"]),
         ("Open customer service requests", f["open_customer_requests"]),

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Settings2, PhoneCall, ShieldCheck, PlusCircle, Repeat, AlertOctagon, Users, X,
   CheckCircle2, AlertTriangle, Clock, Edit3, History, ClipboardList, MapPin, LifeBuoy,
@@ -7,7 +7,7 @@ import { apiFetch } from "@/api/client";
 import {
   visibleActions, CHANGE_REQUEST_TYPES, PURPOSES, CONTACT_ROLES, canVerifyE911,
   e911FormProblems, e911Tone, contactProblems, contactPayload, changedFields, requestTone,
-  errorText,
+  errorText, connectionServiceLabel, servicesConnectionsSummary,
 } from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
@@ -328,7 +328,7 @@ function ConnectionForm({ conn, onClose, onDone, patchConn }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-export default function LocationOperations({ locationRef }) {
+export default function LocationOperations({ locationRef, intent }) {
   const [ws, setWs] = useState(null);
   const [off, setOff] = useState(false);
   const [modal, setModal] = useState(null);
@@ -345,6 +345,18 @@ export default function LocationOperations({ locationRef }) {
     }
   }, [enc]);
   useEffect(() => { load(); }, [load]);
+
+  // Opened from an Action Center row: go straight into the task, once, and only
+  // if the task is actually available (e.g. never Verify E911 on a record that
+  // has no dispatch address yet).
+  const intentDone = useRef(false);
+  useEffect(() => {
+    if (!ws || !intent || intentDone.current) return;
+    intentDone.current = true;
+    const caps = ws.capabilities || {};
+    if (intent === "verify_e911" && canVerifyE911(caps, ws.e911)) setModal({ type: "verify_e911" });
+    else if (intent === "update_contacts" && caps.can_manage_contacts) setModal({ type: "update_contacts" });
+  }, [ws, intent]);
 
   const call = (method) => (path, body) => apiFetch(`/customer/locations/${enc}${path}`, { method, body: JSON.stringify(body) }).then((r) => r.data);
   const post = call("POST"); const patch = call("PATCH"); const put = call("PUT");
@@ -412,7 +424,8 @@ export default function LocationOperations({ locationRef }) {
           <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">E911</h3></div>
           <Pill tone={e911Tone(e.state)}>{e.label}</Pill>
         </div>
-        <p className="text-[12px] text-slate-600 mt-2 flex items-start gap-1.5"><MapPin className="w-3.5 h-3.5 mt-0.5 text-slate-400" />{e.dispatch_address || "No dispatch address on file"}</p>
+        <p className="text-[12px] text-slate-600 mt-2 flex items-start gap-1.5"><MapPin className="w-3.5 h-3.5 mt-0.5 text-slate-400" />{e.dispatch_address || "No dispatch address on file yet"}</p>
+        {e.reason && <p className="text-[11.5px] text-slate-500 mt-1">{e.reason}</p>}
         {e.provenance?.verification_method === "customer_attestation" && (
           <p className="text-[11px] text-slate-400 mt-1">Confirmed by {e.provenance.attested_by} · awaiting official verification</p>
         )}
@@ -421,7 +434,7 @@ export default function LocationOperations({ locationRef }) {
 
       {/* Connections */}
       <div id="ops-connections" className="rounded-xl border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2"><PhoneCall className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Life-Safety Connections</h3><span className="text-[11px] text-slate-400">{ws.connections.length}</span></div>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2"><PhoneCall className="w-4 h-4 text-slate-600" /><h3 className="text-[13px] font-semibold text-slate-900">Life-Safety Connections</h3><span className="text-[11px] text-slate-400">{servicesConnectionsSummary(ws.location)}</span></div>
         {ws.connections.length === 0 && <p className="px-4 py-4 text-[12px] text-slate-400">No connections on file yet.</p>}
         <div className="divide-y divide-slate-100">
           {ws.connections.map((c) => (
@@ -430,7 +443,7 @@ export default function LocationOperations({ locationRef }) {
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium text-slate-900">{c.name}</p>
                   <p className="text-[12px] text-slate-600 tabular-nums">{c.phone_number || "No number on file"}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{c.purpose_label}{c.device_association ? ` · ${c.device_association}` : ""}{c.e911_state ? ` · E911: ${c.e911_state}` : ""}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Service: {connectionServiceLabel(c)} · Purpose: {c.purpose_label}{c.device_association ? ` · ${c.device_association}` : ""}{c.e911_state ? ` · E911: ${c.e911_state}` : ""}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <Pill tone={STATUS_TONE[c.status?.status] || "muted"}>{c.status?.status === "Protected" ? "Protected" : c.status?.status === "Unknown" ? "Status being confirmed" : c.status?.status}</Pill>

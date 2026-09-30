@@ -711,7 +711,10 @@ _HEALTH_FACTOR_WEIGHTS = {
 }
 _HEALTH_FACTOR_LABELS = {
     "operational_health": "Operational Health",
-    "digital_twin_completeness": "Digital Twin Completeness",
+    # How completely True911 knows the building's technical record (services,
+    # equipment, address, monitoring link).  Distinct from operational READINESS
+    # (``building_maturity``), which measures what the customer has supplied.
+    "digital_twin_completeness": "Data Completeness",
     "compliance": "Compliance",
     "documentation": "Documentation",
 }

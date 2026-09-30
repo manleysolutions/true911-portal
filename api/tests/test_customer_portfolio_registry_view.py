@@ -90,6 +90,10 @@ def _evidence(monkeypatch, by_building=None, fused=None, devices_by_site=None):
         return by_building or {}, fused or [], devices_by_site or {}
     monkeypatch.setattr(prv, "_identity_evidence", _ev)
 
+    async def _contacts(db, tenant):
+        return set()
+    monkeypatch.setattr(prv, "_customer_contact_locations", _contacts)
+
 
 # ── mode gating ──────────────────────────────────────────────────────
 def test_flag_off_returns_none_legacy(monkeypatch):

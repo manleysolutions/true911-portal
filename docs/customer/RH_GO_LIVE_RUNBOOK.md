@@ -328,6 +328,21 @@ E911 verification). Spec: `docs/customer/CUSTOMER_SELF_SERVICE.md`.
    resulting requests and apply E911 through the existing `UPDATE_E911` flow.
    Brief her: "Verified" appears only after the verification team completes it.
 
+**What the RH Test smoke test should show** (after the go-live semantics pass):
+- Action Center headline like "35 E911 confirmations needed · 45 locations missing
+  contacts · 10 E911 records being prepared" — confirmations and records being
+  prepared are **separate** buckets; only the former offer *Verify E911*.
+- The audit's "E911 requiring customer confirmation" equals the Action Center's
+  confirmations bucket; its "E911 records being prepared (no address)" equals the
+  informational bucket (a system warning for operations, not a customer action).
+- Building Health shows **Data Completeness** with "weight 25%"; the tier card reads
+  **Operational Readiness · Bronze · 0 of 7 readiness items in place**. Adding a
+  contact moves readiness to 1 of 7 and clears the missing-contact row.
+- Chicago #147: "2 connections across 1 service · 1 not yet linked to a service";
+  the second line is "Additional line", status being confirmed.
+- Upload Photo / Upload Document are greyed with *Soon* and do nothing; Billing is a
+  *Soon* section.
+
 Rollback: `FEATURE_CUSTOMER_SELF_SERVICE=false` — instant; every self-service
 route 404s and the UI returns to the read-only workspace. Data is retained.
 
