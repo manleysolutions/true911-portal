@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-09-30. Branch at time of writing:
-> `feat/rh-customer-calm-ux`.
+> `feat/canonical-foundation`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -24,7 +24,39 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — Calm customer experience: trust rule UNKNOWN ≠ FAILED ≠ PROTECTED [2026-09-30]
+## 0·IN REVIEW — Canonical Life-Safety Service & Connection model: foundation & reconciliation (PR #186a) [2026-09-30]
+
+Branch `feat/canonical-foundation` (PR open, **not merged**, nothing applied in
+production). Decision **D-023**; spec `docs/customer/CANONICAL_SERVICE_MODEL.md`.
+
+- **Why:** the customer "28 telephone connections" was the count of distinct
+  telephone numbers per building, not life-safety connections. Read-only audits
+  (A/B/C) found FACPs needing two paths, unlabeled lines, the Jacksonville carrier
+  migration (6 legacy -> 7 replacement lines) and Memphis records historically
+  merged with other RH locations.
+- **What landed on the branch:** migration **054** (eight additive tables);
+  `api/app/services/canonical/` (vocab, normalize, decisions ledger, PURE engine,
+  read-only loader with live Zoho + retrieval metadata, apply-only writer, report);
+  `scripts.canonical_service_backfill` (dry-run default; `--apply
+  --confirm-tenant`; refuses degraded runs) and `scripts.canonical_operator_decisions`
+  (external file only; supersede, never destroy); customer relabel — hero fact
+  "Telephone connections" -> "Portfolio inventory: Being reconciled", "telephone
+  lines" wording, tab "Services & Lines", action "Manage Telephone Lines"; audit
+  label "Telephone numbers". Flags `FEATURE_CANONICAL_SERVICE_MODEL` +
+  `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST` reserved OFF for #186b.
+- **Not done (by design):** no canonical totals exposed to Judy; no production
+  `--apply`; no operator decisions recorded; no registry approvals; E911 untouched;
+  Judy not invited. #186b (customer read model) not started.
+- **Next (after merge):** run the production DRY-RUN (read-only), review the
+  MEMPHIS RECONCILIATION + findings + watchlist, prepare the external decision file
+  (Memphis suspect, Jacksonville migration + Elevator 1/2), dry-run it, then decide
+  on `--apply` separately.
+- **Audit C production facts (for reference, internal):** 45 buildings; FACP
+  confirmed 32 / probable 4 / unresolved 13; confirmed elevators 17; emergency
+  phones 0; unclassified telephone 22; confirmed services 49; confirmed connection
+  floor 81; probable additional 8. No single precise total is stated.
+
+## 0·DONE — Calm customer experience: trust rule UNKNOWN ≠ FAILED ≠ PROTECTED (PR #185, MERGED `a628066`) [2026-09-30]
 
 Branch `feat/rh-customer-calm-ux` (PR open, **not merged**). PR #184 is **MERGED**
 (`4eb822f`) and the RH Test production smoke test passed. Reviewed from the RH

@@ -163,6 +163,7 @@ safety mechanism. Current production overrides come from `render.yaml`.
 | `FEATURE_CUSTOMER_RETIREMENT` | false | off | Gated write: customer retirement planner |
 | `FEATURE_SAMANTHA` | false | off | AI/Samantha nav item |
 | `FEATURE_LINE_INTELLIGENCE` | false | off | Line Intelligence Engine endpoints |
+| `FEATURE_CANONICAL_SERVICE_MODEL` | false | off | RESERVED for PR #186b canonical customer read model (+ `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST`); nothing reads it in #186a |
 | `ALLOW_PUBLIC_REGISTRATION` | false | off | Public self-registration |
 
 Frontend mirror flags (`VITE_FEATURE_*`) control whether the UI *renders* a
@@ -225,6 +226,13 @@ Role-specific landing pages and nav are defined in `web/src/App.jsx` /
   ThingSpace, T-Mobile Wholesale TAAP, Telnyx, Anthropic, SMTP (SendGrid-style).
 
 ## 9. Design Decisions (the "why")
+
+- **Canonical service model (D-023).** `app/services/canonical/` is a pure
+  engine (`engine.project(snapshot)`) fed by a read-only loader (True911 SELECTs +
+  live Zoho GETs) and persisted only by an explicit `--apply` writer into eight
+  additive tables (migration 054). Service, connection and asset are distinct;
+  confidence, approval and lifecycle are separate axes; operator decisions are a
+  supersedable ledger.
 
 - **One permissions file, two consumers.** Eliminates frontend/backend RBAC drift.
 - **Flag-gated, 404-when-off routers.** Lets code merge to `main` and deploy

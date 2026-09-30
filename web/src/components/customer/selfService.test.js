@@ -17,7 +17,7 @@ const VIEWER = { enabled: true, can_view_requests: true };
 
 test("admin sees every primary action; support-first is gone", () => {
   const labels = visibleActions(ADMIN).map((a) => a.label);
-  assert.deepEqual(labels, ["Manage Location", "Manage Connections", "Verify E911", "Add Service",
+  assert.deepEqual(labels, ["Manage Location", "Manage Telephone Lines", "Verify E911", "Add Service",
     "Request Service Change", "Report a Problem", "Update Contacts"]);
   assert.ok(!labels.some((l) => /support|live help/i.test(l)));
 });
@@ -141,7 +141,7 @@ test("service -> connection wording is semantically accurate", () => {
   assert.equal(connectionServiceLabel({ service: "Elevator" }), "Elevator");
   assert.equal(connectionServiceLabel({ service: null }), "Not yet linked to a life-safety service");
   assert.equal(servicesConnectionsSummary({ service_count: 1, connection_count: 2, unlinked_connection_count: 1 }),
-    "2 connections across 1 service · 1 not yet linked to a service");
+    "2 telephone lines across 1 service · 1 not yet linked to a service");
 });
 
 test("29/45 is never a green all-protected banner", () => {
@@ -194,7 +194,10 @@ test("known failures stay prominent, even without a monitoring link", () => {
 
 test("RH portfolio hero states facts without implying failure", () => {
   const hero = portfolioHero(RH_SUMMARY, RH_AC);
-  assert.deepEqual(hero.facts.map((f) => f.value), [45, 73, 28]);
+  assert.deepEqual(hero.facts.map((f) => f.value), [45, 73, "Being reconciled"]);
+  // the legacy distinct-number count (28) is never presented as connections (D-023)
+  assert.ok(!hero.facts.some((f) => /connection/i.test(f.label)));
+  assert.ok(!hero.facts.some((f) => f.value === RH_SUMMARY.total_phone_numbers));
   const dim = Object.fromEntries(hero.dimensions.map((d) => [d.key, d]));
   assert.equal(dim.service_status.value, "No known service issues");
   assert.equal(dim.monitoring.value, "29 of 45 locations monitored");
@@ -265,7 +268,7 @@ test("location sections: each subject lives in exactly one place", () => {
   assert.equal(home.contacts, "records");
   assert.equal(home.requests, "overview");
   assert.equal(home.activity, "records");
-  assert.deepEqual(LOCATION_TABS.map((t) => t.label), ["Overview", "Connections", "Compliance", "Records"]);
+  assert.deepEqual(LOCATION_TABS.map((t) => t.label), ["Overview", "Services & Lines", "Compliance", "Records"]);
 });
 
 test("service -> connection -> device grouping keeps unlinked lines out of services", () => {

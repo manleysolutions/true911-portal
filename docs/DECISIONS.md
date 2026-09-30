@@ -407,3 +407,38 @@ side effect of bookkeeping rather than as a decision anybody made.
   this is the customer presentation layer over it. No scoring, E911, registry or
   ownership-boundary change.
 
+
+### D-023 — Life-Safety Service and Connection canonical model
+- **Date:** 2026-09-30 · **Status:** Accepted (PR #186a foundation; customer read model is PR #186b)
+- **Context:** The RH dashboard's "28 telephone connections" was the count of
+  distinct telephone numbers per building, not of life-safety connections. Read-only
+  audits showed FACPs needing two paths, elevator lines, unlabeled lines, a carrier
+  migration (Jacksonville: six legacy lines replaced by seven) and a building whose
+  records were historically merged with other locations (Memphis). Counting numbers
+  conflated service, connection and asset.
+- **Decision:**
+  1. Canonical hierarchy **Building -> LifeSafetyService -> LifeSafetyConnection ->
+     CommunicationsAsset**. SERVICE != CONNECTION != ASSET. A connection is a
+     REQUIRED path of a CONFIRMED/APPROVED, non-REJECTED, CURRENT service:
+     ELEVATOR 1, EMERGENCY_PHONE 1, FACP 2. No number is fabricated for a path.
+  2. **Confidence** (evidence), **approval** (operator) and **lifecycle**
+     (CURRENT/DECOMMISSIONED/REPLACED/SUSPENDED/HISTORICAL/UNKNOWN) are separate
+     axes. Evidence-CONFIRMED services count without per-service approval;
+     PROBABLE/UNRESOLVED/REJECTED never count; operator decisions override
+     automated reconciliation.
+  3. Placement priority: operator > asset identifier > telephone mapping >
+     facility name > store number > address > specific account alias. Historical
+     mappings and generic/parent names are supporting evidence only. A building an
+     operator marks BUILDING_IDENTITY_SUSPECT is reconciled strictly (its own
+     registry artefacts are not authoritative).
+  4. Operator ground truth lives in an append-only, supersedable
+     `operator_decisions` ledger fed from an external, uncommitted file.
+  5. Runs read Zoho live (read-only) with retrieval metadata; an unavailable source
+     degrades the run and blocks apply by default — never silently stale.
+  6. The legacy distinct-number metric is retired from the customer view; no
+     canonical total is shown until #186b and customer-use approval.
+- **Consequences:** Migration `054` (eight additive tables, off head `053`);
+  `app/services/canonical/`; dry-run-default scripts `canonical_service_backfill`
+  and `canonical_operator_decisions`; flags `FEATURE_CANONICAL_SERVICE_MODEL` +
+  `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST` reserved (off). E911 untouched. Spec:
+  `docs/customer/CANONICAL_SERVICE_MODEL.md`.
