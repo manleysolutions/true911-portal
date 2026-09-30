@@ -47,13 +47,23 @@ def _json(v) -> str:
     return json.dumps(v, sort_keys=True, default=str)
 
 
-async def apply_projection(db, result: dict, *, run_by: str,
-                           allow_degraded: bool = False) -> int:
+def is_degraded(result: dict) -> bool:
+    """A projection is degraded when the engine said so OR any required source
+    did not report ``ok`` - re-derived here so a caller cannot launder it."""
+    if result.get("degraded"):
+        return True
+    return any(s.get("required") and s.get("status") != "ok"
+               for s in (result.get("sources") or {}).values())
+
+
+async def apply_projection(db, result: dict, *, run_by: str) -> int:
     """Write ``result`` (from ``engine.project``).  Returns the ProjectionRun id.
-    Refuses a degraded projection unless ``allow_degraded``."""
-    if result["degraded"] and not allow_degraded:
+    ALWAYS refuses a degraded projection - there is no override: a projection
+    built without a required source is never persisted."""
+    if is_degraded(result):
         raise DegradedProjectionError(
-            "projection is DEGRADED (a required source was unavailable) - refusing to apply")
+            "projection is DEGRADED (a required source was unavailable) - refusing to apply; "
+            "degraded projections are never persisted")
     tenant = result["tenant_id"]
     now = datetime.now(timezone.utc)
     run = ProjectionRun(tenant_id=tenant, mode="APPLY", run_by=run_by, started_at=now,

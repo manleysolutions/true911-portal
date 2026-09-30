@@ -7,8 +7,9 @@ every BUILDING_IDENTITY_SUSPECT building (e.g. MEMPHIS RECONCILIATION),
 lifecycle events / historical assets, findings and the review watchlist.
 
 ``--apply`` writes ONLY the eight canonical tables (idempotent upserts, never
-deletes) and needs ``--confirm-tenant <tenant>``; it is refused when a required
-source (Zoho) was unavailable unless ``--allow-degraded``.  It never writes the
+deletes) and needs ``--confirm-tenant <tenant>``; it is ALWAYS refused when a
+required source (Zoho) was unavailable - there is no override.  A degraded
+DRY-RUN still prints the reconciliation and exits 2.  It never writes the
 registry, sites, devices, lines, E911, Zoho, Napco, Genesis or any carrier.
 Nothing customer-facing reads the canonical tables in PR #186a.
 
@@ -133,10 +134,11 @@ async def run(args) -> int:
                     print("--apply requires --confirm-tenant %s" % args.tenant)
                     return 3
                 try:
-                    rid = await writer.apply_projection(db, res, run_by=args.run_by,
-                                                        allow_degraded=args.allow_degraded)
+                    rid = await writer.apply_projection(db, res, run_by=args.run_by)
                 except writer.DegradedProjectionError as exc:
                     print(str(exc))
+                    print(report.render(res, snap=snap, targets=profile.get("watchlist", ()),
+                                        mode="DRY-RUN"))
                     return 2
                 print("APPLIED projection run id=%s" % rid)
 
@@ -158,7 +160,6 @@ def main() -> None:
     p.add_argument("--json", help="also write the projection as JSON to this path")
     p.add_argument("--apply", action="store_true", help="write the canonical tables")
     p.add_argument("--confirm-tenant", help="required with --apply; must equal --tenant")
-    p.add_argument("--allow-degraded", action="store_true")
     p.add_argument("--run-by", default=os.environ.get("USER") or "operator")
     args = p.parse_args()
     try:

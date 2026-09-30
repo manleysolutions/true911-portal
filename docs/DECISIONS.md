@@ -434,10 +434,12 @@ side effect of bookkeeping rather than as a decision anybody made.
   4. Operator ground truth lives in an append-only, supersedable
      `operator_decisions` ledger fed from an external, uncommitted file.
   5. Runs read Zoho live (read-only) with retrieval metadata; an unavailable source
-     degrades the run and blocks apply by default — never silently stale.
+     degrades the run; a degraded projection is NEVER persisted (enforced in the
+     writer, no override) — never silently stale.
   6. The legacy distinct-number metric is retired from the customer view; no
      canonical total is shown until #186b and customer-use approval.
-- **Consequences:** Migration `054` (eight additive tables, off head `053`);
+- **Consequences:** Migration `054` (eight additive tables, off head `053`; fails loudly if any
+  already exists rather than adopting an unknown schema);
   `app/services/canonical/`; dry-run-default scripts `canonical_service_backfill`
   and `canonical_operator_decisions`; flags `FEATURE_CANONICAL_SERVICE_MODEL` +
   `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST` reserved (off). E911 untouched. Spec:

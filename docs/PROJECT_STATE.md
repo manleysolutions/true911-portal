@@ -34,11 +34,12 @@ production). Decision **D-023**; spec `docs/customer/CANONICAL_SERVICE_MODEL.md`
   (A/B/C) found FACPs needing two paths, unlabeled lines, the Jacksonville carrier
   migration (6 legacy -> 7 replacement lines) and Memphis records historically
   merged with other RH locations.
-- **What landed on the branch:** migration **054** (eight additive tables);
+- **What landed on the branch:** migration **054** (eight additive tables; fails
+  loudly if any target table pre-exists);
   `api/app/services/canonical/` (vocab, normalize, decisions ledger, PURE engine,
   read-only loader with live Zoho + retrieval metadata, apply-only writer, report);
   `scripts.canonical_service_backfill` (dry-run default; `--apply
-  --confirm-tenant`; refuses degraded runs) and `scripts.canonical_operator_decisions`
+  --confirm-tenant`; a degraded projection is never persisted — no override) and `scripts.canonical_operator_decisions`
   (external file only; supersede, never destroy); customer relabel — hero fact
   "Telephone connections" -> "Portfolio inventory: Being reconciled", "telephone
   lines" wording, tab "Services & Lines", action "Manage Telephone Lines"; audit

@@ -302,7 +302,7 @@ def _fixture(tmp_path):
 
 def _args(**kw):
     base = dict(tenant=T, zoho="skip", decisions_file=None, fixture=None, json=None, apply=False,
-                confirm_tenant=None, allow_degraded=False, run_by="test")
+                confirm_tenant=None, run_by="test")
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -323,3 +323,59 @@ def test_backfill_refuses_apply_on_fixture(tmp_path, capsys):
     from scripts import canonical_service_backfill as bf
     fx, _d = _fixture(tmp_path)
     assert asyncio.run(bf.run(_args(fixture=fx, apply=True))) == 3
+
+
+# ── degraded projections are never persisted (no override) ───────────
+
+def test_writer_has_no_degraded_override_and_rederives_degradation():
+    import inspect
+    assert "allow_degraded" not in inspect.signature(writer.apply_projection).parameters
+
+    async def go():
+        _e, S = await make_db()
+        await seed(S)
+        _s, res = await project(S)
+        assert not res["degraded"]
+        # a caller cannot launder a failed required source by flipping the flag
+        res["sources"]["zoho"]["status"] = "unavailable: timeout"
+        async with S() as db:
+            with pytest.raises(writer.DegradedProjectionError):
+                await writer.apply_projection(db, res, run_by="test")
+            assert await count(db, ProjectionRun) == 0
+    asyncio.run(go())
+
+
+def test_cli_rejects_allow_degraded_flag(monkeypatch):
+    from scripts import canonical_service_backfill as bf
+    monkeypatch.setattr("sys.argv", ["canonical_service_backfill", "--allow-degraded"])
+    with pytest.raises(SystemExit) as exc:
+        bf.main()
+    assert exc.value.code == 2                       # argparse: unrecognized argument
+
+
+def test_degraded_dry_run_prints_reconciliation_and_exits_2(tmp_path, capsys):
+    from scripts import canonical_service_backfill as bf
+    fx, _d = _fixture(tmp_path)
+    data = json.loads(open(fx, encoding="utf-8").read())
+    data["sources"] = {"zoho": {"status": "unavailable: timeout", "required": True}}
+    open(fx, "w", encoding="utf-8").write(json.dumps(data))
+    code = asyncio.run(bf.run(_args(fixture=fx)))
+    out = capsys.readouterr().out
+    assert code == 2
+    assert "DEGRADED" in out and "=== PER BUILDING ===" in out and "nothing was written" in out
+
+
+def test_degraded_cli_apply_is_refused_and_writes_nothing(monkeypatch, capsys):
+    from scripts import canonical_service_backfill as bf
+
+    async def go():
+        _e, S = await make_db()
+        await seed(S)
+        monkeypatch.setattr("app.database.AsyncSessionLocal", S)
+        code = await bf.run(_args(zoho="skip", apply=True, confirm_tenant=T))
+        async with S() as db:
+            return code, await count(db, ProjectionRun), await count(db, LifeSafetyService)
+    code, runs, services = asyncio.run(go())
+    out = capsys.readouterr().out
+    assert (code, runs, services) == (2, 0, 0)
+    assert "refusing to apply" in out and "=== PER BUILDING ===" in out

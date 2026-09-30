@@ -137,12 +137,14 @@ The loader is SELECT-only on True911 and GET-only on Zoho (`Subscription_Mgmnt`,
 live at run time, tenant-scoped by a row filter). Every source records status and
 retrieval time; every evidence row records `observed_at`. If a required source
 (Zoho) is unavailable the run is **DEGRADED**: CONFIRMED is capped at PROBABLE, a
-HIGH `SOURCE_UNAVAILABLE` finding is raised, and `--apply` is refused unless
-`--allow-degraded`. Stale data is never presented as current.
+HIGH `SOURCE_UNAVAILABLE` finding is raised, and `--apply` is **always** refused
+(enforced inside `writer.apply_projection`; there is no CLI override). A degraded
+dry-run still prints the full reconciliation and exits 2. Stale data is never
+presented as current or persisted.
 
 ## 8. Persistence
 
-Migration `054` adds eight tables: `projection_runs`, `communications_assets`,
+Migration `054` creates eight tables (and fails loudly if any already exists): `projection_runs`, `communications_assets`,
 `life_safety_services`, `life_safety_connections`, `connection_asset_links`,
 `asset_lifecycle_events`, `canonical_evidence`, `operator_decisions`. The writer
 (only under `--apply --confirm-tenant`) upserts on natural keys and **never

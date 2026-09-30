@@ -82,7 +82,7 @@ def render(res: dict, *, snap: dict | None = None, targets=(), mode: str = "DRY-
         L.append(_line(k, *("%s=%s" % (x, y) for x, y in sorted(s.items()))))
     if res["degraded"]:
         L.append("!! DEGRADED: a required source was unavailable - CONFIRMED capped at PROBABLE;"
-                 " --apply is refused unless --allow-degraded")
+                 " --apply is always refused (no override)")
 
     p = res["portfolio"]
     L.append("")
