@@ -90,7 +90,9 @@ function PortfolioHero({ name, summary, actionCenter }) {
           {hero.facts.map((f) => (
             <div key={f.key}>
               <dt className="text-[11px] text-slate-500">{f.label}</dt>
-              <dd className="text-[22px] font-semibold text-slate-900 tabular-nums leading-none">{f.value}</dd>
+              <dd className={f.pending
+                ? "text-[14px] font-medium text-slate-600 leading-none pt-1.5"
+                : "text-[22px] font-semibold text-slate-900 tabular-nums leading-none"}>{f.value}</dd>
             </div>
           ))}
         </dl>

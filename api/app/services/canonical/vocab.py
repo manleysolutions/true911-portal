@@ -1,0 +1,116 @@
+"""Closed vocabularies for the canonical model (D-023).
+
+Confidence, approval and lifecycle are three independent axes and are never
+collapsed into one another.
+"""
+
+# ── confidence: strength of evidence (never self-promoting) ─────────────
+CONFIRMED = "CONFIRMED"
+PROBABLE = "PROBABLE"
+UNRESOLVED = "UNRESOLVED"
+CONFIDENCE_RANK = {CONFIRMED: 2, PROBABLE: 1, UNRESOLVED: 0}
+
+
+def weakest(*levels: str) -> str:
+    """The weakest of several confidence levels (evidence is only as strong as
+    its weakest required link)."""
+    return min(levels, key=lambda c: CONFIDENCE_RANK.get(c, 0)) if levels else UNRESOLVED
+
+
+# ── approval: the operator's decision ───────────────────────────────────
+APPROVAL_NONE = "NONE"
+APPROVED = "APPROVED"
+REJECTED = "REJECTED"
+APPROVALS = (APPROVAL_NONE, APPROVED, REJECTED)
+
+# ── lifecycle (services and assets) ─────────────────────────────────────
+CURRENT = "CURRENT"
+DECOMMISSIONED = "DECOMMISSIONED"
+REPLACED = "REPLACED"
+SUSPENDED = "SUSPENDED"
+HISTORICAL = "HISTORICAL"
+UNKNOWN = "UNKNOWN"
+LIFECYCLES = (CURRENT, DECOMMISSIONED, REPLACED, SUSPENDED, HISTORICAL, UNKNOWN)
+# lifecycle states that never contribute to CURRENT counts
+NOT_CURRENT = (DECOMMISSIONED, REPLACED, SUSPENDED, HISTORICAL)
+
+# lifecycle reasons
+REASON_CARRIER_MIGRATION = "CARRIER_MIGRATION"
+REASON_OPERATOR = "OPERATOR_DECISION"
+REASON_SOURCE_DEACTIVATED = "SOURCE_DEACTIVATED"
+REASON_SOURCE_SUSPENDED = "SOURCE_SUSPENDED"
+REASON_SOURCE_ACTIVE = "SOURCE_ACTIVE"
+REASON_TRUE911_STATUS = "TRUE911_STATUS"
+
+# ── service types ───────────────────────────────────────────────────────
+FACP = "FACP"
+ELEVATOR = "ELEVATOR"
+EMERGENCY_PHONE = "EMERGENCY_PHONE"
+UNCLASSIFIED = "UNCLASSIFIED"                 # a telephone service of unknown purpose
+OTHER = "OTHER_NON_LIFE_SAFETY"               # desk / fax / POS / data - never life-safety
+FACP_ASSET = "FACP_ASSET"                     # a number that belongs to FACP equipment
+LIFE_SAFETY_TYPES = (FACP, ELEVATOR, EMERGENCY_PHONE)
+
+# Domain cardinality: required communications paths per CONFIRMED service.
+REQUIRED_CONNECTIONS = {FACP: 2, ELEVATOR: 1, EMERGENCY_PHONE: 1}
+CONNECTION_TYPE = {FACP: "FACP_PATH", ELEVATOR: "ELEVATOR_LINE",
+                   EMERGENCY_PHONE: "EMERGENCY_PHONE_LINE"}
+
+# connection requirement / provisioning
+REQUIRED = "REQUIRED"
+NOT_REQUIRED = "NOT_REQUIRED"
+ASSET_LINKED = "ASSET_LINKED"
+NO_ASSET_LINKED = "NO_ASSET_LINKED"
+NOT_EVALUATED = "NOT_EVALUATED"
+
+# ── asset types ─────────────────────────────────────────────────────────
+TELEPHONE_NUMBER = "TELEPHONE_NUMBER"
+NAPCO_RADIO = "NAPCO_RADIO"
+SIM_ICCID = "SIM_ICCID"
+DEVICE_IMEI = "DEVICE_IMEI"
+ASSET_TYPES = (TELEPHONE_NUMBER, NAPCO_RADIO, SIM_ICCID, DEVICE_IMEI)
+MASKED_ASSET_TYPES = (SIM_ICCID, DEVICE_IMEI)
+
+# connection -> asset relationships
+REL_CARRIER_LINE = "CARRIER_LINE"             # the telephone line that carries the path
+REL_SERVICE_EQUIPMENT = "SERVICE_EQUIPMENT"   # communicator / SIM / radio of the service
+
+# ── sources ─────────────────────────────────────────────────────────────
+SRC_ZOHO = "ZOHO"
+SRC_TRUE911 = "TRUE911"
+SRC_NAPCO = "NAPCO"
+SRC_REGISTRY = "REGISTRY"
+SRC_OPERATOR = "OPERATOR"
+
+# ── placement bases, in priority order (lower = stronger) ───────────────
+P_OPERATOR = "OPERATOR_DECISION"
+P_ASSET_IDENTIFIER = "ASSET_IDENTIFIER"       # exact NAPCO / ICCID / IMEI mapping
+P_TELEPHONE_MAPPING = "TELEPHONE_MAPPING"     # exact telephone mapping
+P_FACILITY = "FACILITY_NAME"                  # building-specific source record
+P_STORE_NUMBER = "STORE_NUMBER"               # unique store number
+P_ADDRESS = "ADDRESS"                         # exact normalised address
+P_ACCOUNT_ALIAS = "ACCOUNT_ALIAS"             # a specific (non-generic) account alias
+P_EXISTING_MAPPING = "EXISTING_MAPPING"       # historical site link - support only
+P_GENERIC_ALIAS = "GENERIC_ALIAS"             # parent / generic name - never places
+PLACEMENT_PRIORITY = {
+    P_OPERATOR: 0, P_ASSET_IDENTIFIER: 1, P_TELEPHONE_MAPPING: 2, P_FACILITY: 3,
+    P_STORE_NUMBER: 4, P_ADDRESS: 5, P_ACCOUNT_ALIAS: 6, P_EXISTING_MAPPING: 7,
+    P_GENERIC_ALIAS: 8,
+}
+STRONG_BASES = (P_ASSET_IDENTIFIER, P_TELEPHONE_MAPPING)
+LOCATION_BASES = (P_FACILITY, P_STORE_NUMBER, P_ADDRESS, P_ACCOUNT_ALIAS)
+SUPPORT_BASES = (P_EXISTING_MAPPING, P_GENERIC_ALIAS)
+
+# ── operator decision types ─────────────────────────────────────────────
+D_BUILDING_IDENTITY_SUSPECT = "BUILDING_IDENTITY_SUSPECT"
+D_CARRIER_MIGRATION = "CARRIER_MIGRATION"
+D_ASSET_LIFECYCLE = "ASSET_LIFECYCLE"
+D_SERVICE_CLASSIFICATION = "SERVICE_CLASSIFICATION"
+D_SERVICE_APPROVAL = "SERVICE_APPROVAL"
+DECISION_TYPES = (D_BUILDING_IDENTITY_SUSPECT, D_CARRIER_MIGRATION, D_ASSET_LIFECYCLE,
+                  D_SERVICE_CLASSIFICATION, D_SERVICE_APPROVAL)
+
+# ── findings ────────────────────────────────────────────────────────────
+HIGH = "HIGH"
+MEDIUM = "MEDIUM"
+INFO = "INFO"

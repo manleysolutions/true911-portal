@@ -241,6 +241,16 @@ class Settings(BaseSettings):
     CUSTOMER_SELF_SERVICE_TENANT_ALLOWLIST: str = ""
     CUSTOMER_SELF_SERVICE_USER_ALLOWLIST: str = ""
 
+    # ── Canonical Life-Safety Service & Connection model (D-023) ────
+    # Building -> LifeSafetyService -> LifeSafetyConnection -> CommunicationsAsset.
+    # PR #186a ships the tables, the reconciliation engine, the operator-decision
+    # mechanism and a DRY-RUN-first backfill.  Nothing customer-facing reads the
+    # canonical tables yet: these flags are RESERVED for PR #186b (canonical
+    # customer read model) and stay OFF.  Turning them on in #186a changes
+    # nothing.  See docs/customer/CANONICAL_SERVICE_MODEL.md.
+    FEATURE_CANONICAL_SERVICE_MODEL: str = "false"
+    CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST: str = ""
+
     # ── AI Customer Operations Center / Support Center ─────────────
     # Caller-facing Tier-1 support workflow: identifier lookup → SMS-OTP
     # caller verification → temporary support session → triage → human

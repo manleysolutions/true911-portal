@@ -11,7 +11,7 @@
 // from GET /customer/self-service/capabilities that unlocks it.
 export const PRIMARY_ACTIONS = [
   { key: "manage_location", label: "Manage Location", cap: "can_manage_location" },
-  { key: "manage_connections", label: "Manage Connections", cap: "can_manage_location" },
+  { key: "manage_connections", label: "Manage Telephone Lines", cap: "can_manage_location" },
   { key: "verify_e911", label: "Verify E911", cap: "can_attest_e911" },
   { key: "add_service", label: "Add Service", cap: "can_submit_requests", requestType: "add_service" },
   { key: "service_change", label: "Request Service Change", cap: "can_submit_requests", requestType: "move_service" },
@@ -249,7 +249,10 @@ export function contributionControl(type, { selfService = false } = {}) {
   return base;
 }
 
-// ── Service → connection wording ────────────────────────────────────
+// ── Service → telephone line wording ────────────────────────────────
+// A telephone number is a LINE, not a life-safety connection: connections are
+// the required communications paths of a confirmed service (D-023) and are not
+// shown to customers until the canonical inventory is reconciled (PR #186b).
 export function connectionServiceLabel(c) {
   return c?.service || "Not yet linked to a life-safety service";
 }
@@ -257,7 +260,7 @@ export function servicesConnectionsSummary(loc) {
   if (!loc) return "";
   const s = loc.service_count ?? 0;
   const n = loc.connection_count ?? 0;
-  const base = `${plural(n, "connection", "connections")} across ${plural(s, "service", "services")}`;
+  const base = `${plural(n, "telephone line", "telephone lines")} across ${plural(s, "service", "services")}`;
   return loc.unlinked_connection_count
     ? `${base} · ${loc.unlinked_connection_count} not yet linked to a service` : base;
 }
@@ -368,7 +371,10 @@ export function portfolioHero(summary, ac) {
     facts: [
       { key: "locations", label: "Locations", value: total },
       { key: "devices", label: "Physical devices", value: m.devices ?? m.total_devices ?? 0 },
-      { key: "connections", label: "Telephone connections", value: m.total_phone_numbers ?? 0 },
+      // The legacy distinct-telephone-number count is NOT a count of life-safety
+      // connections (D-023); no service/connection total is shown until the
+      // canonical inventory is reconciled and approved for customer use.
+      { key: "inventory", label: "Portfolio inventory", value: "Being reconciled", pending: true },
     ],
     dimensions, customerActions, operationsActions,
   };
@@ -397,11 +403,11 @@ export function actionCenterTiers(data) {
 }
 
 // ── Location page: one place per thing ──────────────────────────────
-// Overview · Connections · Compliance · Records.  Each subject lives in exactly
+// Overview · Services & Lines · Compliance · Records.  Each subject lives in exactly
 // one section; the header carries at most two primary actions.
 export const LOCATION_TABS = [
   { key: "overview", label: "Overview", sections: ["status", "your_actions", "requests"] },
-  { key: "connections", label: "Connections", sections: ["services_connections_devices"] },
+  { key: "connections", label: "Services & Lines", sections: ["services_connections_devices"] },
   { key: "compliance", label: "Compliance", sections: ["e911", "inspections", "procedures"] },
   { key: "records", label: "Records", sections: ["contacts", "notes", "activity", "documents_photos"] },
 ];

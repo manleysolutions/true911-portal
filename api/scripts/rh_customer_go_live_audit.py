@@ -362,7 +362,7 @@ def render(out: dict) -> str:
         ("Customer-visible buildings", f["customer_visible_buildings"]),
         ("Protected buildings", f"{f['protected_buildings']}/{f['customer_visible_buildings']}"),
         ("Physical devices", f["physical_devices"]),
-        ("Telephone numbers / connections", f["telephone_numbers"]),
+        ("Telephone numbers", f["telephone_numbers"]),
         ("E911 verified", f["e911_verified"]),
         ("E911 requiring customer confirmation", f["e911_customer_confirmation"]),
         ("E911 records being prepared (no address)", f["e911_no_address"]),

@@ -65,6 +65,14 @@ health (not device counts); Operations approve/override/merge/split classificati
 (append-only audit, CUSTOMER_* isolated). Spec:
 `docs/customer/LIFE_SAFETY_SERVICE_MODEL.md`.
 
+**Canonical service inventory (D-023, PR #186a/#186b).** Before any service or
+connection total is shown to a customer, the portfolio is reconciled into the
+canonical Building → Service → Connection → Asset model with operator ground
+truth (carrier migrations, suspect buildings). #186a builds the foundation and the
+dry-run reconciliation and retires the misleading "28 connections"; #186b exposes
+canonical figures behind `FEATURE_CANONICAL_SERVICE_MODEL` once approved for
+customer use. Spec: `docs/customer/CANONICAL_SERVICE_MODEL.md`.
+
 **Design status recorded:** customer boundary architecture complete · tenant isolation
 audited (no CRITICAL) · customer RBAC design complete · customer API contract design
 complete · `FEATURE_CUSTOMER_API` rollout design complete. The horizons below remain the

@@ -172,7 +172,7 @@ function RequestForm({ ws, initialType, onClose, onDone, post }) {
         </Field>
       )}
       {type !== "add_service" && ws.connections.length > 0 && (
-        <Field label="Which connection? (optional)">
+        <Field label="Which telephone line? (optional)">
           <select className={inputCls} value={conn} onChange={(e) => setConn(e.target.value)}>
             <option value="">The whole location</option>
             {ws.connections.map((c) => <option key={c.connection_ref} value={c.connection_ref}>{c.name}{c.phone_number ? ` · ${c.phone_number}` : ""}</option>)}
@@ -290,7 +290,7 @@ function ConnectionForm({ conn, onClose, onDone, patchConn }) {
       if (f.new_number.trim()) changes.phone_number = f.new_number.trim();
       if (!Object.keys(changes).length) { onClose(); return; }
       const r = await patchConn(conn.connection_ref, { changes });
-      onDone(r.requests?.length ? "Saved. Your number change was sent for review." : "Connection saved.");
+      onDone(r.requests?.length ? "Saved. Your number change was sent for review." : "Telephone line saved.");
     } catch (x) { setErr(errorText(x)); } finally { setBusy(false); }
   };
   const setC = (k) => (e) => setF((p) => ({ ...p, contact: { ...p.contact, [k]: e.target.value } }));

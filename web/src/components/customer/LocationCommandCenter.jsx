@@ -337,7 +337,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
               </p>
               <p className="text-[12px] text-slate-500">
                 {monitoredSvcs > 0 ? `${monitoredSvcs} monitored life-safety service${monitoredSvcs === 1 ? "" : "s"}` : `${svcList.length} life-safety service${svcList.length === 1 ? "" : "s"}`}
-                {connCount != null && ` · ${connCount} telephone connection${connCount === 1 ? "" : "s"}`}
+                {connCount != null && ` · ${connCount} telephone line${connCount === 1 ? "" : "s"}`}
                 <span className="mx-1.5">·</span>E911: <span className="font-medium text-slate-700">{e911State.label}</span>
               </p>
             </div>
@@ -448,8 +448,8 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
           )}
 
           {detail && tab === "connections" && (
-            <Block title="Services, connections and devices" icon={PhoneCall}
-              count={ws?.location ? `${ws.location.service_count} service${ws.location.service_count === 1 ? "" : "s"} · ${ws.location.connection_count} connection${ws.location.connection_count === 1 ? "" : "s"}` : null}>
+            <Block title="Services, telephone lines and devices" icon={PhoneCall}
+              count={ws?.location ? `${ws.location.service_count} service${ws.location.service_count === 1 ? "" : "s"} · ${ws.location.connection_count} telephone line${ws.location.connection_count === 1 ? "" : "s"}` : null}>
               {groups.length === 0 ? <Muted>No life-safety services on file yet.</Muted> : (
                 <div className="space-y-3">
                   {groups.map((g) => {

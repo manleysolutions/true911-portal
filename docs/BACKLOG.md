@@ -13,6 +13,25 @@
 
 ---
 
+## ⭐ NEXT (RH) — Canonical service inventory: PR #186a review → production DRY-RUN → decisions → #186b [2026-09-30]
+
+- **#186a (IN REVIEW, branch `feat/canonical-foundation`):** migration 054,
+  canonical engine, operator-decision ledger, dry-run backfill, customer relabel
+  of the false "28 connections". Merge only on explicit instruction.
+- **After merge (read-only):** `python -m scripts.canonical_service_backfill
+  --tenant restoration-hardware` on the Render api shell; review SOURCES
+  (Zoho must be `ok`), MEMPHIS RECONCILIATION, findings and the watchlist
+  (Edina #159, Raleigh #178, Leawood 119th St, San Rafael 20 Front St, Beverly
+  Modern / Hollywood, Roseville / Dawsonville / Long Beach duplicates).
+- **Operator decisions (external file, never committed):** Memphis
+  BUILDING_IDENTITY_SUSPECT; Jacksonville CARRIER_MIGRATION (6 legacy
+  DECOMMISSIONED, 7 CURRENT) + SERVICE_CLASSIFICATION Elevator 1 / Elevator 2.
+  Preview with `--decisions-file`, record with `canonical_operator_decisions`.
+- **Then, separately authorised:** first `--apply --confirm-tenant`.
+- **#186b (NOT STARTED):** canonical customer read model behind
+  `FEATURE_CANONICAL_SERVICE_MODEL` + tenant allowlist; only once the projection
+  is approved for customer use. No Judy invite until then.
+
 ## ⭐ NEXT — Send the four carrier questions; QueryNetwork PIT is paused on the answer [2026-09-01]
 
 **QueryNetwork was attempted once on 2026-09-01 and failed.** OAuth returned

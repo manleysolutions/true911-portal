@@ -42,6 +42,24 @@ Restoration Hardware (Tenant)
                  └─ E911 (verified dispatchable address @ Site)
 ```
 
+### 1b. Life-safety service layer (D-023, migration 054)
+
+Alongside the operational hierarchy, the canonical customer-service model is:
+
+```
+PortfolioBuilding
+ └─ LifeSafetyService        (FACP / ELEVATOR / EMERGENCY_PHONE; confidence · approval · lifecycle)
+     └─ LifeSafetyConnection (REQUIRED path: ELEVATOR 1, EMERGENCY_PHONE 1, FACP 2)
+         └─ CommunicationsAsset via ConnectionAssetLink
+                             (telephone number / NAPCO radio / SIM / IMEI; placement + lifecycle)
+```
+
+A telephone number is an **asset**, not a connection. Provenance is
+`canonical_evidence`; operator ground truth is the supersedable
+`operator_decisions` ledger; carrier migrations are `asset_lifecycle_events`.
+Written only by `scripts.canonical_service_backfill --apply`. Spec:
+`docs/customer/CANONICAL_SERVICE_MODEL.md`.
+
 ## 2. Entities, Authoritative Keys, and Ownership
 
 Each entity has **exactly one authoritative key** and owns **one axis** of truth.
