@@ -6,8 +6,8 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-09-01. Branch at time of writing:
-> `docs/tmobile-network-pit-failure`.
+> Last updated: 2026-09-30. Branch at time of writing:
+> `feat/rh-customer-self-service`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -23,6 +23,56 @@
 > sections below that describe it as "PR open, NOT merged" were accurate on
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·IN REVIEW — RH Customer Operations Console (self-service) + Devices KPI fix [2026-09-30]
+
+Branch `feat/rh-customer-self-service` (PR open, **not merged**). Moves the RH
+customer plane from "dashboard + email support" to "customer operations console +
+governed escalation". Spec: `customer/CUSTOMER_SELF_SERVICE.md`; decision
+**D-021**; runbook `customer/RH_GO_LIVE_RUNBOOK.md` §4f.
+
+- **Ownership boundary** — customer-managed (contacts, notes, display name,
+  connection name/purpose, notification prefs) writes a customer **overlay**
+  directly with old/new audit; request-based (name/address/store #, numbers,
+  service type, add/remove/move, replace equipment, problems, E911) creates a
+  `CustomerServiceRequest`; system-managed (ICCID/IMEI/SIM/carrier/SIP/network/
+  device identity/verified E911/registry mappings) is refused 403, whole-payload.
+- **E911 self-service** — attestation with provenance → `e911_verification`
+  request + the existing E911 review queue; states `not_verified ·
+  customer_confirmation_required · customer_submitted · requires_review ·
+  verification_pending · failed · verified`; `verified` only from the official
+  record. Attestation is `CUSTOMER_ADMIN`-only.
+- **Action Center** on the dashboard + **Manage this location** panel (Manage
+  Location · Manage Connections · Verify E911 · Add Service · Request Service
+  Change · Report a Problem · Update Contacts); support is a secondary line.
+- **Migration `053`** (off the single head `052`): `customer_service_requests`,
+  `customer_managed_fields`, `customer_activity_events`. Internal queue
+  `/api/customer-requests` (`MANAGE_CUSTOMER_REQUESTS`).
+- **Flags (default OFF):** `FEATURE_CUSTOMER_SELF_SERVICE`,
+  `CUSTOMER_SELF_SERVICE_TENANT_ALLOWLIST`, `CUSTOMER_SELF_SERVICE_USER_ALLOWLIST`
+  (RH Test first).
+- **Devices = 0 root cause (fixed):** the UI read `summary.devices`; registry mode
+  returned only `total_devices` and omitted `critical_sites` /
+  `sites_requiring_attention` — which **also rendered the "All listed locations
+  are currently protected" banner at 29/45 (false green)**. Registry mode also
+  counted only linked-site equipment. Now: physical devices from registry mappings
+  + approved fused payloads + True911 devices, merged by identifier; banner green
+  only when protected == total. Placeholder store numbers (Hollywood `#0`) are
+  hidden from the customer display.
+- **Go-live audit** `python -m scripts.rh_customer_go_live_audit --tenant
+  restoration-hardware` — SYSTEM BLOCKERS vs WARNINGS vs CUSTOMER ACTIONS;
+  verdict `READY · READY_WITH_CUSTOMER_ACTIONS · BLOCKED`. **Not yet run against
+  production** (needs the Render shell).
+- **Tests:** real-DB suite `test_customer_self_service.py` (first SQLite harness,
+  `tests/_customer_db.py`; `aiosqlite` added to requirements), device counting,
+  audit verdicts, RBAC matrix; web `npm test` (Node built-in runner, now in CI) +
+  build green.
+
+**Next:** merge → deploy → enable for RH Test → run the audit on Render → resolve
+any SYSTEM BLOCKERS → open to the tenant → send Judy's invite (not before).
+Known likely audit findings to confirm on Render: ~16 approved buildings with no
+linked True911 monitoring record (the 29/45 protected gap — shown honestly as
+Unknown), pending registry review items, and store-number checks.
 
 ## 0·⚠️ ATTEMPTED, NOT CERTIFIED — Network Profile live PIT run returned HTTP 500 / GENS-0005 [2026-09-01]
 

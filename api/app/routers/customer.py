@@ -24,8 +24,9 @@ from app.services.customer import command_center as cc
 from app.services.customer import contributions as contrib
 from app.services.customer import portfolio as cportfolio
 from app.services.customer import portfolio_registry_view as prv
+from app.services.customer import self_service as ss
 from app.services.customer import serialize as cs
-from app.services.customer.gate import require_customer_api
+from app.services.customer.gate import require_customer_api, require_customer_self_service
 from app.services.customer.preview import preview_enabled
 
 router = APIRouter()
@@ -551,3 +552,276 @@ async def customer_location_health(location_ref: str,
         return {"as_of": now.isoformat(), "data": data}
     return await _twin_subresource(cc.load_location_health, db, current_user.tenant_id,
                                    location_ref, now, pass_now=True)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Customer Self-Service — the Customer Operations Console (flag-gated).
+# Every route: customer API two-key gate + FEATURE_CUSTOMER_SELF_SERVICE gate
+# (404 when off) + a CUSTOMER_* permission, tenant-scoped server-side.  Customer-
+# owned fields are written to the customer overlay (never Site / Device / registry
+# / E911); provisioning, identity and E911 changes become GOVERNED requests.
+# System-managed fields (SIM / ICCID / IMEI / carrier / network / verified E911 ...)
+# are refused with 403.  See docs/customer/CUSTOMER_SELF_SERVICE.md.
+# ══════════════════════════════════════════════════════════════════════
+class _ProfileBody(BaseModel):
+    changes: dict
+
+
+class _ContactsBody(BaseModel):
+    contacts: dict
+
+
+class _ConnectionBody(BaseModel):
+    changes: dict
+
+
+class _RequestBody(BaseModel):
+    request_type: str
+    notes: str | None = None
+    requested_changes: dict | None = None
+    connection_ref: str | None = None
+    priority: str = "normal"
+
+
+class _RequestNoteBody(BaseModel):
+    notes: str | None = None
+
+
+class _E911VerifyBody(BaseModel):
+    """The customer's portion of E911 verification.  ``attest`` must be true.
+    Corrections are stored as a request - never written to the official record."""
+    number_confirmed: bool = False
+    address_confirmed: bool = False
+    building_confirmed: bool = False
+    corrected_address: str | None = None
+    suite: str | None = None
+    floor: str | None = None
+    additional_location: str | None = None
+    callback_number: str | None = None
+    contact: dict | None = None
+    note: str | None = None
+    attest: bool = False
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _ss_ctx(db, user, location_ref, *, full=False):
+    ctx = await ss.resolve_location_context(db, user.tenant_id, location_ref,
+                                            datetime.now(timezone.utc), full=full)
+    if ctx is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return ctx
+
+
+async def _ss_run(coro) -> dict:
+    """Await a self-service mutation, mapping a refusal to its HTTP status."""
+    try:
+        data = await coro
+    except ss.SelfServiceError as exc:
+        raise HTTPException(exc.status, exc.as_detail())
+    return {"as_of": _now_iso(), "data": data}
+
+
+@router.get("/self-service/capabilities",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_self_service_capabilities(
+    current_user: User = Depends(require_customer_self_service),
+) -> dict:
+    """What this user may do in the operations console (drives the UI; the
+    server re-checks every permission on every mutation)."""
+    return {"as_of": _now_iso(), "data": ss.capabilities(current_user)}
+
+
+@router.get("/action-center",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_DASHBOARD"))])
+async def customer_action_center(
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """What do I need to do? - needs attention, E911 verification required,
+    missing contacts, open change requests / problems, recent updates."""
+    now = datetime.now(timezone.utc)
+    return {"as_of": now.isoformat(), "data": await ss.action_center(db, current_user, now)}
+
+
+@router.get("/locations/{location_ref}/workspace",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_workspace(
+    location_ref: str,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """The actionable location workspace: overview, connections, contacts,
+    notes, E911 state, requests, activity, outstanding actions."""
+    now = datetime.now(timezone.utc)
+    ctx = await _ss_ctx(db, current_user, location_ref, full=True)
+    return {"as_of": now.isoformat(), "data": await ss.location_workspace(db, current_user, ctx, now)}
+
+
+@router.patch("/locations/{location_ref}/profile",
+              dependencies=[Depends(require_permission("CUSTOMER_MANAGE_LOCATION"))])
+async def customer_update_location_profile(
+    location_ref: str, body: _ProfileBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Customer-owned location fields apply directly (audited old/new); identity
+    fields (name / address / store #) create a location-correction request."""
+    ctx = await _ss_ctx(db, current_user, location_ref)
+    return await _ss_run(ss.update_location_profile(db, current_user, ctx, body.changes))
+
+
+@router.put("/locations/{location_ref}/contacts",
+            dependencies=[Depends(require_permission("CUSTOMER_MANAGE_CONTACTS"))])
+async def customer_update_contacts(
+    location_ref: str, body: _ContactsBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Facility / emergency / property-manager contacts (null clears one)."""
+    ctx = await _ss_ctx(db, current_user, location_ref)
+    return await _ss_run(ss.update_contacts(db, current_user, ctx, body.contacts))
+
+
+@router.patch("/locations/{location_ref}/connections/{connection_ref}",
+              dependencies=[Depends(require_permission("CUSTOMER_MANAGE_LOCATION"))])
+async def customer_update_connection(
+    location_ref: str, connection_ref: str, body: _ConnectionBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Friendly name / purpose / notes / contact apply directly; a telephone or
+    callback number or service-type change becomes a governed request."""
+    ctx = await _ss_ctx(db, current_user, location_ref)
+    conn_key = ss.decode_connection_ref(ctx, connection_ref)
+    if conn_key is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Connection not found")
+    return await _ss_run(ss.update_connection(db, current_user, ctx, conn_key, body.changes))
+
+
+@router.post("/locations/{location_ref}/requests",
+             dependencies=[Depends(require_permission("CUSTOMER_SUBMIT_REQUESTS"))])
+async def customer_submit_request(
+    location_ref: str, body: _RequestBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Add / remove / move a service, change a number or service type, replace
+    equipment, correct the location, or report a problem - a governed request;
+    nothing is provisioned or changed until operations act on it."""
+    ctx = await _ss_ctx(db, current_user, location_ref)
+    conn_key = None
+    if body.connection_ref:
+        conn_key = ss.decode_connection_ref(ctx, body.connection_ref)
+        if conn_key is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Connection not found")
+    return await _ss_run(ss.submit_request(
+        db, current_user, ctx, request_type=body.request_type, notes=body.notes,
+        changes=body.requested_changes, connection_key=conn_key, priority=body.priority))
+
+
+@router.get("/locations/{location_ref}/requests",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_REQUESTS"))])
+async def customer_location_requests(
+    location_ref: str,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    ctx = await _ss_ctx(db, current_user, location_ref)
+    rows = await ss.load_requests(db, current_user.tenant_id, location_key=ctx.key)
+    return {"as_of": _now_iso(), "data": {"requests": [ss.serialize_request(r) for r in rows]}}
+
+
+@router.get("/requests", dependencies=[Depends(require_permission("CUSTOMER_VIEW_REQUESTS"))])
+async def customer_requests(
+    open_only: bool = Query(False, alias="open"),
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Every request for this portfolio (own tenant only), newest first."""
+    rows = await ss.load_requests(db, current_user.tenant_id, open_only=open_only)
+    return {"as_of": _now_iso(), "data": {"requests": [ss.serialize_request(r) for r in rows]}}
+
+
+async def _own_request(db, user, request_ref):
+    req = await ss.get_request(db, user.tenant_id, request_ref)
+    if req is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
+    return req
+
+
+@router.get("/requests/{request_ref}",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_REQUESTS"))])
+async def customer_request_detail(
+    request_ref: str,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    req = await _own_request(db, current_user, request_ref)
+    return {"as_of": _now_iso(), "data": ss.serialize_request(req)}
+
+
+@router.post("/requests/{request_ref}/cancel",
+             dependencies=[Depends(require_permission("CUSTOMER_SUBMIT_REQUESTS"))])
+async def customer_cancel_request(
+    request_ref: str, body: _RequestNoteBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    req = await _own_request(db, current_user, request_ref)
+    return await _ss_run(ss.customer_cancel(db, current_user, req, notes=body.notes))
+
+
+@router.post("/requests/{request_ref}/respond",
+             dependencies=[Depends(require_permission("CUSTOMER_SUBMIT_REQUESTS"))])
+async def customer_respond_request(
+    request_ref: str, body: _RequestNoteBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Answer a request that is waiting on the customer."""
+    req = await _own_request(db, current_user, request_ref)
+    return await _ss_run(ss.customer_respond(db, current_user, req, notes=body.notes))
+
+
+@router.get("/locations/{location_ref}/e911/verification",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_E911"))])
+async def customer_e911_verification_state(
+    location_ref: str,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """The self-service E911 state + what the customer is asked to review."""
+    now = datetime.now(timezone.utc)
+    ctx = await _ss_ctx(db, current_user, location_ref, full=True)
+    ws = await ss.location_workspace(db, current_user, ctx, now)
+    return {"as_of": now.isoformat(),
+            "data": {**ws["e911"], "location": ws["location"]["display_name"]}}
+
+
+@router.post("/locations/{location_ref}/e911/verification",
+             dependencies=[Depends(require_permission("CUSTOMER_ATTEST_E911"))])
+async def customer_e911_verification_submit(
+    location_ref: str, body: _E911VerifyBody,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Submit the customer's E911 attestation.  Creates a pending verification
+    (never marks E911 verified) and feeds the existing E911 review queue."""
+    ctx = await _ss_ctx(db, current_user, location_ref, full=True)
+    return await _ss_run(ss.submit_e911_verification(db, current_user, ctx, body.model_dump()))
+
+
+@router.get("/locations/{location_ref}/activity",
+            dependencies=[Depends(require_permission("CUSTOMER_VIEW_LOCATIONS"))])
+async def customer_location_activity(
+    location_ref: str,
+    current_user: User = Depends(require_customer_self_service),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    ctx = await _ss_ctx(db, current_user, location_ref)
+    return {"as_of": _now_iso(),
+            "data": {"activity": await ss.load_activity(db, current_user.tenant_id,
+                                                         location_key=ctx.key)}}

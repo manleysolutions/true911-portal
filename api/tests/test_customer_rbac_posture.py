@@ -28,6 +28,8 @@ FORBIDDEN = [
     "INTERNAL_OPS", "VIEW_ADMIN", "COMMAND_VIEW_OPERATOR", "COMMAND_VIEW_NETWORK",
     "COMMAND_VIEW_AUTO_OPS", "MANAGE_USERS", "MANAGE_SIMS", "UPDATE_E911",
     "MANAGE_DEVICES", "VIEW_REGISTRATIONS", "SUBSCRIBER_IMPORT",
+    # the internal self-service request queue (operations only)
+    "MANAGE_CUSTOMER_REQUESTS",
 ]
 
 
@@ -92,3 +94,30 @@ def test_no_regression_internal_roles_keep_internal_ops():
         assert can(role, "INTERNAL_OPS") is True
     # SuperAdmin bypasses via can() returning True for everything.
     assert can("SuperAdmin", "INTERNAL_OPS") is True
+
+
+# ── Customer self-service grants (docs/customer/CUSTOMER_SELF_SERVICE.md §4) ──
+SELF_SERVICE_MATRIX = {
+    #                      manage_location manage_contacts submit_requests attest_e911 view_requests
+    "CUSTOMER_ADMIN":    (True,  True,  True,  True,  True),
+    "CUSTOMER_MANAGER":  (False, True,  True,  False, True),
+    "CUSTOMER_SUPPORT":  (False, False, True,  False, True),
+    "CUSTOMER_USER":     (False, False, False, False, True),
+    "CUSTOMER_BILLING":  (False, False, False, False, True),
+    "CUSTOMER_VIEWER":   (False, False, False, False, True),
+    "CUSTOMER_READONLY": (False, False, False, False, True),
+}
+_SS_PERMS = ("CUSTOMER_MANAGE_LOCATION", "CUSTOMER_MANAGE_CONTACTS", "CUSTOMER_SUBMIT_REQUESTS",
+             "CUSTOMER_ATTEST_E911", "CUSTOMER_VIEW_REQUESTS")
+
+
+@pytest.mark.parametrize("role,expected", sorted(SELF_SERVICE_MATRIX.items()))
+def test_customer_self_service_grants(role, expected):
+    assert tuple(can(role, p) for p in _SS_PERMS) == expected
+
+
+@pytest.mark.parametrize("role", ["Admin", "Manager", "DataSteward"])
+def test_internal_roles_hold_the_request_queue_but_no_customer_writes(role):
+    assert can(role, "MANAGE_CUSTOMER_REQUESTS") is True
+    for p in _SS_PERMS:
+        assert can(role, p) is False

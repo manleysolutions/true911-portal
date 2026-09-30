@@ -199,3 +199,17 @@ Gallery #147*), de-duplicated building counts, and KPIs derived from fusion serv
 are hidden; pending buildings show only under a preview flag with calm wording. Off
 (or registry empty) → unchanged legacy Site behavior. See
 `CUSTOMER_COMMAND_CENTER.md` §8e.
+
+## 11. The actionable twin — customer operations (self-service)
+
+With `FEATURE_CUSTOMER_SELF_SERVICE` on, the Location Workspace opens with
+**Manage this location**: the outstanding actions for the building, the primary
+actions, E911 state + *Verify E911*, **Life-Safety Connections** (one per service
+and telephone number — "Fire Alarm Line 1 · (561) 555-0100 · Protected · E911:
+Your confirmation needed" — never ICCID / IMEI / SIM), **Contacts** (facility,
+emergency, property manager), **Requests** and **Activity**. A registry-known
+number not yet attached to a monitored service is shown honestly as *status being
+confirmed*. The customer layer is an overlay keyed by the building
+(`bldg:<id>`, or `site:<site_id>` in legacy mode) — the registry identity is never
+customer-written. Served by `GET /customer/locations/{ref}/workspace`; spec
+`CUSTOMER_SELF_SERVICE.md`.

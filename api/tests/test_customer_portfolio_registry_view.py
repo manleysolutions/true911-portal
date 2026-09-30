@@ -80,6 +80,15 @@ def _wire(monkeypatch, rows, sites_portfolio, services):
     monkeypatch.setattr(cportfolio, "load_portfolio", _lp)
     monkeypatch.setattr(prv, "_link_indexes", _idx)
     monkeypatch.setattr(cc, "_build_location_services", _svcs)
+    _evidence(monkeypatch)
+
+
+def _evidence(monkeypatch, by_building=None, fused=None, devices_by_site=None):
+    """Patch the physical-device evidence seam (registry mappings / fused payload
+    groups / True911 Device rows)."""
+    async def _ev(db, tenant):
+        return by_building or {}, fused or [], devices_by_site or {}
+    monkeypatch.setattr(prv, "_identity_evidence", _ev)
 
 
 # ── mode gating ──────────────────────────────────────────────────────
@@ -164,6 +173,11 @@ def _records(monkeypatch, statuses=("Protected", "Attention Needed")):
     monkeypatch.setattr(cportfolio, "load_portfolio", _lp)
     monkeypatch.setattr(prv, "_link_indexes", _idx)
     monkeypatch.setattr(cc, "_build_location_services", _svcs)
+    # two physical True911 devices on every linked site
+    _evidence(monkeypatch, devices_by_site={
+        s.site_id: [SimpleNamespace(device_id=f"{s.site_id}-D{n}", imei=None, iccid=None,
+                                    msisdn=None, serial_number=None) for n in (1, 2)]
+        for s, _p in sites})
     return asyncio.run(prv.load_customer_buildings(object(), RH, NOW))
 
 
@@ -179,6 +193,7 @@ def test_summary_uses_registry_services_and_devices(monkeypatch):
     s = prv.summary(recs, "Restoration Hardware", NOW)
     assert s["locations_total"] == 2 and s["life_safety_services"] == 2
     assert s["total_devices"] == 4 and s["total_phone_numbers"] >= 1   # KPIs no longer 0
+    assert s["devices"] == 4                                           # the key the UI reads
     assert s["monthly_health_score"]["score"] is not None              # not 0/100 placeholder
 
 

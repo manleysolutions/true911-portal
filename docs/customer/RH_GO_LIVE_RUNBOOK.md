@@ -287,6 +287,50 @@ behavior. Rollback: flip `FEATURE_CUSTOMER_PORTFOLIO_REGISTRY=false` — instant
 deploy, no data change. Full spec: `docs/customer/PORTFOLIO_REGISTRY.md`,
 `docs/customer/CUSTOMER_COMMAND_CENTER.md` §8e.
 
+## 4f. Customer Self-Service + the definitive go-live audit
+
+Judy administers the customer-owned layer herself (contacts, notes, connection
+names/purpose) and submits governed requests (service changes, problem reports,
+E911 verification). Spec: `docs/customer/CUSTOMER_SELF_SERVICE.md`.
+
+1. **Deploy** — migration `053` runs in the api build (`alembic upgrade head`);
+   it only creates three new tables and is inert until the flag is on.
+2. **Enable for RH Test only** (per-service: `true911-api` **and**
+   `true911-worker`):
+   - `FEATURE_CUSTOMER_SELF_SERVICE=true`
+   - `CUSTOMER_SELF_SERVICE_TENANT_ALLOWLIST=restoration-hardware`
+   - `CUSTOMER_SELF_SERVICE_USER_ALLOWLIST=<rh-test user email>`
+3. **Exercise as RH Test** — open a location → *Manage this location*: update a
+   contact, rename a connection, submit a *Report a Problem*, run *Verify E911*
+   on one location. Confirm the Action Center updates and Activity shows each
+   change. Work the test request from the operations side:
+   `GET /api/customer-requests` → `POST /api/customer-requests/{ref}/transition`.
+4. **Open to the tenant** — clear `CUSTOMER_SELF_SERVICE_USER_ALLOWLIST` (both
+   services).
+5. **Run the go-live audit** (read-only):
+   ```bash
+   cd api && python -m scripts.rh_customer_go_live_audit --tenant restoration-hardware
+   # machine-readable: add --json      exit: 0 READY · 1 READY_WITH_CUSTOMER_ACTIONS · 2 BLOCKED
+   ```
+   It reports canonical / visible / protected buildings, physical devices,
+   telephone numbers, E911 states, pending registry reviews, open requests,
+   missing contacts, unresolved identity, the known-location checks (Chicago #147
+   … San Rafael #656, Princeton/Brunswick Pike, Pleasanton, Hollywood, LaSalle,
+   Beverly Modern, Linden House, Soda Grocery, Greenwich, Richmond, RH NYC,
+   Patterson, MDC, Memphis, Edina/Raleigh separation), the flags and the dashboard
+   mode — then separates **SYSTEM BLOCKERS** (fix before the invite) from
+   **CUSTOMER ACTIONS** (Judy does after login) and prints the verdict.
+   **Send the invite only on `READY` or `READY_WITH_CUSTOMER_ACTIONS`.** E911
+   confirmations and missing contacts are customer actions — they never block.
+6. **Judy's go-live procedure** — send the invite (§2) → she signs in → her
+   Action Center lists what needs her (E911 confirmations, contacts) → for each
+   location she runs *Verify E911* and *Update Contacts* → operations work the
+   resulting requests and apply E911 through the existing `UPDATE_E911` flow.
+   Brief her: "Verified" appears only after the verification team completes it.
+
+Rollback: `FEATURE_CUSTOMER_SELF_SERVICE=false` — instant; every self-service
+route 404s and the UI returns to the read-only workspace. Data is retained.
+
 ## 5. Verify login
 
 - Judy accepts her invite, sets a password, signs in.
@@ -342,6 +386,13 @@ send until every box is checked.
 - [ ] Every location's E911 `verified` reflects the real stored status; any
       unverified/missing addresses are on the internal worklist
       (`GET /api/e911-changes/gaps`) with an owner.
+
+**Self-service (§4f)**
+- [ ] `python -m scripts.rh_customer_go_live_audit --tenant restoration-hardware`
+      verdict is `READY` or `READY_WITH_CUSTOMER_ACTIONS` (zero SYSTEM BLOCKERS).
+- [ ] `CUSTOMER_SELF_SERVICE_USER_ALLOWLIST` is empty (or Judy is on it).
+- [ ] Devices KPI is non-zero and the banner reads "N of M locations protected"
+      unless every location is Protected.
 
 **Deliver**
 - [ ] Send Judy the invite link out-of-band; confirm she can set a password and

@@ -26,4 +26,7 @@ aiosmtplib>=3.0.0
 openpyxl>=3.1.0
 pytest==8.3.0
 pytest-asyncio==0.24.0
+# In-memory SQLite engine for the real-database customer-plane tests
+# (tests/_customer_db.py).  Test-only; production uses asyncpg.
+aiosqlite==0.20.0
 respx==0.21.1

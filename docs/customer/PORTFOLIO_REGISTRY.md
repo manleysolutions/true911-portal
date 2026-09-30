@@ -100,6 +100,16 @@ cd api && python -m scripts.rh_portfolio_fusion --tenant restoration-hardware \
 # persist pending review items to the queue (opt-in): --sync-review-queue
 ```
 
+## 8a. Customer self-service never writes the registry
+
+The customer console (`CUSTOMER_SELF_SERVICE.md`) keeps its customer-owned values
+in a separate overlay keyed by building. A customer's request to correct a name,
+address or store number becomes a `location_correction` request — the registry
+still changes **only** through the approval workflow above. The go-live audit
+(`scripts/rh_customer_go_live_audit.py`) reports pending review items, duplicate
+store numbers / addresses, placeholder store numbers (e.g. Hollywood `#0`, now
+hidden from the customer display) and the operator-confirmed location checks.
+
 ## 9. Files
 
 - Models: `api/app/models/portfolio_registry.py` · migration `api/alembic/versions/051_portfolio_registry.py`.

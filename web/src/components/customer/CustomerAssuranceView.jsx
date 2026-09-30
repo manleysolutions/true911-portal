@@ -10,6 +10,7 @@ import PageWrapper from "@/components/PageWrapper";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import LocationCommandCenter from "@/components/customer/LocationCommandCenter";
+import ActionCenter from "@/components/customer/ActionCenter";
 
 // ════════════════════════════════════════════════════════════════════
 // CustomerAssuranceView — the Customer Command Center (Phase 1/2/3).
@@ -256,7 +257,9 @@ export default function CustomerAssuranceView() {
 
   const m = summary || {};
   const health = m.monthly_health_score;
-  const allProtected = (m.locations_total || 0) > 0 && (m.critical_sites || 0) === 0 && (m.sites_requiring_attention || 0) === 0;
+  // Green only when every location is Protected — an absent attention/critical
+  // count must never read as "all good" (no green without evidence).
+  const allProtected = (m.locations_total || 0) > 0 && (m.locations_protected || 0) === m.locations_total;
 
   return (
     <PageWrapper>
@@ -321,12 +324,15 @@ export default function CustomerAssuranceView() {
                 <Metric label="Requires Attention" value={m.sites_requiring_attention ?? 0} icon={AlertTriangle} tone={(m.sites_requiring_attention || 0) > 0 ? "amber" : "slate"} />
                 <Metric label="Critical Sites" value={m.critical_sites ?? 0} icon={AlertTriangle} tone={(m.critical_sites || 0) > 0 ? "red" : "slate"} />
                 <HealthGauge health={health} />
-                <Metric label="Devices" value={m.devices ?? 0} icon={Cpu} />
+                <Metric label="Devices" value={m.devices ?? m.total_devices ?? 0} icon={Cpu} />
                 <Metric label="Telephone Numbers" value={m.total_phone_numbers ?? 0} icon={PhoneCall} />
                 <Metric label="E911 Verified" value={m.e911_verification_pct != null ? `${m.e911_verification_pct}%` : "—"} icon={CheckCircle2} />
                 <Metric label="Service Availability" value={m.service_availability_pct != null ? `${m.service_availability_pct}%` : "—"} icon={Activity} />
                 <Metric label="Upcoming Maintenance" value={(m.upcoming_maintenance || []).length} icon={Wrench} />
               </div>
+
+              {/* Action Center — "what do I need to do?" (self-service; hidden when off) */}
+              <ActionCenter onOpenLocation={openLocation} refreshKey={drawer ? null : "closed"} />
 
               {/* Recent activity */}
               {(m.recent_activity || []).length > 0 && (

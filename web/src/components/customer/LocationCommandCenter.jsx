@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
+import LocationOperations from "@/components/customer/LocationOperations";
 
 // ════════════════════════════════════════════════════════════════════
 // LocationCommandCenter — the collaborative Building Workspace (Digital Twin).
@@ -351,6 +352,10 @@ export default function LocationCommandCenter({ locationRef, locationName, onClo
         <div className="p-5 space-y-6">
           {loading && <p className="text-xs text-slate-400">Loading…</p>}
           {error && <p className="text-xs text-red-600">{error}</p>}
+
+          {/* ══ OPERATIONS — the customer's actions for this location (self-service;
+              renders nothing when the console is off for this user) ══ */}
+          {detail && <LocationOperations locationRef={locationRef} />}
 
           {detail && (
             <>

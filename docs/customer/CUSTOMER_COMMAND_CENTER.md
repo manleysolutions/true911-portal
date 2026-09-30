@@ -193,6 +193,26 @@ Health) compute from fusion/registry-derived services rather than placeholder lo
   read model `services/customer/portfolio_registry_view.py`. Audit:
   `python -m scripts.customer_registry_view_audit --tenant restoration-hardware`.
 
+## 8f. Customer Operations Console (self-service, flag-gated OFF)
+
+The Command Center becomes actionable. The dashboard gains an **Action Center**
+("What needs your attention": waiting on you · needs attention · E911
+verification required · missing contact information · service change requests ·
+open problems · recently updated), and every location a **Manage this location**
+panel with the primary actions (Manage Location · Manage Connections · Verify
+E911 · Add Service · Request Service Change · Report a Problem · Update Contacts).
+Customer-owned details save directly (audited); provisioning, identity and E911
+changes become governed requests; system-managed fields are refused. Support is a
+one-line secondary escalation. Gated by `FEATURE_CUSTOMER_SELF_SERVICE` + tenant
+allowlist (+ optional user allowlist); off = unchanged. Full spec:
+`CUSTOMER_SELF_SERVICE.md`.
+
+**KPI fixes shipped with it (registry mode):** the summary now returns `devices`
+(physical devices, one per radio / communicator, never per SIM or number) plus
+`critical_sites` / `sites_requiring_attention`; the "All listed locations are
+currently protected" banner now requires `locations_protected == locations_total`
+— previously the missing keys rendered it green at 29/45 (a false green).
+
 ## 9. Files
 
 - Backend: `api/app/services/customer/command_center.py` (new),

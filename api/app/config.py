@@ -225,6 +225,22 @@ class Settings(BaseSettings):
     CUSTOMER_PORTFOLIO_PREVIEW_PENDING: str = "false"
     CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST: str = ""
 
+    # ── Customer Self-Service (Customer Operations Console) ────────
+    # Lets CUSTOMER_* users manage the CUSTOMER-OWNED operational layer of their
+    # portfolio (contacts, notes, connection labels/purpose, notification
+    # preferences) and submit GOVERNED requests (add/remove/move service, change
+    # number, replace equipment, E911 verification, location corrections).  It
+    # NEVER writes carrier / device / network / registry / official-E911 data:
+    # provisioning-impacting changes become requests reviewed by operations.
+    # Two-key (FEATURE_CUSTOMER_SELF_SERVICE == "true" AND tenant allowlisted),
+    # plus an OPTIONAL user allowlist (emails): when set, only those users get the
+    # write surface — used to enable the internal RH Test user before Judy.
+    # Default OFF; when off every self-service route 404s and the customer view
+    # is byte-for-byte unchanged.  See docs/customer/CUSTOMER_SELF_SERVICE.md.
+    FEATURE_CUSTOMER_SELF_SERVICE: str = "false"
+    CUSTOMER_SELF_SERVICE_TENANT_ALLOWLIST: str = ""
+    CUSTOMER_SELF_SERVICE_USER_ALLOWLIST: str = ""
+
     # ── AI Customer Operations Center / Support Center ─────────────
     # Caller-facing Tier-1 support workflow: identifier lookup → SMS-OTP
     # caller verification → temporary support session → triage → human
@@ -552,6 +568,20 @@ class Settings(BaseSettings):
     def customer_portfolio_preview_tenant_id_set(self) -> set[str]:
         """Tenants whose test user may preview ALL (approved + pending) buildings."""
         return {t.strip() for t in self.CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST.split(",")
+                if t.strip()}
+
+    @property
+    def customer_self_service_tenant_id_set(self) -> set[str]:
+        """Tenants allowed the customer self-service surface (when
+        FEATURE_CUSTOMER_SELF_SERVICE is on)."""
+        return {t.strip() for t in self.CUSTOMER_SELF_SERVICE_TENANT_ALLOWLIST.split(",")
+                if t.strip()}
+
+    @property
+    def customer_self_service_user_set(self) -> set[str]:
+        """Optional per-user narrowing (lower-cased emails).  Empty = every user
+        of an allowlisted tenant."""
+        return {t.strip().lower() for t in self.CUSTOMER_SELF_SERVICE_USER_ALLOWLIST.split(",")
                 if t.strip()}
 
 
