@@ -30,32 +30,28 @@ there at send time.
 
 ## 0. Ready-to-send draft
 
-> **2026-09-30:** question 4 is resolved — **remove it from the draft** before
-> sending. The 09-01 failure's trace identifiers were supplied to T-Mobile
-> Engineering, who asked for a re-test, and the re-test succeeded. Questions 1–3
-> are unaffected.
+Reviewed **2026-09-30**. There are **three** open questions. The former Network
+Profile question (§4) is resolved — the carrier-directed 2026-09-30 re-test
+returned HTTP 200 / SUCCESS — and is kept below only as a historical record; it
+is not part of this draft. Paste as-is; the reasoning behind each question is in
+§§1–3 and is deliberately **not** in the email.
 
-Reviewed 2026-09-01 after the Network Profile live attempt returned HTTP 500 /
-GENS-0005. That run added **question 4**; the set below is now four. Paste as-is;
-the reasoning behind each question is in §§1–4 and is deliberately **not** in
-the email.
-
-> **Subject:** True911 — four follow-up questions from our PIT activation,
-> subscriber readback and Network Profile attempt
+> **Subject:** True911 — three follow-up questions from our PIT activation and
+> subscriber readback
 >
 > Hi Aman,
 >
-> Thanks again for the PIT inventory and the marketZip guidance. We completed a
-> clean activation and readback against Wholesale PIT, and have since made one
-> controlled Network Profile attempt that did not succeed. We wanted to close
-> out four points before we go any further.
+> Thanks again for the PIT inventory and the marketZip guidance, and for the
+> Network Profile re-test request — the re-test returned SUCCESS. We completed a
+> clean activation and readback against Wholesale PIT and wanted to close out
+> three remaining points before we go any further.
 >
 > What worked, for context: OAuth and PoP signing, the partner headers, the
 > activation itself (HTTP 201, status SUCCESS, result 100, with the MSISDN and
-> accountId both returned synchronously), and a subsequent Subscriber Inquiry
-> that returned subscriberStatus Active. We sent exactly one of each request,
-> with no retries, and we have not touched the three reserve ICCIDs you
-> supplied.
+> accountId both returned synchronously), a subsequent Subscriber Inquiry that
+> returned subscriberStatus Active, and the Network Profile re-test. We sent
+> exactly one of each request, with no retries, and we have not touched the three
+> reserve ICCIDs you supplied.
 >
 > **1. Query Transaction Status — what value is `transactionId`?**
 >
@@ -91,24 +87,6 @@ the email.
 > addresses does T-Mobile deliver from? We would like to confirm our ingest is
 > correct before we rely on callbacks for the lifecycle operations, where the
 > synchronous answer is only an acceptance.
->
-> **4. Network Profile returned HTTP 500 / GENS-0005**
->
-> On 2026-09-01 we made a single controlled request to
-> `POST /wholesale/v1/subscriber/network-profile` for the PIT subscriber you
-> supplied — the same one that Subscriber Inquiry reports as Active.
->
-> OAuth succeeded (HTTP 200). The resource request returned HTTP 500 with
-> `GENS-0005`, "Unexpected Exception: Please notify your system administrator".
-> We sent it once and did not retry, and we have paused our certification
-> sequence rather than moving on to Usage.
->
-> Could you confirm whether the Network Profile endpoint is enabled for our
-> partner id in PIT, whether any additional partner or subscriber provisioning
-> is required for it, whether that test subscriber is valid for this operation,
-> and whether anything is missing from our request? We have the correlation id,
-> work-flow id, service-transaction id and our partner-transaction-id for that
-> exact call and can send them to you on request.
 >
 > Happy to supply the correlation and transaction ids for any of these requests
 > if that helps you locate them in your logs.
