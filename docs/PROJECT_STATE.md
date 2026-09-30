@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-09-30. Branch at time of writing:
-> `feat/rh-customer-self-service`.
+> `fix/rh-go-live-ux-semantics`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -24,7 +24,41 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — RH Customer Operations Console (self-service) + Devices KPI fix [2026-09-30]
+## 0·IN REVIEW — RH go-live UX / action-semantics pass [2026-09-30]
+
+Branch `fix/rh-go-live-ux-semantics` (PR open, **not merged**). PR #183 is
+**MERGED** (`bf068ff`) and deployed; production RH Test showed 45 buildings,
+29/45 protected, 73 physical devices, 28 connections, 0% E911 verified, audit
+`READY_WITH_CUSTOMER_ACTIONS`. This pass fixes what the first customer session
+would have got wrong, with no redesign and no scoring change:
+
+- **"45 E911 confirmations" (defect).** The Action Center put
+  `customer_confirmation_required` (35) and `not_verified` (10, no dispatch
+  address) in one list headlined as confirmations, and the UI offered Verify E911
+  on records with no address. Now two buckets — *E911 confirmations needed*
+  (actionable, opens Verify E911) and *E911 records being prepared*
+  (informational); `not_verified` is labelled "E911 record being prepared" and is
+  not a customer action. The dashboard, location page, wizard and audit now read
+  ONE `dispatch_address` per building (they previously disagreed when only the
+  linked site carried the address).
+- **100/100 vs Bronze 0/7 (labels).** "Digital Twin Completeness · 25%" was a
+  health factor with its WEIGHT next to its value. Renamed **Data Completeness**
+  (weight shown as "weight 25%"); the tier card is **Operational Readiness · 0 of 7
+  readiness items in place**. Customer-supplied contacts now count toward the
+  *Site contacts* readiness item (previously ignored).
+- **Chicago 1 service / 2 connections (labels).** Correct: one Elevator service
+  plus a registry number not linked to a service. That line was named "Life
+  Safety Line" (read as a second service); now "Additional line", service "Not yet
+  linked to a life-safety service", with a "2 connections across 1 service"
+  summary.
+- **Controls.** Upload Photo / Upload Document stored only a filename — now
+  disabled *Soon*. "Upload Procedure" → "Add Procedure" (text, works). With
+  self-service on, the older Add Contact / Create Request contribution controls
+  are replaced by the governed flows (one path each). Billing stays *Soon*.
+- Tests: `test_customer_go_live_semantics.py` (9, real DB) + web helper tests
+  (17 total). Full backend suite **4751** passed; web build + eslint clean.
+
+## 0·DONE — RH Customer Operations Console (self-service) + Devices KPI fix (PR #183, MERGED `bf068ff`) [2026-09-30]
 
 Branch `feat/rh-customer-self-service` (PR open, **not merged**). Moves the RH
 customer plane from "dashboard + email support" to "customer operations console +

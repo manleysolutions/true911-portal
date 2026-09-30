@@ -137,6 +137,16 @@ async def _identity_evidence(db, tenant_id):
     return by_building, fused, devices_by_site
 
 
+async def _customer_contact_locations(db, tenant_id) -> set:
+    """Location keys where the customer has supplied at least one contact through
+    self-service (read-only).  Feeds the "Site contacts" readiness item."""
+    from app.models.customer_self_service import CustomerManagedField
+    rows = (await db.execute(select(CustomerManagedField.location_key, CustomerManagedField.value).where(
+        CustomerManagedField.tenant_id == tenant_id,
+        CustomerManagedField.field.like("contact.%")))).all()
+    return {key for key, value in rows if value not in (None, "null")}
+
+
 def cs_norm_addr(site) -> str:
     import re
     return re.sub(r"[^a-z0-9]+", " ",
@@ -179,6 +189,7 @@ async def load_customer_buildings(db: AsyncSession, tenant_id: str, now):
     sites_portfolio = await cportfolio.load_portfolio(db, tenant_id, now)
     site_by_id, by_store, by_addr, dev_site = await _link_indexes(db, tenant_id, sites_portfolio)
     mappings_by_building, fused_groups, devices_by_site = await _identity_evidence(db, tenant_id)
+    contact_locations = await _customer_contact_locations(db, tenant_id)
 
     records = []
     for b, pending in rows:
@@ -192,6 +203,10 @@ async def load_customer_buildings(db: AsyncSession, tenant_id: str, now):
         service_phones = [ph for svc in rec["services"] for ph in (svc.get("phone_numbers") or [])]
         rec["connection_numbers"] = pdev.building_phone_numbers(mappings, service_phones)
         rec["phone_count"] = len(rec["connection_numbers"])
+        if f"bldg:{b.id}" in contact_locations:
+            # contacts the customer supplied count toward operational readiness
+            signals = {d["key"]: d["met"] for d in rec["maturity"]["dimensions"]}
+            rec["maturity"] = cs.building_maturity({**signals, "contacts": True})
         records.append(rec)
     return records
 
@@ -235,7 +250,8 @@ async def _aggregate_building(db, tenant_id, b, pending, linked, now) -> dict:
 
     protected_services = sum(1 for s in services if s.get("status", {}).get("status") == "Protected")
     operational = cs._pct(protected_services, len(services)) if services else None
-    has_address = bool(b.address or (linked and linked[0][0].e911_street))
+    dispatch_address = building_dispatch_address(b, linked)
+    has_address = bool(dispatch_address)
     completeness = cs._pct(sum([bool(services), equipment_count > 0, bool(has_address),
                                 bool(linked)]), 4)
     e911_all_verified = bool(linked) and e911_verified_sites == e911_any and e911_any > 0
@@ -262,8 +278,29 @@ async def _aggregate_building(db, tenant_id, b, pending, linked, now) -> dict:
         "e911_state": _e911_state(e911_all_verified, e911_any, pending),
         "e911_verified": e911_all_verified,
         "separated_health": separated, "maturity": maturity, "completeness": completeness,
+        # the ONE dispatch address the dashboard, the location page, the E911
+        # wizard and the go-live audit all read (official E911 record on a linked
+        # site first, else the canonical service address)
+        "dispatch_address": dispatch_address,
         "_site_ids": [s.site_id for s, _ in linked],
     }
+
+
+def format_address(street, city, state, zp):
+    parts = [street, city, " ".join(x for x in (state, zp) if x)]
+    return ", ".join(p for p in parts if p) or None
+
+
+def building_dispatch_address(b, linked):
+    """The registered dispatch address for a canonical building: the official
+    E911 record of the first linked site that has one, else the building's
+    canonical service address.  None when neither exists."""
+    for site, _p in linked:
+        if getattr(site, "e911_street", None):
+            return format_address(site.e911_street, site.e911_city, site.e911_state, site.e911_zip)
+    if b.address:
+        return format_address(b.address, b.city, b.state, b.zip)
+    return None
 
 
 _CATEGORY = {"store": "Retail", "gallery": "Retail", "outlet": "Retail",

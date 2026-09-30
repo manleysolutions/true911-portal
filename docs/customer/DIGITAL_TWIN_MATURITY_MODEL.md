@@ -65,7 +65,7 @@ and showing the composite **only after** explaining them (Constitution §4.5):
 | Factor | Weight | Derived from |
 |---|---|---|
 | Operational Health | 40% | protected share of the location's life-safety services |
-| Digital Twin Completeness | 25% | services + equipment + address + contacts present |
+| Data Completeness (formerly "Digital Twin Completeness") | 25% | services + equipment + address + contacts present |
 | Compliance | 20% | reserved (unknown → lowers confidence, never fabricated) |
 | Documentation | 15% | share of document/photo/procedure artefact types present |
 

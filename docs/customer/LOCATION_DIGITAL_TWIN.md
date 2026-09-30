@@ -213,3 +213,35 @@ confirmed*. The customer layer is an overlay keyed by the building
 (`bldg:<id>`, or `site:<site_id>` in legacy mode) — the registry identity is never
 customer-written. Served by `GET /customer/locations/{ref}/workspace`; spec
 `CUSTOMER_SELF_SERVICE.md`.
+
+## 12. Two different measures: Data Completeness vs Operational Readiness
+
+The workspace shows two numbers that answer different questions. They are named
+so they cannot be read as two contradictory "completeness" scores.
+
+| Measure | Question | Scale | Source |
+|---|---|---|---|
+| **Data Completeness** (a Building-health factor, weight 25% of overall health) | How completely does True911 know this building's technical record? | 0–100: services · equipment · dispatch address · monitoring link | `serialize.separated_health` (`digital_twin_completeness`) |
+| **Operational Readiness** (tier Bronze / Silver / Gold / Platinum) | How many of the seven readiness items does the customer have in place? | 0–7: documentation · site contacts · emergency procedures · testing records · compliance · photos · E911 verified | `serialize.building_maturity` |
+
+So Chicago can honestly read **Data Completeness 100/100** (True911 knows its
+services, equipment, address and monitoring link) and **Operational Readiness
+Bronze · 0 of 7 readiness items in place** (the customer has not yet supplied
+documents, contacts, procedures …). The factor's weight is shown as "weight 25%",
+never next to its value as if it were a score. Scoring is unchanged; only the
+labels changed, and customer-supplied contacts now count toward *Site contacts*.
+
+## 13. Hierarchy
+
+```
+Building (Portfolio Registry)
+  └─ Life-Safety Service      (Elevator, Fire Alarm …; inferred from equipment)
+       └─ Connection          (a line / telephone number; may exist before it is
+                               linked to a service → "Additional line")
+            └─ Device         (physical: radio / communicator; counted once)
+                 └─ Carrier   (name only in the customer plane)
+```
+
+"Life Safety Services" counts services; "Life-Safety Connections" counts lines.
+One Elevator service plus an unattached registry number is **1 service and 2
+connections** — correct, and labelled that way.

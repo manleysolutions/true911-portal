@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import LocationCommandCenter from "@/components/customer/LocationCommandCenter";
 import ActionCenter from "@/components/customer/ActionCenter";
+import { protectionBanner } from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
 // CustomerAssuranceView — the Customer Command Center (Phase 1/2/3).
@@ -259,7 +260,8 @@ export default function CustomerAssuranceView() {
   const health = m.monthly_health_score;
   // Green only when every location is Protected — an absent attention/critical
   // count must never read as "all good" (no green without evidence).
-  const allProtected = (m.locations_total || 0) > 0 && (m.locations_protected || 0) === m.locations_total;
+  const banner = protectionBanner(m);
+  const allProtected = banner.allProtected;
 
   return (
     <PageWrapper>
@@ -310,7 +312,7 @@ export default function CustomerAssuranceView() {
                   </div>
                   <div>
                     <p className={`text-[15px] font-semibold ${allProtected ? "text-emerald-800" : "text-slate-800"}`}>
-                      {allProtected ? "All listed locations are currently protected." : `${m.locations_protected || 0} of ${m.locations_total || 0} locations protected.`}
+                      {banner.text}
                     </p>
                     <p className={`text-[13px] mt-0.5 ${allProtected ? "text-emerald-700" : "text-slate-500"}`}>Continuously monitored.</p>
                   </div>
@@ -398,7 +400,7 @@ export default function CustomerAssuranceView() {
         </div>
       </div>
 
-      {drawer && <LocationCommandCenter locationRef={drawer.ref} locationName={drawer.name} onClose={closeLocation} />}
+      {drawer && <LocationCommandCenter locationRef={drawer.ref} locationName={drawer.name} intent={drawer.intent} onClose={closeLocation} />}
     </PageWrapper>
   );
 }
