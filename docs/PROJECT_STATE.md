@@ -6,8 +6,8 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-09-30. Branch at time of writing:
-> `feat/tmobile-network-profile-certified`.
+> Last updated: 2026-10-01. Branch at time of writing:
+> `fix/customer-basemap`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -23,6 +23,27 @@
 > sections below that describe it as "PR open, NOT merged" were accurate on
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·IN REVIEW — Customer basemap fix: CARTO "API KEY REQUIRED" tiles (D-027) [2026-10-01]
+
+Branch `fix/customer-basemap`. **Frontend only.** No change to portfolio, canonical
+inventory, E911, registry, snapshots, permissions or coordinates.
+- **Cause:** both Leaflet maps hard-coded keyless CARTO `light_all`. CARTO now
+  returns a 200 placeholder PNG ("API KEY REQUIRED") for every keyless tile.
+- **Fix:** shared tile config `web/src/lib/mapTiles.js`, defaulting to keyless OSM
+  standard tiles with the required attribution, overridable via `VITE_MAP_TILE_*`.
+  The customer map also gets a quiet "map background unavailable" notice when tiles
+  fail to load.
+- **Small map defects fixed:** the map refit on every render (hover, 60 s poll),
+  which yanked the customer's pan/zoom; it now refits only when the plotted point set
+  changes. Markers are de-duplicated by `location_ref`. Invalid points (non-finite,
+  out of range, 0,0) are excluded and counted, never plotted.
+- **Unchanged:** "N locations not shown on the map (no coordinates on file)" stays
+  truthful (16 for RH). Status semantics Monitored / Needs attention / Being
+  reconciled are unchanged.
+- **Not complete:** RH mapping. Basemap availability and canonical location geocoding
+  are separate concerns. Coordinate-source defects M1–M5 are in BACKLOG (→ #190/#192).
+- Judy **not** invited. Staged T-Mobile snapshot work untouched.
 
 ## 0·IN REVIEW — RH Completion Program PR #187: operational source snapshots [2026-09-30]
 

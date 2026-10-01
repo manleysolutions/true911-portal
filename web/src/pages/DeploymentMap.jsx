@@ -4,10 +4,11 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-le
 import PageWrapper from "@/components/PageWrapper";
 import SiteDrawer from "@/components/SiteDrawer";
 import CustomerSiteDetailDrawer from "@/components/CustomerSiteDetailDrawer";
-import { MapPin, Layers, RefreshCw, AlertTriangle, ChevronRight, X, Crosshair, Navigation, Loader2, Save } from "lucide-react";
+import { MapPin, Layers, RefreshCw, AlertTriangle, X, Crosshair, Navigation, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { isCustomerRole, toCustomerStatus, CUSTOMER_STATUS } from "@/lib/attention";
+import { TILE_CONFIG } from "@/lib/mapTiles";
 
 // Raw operational colors — used by internal/operations roles.
 const STATUS_COLORS = {
@@ -259,8 +260,9 @@ export default function DeploymentMap() {
                 zoomControl={false}
               >
                 <TileLayer
-                  attribution='&copy; <a href="https://carto.com">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                  attribution={TILE_CONFIG.attribution}
+                  url={TILE_CONFIG.url}
+                  maxZoom={TILE_CONFIG.maxZoom}
                 />
                 {selectedSite && <FlyTo site={selectedSite} />}
                 {mappableSites.map(site => {

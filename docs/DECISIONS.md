@@ -529,3 +529,32 @@ side effect of bookkeeping rather than as a decision anybody made.
   `test_tmobile_pit_network_certification.py`. Record:
   `TMOBILE_PIT_CERTIFICATION_20260930.md`. No carrier call was made to produce
   this change.
+
+### D-027 — Basemap availability and canonical location geocoding are separate concerns
+- **Date:** 2026-10-01 · **Status:** Accepted
+- **Context:** On the production RH Test (CUSTOMER_ADMIN) dashboard the Locations
+  map plotted markers over tiles reading "API KEY REQUIRED / carto.com/basemaps/apikey".
+  Both Leaflet maps (`CustomerAssuranceView.jsx`, `DeploymentMap.jsx`) hard-coded
+  keyless CARTO `light_all` tiles; CARTO now answers every keyless tile request
+  with HTTP 200 and a placeholder PNG. No decision ever required CARTO. In the same
+  view, "16 locations not shown on the map (no coordinates on file)" is a separate,
+  truthful data gap.
+- **Decision:**
+  1. **Basemap availability and canonical location geocoding are separate concerns.**
+     Fixing tiles never touches coordinates, and coordinate gaps are never hidden,
+     guessed, client-geocoded or back-filled in the frontend.
+  2. The basemap is a configurable, keyless default: OpenStreetMap standard tiles
+     (`web/src/lib/mapTiles.js`), with the "© OpenStreetMap contributors"
+     attribution the OSMF Tile Usage Policy requires. A deployment can override it
+     with `VITE_MAP_TILE_URL` + `VITE_MAP_TILE_ATTRIBUTION` (+ optional
+     `VITE_MAP_TILE_MAX_ZOOM`). An override is honoured only with its own
+     attribution and only over https. Any token in these variables reaches the
+     browser, so it must be a public, domain-restricted client token, never a secret.
+  3. No paid or keyed map provider is added without a concrete requirement. If
+     customer traffic outgrows OSMF's "light use" policy, move to a contracted
+     provider through the override above. That needs no code change.
+- **Consequences:** Rendering the basemap does **not** complete RH mapping. RH map
+  completion still requires every current certified RH building to have a
+  validated canonical address and approved coordinates (program PR #190 canonical
+  geocoding, #192 one-marker map). Today registry-mode markers come from the
+  first linked legacy Site's lat/lng, chosen from an unordered set (BACKLOG).
