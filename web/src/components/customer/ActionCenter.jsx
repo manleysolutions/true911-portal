@@ -6,10 +6,11 @@ import { actionCenterHeadline, actionCenterTiers } from "@/components/customer/s
 //   Urgent        — known service problems (evidence-backed only)
 //   Action needed — things the customer can do now (E911 confirmations, replies)
 //   In progress   — True911 / operations own these (records being prepared,
-//                   monitoring being reconciled, requests being worked)
-//   Portfolio setup — low-priority completion (site contacts), collapsed
+//                   monitoring records being confirmed, requests being worked)
+//   Portfolio setup — optional completion (site contacts), collapsed
+//   Recent activity — history only; nothing waits on it (D-028)
 // Missing contacts are never shown at the severity of a service problem, and the
-// customer is never made responsible for True911's reconciliation work.
+// customer is never made responsible for True911's work.
 // Presentational: the dashboard loads GET /customer/action-center once and
 // passes it in (null when self-service is off → renders nothing).
 // ════════════════════════════════════════════════════════════════════
@@ -19,6 +20,7 @@ const TIER_STYLE = {
   action_needed: { badge: "bg-amber-50 text-amber-800 border-amber-200", title: "text-slate-900" },
   in_progress: { badge: "bg-slate-50 text-slate-600 border-slate-200", title: "text-slate-900" },
   informational: { badge: "bg-slate-50 text-slate-500 border-slate-200", title: "text-slate-700" },
+  activity: { badge: "bg-slate-50 text-slate-500 border-slate-200", title: "text-slate-700" },
 };
 
 function Rows({ section, onOpen }) {

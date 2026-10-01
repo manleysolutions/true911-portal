@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-10-01. Branch at time of writing:
-> `fix/customer-basemap`.
+> `feat/customer-generic-terminology`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -24,9 +24,28 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — Customer basemap fix: CARTO "API KEY REQUIRED" tiles (D-027) [2026-10-01]
+## 0·IN REVIEW — Customer generic terminology + status clarity (D-028) [2026-10-01]
 
-Branch `fix/customer-basemap`. **Frontend only.** No change to portfolio, canonical
+Branch `feat/customer-generic-terminology`. **Presentation only.** No change to
+monitoring evidence, E911, addresses, store numbers, canonical buildings,
+coordinates, snapshots, operator decisions or RBAC. No migration.
+- **Universal nouns:** Manage Location reads "Wrong address or Location ID?" /
+  "Correct Location ID" (with an any-industry hint). "Official record" is now
+  "True911 record", and "Store #" is now "Location ID". RH names such as "Edmonton
+  Gallery #505" are unchanged.
+- **Being reconciled → "Monitoring record being confirmed — True911 is confirming
+  this location's monitoring information. No action is needed from you."** It is
+  still neutral and still UNKNOWN (D-022).
+- **Ownership:** Recent activity is its own history tier (past tense), not inside
+  Portfolio setup. A waiting-on-you request is listed once. The location page shows
+  "True911 is working on: …".
+- **#653:** the "RESEARCH REQUIRED" flag is stripped from customer names (API and
+  render). The record still needs certification (BACKLOG T1).
+- Judy **not** invited. T-Mobile snapshot work untouched.
+
+## 0·DONE — Customer basemap fix: CARTO "API KEY REQUIRED" tiles (D-027) — PR #189 MERGED `58522fa` [2026-10-01]
+
+Merged to `main` as PR #189 (`58522fa`). **Frontend only.** No change to portfolio, canonical
 inventory, E911, registry, snapshots, permissions or coordinates.
 - **Cause:** both Leaflet maps hard-coded keyless CARTO `light_all`. CARTO now
   returns a 200 placeholder PNG ("API KEY REQUIRED") for every keyless tile.

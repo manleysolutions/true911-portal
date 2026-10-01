@@ -13,6 +13,35 @@
 
 ---
 
+## 🗣️ Customer terminology / internal-language findings (D-028) [2026-10-01]
+
+Found during the generic-terminology pass (branch `feat/customer-generic-terminology`).
+These are data or follow-ups, deliberately NOT solved with presentation logic:
+- **T1. `RESEARCH REQUIRED Gallery #653` — certification needed.** The customer name
+  is built from `PortfolioBuilding.canonical_name`, which Fusion took from a source
+  record name carrying an internal research flag. The flag is now stripped from the
+  customer name ("Gallery #653"). The building still needs certifying (true name,
+  city, address) under #189 building certification. The correct name was not
+  invented.
+- **T2. Category labels are RH-shaped in a generic serializer.**
+  `serialize._BUILDING_CATEGORY_LABEL` maps `store`/`special` → "Gallery" and
+  `portfolio_registry_view._CATEGORY` maps store/gallery/outlet → "Retail". Correct
+  for RH today. It belongs in the future per-tenant vocabulary layer (`CUSTOMER_NOUNS`
+  is the seam), not hard-coded for every customer.
+- **T3. Stored activity summaries read like statuses.** `customer_activity_events.summary`
+  stores "X requested" / "X: under review". The UI renders them past tense
+  (`activityText`). If the API gains other consumers, render from `event_type` +
+  request type server-side; stored rows are append-only and stay as written.
+- **T4. Legacy Site-mode names rely on the render guard only.** Registry names are
+  cleaned in `building_display_name`. Legacy `Site.site_name` names are cleaned only
+  by `customerLocationName` in the web UI.
+- **T5. `confidence` bucket ("Needs review") is in the customer API payload**
+  (`portfolio_building`). It is not rendered today. Remove it or rename it before any
+  UI shows it.
+- **T6. Operational-state copy exists in two places** (`serialize.OPERATIONAL_STATES`
+  and `selfService.js` `OPERATIONAL`, where the UNKNOWN states use the web copy).
+  Keep them in step, or make the API keys-only.
+
 ## 🗺️ RH map — coordinate source defects found during the basemap fix (D-027) [2026-10-01]
 
 The basemap now renders (PR `fix/customer-basemap`). **RH mapping is NOT complete.**

@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import {
   CHANGE_REQUEST_TYPES, PURPOSES, CONTACT_ROLES, e911FormProblems, contactProblems,
-  contactPayload, changedFields, errorText,
+  contactPayload, changedFields, errorText, CUSTOMER_NOUNS, customerLocationName,
 } from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
@@ -210,20 +210,20 @@ function LocationForm({ ws, onClose, onDone, patch }) {
       if (corr.store_number.trim()) changes.store_number = corr.store_number.trim();
       if (!Object.keys(changes).length) { onClose(); return; }
       const r = await patch("/profile", { changes });
-      onDone(r.request ? "Saved. Your address / store-number correction was sent for review." : "Location details saved.");
+      onDone(r.request ? `Saved. Your address / ${CUSTOMER_NOUNS.locationId} correction was sent to True911 for review.` : "Location details saved.");
     } catch (x) { setErr(errorText(x)); } finally { setBusy(false); }
   };
   return (
     <Modal title="Manage Location" onClose={onClose}
       footer={<><Btn onClick={onClose}>Cancel</Btn><Btn primary disabled={busy} onClick={submit}>{busy ? "Saving…" : "Save"}</Btn></>}>
-      <Field label="Location name (how your team refers to it)" hint={`Official record: ${ws.location.canonical_name}`}><input className={inputCls} value={f.display_name || ""} onChange={set("display_name")} /></Field>
+      <Field label="Location name (how your team refers to it)" hint={`${CUSTOMER_NOUNS.trueRecord}: ${customerLocationName(ws.location.canonical_name)}`}><input className={inputCls} value={f.display_name || ""} onChange={set("display_name")} /></Field>
       <Field label="Your reference / cost-center #"><input className={inputCls} value={f.customer_reference || ""} onChange={set("customer_reference")} /></Field>
       <Field label="Location notes"><textarea rows={3} className={inputCls} value={f.location_notes || ""} onChange={set("location_notes")} /></Field>
       <Field label="Access notes" hint="Gate codes and keys are best shared by phone, not stored here."><textarea rows={2} className={inputCls} value={f.access_notes || ""} onChange={set("access_notes")} /></Field>
       <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2">
-        <p className="text-[11.5px] text-slate-600">Wrong address or store number? These are part of the official record, so a correction is reviewed before it's applied.</p>
+        <p className="text-[11.5px] text-slate-600">Wrong address or {CUSTOMER_NOUNS.locationId}? These are part of True911's record for this location, so True911 reviews a correction before applying it.</p>
         <Field label="Correct address"><input className={inputCls} value={corr.address} onChange={(e) => setCorr((p) => ({ ...p, address: e.target.value }))} placeholder={ws.location.address || ""} /></Field>
-        <Field label="Correct store number"><input className={inputCls} value={corr.store_number} onChange={(e) => setCorr((p) => ({ ...p, store_number: e.target.value }))} placeholder={ws.location.store_number || ""} /></Field>
+        <Field label={`Correct ${CUSTOMER_NOUNS.locationId}`} hint={CUSTOMER_NOUNS.locationIdHint}><input className={inputCls} value={corr.store_number} onChange={(e) => setCorr((p) => ({ ...p, store_number: e.target.value }))} placeholder={ws.location.store_number || ""} /></Field>
       </div>
       {err && <p className="text-[12px] text-red-700">{err}</p>}
     </Modal>

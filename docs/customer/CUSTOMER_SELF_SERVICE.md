@@ -267,7 +267,7 @@ UNKNOWN ≠ PROTECTED** — and by owner:
 - **For you (customer actions):** E911 confirmations ready · requests waiting on
   you · site contacts (low priority, "Portfolio setup").
 - **True911 is working on:** E911 records being prepared (no dispatch address
-  yet) · monitoring relationships being reconciled · requests in progress.
+  yet) · monitoring records being confirmed · requests in progress.
 - **Urgent** is reserved for evidence-backed service problems.
 
 The Action Center returns `tiers` (urgent / action_needed / in_progress /
@@ -278,6 +278,45 @@ the location workspace returns `operational_state` and
 `actionCenterTiers`, `locationActions`, `LOCATION_TABS`, `statusWord`,
 `operationalView`). The location page and dashboard are described in
 `LOCATION_DIGITAL_TWIN.md` §14 and `CUSTOMER_COMMAND_CENTER.md` §8g.
+
+## 14. Customer UX conventions (D-028)
+
+**Universal nouns.** Generic UI says **Location**, and **Facility** where a
+physical place reads better. It never says Store / School / Campus / Installation /
+Gallery: those are customer data (a building named "Edmonton Gallery #505" keeps
+its name) or a future per-tenant vocabulary layer. Defaults live in
+`CUSTOMER_NOUNS` in `web/src/components/customer/selfService.js`:
+
+| Concept | Customer label | Notes |
+|---|---|---|
+| a place the customer has service | Location | universal default |
+| the customer's own identifier on True911's record (`store_number`) | Location ID | hint: "site, building, school, store or facility number" |
+| the customer-owned overlay reference | Your reference / cost-center # | unchanged |
+| True911's governed record of the location | True911 record | not "official": it is not a legal or government record |
+
+A future vocabulary layer could override these per tenant (RH: Location / Gallery,
+school district: School / Campus, municipality: Facility / Site, military:
+Installation / Building, healthcare: Facility / Campus). No such engine exists yet.
+
+**Ownership on every screen.** Every item answers *who acts?*:
+
+| Owner | Dashboard (Action Center) | Location page |
+|---|---|---|
+| Customer action | Action needed ("Things you can do now") | "Your to-do here" |
+| True911 action | In progress ("True911 is handling these — nothing for you to do") | "True911 is working on: …. No action is needed from you." |
+| Optional setup | Portfolio setup ("Optional — complete over time; nothing is wrong") | Portfolio setup readiness |
+| History | Recent activity ("History — already done; nothing is waiting") | Activity ("Already done, for your records") |
+
+A request waiting on the customer appears only under Action needed. Activity rows
+are past tense; a request's current status is shown only on the request.
+
+**No internal language.** Never shown to a customer: reconcile / reconciliation,
+canonical, registry, mapping, source systems, research / review flags, and SIM or
+device identifiers as the default view (Constitution §7.9). The UNKNOWN
+`being_reconciled` state reads "Monitoring record being confirmed — True911 is
+confirming this location's monitoring information. No action is needed from you."
+Internal flags inside a record name ("RESEARCH REQUIRED …") are stripped from the
+customer name, and nothing is invented in their place.
 
 ## 11. Not in this slice (roadmap)
 

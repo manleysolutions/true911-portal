@@ -199,11 +199,16 @@ def location_summary(site, *, protection: dict) -> dict:
 # ══════════════════════════════════════════════════════════════════════
 OPERATIONAL_STATES = {
     # state: (label, one-line customer summary, evidence class)
+    # Copy names the OWNER of the work (D-028): True911-owned states say so and
+    # tell the customer no action is needed.  The state KEYS are the API contract
+    # and do not change; only the customer wording does.
     "attention_required": ("Needs attention", "A service issue is being worked on.", "known_problem"),
     "monitored": ("Monitored", "No known service issues.", "known_good"),
-    "being_reconciled": ("Being reconciled", "True911 is connecting this location's monitoring record.",
-                         "unknown"),
-    "not_yet_confirmed": ("Status being confirmed", "True911 is confirming this location's status.",
+    "being_reconciled": ("Monitoring record being confirmed",
+                         "True911 is confirming this location's monitoring information. "
+                         "No action is needed from you.", "unknown"),
+    "not_yet_confirmed": ("Status being confirmed",
+                          "True911 is confirming this location's status. No action is needed from you.",
                           "unknown"),
 }
 _KNOWN_PROBLEM_STATUSES = frozenset({"Critical", "Attention Needed"})
@@ -844,12 +849,30 @@ def confidence_bucket(conf) -> str:
     return "High" if conf >= 80 else "Medium" if conf >= 50 else "Needs review"
 
 
+# Internal review / research flags that operators or source systems put INTO a
+# record's name (e.g. "RESEARCH REQUIRED Gallery #653").  They describe True911's
+# certification work, not the customer's location, so they never reach a customer
+# name (D-028).  The underlying record is untouched and still needs certifying.
+# Mirrored for render-time defense in web/src/components/customer/selfService.js.
+_INTERNAL_NAME_MARKERS = re.compile(
+    r"(?i)[\[(]?\s*\b(?:research\s+(?:required|needed)|needs?\s+research|requires\s+research"
+    r"|(?:pending|needs?)\s+review|review\s+required)\b\s*[\])]?\s*[:\-–—]?")
+
+
+def strip_internal_markers(name) -> str:
+    """``name`` without internal review/research flags; '' when nothing else is left.
+    Never invents a replacement name."""
+    out = _INTERNAL_NAME_MARKERS.sub(" ", str(name or ""))
+    return re.sub(r"\s+", " ", out).strip(" -–—:,")
+
+
 def building_display_name(canonical_name, store_number, city, site_type) -> str:
     """A calm customer display name — e.g. 'Chicago Gallery #147', 'Linden House
-    Gallery' — with the operating company and store jargon stripped."""
+    Gallery' — with the operating company, store jargon and internal review flags
+    stripped."""
     label = _BUILDING_CATEGORY_LABEL.get((site_type or "").lower(), "Location")
     base = re.sub(r"(?i)\brestoration hardware\b|\brh\b|#\s*\d+|\bstore\b|\(main account\)",
-                  " ", canonical_name or "")
+                  " ", strip_internal_markers(canonical_name))
     base = re.sub(r"\s+", " ", base).strip(" -–,")
     if city:
         name = f"{city} {label}"

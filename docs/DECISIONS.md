@@ -558,3 +558,54 @@ side effect of bookkeeping rather than as a decision anybody made.
   validated canonical address and approved coordinates (program PR #190 canonical
   geocoding, #192 one-marker map). Today registry-mode markers come from the
   first linked legacy Site's lat/lng, chosen from an unordered set (BACKLOG).
+
+### D-028 — Customer terminology is universal, owned and free of internal language
+- **Date:** 2026-10-01 · **Status:** Accepted
+- **Context:** A walkthrough as the RH Test CUSTOMER_ADMIN found generic UI built
+  around retail ("Wrong address or store number?", "Correct store number",
+  "Store #"), operational jargon ("Being reconciled", "Monitoring being
+  reconciled", "Portfolio inventory: Being reconciled"), a Recent-activity list
+  shown inside "Portfolio setup" with status-like wording ("Change service type
+  requested"), a request that was waiting on the customer listed both as
+  "Waiting on you" and as True911's in-progress work, and an internal flag
+  rendered as a location name ("RESEARCH REQUIRED Gallery #653"). True911 serves
+  retailers, school districts, municipalities, agencies, military installations,
+  healthcare systems, campuses, property managers and enterprises.
+- **Decision:**
+  1. **True911 customer-facing terminology uses Location/Facility as universal
+     nouns.** Industry-specific nouns such as Store, School, Campus, Installation
+     or Gallery belong to customer data or a future configured vocabulary layer,
+     not generic UI. The customer's own identifier, stored as `store_number`, is
+     labelled **Location ID** (not "reference", which the customer-owned "Your
+     reference / cost-center #" already means). The True911-governed record is the
+     **True911 record**, not the "official record": it is not a legal or
+     government record. Customer names (e.g. "Edmonton Gallery #505") are data and
+     are unchanged. Defaults live in `CUSTOMER_NOUNS` (`selfService.js`), the seam a
+     per-tenant vocabulary would override.
+  2. **Customer workflow states must communicate ownership: Customer action /
+     True911 action / optional setup / historical activity.** The Action Center
+     tiers are Urgent · Action needed · In progress (True911) · Portfolio setup
+     (optional) · **Recent activity** (history, its own tier, `owner: none`, never
+     counted). The location page mirrors it: "Your to-do here", plus a quiet
+     "True911 is working on: …. No action is needed from you." line. A request
+     waiting on the customer is listed once, as theirs. Activity is rendered in
+     the past tense ("Submitted a request: Change service type"). A request's
+     current status lives on the request (Requests / In progress). Stored activity
+     events are not rewritten.
+  3. **Internal reconciliation/certification terminology must not leak into the
+     customer experience.** The UNKNOWN `being_reconciled` state (key unchanged)
+     reads "Monitoring record being confirmed — True911 is confirming this
+     location's monitoring information. No action is needed from you." It claims
+     neither monitored nor failed (D-022 unchanged). Internal review/research flags
+     in a record name are stripped from customer names, at the API
+     (`serialize.building_display_name`) and at render (`customerLocationName`).
+     Nothing is invented in their place. The underlying record is certified
+     separately.
+- **Consequences:** Presentation only. No change to monitoring evidence, E911,
+  addresses, store numbers, canonical buildings, coordinates, snapshots, operator
+  decisions or RBAC; no migration. API: `operational_state` label/summary copy, a
+  new `activity` tier in `ACTION_CENTER_TIERS`, and `service_change_requests` /
+  `open_problems` no longer repeat `waiting_customer` requests (still in
+  `awaiting_your_response`). Regression tests:
+  `web/src/components/customer/customerTerminology.test.js`,
+  `api/tests/test_customer_terminology.py`.

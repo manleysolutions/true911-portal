@@ -507,9 +507,15 @@ def test_customer_cancel_and_respond(flags):
         state["user"] = user()
         ac = (await c.get("/api/customer/action-center")).json()["data"]
         assert [x["request_ref"] for x in ac["awaiting_your_response"]] == [rq["request_ref"]]
+        # the customer's action is listed ONCE — never also as True911's in-progress work
+        assert rq["request_ref"] not in [x["request_ref"] for x in ac["service_change_requests"]]
         r = await c.post(f"/api/customer/requests/{rq['request_ref']}/respond",
                          json={"notes": "Room 210"})
         assert r.status_code == 200 and r.json()["data"]["status"] == "submitted"
+        ac = (await c.get("/api/customer/action-center")).json()["data"]
+        assert ac["awaiting_your_response"] == []
+        mine = [x for x in ac["service_change_requests"] if x["request_ref"] == rq["request_ref"]]
+        assert mine and mine[0]["status_label"] == "Submitted"     # real status, in the request list
         r = await c.post(f"/api/customer/requests/{rq['request_ref']}/cancel", json={})
         assert r.status_code == 200 and r.json()["data"]["status"] == "cancelled"
         again = await c.post(f"/api/customer/requests/{rq['request_ref']}/cancel", json={})
