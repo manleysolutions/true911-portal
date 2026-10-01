@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-10-01. Branch at time of writing:
-> `feat/customer-generic-terminology`.
+> `docs/project-state-190-merged`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -24,9 +24,9 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — Customer generic terminology + status clarity (D-028) [2026-10-01]
+## 0·DONE — Customer generic terminology + status clarity (D-028) — PR #190 MERGED `ca403f2` [2026-10-01]
 
-Branch `feat/customer-generic-terminology`. **Presentation only.** No change to
+Merged to `main` as PR #190 (`ca403f2`). **Presentation only.** No change to
 monitoring evidence, E911, addresses, store numbers, canonical buildings,
 coordinates, snapshots, operator decisions or RBAC. No migration.
 - **Universal nouns:** Manage Location reads "Wrong address or Location ID?" /
