@@ -13,6 +13,65 @@
 
 ---
 
+## 🔴 Multi-tenant correctness defects found during the Belle Terre / default-line investigation [2026-10-01]
+
+Recorded only. **No remediation.** Historical data is a separate, governed effort.
+A line whose tenant differs from its site's tenant is a legacy ownership anomaly /
+provenance finding. It is NOT automatically a competing customer, the correct owner,
+or safe to delete or reassign.
+
+- **MT1. Telnyx call events attach to an arbitrary line when a number exists in more
+  than one tenant (safety).** `api/app/services/telnyx_service.py`:
+  - `_match_line()` runs `select(Line).where(Line.did == did)`, with no tenant or site
+    filter and no `ORDER BY`, and takes `.scalars().first()`.
+  - Its digit-normalized fallback scans every line in all tenants and returns the first
+    match in database order.
+  - `ingest_call_event()` then writes the `CallRecord` with `tenant_id=line.tenant_id`,
+    `site_id` and `line_id` from that arbitrary row. It is reached from
+    `POST` webhooks (`api/app/routers/webhooks.py:97`).
+  - The same number legitimately exists in several tenants (`uq_lines_did_tenant` is
+    per tenant; `default` lines often duplicate a customer's number), so database order
+    silently decides which customer's life-safety record receives the event.
+  - **Required:** deterministic tenant/site resolution, or explicit ambiguity handling
+    (record the event as unattributed / needs review, never pick one). Never let query
+    order decide. Add a regression test with the same DID in two tenants.
+- **MT2. Re-tenant operations can leave lines behind under their former tenant.** These
+  paths move sites and/or devices but not the lines that point at them:
+  - `admin.auto_provision_commit` (`routers/admin.py:1084-1173`) re-tenants sites and
+    devices only;
+  - `admin.cleanup_tenants` (`routers/admin.py:757-839`);
+  - `api/scripts/remediate_rh_tenant_assignment.py` (explicitly skips service_units,
+    sims, lines);
+  - `routers/provisioning.py` `_link_item_to_site` re-points `line.site_id` without
+    re-tenanting;
+  - `PATCH /lines` allows a `site_id` change with no tenant alignment.
+
+  Effects:
+  - customer views (tenant-scoped) cannot see the stranded lines;
+  - snapshot attribution sees the stranded copy as a cross-tenant holder
+    (`IDENTIFIER_CROSS_TENANT`);
+  - MT1 can attach calls to it.
+- **MT3. New writes can still create line/site tenant inconsistency.**
+  - `POST /lines` stamps `tenant_id=current_user.tenant_id` and never checks the
+    `site_id` / `device_id` tenant. A non-impersonating SuperAdmin's tenant is `default`.
+  - The default-tenant warning guardrail (`efe65c2`) covers sites, devices and customers
+    but not lines, and only warns.
+  - **Planned:** a small guardrail PR for NEW writes only, covering `POST /lines`, bulk
+    line import, line PATCH/reassignment, and site/device re-tenant operations. No
+    historical remediation in that PR. Scheduled after the production read-only trace.
+- **MT4. Provenance unknown (read-only evidence pending).**
+  - Origin of tenant `integrity-property-management`.
+  - Whether `scripts/reassign_rh_sites.py`, `scripts/consolidate_rh_to_default.py`,
+    `scripts/dedupe_tenant_rh.py` and `api/scripts/remediate_rh_tenant_assignment.py` ran
+    in production (they write `AuditLogEntry` rows with known `entry_id` prefixes).
+  - `consolidate_integrity_tenants.py` / `cleanup_legacy_ipm_tenant.py` write no audit
+    row, so their execution can't be shown from audit evidence.
+  - Do not infer execution from git.
+  - Evidence comes from the Belle Terre / default-line trace v2
+    (`operator-tools/belle_terre_lineage_trace_v2.sh`, untracked until sanitized).
+- **MT5. Unverified:** `docs/ARCHITECTURE.md` says impersonated sessions are read-only;
+  no backend enforcement was found. Verify.
+
 ## 🗣️ Customer terminology / internal-language findings (D-028) [2026-10-01]
 
 Found during the generic-terminology pass (branch `feat/customer-generic-terminology`).
