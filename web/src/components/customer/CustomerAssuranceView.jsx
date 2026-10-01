@@ -11,6 +11,8 @@ import { apiFetch } from "@/api/client";
 import LocationCommandCenter from "@/components/customer/LocationCommandCenter";
 import ActionCenter from "@/components/customer/ActionCenter";
 import { portfolioHero, locationOperational } from "@/components/customer/selfService";
+import { mapMarkers, pointsSignature, filterLocations } from "@/components/customer/portfolioMap";
+import { TILE_CONFIG, TILE_FAILURE_THRESHOLD } from "@/lib/mapTiles";
 
 // ════════════════════════════════════════════════════════════════════
 // CustomerAssuranceView — the customer's portfolio home.
@@ -131,34 +133,46 @@ function PortfolioHero({ name, summary, actionCenter }) {
 }
 
 // ── Map ──────────────────────────────────────────────────────────────
-function FitBounds({ points }) {
+// Refit only when the plotted point SET changes (signature), not on every
+// render — hover, the 60 s refresh and drawer state all re-render the map.
+function FitBounds({ points, signature }) {
   const map = useMap();
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
   useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) { map.setView(points[0], 11); return; }
-    map.fitBounds(points, { padding: [40, 40], maxZoom: 12 });
-  }, [points, map]);
+    const pts = pointsRef.current;
+    if (pts.length === 0) return;
+    if (pts.length === 1) { map.setView(pts[0], 11); return; }
+    map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
+  }, [signature, map]);
   return null;
 }
 
 function PortfolioMap({ locations, highlightRef, onSelect, onHover }) {
-  const mappable = locations.filter((l) => l.map_point);
-  const points = useMemo(() => mappable.map((l) => [l.map_point.lat, l.map_point.lng]), [mappable]);
-  const hidden = locations.length - mappable.length;
+  const { markers, hidden } = useMemo(() => mapMarkers(locations), [locations]);
+  const signature = pointsSignature(markers);
+  const points = useMemo(() => markers.map((m) => m.point), [markers]);
+  // Basemap failure: markers and the list stay accurate; say so plainly.
+  const [tiles, setTiles] = useState({ loaded: 0, failed: 0 });
+  const tileEvents = useMemo(() => ({
+    tileload: () => setTiles((t) => (t.loaded ? t : { ...t, loaded: 1 })),
+    tileerror: () => setTiles((t) => (t.failed >= TILE_FAILURE_THRESHOLD ? t : { ...t, failed: t.failed + 1 })),
+  }), []);
+  const basemapDown = tiles.loaded === 0 && tiles.failed >= TILE_FAILURE_THRESHOLD;
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="relative h-[480px] w-full">
-        {mappable.length === 0 ? (
+        {markers.length === 0 ? (
           <div className="h-full flex items-center justify-center"><p className="text-xs text-slate-400">No locations have map coordinates yet.</p></div>
         ) : (
           <MapContainer center={[38.5, -97]} zoom={4} className="h-full w-full" style={{ background: "#e8ecf1" }} zoomControl={false}>
-            <TileLayer attribution='&copy; <a href="https://carto.com">CARTO</a> &copy; OSM' url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-            <FitBounds points={points} />
-            {mappable.map((l) => {
+            <TileLayer attribution={TILE_CONFIG.attribution} url={TILE_CONFIG.url} maxZoom={TILE_CONFIG.maxZoom} eventHandlers={tileEvents} />
+            <FitBounds points={points} signature={signature} />
+            {markers.map(({ loc: l, point }) => {
               const hl = highlightRef === l.location_ref;
               const t = TONE[l.op.tone];
               return (
-                <CircleMarker key={l.location_ref} center={[l.map_point.lat, l.map_point.lng]}
+                <CircleMarker key={l.location_ref} center={point}
                   radius={hl ? 12 : 8}
                   pathOptions={{ fillColor: t.hex, color: hl ? "#1f2937" : (t.ring || "#fff"), weight: hl ? 3 : 2, fillOpacity: 0.9 }}
                   eventHandlers={{ click: () => onSelect({ ref: l.location_ref, name: l.location }), mouseover: () => onHover(l.location_ref), mouseout: () => onHover(null) }}>
@@ -169,6 +183,11 @@ function PortfolioMap({ locations, highlightRef, onSelect, onHover }) {
               );
             })}
           </MapContainer>
+        )}
+        {basemapDown && markers.length > 0 && (
+          <div role="status" className="absolute top-3 left-1/2 -translate-x-1/2 bg-white/95 rounded-lg border border-slate-200 shadow-sm px-3 py-1.5 text-[11px] text-slate-600" style={{ zIndex: 500 }}>
+            Map background is temporarily unavailable. Location markers and the list are unaffected.
+          </div>
         )}
         <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur rounded-lg border border-slate-200 shadow-sm px-3 py-2" style={{ zIndex: 500 }}>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -264,11 +283,8 @@ export default function CustomerAssuranceView() {
 
   const statusOptions = useMemo(() => Array.from(new Set(locations.map((l) => l.op.label))).sort(), [locations]);
   const e911Options = useMemo(() => Array.from(new Set(locations.map((l) => l.emergency_address_state).filter(Boolean))).sort(), [locations]);
-  const filtered = useMemo(() => locations.filter((l) => {
-    if (statusFilter !== "all" && l.op.label !== statusFilter) return false;
-    if (e911Filter !== "all" && l.emergency_address_state !== e911Filter) return false;
-    return true;
-  }), [locations, statusFilter, e911Filter]);
+  const filtered = useMemo(() => filterLocations(locations, { status: statusFilter, e911: e911Filter }),
+    [locations, statusFilter, e911Filter]);
 
   if (loading) {
     return (

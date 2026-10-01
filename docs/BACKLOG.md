@@ -13,6 +13,37 @@
 
 ---
 
+## 🗺️ RH map — coordinate source defects found during the basemap fix (D-027) [2026-10-01]
+
+The basemap now renders (PR `fix/customer-basemap`). **RH mapping is NOT complete.**
+Basemap availability and canonical location geocoding are separate concerns (D-027).
+These are data-model items for **#190 (canonical geocoding)** / **#192 (one-marker map)**,
+deliberately NOT patched in the frontend:
+- **M1. Map point = first linked legacy Site, picked from an unordered set.**
+  `portfolio_registry_view._map_point(b, linked)` returns the first linked `Site`
+  with lat/lng. `linked` is built from `_resolve_building_site_ids()`, which returns a
+  Python `set` of string site_ids, so the order depends on the process hash seed.
+  When a building links Sites with different coordinates, the pin can move between
+  API restarts/workers. `building_dispatch_address()` has the same
+  first-of-unordered-set pattern for the dispatch address, which matters more because
+  it is E911-adjacent. Fix: canonical approved coordinates on `PortfolioBuilding`
+  (it has no lat/lng today), plus deterministic ordering until those exist.
+- **M2. Registry `_map_point` does not validate coordinates.** Unlike
+  `serialize._map_point` (range check, rejects 0,0), the registry path passes any
+  non-null lat/lng. The frontend now refuses invalid points and counts them as "not
+  shown", so they cannot crash Leaflet or appear as fabricated pins. The API should
+  apply the same rule.
+- **M3. Pending (unapproved) buildings can be plotted under the preview flag.**
+  With `CUSTOMER_SHOW_PENDING_PORTFOLIO_BUILDINGS` or
+  `CUSTOMER_PORTFOLIO_PREVIEW_PENDING` on, pending buildings flow into
+  `/customer/locations` and therefore onto the map. Intended for preview only.
+  Confirm both flags are off for RH before any customer invite.
+- **M4. 16 RH locations have no coordinates.** The notice is truthful. Resolve via
+  certified address → approved geocode (#190), never by inference from name/ZIP/city.
+- **M5 (minor UX).** The list↔map toggle unmounts and recreates the Leaflet map each
+  time. Acceptable for now: it avoids hidden-container sizing bugs, and the refit is
+  now signature-gated.
+
 ## ⭐ PRIMARY (RH) — RH Customer Completion Program: #187 → #193 [2026-09-30]
 
 Program: `docs/customer/RH_COMPLETION_PROGRAM.md` (D-025). Do not invite Judy; do
