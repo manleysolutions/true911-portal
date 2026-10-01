@@ -171,7 +171,7 @@ const RH_AC = {
 
 test("unknown monitoring is neither 'unprotected' nor green", () => {
   const reconciling = locationOperational({ protection: { status: "Unknown" }, monitoring_linked: false });
-  assert.equal(reconciling.label, "Being reconciled");
+  assert.equal(reconciling.label, "Monitoring record being confirmed");
   assert.equal(reconciling.tone, "neutral");
   const unknown = locationOperational({ protection: { status: "Unknown" } });
   assert.equal(unknown.tone, "neutral");
@@ -194,14 +194,14 @@ test("known failures stay prominent, even without a monitoring link", () => {
 
 test("RH portfolio hero states facts without implying failure", () => {
   const hero = portfolioHero(RH_SUMMARY, RH_AC);
-  assert.deepEqual(hero.facts.map((f) => f.value), [45, 73, "Being reconciled"]);
+  assert.deepEqual(hero.facts.map((f) => f.value), [45, 73, "Being finalized by True911"]);
   // the legacy distinct-number count (28) is never presented as connections (D-023)
   assert.ok(!hero.facts.some((f) => /connection/i.test(f.label)));
   assert.ok(!hero.facts.some((f) => f.value === RH_SUMMARY.total_phone_numbers));
   const dim = Object.fromEntries(hero.dimensions.map((d) => [d.key, d]));
   assert.equal(dim.service_status.value, "No known service issues");
   assert.equal(dim.monitoring.value, "29 of 45 locations monitored");
-  assert.ok(dim.monitoring.detail.includes("16 being reconciled by True911"));
+  assert.ok(dim.monitoring.detail.includes("16 monitoring records being confirmed by True911"), dim.monitoring.detail);
   assert.equal(dim.monitoring.tone, "neutral");                 // a coverage gap is not a failure
   assert.ok(dim.e911.detail.includes("35 ready for your confirmation"));
   assert.ok(dim.e911.detail.includes("10 being prepared by True911"));
@@ -218,7 +218,7 @@ test("customer actions and True911 actions are separated", () => {
   const mine = hero.customerActions.map((a) => a.text).join(" | ");
   const ours = hero.operationsActions.map((a) => a.text).join(" | ");
   assert.ok(mine.includes("35 E911 confirmations ready") && mine.includes("44 locations need contacts"), mine);
-  assert.ok(ours.includes("10 E911 records being prepared") && ours.includes("16 monitoring relationships being reconciled"), ours);
+  assert.ok(ours.includes("10 E911 records being prepared") && ours.includes("Confirming monitoring information for 16 locations"), ours);
   assert.ok(!/prepared|reconcil/i.test(mine), "True911 work is never listed as the customer task");
   assert.ok(!/confirmation|contacts/i.test(ours));
 });

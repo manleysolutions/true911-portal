@@ -10,6 +10,7 @@ import {
   LOCATION_TABS, locationActions, locationOperational, operationalView, statusWord,
   groupConnectionsByService, canVerifyE911, e911Tone, contributionControl, readinessProgress,
   TWIN_LABELS, CONTACT_ROLES, requestTone, errorText, connectionServiceLabel,
+  activityText, customerLocationName, locationTrue911Work, CUSTOMER_NOUNS,
 } from "@/components/customer/selfService";
 
 // ════════════════════════════════════════════════════════════════════
@@ -285,7 +286,8 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
     : { label: review?.state || detail?.emergency_address_state || "Verification Pending",
         tone: (review?.state || detail?.emergency_address_state) === "Verified" ? "good" : "neutral" };
   const actions = locationActions(ws, caps);
-  const title = ws?.location?.display_name || detail?.display_name || detail?.location || locationName;
+  const title = customerLocationName(ws?.location?.display_name || detail?.display_name || detail?.location || locationName);
+  const true911Work = locationTrue911Work(ws, op);
   const address = ws?.location?.address || detail?.service_address;
   const openRequests = (ws?.requests || []).filter((r) => r.open);
 
@@ -302,7 +304,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
 
   // Activity: self-service events + real E911 record activity, newest first.
   const activity = [
-    ...(ws?.activity || []).map((a) => ({ when: a.when, text: `${a.by} · ${a.summary}` })),
+    ...(ws?.activity || []).map((a) => ({ when: a.when, text: `${a.by} · ${activityText(a)}` })),
     ...((timeline?.timeline || []).map((t) => ({ when: t.when, text: `${t.by} · ${t.title}` }))),
   ].sort((a, b) => String(b.when || "").localeCompare(String(a.when || "")));
 
@@ -373,7 +375,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                 <dl className="grid grid-cols-[120px_1fr] gap-y-1.5 text-[12.5px]">
                   <dt className="text-slate-500">Address</dt><dd className="text-slate-800">{address || "Not yet on file"}</dd>
                   {(ws?.location?.building_type || detail.building_category) && (<><dt className="text-slate-500">Type</dt><dd className="text-slate-800">{ws?.location?.building_type || detail.building_category}</dd></>)}
-                  {(ws?.location?.store_number || detail.store_number) && (<><dt className="text-slate-500">Store #</dt><dd className="text-slate-800">{ws?.location?.store_number || detail.store_number}</dd></>)}
+                  {(ws?.location?.store_number || detail.store_number) && (<><dt className="text-slate-500">{CUSTOMER_NOUNS.locationId}</dt><dd className="text-slate-800">{ws?.location?.store_number || detail.store_number}</dd></>)}
                   {ws?.location?.device_count != null && (<><dt className="text-slate-500">Devices</dt><dd className="text-slate-800">{ws.location.device_count}</dd></>)}
                 </dl>
               </Block>
@@ -403,7 +405,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
               {selfServiceOn && (
                 <Block title="Your to-do here" icon={CheckCircle2}>
                   {(ws.location.outstanding_actions || []).length === 0
-                    ? <p className="text-[12px] text-emerald-700">Nothing needs you here right now.</p>
+                    ? <p className="text-[12px] text-slate-600">Nothing needs you here right now.</p>
                     : (
                       <ul className="space-y-1">
                         {ws.location.outstanding_actions.map((a, i) => (
@@ -417,6 +419,9 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                         ))}
                       </ul>
                     )}
+                  {true911Work.length > 0 && (
+                    <p className="text-[11.5px] text-slate-500 mt-2">True911 is working on: {true911Work.join(" · ")}. No action is needed from you.</p>
+                  )}
                 </Block>
               )}
 
@@ -608,6 +613,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
               </Block>
 
               <Block title="Activity" icon={ClipboardCheck}>
+                <p className="text-[11px] text-slate-400 mb-1.5">Already done, for your records. Open requests and their status are on the Overview tab.</p>
                 {activity.length === 0 ? <Muted>No activity yet.</Muted> : (
                   <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-72 overflow-y-auto">
                     {activity.slice(0, 40).map((a, i) => (

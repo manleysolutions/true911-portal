@@ -1141,7 +1141,8 @@ async def _portfolio_locations(db, tenant_id, now) -> list[dict]:
 
 # Action Center tiers: URGENT (known service problems) · ACTION NEEDED (tasks the
 # customer can do now) · IN PROGRESS (True911 / operations own it) ·
-# INFORMATIONAL (low-priority portfolio completion).  Missing contacts are setup,
+# INFORMATIONAL (low-priority portfolio completion) · ACTIVITY (history — things
+# that already happened; nothing waits on it, D-028).  Missing contacts are setup,
 # never shown at the severity of a service problem.
 ACTION_CENTER_TIERS = [
     {"tier": "urgent", "owner": "true911", "lists": ["needs_attention"]},
@@ -1149,8 +1150,8 @@ ACTION_CENTER_TIERS = [
      "lists": ["awaiting_your_response", "e911_confirmation_required"]},
     {"tier": "in_progress", "owner": "true911",
      "lists": ["e911_not_ready", "being_reconciled", "service_change_requests", "open_problems"]},
-    {"tier": "informational", "owner": "customer",
-     "lists": ["missing_contact_information", "recently_updated"]},
+    {"tier": "informational", "owner": "customer", "lists": ["missing_contact_information"]},
+    {"tier": "activity", "owner": "none", "lists": ["recently_updated"]},
 ]
 
 
@@ -1198,6 +1199,9 @@ async def action_center(db, user, now) -> dict:
                 "location": names.get(r.location_key)}
     visible = [r for r in all_requests if r.location_key in refs]
     open_reqs = [r for r in visible if r.status not in TERMINAL_STATUSES]
+    # a request waiting on the customer is THEIR action (awaiting_your_response),
+    # so it is not also listed as True911's in-progress work
+    true911_reqs = [r for r in open_reqs if r.status != "waiting_customer"]
     needs_attention.sort(key=lambda x: 0 if x["status"] == "Critical" else 1)
     return {
         "needs_attention": needs_attention,
@@ -1209,9 +1213,9 @@ async def action_center(db, user, now) -> dict:
         "e911_verification_required": e911_confirm + e911_not_ready,
         "missing_contact_information": missing_contacts,
         "awaiting_your_response": [req_item(r) for r in open_reqs if r.status == "waiting_customer"],
-        "service_change_requests": [req_item(r) for r in open_reqs
+        "service_change_requests": [req_item(r) for r in true911_reqs
                                     if r.request_type in CHANGE_REQUEST_TYPES],
-        "open_problems": [req_item(r) for r in open_reqs if r.request_type == "support_request"],
+        "open_problems": [req_item(r) for r in true911_reqs if r.request_type == "support_request"],
         "being_reconciled": being_reconciled,
         "recently_updated": await load_activity(db, user.tenant_id, limit=10),
         # Who owns what, and how urgent it is (customer trust rule, D-022).  The UI

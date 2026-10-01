@@ -10,7 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/api/client";
 import LocationCommandCenter from "@/components/customer/LocationCommandCenter";
 import ActionCenter from "@/components/customer/ActionCenter";
-import { portfolioHero, locationOperational } from "@/components/customer/selfService";
+import { portfolioHero, locationOperational, customerLocationName } from "@/components/customer/selfService";
 import { mapMarkers, pointsSignature, filterLocations } from "@/components/customer/portfolioMap";
 import { TILE_CONFIG, TILE_FAILURE_THRESHOLD } from "@/lib/mapTiles";
 
@@ -22,7 +22,8 @@ import { TILE_CONFIG, TILE_FAILURE_THRESHOLD } from "@/lib/mapTiles";
 // True911 still working on, (5) where do I drill in.
 //
 // Customer trust rule (DECISIONS D-022): KNOWN GOOD · KNOWN PROBLEM · UNKNOWN.
-// A location without linked monitoring is "Being reconciled" (neutral) — never
+// A location without linked monitoring is "Monitoring record being confirmed"
+// (neutral, True911's work) — never
 // "unprotected"; nothing is green without evidence.  No blended health score is
 // shown to customers: service status, monitoring coverage, E911 readiness and
 // portfolio setup are separate dimensions.
@@ -38,7 +39,7 @@ const TONE = {
   // neutral = unknown / incomplete evidence: hollow grey, never red or green
   neutral: { dot: "bg-white border border-slate-400", text: "text-slate-500", hex: "#cbd5e1", ring: "#94a3b8" },
 };
-const MAP_LEGEND = [["Monitored", "good"], ["Needs attention", "problem"], ["Being reconciled / confirming", "neutral"]];
+const MAP_LEGEND = [["Monitored", "good"], ["Needs attention", "problem"], ["Being confirmed by True911", "neutral"]];
 const e911Text = (state) => (state === "Verified" ? "text-emerald-700" : "text-slate-500");
 
 // Backend caps /customer/locations page_size at 100 — fetch every page.
@@ -49,7 +50,7 @@ function normLocation(it) {
   return {
     ...it,
     location_ref: it.building_ref || it.location_ref,
-    location: it.display_name || it.canonical_name || it.location,
+    location: customerLocationName(it.display_name || it.canonical_name || it.location),
     op: locationOperational(it),
   };
 }

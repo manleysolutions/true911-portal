@@ -154,6 +154,6 @@ test("list and map views share the filtered set and toggle on view state", () =>
   assert.match(VIEW, /onClick=\{\(\) => setView\("map"\)\}/);
 });
 
-test("status marker semantics are unchanged", () => {
-  assert.match(VIEW, /\["Monitored", "good"\], \["Needs attention", "problem"\], \["Being reconciled \/ confirming", "neutral"\]/);
+test("status marker semantics are unchanged (wording only changed, D-028)", () => {
+  assert.match(VIEW, /\["Monitored", "good"\], \["Needs attention", "problem"\], \["Being confirmed by True911", "neutral"\]/);
 });

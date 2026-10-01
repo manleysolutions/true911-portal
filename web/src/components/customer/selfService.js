@@ -50,16 +50,49 @@ export const CONTACT_ROLES = [
   { value: "property_manager", label: "Property / facility manager" },
 ];
 
-// Terms that must never reach a customer screen (Constitution §7; the registry
-// and source systems are internal).  Used by tests and as a render-time guard.
+// Terms that must never reach a customer screen (Constitution §7; the registry,
+// source systems and True911's reconciliation / certification work are internal —
+// D-028).  Used by tests and as a render-time guard.  Entries are regex fragments.
 export const INTERNAL_TERMS = [
   "PortfolioReviewItem", "source confidence", "Napco", "Genesis", "Zoho",
   "ICCID", "IMEI", "MSISDN", "SIM",
+  "reconcil\\w*", "canonical", "registry", "research required", "pending review",
+  "store number",
 ];
 
 export function containsInternalTerm(text) {
   const t = String(text || "");
   return INTERNAL_TERMS.some((term) => new RegExp(`\\b${term}\\b`, "i").test(t));
+}
+
+// ── Universal customer nouns (D-028) ────────────────────────────────
+// Generic UI says LOCATION (and FACILITY where a physical place reads better) —
+// never Store / School / Gallery / Installation.  Those belong to the customer's
+// own data (a building called "Edmonton Gallery #505" keeps its name) or to a
+// future per-tenant vocabulary layer, which would override these defaults.
+export const CUSTOMER_NOUNS = {
+  location: "Location",
+  locations: "Locations",
+  facility: "Facility",
+  // the customer's own identifier for a location on True911's record (stored as
+  // `store_number` for historical reasons — the field name is not UI language)
+  locationId: "Location ID",
+  locationIdHint: "The number or code your organization uses for this location, such as a site, building, school, store or facility number.",
+  // the True911-governed record of the location (not a legal / government record)
+  trueRecord: "True911 record",
+};
+
+// Internal review / research flags that sometimes sit inside a record's NAME
+// (e.g. "RESEARCH REQUIRED Gallery #653").  Mirrors serialize._INTERNAL_NAME_MARKERS;
+// the API strips them first, this is the render-time backstop.  Only the flag is
+// removed — a replacement name is never invented.
+const INTERNAL_NAME_MARKERS = /[[(]?\s*\b(?:research\s+(?:required|needed)|needs?\s+research|requires\s+research|(?:pending|needs?)\s+review|review\s+required)\b\s*[\])]?\s*[:\-–—]?/gi;
+
+export function customerLocationName(name, fallback = CUSTOMER_NOUNS.location) {
+  if (name == null) return name;
+  const cleaned = String(name).replace(INTERNAL_NAME_MARKERS, " ").replace(/\s+/g, " ")
+    .replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, "");
+  return cleaned || fallback;
 }
 
 // E911 states in which the CUSTOMER can act (Verify E911).  "not_verified" means
@@ -172,32 +205,58 @@ export function actionCenterHeadline(counts) {
 // customer to do something they cannot do.
 export function actionCenterSections(data) {
   if (!data) return [];
-  const req = (it) => `${it.location} — ${it.request_label}`;
+  const name = (it) => customerLocationName(it.location);
+  const req = (it) => `${name(it)} — ${it.request_label}`;
+  // a request waiting on the customer is THEIR action ("Waiting on you"), never
+  // also listed as True911's in-progress work
+  const true911Owned = (list) => (list || []).filter((it) => it.status !== "waiting_customer");
   return [
     { key: "awaiting_your_response", title: "Waiting on you", tone: "amber",
       items: data.awaiting_your_response || [], row: req, action: { intent: null, label: "Respond" } },
     { key: "needs_attention", title: "Service issues", tone: "red", items: data.needs_attention || [],
-      row: (it) => `${it.location} — ${it.label || statusWord(it.status).label}`, action: { intent: null, label: "Review" } },
+      row: (it) => `${name(it)} — ${it.label || statusWord(it.status).label}`, action: { intent: null, label: "Review" } },
     { key: "e911_confirmation_required", title: "E911 confirmations needed", tone: "amber",
-      items: data.e911_confirmation_required || [], row: (it) => it.location,
+      items: data.e911_confirmation_required || [], row: name,
       action: { intent: "verify_e911", label: "Verify E911" } },
     { key: "missing_contact_information", title: "Add site contacts", tone: "slate",
       subtitle: "Who we should call about each location. Add them when convenient.",
-      items: data.missing_contact_information || [], row: (it) => it.location,
+      items: data.missing_contact_information || [], row: name,
       action: { intent: "update_contacts", label: "Add contacts" } },
-    { key: "being_reconciled", title: "Monitoring being reconciled", tone: "slate",
-      subtitle: "True911 is connecting these locations' monitoring records. Nothing for you to do.",
-      items: data.being_reconciled || [], row: (it) => it.location, informational: true },
+    { key: "being_reconciled", title: "Monitoring records being confirmed", tone: "slate",
+      subtitle: "True911 is confirming these locations' monitoring information. No action is needed from you.",
+      items: data.being_reconciled || [], row: name, informational: true },
     { key: "service_change_requests", title: "Service change requests", tone: "blue",
-      items: data.service_change_requests || [], row: (it) => `${req(it)}: ${it.status_label}`, informational: true },
-    { key: "open_problems", title: "Open problems", tone: "blue", items: data.open_problems || [],
-      row: (it) => `${it.location} — ${it.status_label}`, informational: true },
+      subtitle: "Submitted by your team. True911 is processing these.",
+      items: true911Owned(data.service_change_requests), row: (it) => `${req(it)}: ${it.status_label}`, informational: true },
+    { key: "open_problems", title: "Reported problems", tone: "blue",
+      subtitle: "True911 is working on these.",
+      items: true911Owned(data.open_problems), row: (it) => `${name(it)} — ${it.status_label}`, informational: true },
     { key: "e911_not_ready", title: "E911 records being prepared", tone: "slate",
       subtitle: "No dispatch address on file yet — the verification team is preparing these. Nothing for you to confirm yet.",
-      items: data.e911_not_ready || [], row: (it) => it.location, informational: true },
-    { key: "recently_updated", title: "Recently updated", tone: "slate", items: data.recently_updated || [],
-      row: (it) => `${it.by} · ${it.summary}`, informational: true, noOpen: true },
+      items: data.e911_not_ready || [], row: name, informational: true },
+    { key: "recently_updated", title: "Recent activity", tone: "slate", items: data.recently_updated || [],
+      subtitle: "Already done, for your records. Open requests and their current status are under In progress.",
+      row: (it) => `${it.by} · ${activityText(it)}`, informational: true, noOpen: true },
   ];
+}
+
+// ── Activity = history, never a status (D-028) ──────────────────────
+// Activity rows are append-only records of something that ALREADY happened.  The
+// stored summaries of request events read like statuses ("Change service type
+// requested", "Change service type: under review"), so they are rendered in the
+// past tense.  A request's CURRENT status lives on the request itself (Requests /
+// In progress), never here.  Stored events are not rewritten.
+export function activityText(ev) {
+  const summary = String(ev?.summary || "").trim();
+  if (ev?.event_type === "request_submitted") {
+    const m = summary.match(/^(.*?)\s+requested$/i);
+    return m ? `Submitted a request: ${m[1]}` : summary;
+  }
+  if (ev?.event_type === "request_status_changed") {
+    const m = summary.match(/^(.*?):\s*(.+)$/);
+    return m ? `Request "${m[1]}" was marked ${m[2]}` : summary;
+  }
+  return summary;
 }
 
 // ── Data Completeness vs Operational Readiness ──────────────────────
@@ -288,8 +347,11 @@ export const TONES = { good: "good", problem: "problem", urgent: "urgent", neutr
 const OPERATIONAL = {
   monitored: { label: "Monitored", tone: "good" },
   attention_required: { label: "Needs attention", tone: "problem" },
-  being_reconciled: { label: "Being reconciled", tone: "neutral" },
-  not_yet_confirmed: { label: "Status being confirmed", tone: "neutral" },
+  // UNKNOWN states: True911's work, said plainly — never green, never red (D-022)
+  being_reconciled: { label: "Monitoring record being confirmed", tone: "neutral", owner: "true911",
+    summary: "True911 is confirming this location's monitoring information. No action is needed from you." },
+  not_yet_confirmed: { label: "Status being confirmed", tone: "neutral", owner: "true911",
+    summary: "True911 is confirming this location's status. No action is needed from you." },
 };
 // A list item's operational state — the API's `operational_state` when present,
 // else derived from the assurance label (older payloads) with the SAME rule.
@@ -303,9 +365,25 @@ export function locationOperational(item) {
 }
 
 export function operationalView(op) {
-  const base = OPERATIONAL[op?.state] || OPERATIONAL.not_yet_confirmed;
-  return { ...base, tone: op?.urgent ? "urgent" : base.tone,
-    summary: op?.summary || "True911 is confirming this location's status." };
+  const state = OPERATIONAL[op?.state] ? op.state : "not_yet_confirmed";
+  const base = OPERATIONAL[state];
+  // UNKNOWN states always use their owner-explicit copy; known states use the
+  // API's evidence-backed summary.
+  return { ...base, state, tone: op?.urgent ? "urgent" : base.tone,
+    summary: base.summary || op?.summary || OPERATIONAL.not_yet_confirmed.summary };
+}
+
+// What True911 is doing at ONE location — the location page's counterpart of the
+// dashboard's "In progress".  Never contains anything the customer must do.
+export function locationTrue911Work(ws, op) {
+  const out = [];
+  if (op?.owner === "true911") {
+    out.push(op.state === "being_reconciled" ? "confirming monitoring information" : "confirming this location's status");
+  }
+  if (ws?.e911?.state === "not_verified") out.push("preparing the E911 record");
+  const processing = (ws?.requests || []).filter((r) => r.open && r.status !== "waiting_customer").length;
+  if (processing) out.push(`processing ${plural(processing, "request", "requests")}`);
+  return out;
 }
 
 // Service / connection assurance label -> customer word + tone.  "Protected"
@@ -343,7 +421,8 @@ export function portfolioHero(summary, ac) {
       tone: attention ? "problem" : "good" },
     { key: "monitoring", title: "Monitoring coverage",
       value: `${monitored} of ${total} locations monitored`,
-      detail: [reconciling && `${reconciling} being reconciled by True911`, confirming && `${confirming} being confirmed`]
+      detail: [reconciling && `${plural(reconciling, "monitoring record", "monitoring records")} being confirmed by True911`,
+        confirming && `${plural(confirming, "status", "statuses")} being confirmed by True911`]
         .filter(Boolean).join(" · ") || "All locations linked to monitoring.",
       tone: "neutral" },
     { key: "e911", title: "E911 readiness",
@@ -365,7 +444,7 @@ export function portfolioHero(summary, ac) {
   ].filter(Boolean) : [];
   const operationsActions = ac ? [
     c.e911_not_ready && { key: "e911_prep", text: `${plural(c.e911_not_ready, "E911 record", "E911 records")} being prepared` },
-    reconciling && { key: "reconcile", text: `${plural(reconciling, "monitoring relationship", "monitoring relationships")} being reconciled` },
+    reconciling && { key: "reconcile", text: `Confirming monitoring information for ${plural(reconciling, "location", "locations")}` },
   ].filter(Boolean) : [];
   return {
     facts: [
@@ -373,8 +452,8 @@ export function portfolioHero(summary, ac) {
       { key: "devices", label: "Physical devices", value: m.devices ?? m.total_devices ?? 0 },
       // The legacy distinct-telephone-number count is NOT a count of life-safety
       // connections (D-023); no service/connection total is shown until the
-      // canonical inventory is reconciled and approved for customer use.
-      { key: "inventory", label: "Portfolio inventory", value: "Being reconciled", pending: true },
+      // canonical inventory is approved for customer use.
+      { key: "inventory", label: "Service inventory", value: "Being finalized by True911", pending: true },
     ],
     dimensions, customerActions, operationsActions,
   };
@@ -385,18 +464,28 @@ export const TIER_META = {
   urgent: { title: "Urgent", subtitle: "Known service problems", open: true },
   action_needed: { title: "Action needed", subtitle: "Things you can do now", open: true },
   in_progress: { title: "In progress", subtitle: "True911 is handling these — nothing for you to do", open: false },
-  informational: { title: "Portfolio setup", subtitle: "Complete over time — low priority", open: false },
+  informational: { title: "Portfolio setup", subtitle: "Optional — complete over time; nothing is wrong", open: false },
+  activity: { title: "Recent activity", subtitle: "History — already done; nothing is waiting", open: false },
 };
+// Ownership (D-028): customer action · True911 action · optional setup · history.
 const DEFAULT_TIERS = [
   { tier: "urgent", owner: "true911", lists: ["needs_attention"] },
   { tier: "action_needed", owner: "customer", lists: ["awaiting_your_response", "e911_confirmation_required"] },
   { tier: "in_progress", owner: "true911", lists: ["e911_not_ready", "being_reconciled", "service_change_requests", "open_problems"] },
-  { tier: "informational", owner: "customer", lists: ["missing_contact_information", "recently_updated"] },
+  { tier: "informational", owner: "customer", lists: ["missing_contact_information"] },
+  { tier: "activity", owner: "none", lists: ["recently_updated"] },
 ];
+// History always gets its own tier, even if an older API lists it under setup.
+function normalizeTiers(tiers) {
+  const out = tiers.map((t) => (t.tier === "activity" ? t
+    : { ...t, lists: t.lists.filter((k) => k !== "recently_updated") }));
+  return out.some((t) => t.tier === "activity") ? out
+    : [...out, { tier: "activity", owner: "none", lists: ["recently_updated"] }];
+}
 export function actionCenterTiers(data) {
   if (!data) return [];
   const sections = Object.fromEntries(actionCenterSections(data).map((s) => [s.key, s]));
-  return (data.tiers || DEFAULT_TIERS).map((t) => {
+  return normalizeTiers(data.tiers || DEFAULT_TIERS).map((t) => {
     const list = t.lists.map((k) => sections[k]).filter((s) => s && s.items.length);
     return { ...t, ...TIER_META[t.tier], sections: list, count: list.reduce((n, s) => n + (s.key === "recently_updated" ? 0 : s.items.length), 0) };
   }).filter((t) => t.sections.length);

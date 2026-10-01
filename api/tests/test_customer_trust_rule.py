@@ -85,7 +85,7 @@ def test_summary_reports_operational_states_not_failures(flags):
         items = (await c.get("/api/customer/locations")).json()["data"]["items"]
         by_ref = {i["building_ref"]: i for i in items}
         assert by_ref[B1]["operational_state"]["label"] == "Monitored"
-        assert by_ref[B2]["operational_state"]["label"] == "Being reconciled"
+        assert by_ref[B2]["operational_state"]["label"] == "Monitoring record being confirmed"
         assert by_ref[B2]["monitoring_linked"] is False
         assert "unprotected" not in json.dumps(items).lower()
     run(sc)
