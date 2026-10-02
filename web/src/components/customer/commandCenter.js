@@ -217,3 +217,41 @@ export function freshnessText(date) {
   const t = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return `Updated ${t}`;
 }
+
+// ── Workspace views (?view=) — three real views, one page, no new routes ──
+export const VIEWS = ["overview", "actions", "locations"];
+export function parseView(v, { hasActions = true } = {}) {
+  const view = VIEWS.includes(v) ? v : "overview";
+  return view === "actions" && !hasActions ? "overview" : view;
+}
+
+// Overview rail = a SUMMARY of the Action Center: only the operational tiers
+// (urgent / action needed / in progress), each showing its first few items in
+// order plus the totals; optional setup and history live in the full Action
+// Center view.  Order and ownership are untouched — only the display is capped.
+export const SUMMARY_TIERS = ["urgent", "action_needed", "in_progress"];
+export function summarizeTiers(tiers, maxPerTier = 3) {
+  return (tiers || []).filter((t) => SUMMARY_TIERS.includes(t.tier)).map((t) => {
+    let left = maxPerTier;
+    const sections = t.sections.map((s) => {
+      const shown = s.items.slice(0, Math.max(left, 0));
+      left -= shown.length;
+      return { ...s, items: shown, total: s.items.length, hidden: s.items.length - shown.length };
+    }).filter((s) => s.items.length > 0);
+    const total = t.sections.reduce((n, s) => n + s.items.length, 0);
+    return { ...t, sections, total, hidden: total - sections.reduce((n, s) => n + s.items.length, 0) };
+  });
+}
+export function actionTotal(tiers) {
+  return (tiers || []).filter((t) => t.tier === "action_needed").reduce((n, t) => n + t.count, 0);
+}
+
+// Overview location preview: exceptions first (known problems, then your action,
+// then being confirmed), then the rest — never re-labels a location.
+const PREVIEW_RANK = { urgent: 0, problem: 1, neutral: 3, good: 4 };
+export function exceptionsPreview(locations, actionRefs = new Set(), n = 5) {
+  const rank = (l) => (actionRefs.has(l.location_ref) && (l.op?.tone === "good" || l.op?.tone === "neutral")
+    ? 2 : PREVIEW_RANK[l.op?.tone] ?? 3);
+  return [...(locations || [])].map((l, i) => ({ l, i, r: rank(l) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i).slice(0, n).map((x) => x.l);
+}

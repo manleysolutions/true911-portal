@@ -8,50 +8,35 @@ import {
 // CustomerShell — the CUSTOMER_* roles' application frame (internal roles keep
 // the existing sidebar).  ONE navigation system: a top application bar on
 // desktop, a bottom bar on mobile.  Navigation items are REGISTERED by the page
-// for sections that actually exist on it, so there is never a dead, "coming
-// soon" or fake destination.
+// for the workspace views that actually exist (Overview / Action Center /
+// Locations, switched with ?view=), so there is never a dead, "coming soon" or
+// fake destination.
 // ════════════════════════════════════════════════════════════════════
 
 const NavCtx = createContext({ items: [], setItems: () => {} });
 const NAV_ICON = { overview: LayoutDashboard, actions: Inbox, locations: Building2 };
 
 // Page-side hook: declare the real sections this page renders.
+// Each item: { id, label, icon, href, current, onSelect }.
 export function useCustomerNav(items) {
   const { setItems } = useContext(NavCtx);
-  const key = items.map((i) => i.id).join("|");
+  const key = items.map((i) => `${i.id}:${i.current ? 1 : 0}`).join("|");
   useEffect(() => {
     setItems(items);
     return () => setItems([]);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-function useActiveSection(items) {
-  const [active, setActive] = useState(items[0]?.id);
-  useEffect(() => {
-    if (!items.length || typeof IntersectionObserver === "undefined") return undefined;
-    const obs = new IntersectionObserver((entries) => {
-      const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-      if (vis[0]) setActive(vis[0].target.id);
-    }, { rootMargin: "-80px 0px -55% 0px" });
-    items.forEach((i) => { const el = document.getElementById(i.id); if (el) obs.observe(el); });
-    return () => obs.disconnect();
-  }, [items]);
-  return active;
-}
-
-function go(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-  el.focus?.({ preventScroll: true });
+function select(e, item) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;   // let new-tab work
+  e.preventDefault();
+  item.onSelect?.();
 }
 
 export default function CustomerShell({ user, impersonation, onExitImpersonation, onChangePassword, onLogout, children }) {
   const [items, setItemsState] = useState([]);
   const setItems = useCallback((v) => setItemsState(v), []);
   const ctx = useMemo(() => ({ items, setItems }), [items, setItems]);
-  const active = useActiveSection(items);
 
   return (
     <NavCtx.Provider value={ctx}>
@@ -78,9 +63,9 @@ export default function CustomerShell({ user, impersonation, onExitImpersonation
             {items.length > 1 && (
               <nav aria-label="Primary" className="hidden md:flex items-center gap-1 ml-4">
                 {items.map((i) => (
-                  <a key={i.id} href={`#${i.id}`} onClick={(e) => { e.preventDefault(); go(i.id); }}
-                    aria-current={active === i.id ? "true" : undefined}
-                    className={`cc-focus-dark px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${active === i.id ? "bg-white/10 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}>
+                  <a key={i.id} href={i.href} onClick={(e) => select(e, i)}
+                    aria-current={i.current ? "page" : undefined}
+                    className={`cc-focus-dark px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${i.current ? "bg-white/10 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}>
                     {i.label}
                   </a>
                 ))}
@@ -120,10 +105,10 @@ export default function CustomerShell({ user, impersonation, onExitImpersonation
             <ul className="flex">
               {items.map((i) => {
                 const Icon = NAV_ICON[i.icon] || LayoutDashboard;
-                const on = active === i.id;
+                const on = Boolean(i.current);
                 return (
                   <li key={i.id} className="flex-1">
-                    <a href={`#${i.id}`} onClick={(e) => { e.preventDefault(); go(i.id); }} aria-current={on ? "true" : undefined}
+                    <a href={i.href} onClick={(e) => select(e, i)} aria-current={on ? "page" : undefined}
                       className={`cc-focus flex flex-col items-center justify-center gap-0.5 min-h-[56px] text-[11px] font-medium ${on ? "text-slate-900" : "text-slate-500"}`}>
                       <Icon className="w-5 h-5" aria-hidden="true" />{i.label}
                       {i.badge ? <span className="sr-only">, {i.badge} waiting</span> : null}

@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ChevronRight, TriangleAlert, UserCheck, Wrench, ListChecks, History } from "lucide-react";
 import { actionCenterHeadline, actionCenterTiers } from "@/components/customer/selfService";
-import { STATUS_TOKENS, ownership } from "@/components/customer/commandCenter";
+import { STATUS_TOKENS, ownership, summarizeTiers, actionTotal } from "@/components/customer/commandCenter";
 
 // ════════════════════════════════════════════════════════════════════
 // ActionCenter — "What needs your attention", tiered by urgency AND owner:
@@ -17,6 +17,9 @@ import { STATUS_TOKENS, ownership } from "@/components/customer/commandCenter";
 // customer is never made responsible for True911's work.
 // Presentational: the dashboard loads GET /customer/action-center once and
 // passes it in (null when self-service is off → renders nothing).
+// mode="summary" (Overview rail): operational tiers only, first items + totals,
+// "View all" to the full view — no nested scrolling.  mode="full" (Action
+// Center view): every tier, every item.
 // ════════════════════════════════════════════════════════════════════
 
 // Tier -> owner icon + count-chip token.  Only "Action needed" is the customer's.
@@ -52,17 +55,18 @@ function OwnerLine({ own }) {
   );
 }
 
-function Rows({ section, onOpen }) {
+function Rows({ section, onOpen, compact }) {
   const { title, subtitle, items, row, action, noOpen, key } = section;
+  const total = section.total ?? items.length;
   return (
-    <div className="py-3">
+    <div className={compact ? "py-1.5" : "py-3"}>
       <div className="flex items-baseline gap-2">
         <p className="text-[12.5px] font-medium text-slate-800">{title}</p>
-        <span className="text-[11px] text-slate-400 tabular-nums">{items.length}</span>
+        <span className="text-[11px] text-slate-400 tabular-nums">{total}</span>
       </div>
-      {subtitle && <p className="text-[11.5px] text-slate-500 leading-snug mt-0.5">{subtitle}</p>}
-      <ul className="mt-2 rounded-xl ring-1 ring-slate-100 divide-y divide-slate-100 max-h-64 overflow-y-auto">
-        {items.slice(0, 25).map((it, i) => {
+      {subtitle && !compact && <p className="text-[11.5px] text-slate-500 leading-snug mt-0.5">{subtitle}</p>}
+      <ul className={`${compact ? "mt-1" : "mt-2"} rounded-xl ring-1 ring-slate-100 divide-y divide-slate-100`}>
+        {items.map((it, i) => {
           const own = ownership(key, it);
           const ownLine = <OwnerLine own={own} />;
           const rule = OWNER_TAG[own.owner]?.rule;
@@ -74,7 +78,7 @@ function Rows({ section, onOpen }) {
               ) : (
                 <button type="button"
                   onClick={() => onOpen({ ref: it.location_ref, name: it.location, intent: action?.intent || null })}
-                  className={`cc-focus w-full text-left px-3.5 py-2.5 min-h-[48px] hover:bg-slate-50 flex items-center gap-2 ${ruleCls}`}>
+                  className={`cc-focus w-full text-left px-3.5 ${compact ? "py-1.5 min-h-[44px]" : "py-2.5 min-h-[48px]"} hover:bg-slate-50 flex items-center gap-2 ${ruleCls}`}>
                   <span className="flex-1 min-w-0">
                     <span className="block text-[12.5px] text-slate-800 truncate">{row(it)}</span>
                     {ownLine}
@@ -90,11 +94,12 @@ function Rows({ section, onOpen }) {
           );
         })}
       </ul>
+      {section.hidden > 0 && <p className="mt-1 text-[11px] text-slate-500 tabular-nums">+{section.hidden} more</p>}
     </div>
   );
 }
 
-function Tier({ t, onOpen }) {
+function Tier({ t, onOpen, compact }) {
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(Boolean(t.open));
   const panelId = useId();
@@ -103,16 +108,16 @@ function Tier({ t, onOpen }) {
   const tok = STATUS_TOKENS[look.token];
   const actionable = t.tier === "action_needed" && t.count > 0;
   return (
-    <div className="px-4 sm:px-5 py-3.5">
+    <div className={`px-4 sm:px-5 ${compact ? "py-2" : "py-3.5"}`}>
       <h3>
         <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={panelId}
-          className="cc-focus w-full flex items-center gap-2.5 min-h-[44px] text-left rounded-lg">
+          className={`cc-focus w-full flex items-center gap-2.5 ${compact ? "min-h-[40px]" : "min-h-[44px]"} text-left rounded-lg`}>
           <span className={`inline-flex w-7 h-7 items-center justify-center rounded-lg flex-shrink-0 ${look.token === "neutral" ? "bg-slate-100 text-slate-500" : tok.chip}`}>
             <Icon className="w-3.5 h-3.5" aria-hidden="true" />
           </span>
           <span className="flex-1 min-w-0">
             <span className="block text-[13px] font-semibold text-slate-900">{t.title}</span>
-            <span className="block text-[11.5px] text-slate-500 truncate">{t.subtitle}</span>
+            {!compact && <span className="block text-[11.5px] text-slate-500 truncate">{t.subtitle}</span>}
           </span>
           {t.count > 0 && (
             // one-time emphasis on genuinely actionable work; never loops
@@ -131,7 +136,7 @@ function Tier({ t, onOpen }) {
             initial={reduce ? false : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={reduce ? undefined : { height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
             <div className="pl-[38px]">
-              {t.sections.map((s) => <Rows key={s.key} section={s} onOpen={onOpen} />)}
+              {t.sections.map((s) => <Rows key={s.key} section={s} onOpen={onOpen} compact={compact} />)}
             </div>
           </motion.div>
         )}
@@ -140,19 +145,37 @@ function Tier({ t, onOpen }) {
   );
 }
 
-export default function ActionCenter({ data, onOpenLocation }) {
+export default function ActionCenter({ data, onOpenLocation, mode = "full", onViewAll }) {
   if (!data) return null;
-  const tiers = actionCenterTiers(data);
+  const all = actionCenterTiers(data);
+  const summary = mode === "summary";
+  const tiers = summary ? summarizeTiers(all) : all.map((t) => ({ ...t, open: t.tier === "activity" ? t.open : true }));
+  const waiting = actionTotal(all);
   return (
     <section aria-labelledby="action-center-title" className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
-      <div className="px-4 sm:px-5 pt-4 pb-3 border-b border-slate-100">
-        <h2 id="action-center-title" className="text-[14px] font-semibold text-slate-900">What needs your attention</h2>
-        <p className="text-[12px] text-slate-600 mt-0.5">{actionCenterHeadline({
-          ...data.counts, awaiting_your_response: (data.awaiting_your_response || []).length })}</p>
+      <div className={`px-4 sm:px-5 ${summary ? "pt-3 pb-2.5" : "pt-4 pb-3"} border-b border-slate-100 flex items-start justify-between gap-3`}>
+        <div className="min-w-0">
+          <h2 id="action-center-title" className={`${summary ? "text-[13.5px]" : "text-[16px]"} font-semibold text-slate-900`}>
+            {summary ? "What needs your attention" : "Action Center"}
+          </h2>
+          {/* the summary rail lets the tiers carry the counts; the full view states them */}
+          {!summary && <p className="text-[12px] text-slate-600 mt-0.5">{actionCenterHeadline({
+            ...data.counts, awaiting_your_response: (data.awaiting_your_response || []).length })}</p>}
+        </div>
       </div>
       <div className="divide-y divide-slate-100">
-        {tiers.map((t) => <Tier key={t.tier} t={t} onOpen={onOpenLocation} />)}
+        {tiers.map((t) => <Tier key={t.tier} t={t} onOpen={onOpenLocation} compact={summary} />)}
       </div>
+      {summary && onViewAll && (
+        <div className="px-4 sm:px-5 py-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-x-3">
+          <a href="?view=actions" onClick={(e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); onViewAll(); }}
+            className="cc-focus inline-flex items-center gap-1 min-h-[36px] text-[12.5px] font-semibold text-slate-900 hover:underline">
+            {waiting > 0 ? `View all ${waiting} actions` : "Open the Action Center"}
+            <ChevronRight className="w-4 h-4" aria-hidden="true" />
+          </a>
+          <span className="text-[11px] text-slate-500">Includes setup and recent activity</span>
+        </div>
+      )}
     </section>
   );
 }

@@ -55,28 +55,28 @@ export function StatusStatement({ statement, name, freshness, onRefresh, refresh
   return (
     <section aria-labelledby="cc-statement" className="relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
       <div className={`absolute inset-y-0 left-0 w-1.5 ${t.accent}`} aria-hidden="true" />
-      <div className="px-5 sm:px-7 py-5 sm:py-6 flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
+      <div className="px-5 sm:px-7 py-4 lg:py-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-8">
         <div className="flex-1 min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{name}</p>
-          <div className="mt-1.5 flex items-start gap-3">
+          <div className="mt-0.5 flex items-start gap-3">
             <Icon className={`w-7 h-7 mt-0.5 flex-shrink-0 ${t.text}`} aria-hidden="true" />
             <div aria-live="polite">
-              <h1 id="cc-statement" className="text-[24px] sm:text-[28px] leading-tight font-semibold tracking-tight text-slate-900">
+              <h1 id="cc-statement" className="text-[24px] sm:text-[26px] leading-[1.15] font-semibold tracking-tight text-slate-900">
                 {statement.title}
               </h1>
-              <p className="mt-1 text-[13.5px] text-slate-600">{statement.detail}</p>
+              <p className="mt-0.5 text-[13.5px] leading-5 text-slate-600">{statement.detail}</p>
             </div>
           </div>
           {/* at most 3 summaries; the full breakdown lives in the Action Center */}
           {heroChips(statement).length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               {heroChips(statement).map((c) => (
                 <StatusChip key={c.key} token={c.token}>{c.owner === "customer" ? "For you" : "True911"}: {c.text}</StatusChip>
               ))}
             </div>
           )}
         </div>
-        <div className="flex flex-col sm:flex-row lg:flex-col items-stretch sm:items-center lg:items-end gap-3">
+        <div className="flex flex-col sm:flex-row lg:flex-col items-stretch sm:items-center lg:items-end gap-2 lg:gap-1">
           {children}
           <Freshness at={freshness} onRefresh={onRefresh} refreshing={refreshing} />
         </div>
@@ -110,29 +110,29 @@ export function OpTile({ tile, onClick, index = 0 }) {
     <>
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className={`inline-flex w-10 h-10 items-center justify-center rounded-xl ${tile.token === "neutral" ? "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200" : t.chip}`}>
+          <span className={`inline-flex w-9 h-9 items-center justify-center rounded-xl ${tile.token === "neutral" ? "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200" : t.chip}`}>
             {Icon && <Icon className="w-5 h-5" strokeWidth={1.9} aria-hidden="true" />}
           </span>
           <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{tile.title}</span>
         </span>
         {tile.e911 && <E911Badge />}
       </div>
-      <span className={`mt-3 block h-0.5 w-8 rounded-full ${tile.token === "neutral" ? "bg-slate-200" : t.accent}`} aria-hidden="true" />
-      <div className="mt-4">
+      <span className={`mt-2 block h-0.5 w-8 rounded-full ${tile.token === "neutral" ? "bg-slate-200" : t.accent}`} aria-hidden="true" />
+      <div className="mt-2">
         {tile.numeric ? (
-          <p className={`text-[40px] leading-none font-bold tracking-tight ${tile.token === "neutral" ? "text-slate-900" : t.text}`}>
+          <p className={`text-[34px] leading-none font-bold tracking-tight ${tile.token === "neutral" ? "text-slate-900" : t.text}`}>
             <CountUp value={tile.value} />
             {tile.caption && <span className="ml-2 text-[13px] font-medium tracking-normal text-slate-600">{tile.caption}</span>}
           </p>
         ) : (
           <p className={`text-[19px] leading-snug font-semibold tracking-tight ${tile.token === "neutral" ? "text-slate-900" : t.text}`}>{tile.value}</p>
         )}
-        <p className="mt-2 text-[12px] text-slate-500 leading-snug">{tile.detail}</p>
+        <p className="mt-1 text-[12px] text-slate-500 leading-snug">{tile.detail}</p>
       </div>
       {interactive && <ChevronRight className="absolute right-3 bottom-3 w-4 h-4 text-slate-300" aria-hidden="true" />}
     </>
   );
-  const cls = `relative text-left rounded-2xl bg-white p-4 sm:p-5 shadow-sm ring-1 ${t.tile} ${interactive ? "cc-focus hover:shadow-md transition-shadow" : ""}`;
+  const cls = `relative text-left rounded-2xl bg-white px-4 py-3.5 sm:px-5 lg:py-3.5 shadow-sm ring-1 ${t.tile} ${interactive ? "cc-focus hover:shadow-md transition-shadow" : ""}`;
   return (
     <motion.div initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: reduce ? 0 : index * 0.04 }} className="h-full">
@@ -159,7 +159,7 @@ export function CommandSkeleton() {
         ))}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-8 rounded-2xl bg-white ring-1 ring-slate-200/80 h-[420px] lg:h-[560px] p-5"><Bone className="h-full w-full" /></div>
+        <div className="lg:col-span-8 rounded-2xl bg-white ring-1 ring-slate-200/80 h-[420px] lg:h-[460px] p-5"><Bone className="h-full w-full" /></div>
         <div className="lg:col-span-4 rounded-2xl bg-white ring-1 ring-slate-200/80 p-5 space-y-3">{[0, 1, 2, 3].map((i) => <Bone key={i} className="h-10 w-full" />)}</div>
       </div>
       <span className="sr-only">Loading…</span>
