@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-10-01. Branch at time of writing:
-> `docs/project-state-190-merged`.
+> `docs/project-state-194-merged`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -23,6 +23,34 @@
 > sections below that describe it as "PR open, NOT merged" were accurate on
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·DONE — Life-Safety Command Center foundation — PR #194 MERGED `735e37a` [2026-10-01]
+
+Customer dashboard rebuilt as a command center. **Presentation only**: no API,
+backend, data, E911, canonical or monitoring-semantics change; no new
+dependencies. Feature commit `e559fc8` plus the review polish commit `eac6397`.
+- **Shell:** CUSTOMER_* roles get a top application bar, with a bottom bar on mobile.
+  Nav lists only real on-page sections. Internal roles keep the sidebar unchanged.
+- **Overview:** status statement ("No known issues requiring attention" when
+  nothing evidence-backed needs attention), at most 3 hero chips, and four tiles:
+  Locations · Needs attention · E911 readiness · Life-safety services ("Being
+  finalized by True911", no number). The map sits beside the Action Center rail,
+  with the list below. Mobile is list-first.
+- **Truth rules:** all live in `web/src/components/customer/commandCenter.js`,
+  covered by the `commandCenter.test.js` suite.
+  - Unknown is never good or failed.
+  - **No E911 renders green** until verification is provider-backed; legacy
+    "Verified" (from validated/confirmed) reads "Record on file".
+  - No service or connection totals.
+  - Buttons appear only on customer-owned rows.
+- **Map:** shape + glyph markers (keyboard-focusable), a preview card, and
+  `mapTiles.js` preserved. No clustering yet.
+- **Deferred:**
+  - marker clustering;
+  - service-type glyphs, certified service/connection counts and a green E911
+    count (all need API work);
+  - legacy per-location counts in the location record (BACKLOG T7);
+  - a drawer focus trap.
 
 ## 0·DONE — Customer generic terminology + status clarity (D-028) — PR #190 MERGED `ca403f2` [2026-10-01]
 
