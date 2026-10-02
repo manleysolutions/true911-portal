@@ -168,6 +168,26 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
 - **T-Mobile `GET /tmobile/wholesale/callback/subscriber-status`** has no auth
   dependency (a carrier callback, WAF-fronted on the PIT host). It stays with the
   separate callback-authentication verification work; deliberately unchanged.
+- **CG. RH life-safety service certification gap (audit 2026-10-02, design only).**
+  - **Today:** the Command Center "Life-safety services: Being finalized by True911"
+    tile is a **hard-coded constant** (`commandCenter.js` `opTiles`; also
+    `selfService.js` hero fact). No field, flag or condition can replace it, and
+    "certified" has **no machine-readable meaning**. The API's `life_safety_services`
+    counts come from heuristic `service_inference` and are deliberately ignored by
+    the UI.
+  - **Canonical model (D-023, #186a):** the engine exists, but there has been no
+    production `--apply`, operator decisions are 0, and #186b is not built. Two
+    recorded dry-runs disagree (FACP 32 vs 9; confirmed services 49 vs 26), so no
+    current certified figure exists.
+  - **Proposed gate:** per service (customer-visible only when CONFIRMED or APPROVED,
+    CURRENT, not REJECTED, with a placed building and fresh sources), rolled up per
+    building (fully, partially or not certified). There is no portfolio-wide boolean.
+  - **Slices:** CG-1 is the customer-read-model leak fix (decodable refs, raw
+    `canonical_name`, MSISDN fallback in `phone_numbers`, plus an active-only location
+    filter). Then a fresh dry-run, RH operator decisions (#188), the canonical apply,
+    and the #186b gated read model.
+  - **Needed next:** the production read-only dry-run output (`canonical_service_backfill
+    --json`) to build the per-location matrix.
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 

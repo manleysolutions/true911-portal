@@ -334,6 +334,22 @@ The Billing nav item appears only once B1 is real, per the existing rule.
 
 ## E. Portfolio export
 
+> **Decided 2026-10-02 (Stuart). Approved for future implementation, not built.**
+> - **Read-only XLSX** with sheets README, Locations and a hidden metadata sheet. No
+>   Services or Contacts sheet in the first slice.
+> - **Stable identity:** an HMAC-based **True911 Location Key** using a dedicated
+>   secret (non-reversible; no migration), exported alongside the customer Location ID.
+>   The existing signed refs are NOT used: they decode to internal keys.
+> - **Who:** `CUSTOMER_ADMIN` and `CUSTOMER_MANAGER` may export. `CUSTOMER_BILLING`
+>   and `CUSTOMER_VIEWER` are excluded initially.
+> - **Data boundary:** services and phone numbers are NOT exported until the
+>   customer-safe canonical read model is trustworthy (certification gate, BACKLOG CG).
+>   Export only active approved locations. Use web-equivalent truth labels server-side.
+>   Refuse while preview mode is on. Neutralise formula injection. Write an audit
+>   event without any content.
+> - **Sequencing:** implementation waits for the first service-certification slice
+>   (BACKLOG CG). Locations-only export may proceed after CG-1.
+
 **Format:**
 - CSV (UTF-8 with BOM, so it opens in Excel).
 - Row 1 holds the manifest: `schema=t911.portfolio.v1`, `export_id`, `tenant`, `generated_at`.
