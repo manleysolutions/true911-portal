@@ -99,3 +99,34 @@
   border-style: revert;
   border-color: revert;
 }
+/* ── True911 Life-Safety Command Center (customer shell only) ─────────────
+   Scoped to .t911-customer so internal roles are visually unchanged. */
+.t911-customer .cc-focus:focus-visible {
+  outline: 2px solid #0f172a;
+  outline-offset: 2px;
+}
+.t911-customer .cc-focus-dark:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+/* divIcon markers: no default white box; shapes are inline SVG */
+.t911-customer .leaflet-div-icon.cc-marker {
+  background: transparent;
+  border: 0;
+}
+.t911-customer .leaflet-marker-icon.cc-marker:focus-visible {
+  outline: 2px solid #0f172a;
+  outline-offset: 3px;
+  border-radius: 9999px;
+}
+/* Motion is decoration only — honour the user's preference completely. */
+@media (prefers-reduced-motion: reduce) {
+  .t911-customer *,
+  .t911-customer *::before,
+  .t911-customer *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

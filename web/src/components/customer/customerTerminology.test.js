@@ -13,7 +13,8 @@ import {
 } from "./selfService.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CUSTOMER_JSX = ["CustomerAssuranceView.jsx", "ActionCenter.jsx", "LocationCommandCenter.jsx", "LocationOperations.jsx"];
+const CUSTOMER_JSX = ["CustomerAssuranceView.jsx", "ActionCenter.jsx", "LocationCommandCenter.jsx", "LocationOperations.jsx",
+  "command/CommandMap.jsx", "command/CommandParts.jsx", "command/CustomerShell.jsx"];
 // Customer-visible source text: comments removed (identifiers such as
 // `being_reconciled` / `store_number` are API keys, not UI language).
 const visible = (f) => readFileSync(join(HERE, f), "utf8")
@@ -209,7 +210,7 @@ test("no internal reconciliation / certification terms in customer copy", () => 
   for (const c of copy) assert.ok(!containsInternalTerm(c), c);
   for (const f of CUSTOMER_JSX) assert.doesNotMatch(visible(f), /reconcil|research required/i, f);
   // the map legend keeps its meaning (neutral) with plain wording
-  assert.match(visible("CustomerAssuranceView.jsx"), /\["Being confirmed by True911", "neutral"\]/);
+  assert.match(visible("command/CommandMap.jsx"), /MAP_LEGEND_ITEMS/);
 });
 
 // ── RBAC: wording changes never widen what a role can do ─────────────

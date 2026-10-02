@@ -8,10 +8,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLocationWorkspace, LocationModals, Pill, Btn } from "@/components/customer/LocationOperations";
 import {
   LOCATION_TABS, locationActions, locationOperational, operationalView, statusWord,
-  groupConnectionsByService, canVerifyE911, e911Tone, contributionControl, readinessProgress,
+  groupConnectionsByService, canVerifyE911, contributionControl, readinessProgress,
   TWIN_LABELS, CONTACT_ROLES, requestTone, errorText, connectionServiceLabel,
   activityText, customerLocationName, locationTrue911Work, CUSTOMER_NOUNS,
 } from "@/components/customer/selfService";
+import { motion, useReducedMotion } from "framer-motion";
+import { e911Display } from "@/components/customer/commandCenter";
 
 // ════════════════════════════════════════════════════════════════════
 // LocationCommandCenter — one location, in four places:
@@ -33,7 +35,9 @@ const DOT = {
   neutral: "bg-white border border-slate-400",
 };
 const TEXT = { good: "text-emerald-800", problem: "text-amber-800", urgent: "text-red-700", neutral: "text-slate-700" };
-const E911_PILL = { ok: "good", action: "problem", bad: "urgent", pending: "neutral" };
+// E911 pill tone from the Command Center display policy: nothing E911 is green
+// until verification is provider-backed (commandCenter.e911Display).
+const E911_PILL = { good: "good", attention: "problem", critical: "urgent", working: "neutral", unknown: "neutral", neutral: "neutral" };
 
 function Block({ title, icon: Icon, count, action, children }) {
   return (
@@ -185,6 +189,21 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
   const [copied, setCopied] = useState(false);
   const [legacyForm, setLegacyForm] = useState(null);   // legacy E911 correction (self-service off)
   const [busy, setBusy] = useState(false);
+  const dialogRef = useRef(null);
+  const reduceMotion = useReducedMotion();
+
+  // Accessibility: focus moves into the record on open and returns to whatever
+  // opened it on close; Escape closes it — unless a dialog is open on top of it.
+  useEffect(() => {
+    const opener = document.activeElement;
+    dialogRef.current?.focus({ preventScroll: true });
+    return () => { if (opener && typeof opener.focus === "function") opener.focus({ preventScroll: true }); };
+  }, []);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !modal) onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [modal, onClose]);
 
   const enc = encodeURIComponent(locationRef);
   const get = (p) => apiFetch(`/customer/locations/${enc}${p}`).then((r) => r.data).catch(() => null);
@@ -281,10 +300,17 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
   const monitoredSvcs = ws?.location?.monitored_service_count
     ?? svcList.filter((s) => s.status?.status === "Protected").length;
   const connCount = ws?.location?.connection_count ?? null;
-  const e911State = ws?.e911
-    ? { label: ws.e911.label, tone: E911_PILL[e911Tone(ws.e911.state)] }
-    : { label: review?.state || detail?.emergency_address_state || "Verification Pending",
-        tone: (review?.state || detail?.emergency_address_state) === "Verified" ? "good" : "neutral" };
+  // rawLabel keeps the API's word for logic; label/tone are the display policy.
+  const e911Raw = ws?.e911 ? ws.e911.state : (review?.state || detail?.emergency_address_state || "Verification Pending");
+  const e911View = e911Display(e911Raw);
+  const e911State = {
+    rawLabel: ws?.e911 ? ws.e911.label : e911Raw,
+    label: e911View.label,
+    tone: E911_PILL[e911View.token] || "neutral",
+    reason: e911Raw === "verified" || e911Raw === "Verified"
+      ? "An E911 record is on file. Verified status appears only after official E911 verification."
+      : ws?.e911?.reason,
+  };
   const actions = locationActions(ws, caps);
   const title = customerLocationName(ws?.location?.display_name || detail?.display_name || detail?.location || locationName);
   const true911Work = locationTrue911Work(ws, op);
@@ -311,8 +337,9 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
   return (
     <div className="fixed inset-0 z-[1000] flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-900/30" />
-      <div role="dialog" aria-modal="true" aria-label={title || "Location"}
-        className="relative w-full max-w-2xl bg-white h-full shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title || "Location"}
+        initial={reduceMotion ? false : { x: 32, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.2, ease: "easeOut" }}
+        className="t911-customer relative w-full max-w-2xl bg-white h-full shadow-xl overflow-y-auto outline-none" onClick={(e) => e.stopPropagation()}>
 
         {/* ── Header: identity, evidence-based status, ≤2 primary actions, tabs ── */}
         <div className="px-6 pt-4 border-b border-slate-200 sticky top-0 bg-white z-10">
@@ -390,7 +417,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                   <div className="rounded-lg border border-slate-200 px-3 py-2">
                     <p className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.07em]">E911</p>
                     <p className="text-[13px] font-medium text-slate-800">{e911State.label}</p>
-                    <p className="text-[11px] text-slate-500">{ws?.e911?.reason || "Verification is completed by the verification team."}</p>
+                    <p className="text-[11px] text-slate-500">{e911State.reason || "Verification is completed by the verification team."}</p>
                   </div>
                   {health?.maturity && (
                     <div className="rounded-lg border border-slate-200 px-3 py-2 sm:col-span-2">
@@ -519,7 +546,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                     <p className="text-[12.5px] text-slate-700 flex items-start gap-1.5"><MapPin className="w-3.5 h-3.5 mt-0.5 text-slate-400" />{ws?.e911?.dispatch_address || e911?.emergency_dispatch_address || "No dispatch address on file yet"}</p>
                     <Pill tone={e911State.tone}>{e911State.label}</Pill>
                   </div>
-                  {ws?.e911?.reason && <p className="text-[11.5px] text-slate-500">{ws.e911.reason}</p>}
+                  {e911State.reason && <p className="text-[11.5px] text-slate-500">{e911State.reason}</p>}
                   {ws?.e911?.provenance?.verification_method === "customer_attestation" && (
                     <p className="text-[11px] text-slate-400">Confirmed by {ws.e911.provenance.attested_by} · awaiting official verification</p>
                   )}
@@ -527,7 +554,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                     <p className="text-[11.5px] text-slate-600">Use <strong>Confirm E911</strong> at the top to review the address and numbers — you can correct anything there.</p>
                   )}
                   {/* Self-service OFF only: the older confirm / request-correction controls. */}
-                  {!selfServiceOn && canSubmitLegacyE911 && e911State.label !== "Verified" && (
+                  {!selfServiceOn && canSubmitLegacyE911 && e911State.rawLabel !== "Verified" && (
                     legacyForm == null ? (
                       <div className="flex flex-wrap gap-2 pt-1">
                         <Btn disabled={busy} onClick={legacyConfirm}>Confirm emergency record</Btn>
@@ -637,7 +664,7 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
             </>
           )}
         </div>
-      </div>
+      </motion.div>
 
       <LocationModals modal={modal} ws={ws} api={api} onClose={() => setModal(null)} onDone={done} />
     </div>

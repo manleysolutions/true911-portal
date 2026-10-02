@@ -15,6 +15,8 @@ import { validPoint, mapMarkers, pointsSignature, filterLocations } from "./port
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "..", "..");
 const VIEW = readFileSync(join(HERE, "CustomerAssuranceView.jsx"), "utf8");
+// the customer map moved into the Command Center (command/CommandMap.jsx)
+const MAP = readFileSync(join(HERE, "command", "CommandMap.jsx"), "utf8");
 
 const loc = (ref, point, extra = {}) => ({
   location_ref: ref, location: ref, map_point: point,
@@ -73,7 +75,7 @@ test("a custom provider is used only with its own attribution, over https", () =
 
 test("both Leaflet maps take their tiles from the shared config", () => {
   const deploy = readFileSync(join(SRC, "pages", "DeploymentMap.jsx"), "utf8");
-  for (const src of [VIEW, deploy]) {
+  for (const src of [MAP, deploy]) {
     assert.match(src, /url=\{TILE_CONFIG\.url\}/);
     assert.match(src, /attribution=\{TILE_CONFIG\.attribution\}/);
   }
@@ -126,7 +128,7 @@ test("point signature is stable across re-fetches and changes with the point set
 });
 
 test("missing-coordinate count stays visible in the map footer", () => {
-  assert.match(VIEW, /\{hidden > 0 && <div[^>]*>\{hidden\} location\{hidden === 1 \? "" : "s"\} not shown on the map \(no coordinates on file\)\.<\/div>\}/);
+  assert.match(MAP, /\{hidden > 0 && <div[^>]*>\{hidden\} location\{hidden === 1 \? "" : "s"\} not shown on the map \(no coordinates on file\)\.<\/div>\}/);
 });
 
 // ── filters + list/map toggle ────────────────────────────────────────
@@ -148,12 +150,20 @@ test("status and E911 filters narrow the set the map plots", () => {
 
 test("list and map views share the filtered set and toggle on view state", () => {
   assert.match(VIEW, /filterLocations\(locations, \{ status: statusFilter, e911: e911Filter \}\)/);
-  assert.match(VIEW, /view === "map" \? \(\s*<div className="p-4"><PortfolioMap locations=\{filtered\}/);
+  // desktop: the map is always shown beside the Action Center; small screens:
+  // list first, map on demand.  Both always receive the SAME filtered set.
+  const maps = VIEW.match(/<CommandMap locations=\{filtered\}/g) || [];
+  assert.equal(maps.length, 2, "desktop + on-demand mobile map, both on the filtered set");
+  assert.doesNotMatch(VIEW, /<CommandMap locations=\{locations\}/);
+  assert.match(VIEW, /\{isDesktop && \(/);
+  assert.match(VIEW, /onClick=\{\(\) => setMobileMap\(\(v\) => !v\)\}/);
   assert.match(VIEW, /\{filtered\.map\(\(loc\) =>/);
-  assert.match(VIEW, /onClick=\{\(\) => setView\("list"\)\}/);
-  assert.match(VIEW, /onClick=\{\(\) => setView\("map"\)\}/);
 });
 
-test("status marker semantics are unchanged (wording only changed, D-028)", () => {
-  assert.match(VIEW, /\["Monitored", "good"\], \["Needs attention", "problem"\], \["Being confirmed by True911", "neutral"\]/);
+test("status marker semantics are unchanged (wording only changed, D-028)", async () => {
+  const { MAP_LEGEND_ITEMS } = await import("./commandCenter.js");
+  assert.deepEqual(MAP_LEGEND_ITEMS.map((i) => [i.label, i.token]), [
+    ["Monitored", "good"], ["Needs attention", "attention"], ["Being confirmed by True911", "unknown"],
+    ["Your action needed", "action"]]);
+  assert.match(MAP, /MAP_LEGEND_ITEMS\.map/);
 });
