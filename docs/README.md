@@ -53,6 +53,7 @@ Then consult the level-specific docs relevant to the task.
 - `MASTER_PLAN.md` — strategic horizons + execution sequencing.
 - `BACKLOG.md` — prioritized work + tech debt.
 - `PROJECT_STATE.md` — resumable current state (read first each session).
+- `CUSTOMER_LIFECYCLE_PLAN.md` — PROPOSED (not approved) customer-lifecycle architecture: conversion truth, first login, portfolio reconciliation, billing.
 
 ### Level 4 — Process (HOW WE WORK)
 - `OPERATING_LOOP.md` — the development loop, SWAT discipline, steward workflow,

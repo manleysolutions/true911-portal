@@ -126,6 +126,14 @@ feature expansion.*
 - **Customer portal UX** — calm, plain-language assurance for Cindy/Judy; the
   "Recent Manley Activity" timeline; no telecom jargon.
 
+## Proposed customer-lifecycle workstreams (NOT approved, 2026-10-02)
+
+Conversion truth, first-login guidance, the Portfolio Reconciliation Engine (export,
+bulk changes, enterprise onboarding) and the Billing Center are captured as
+**proposals** in `CUSTOMER_LIFECYCLE_PLAN.md`, with ordering and dependencies in
+`BACKLOG.md` ("Customer lifecycle workstreams"). They are sequenced around the RH
+Completion Program, never ahead of it, and enter work only through the Operating Loop.
+
 ## Horizon 3 — Workflows & Operations
 
 - **E911 workflows** — surface E911 out of Admin into a first-class, guided,
