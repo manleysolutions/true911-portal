@@ -23,14 +23,16 @@
 > 1. device serials became NAPCO radio keys;
 > 2. one radio became two services;
 > 3. `napco:` was asserted without NAPCO evidence;
-> 4. SKU and telephone-line records were taken as FACP evidence.
+> 4. SKU and telephone-line records were taken as FACP evidence;
+> 5. Zoho "Activated" alone made services CURRENT and counted, although an
+>    administrative status is not deployment proof.
 >
-> These are fixed in `fix/canonical-radio-identity` (see
-> `CANONICAL_SERVICE_MODEL.md` §5a). The run is preserved unchanged as audit
+> These are fixed in `fix/canonical-radio-identity` (PR #205; see
+> `CANONICAL_SERVICE_MODEL.md` §5a–§5b). The run is preserved unchanged as audit
 > evidence. Its service keys (`FACP:napco:…`, `FACP:zoho:…`) and the counts in
 > §1–§4 describe the defective engine. The matrix must be rebuilt from a fresh
-> read-only dry-run after that fix is merged and deployed, ideally after the
-> NAPCO radiolist snapshot import.
+> read-only dry-run after that fix is merged and deployed. **No new import is
+> needed:** the engine reads the already-stored 2026-09-30 NAPCO snapshot as-is.
 
 ## 1. Engine baseline (fresh)
 
@@ -267,9 +269,10 @@ wrong):
    NAPCO export (source snapshots, #188) into confirmation, or do not count it. **The
    engine side is implemented** (`fix/canonical-radio-identity`): the engine now reads
    the latest NAPCO radiolist snapshot; a radio absent from it is capped at PROBABLE,
-   with its lifecycle unchanged; a Zoho-only radio is PROBABLE. **Still required:**
-   the governed NAPCO snapshot import (operator `--apply`, Stuart approval).
-   Without it, radios report `NOT_LOADED`.
+   with its lifecycle unchanged; a Zoho-only radio is PROBABLE. It reads the
+   **already-stored** 2026-09-30 RH NAPCO snapshot as-is; no new import is needed.
+   A service counts only with independent deployment evidence (e.g. a recent NAPCO
+   signal), never on Zoho "Activated" alone.
 
 **CAN REMAIN OPEN FOR THE FIRST INCREMENTAL APPLY** (they stay uncounted):
 - lifecycle-UNKNOWN FACPs and probable or duplicate Zoho FACP records;
