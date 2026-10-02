@@ -609,3 +609,39 @@ side effect of bookkeeping rather than as a decision anybody made.
   `awaiting_your_response`). Regression tests:
   `web/src/components/customer/customerTerminology.test.js`,
   `api/tests/test_customer_terminology.py`.
+
+### D-029 — Allocation is not deployment; Belle Terre was never installed
+- **Date:** 2026-10-01 · **Status:** Accepted (principle). Remediation: Proposed, not applied.
+- **Context:** `app/seed_integrity.py` (2026-06-01) created Belle Terre at Sunrise
+  (`integrity-pm`) from a planning intake sheet, with an active site, full E911 address,
+  three active elevator units, three LM150 devices and three SIMs. Operator ground truth
+  (Stuart Manley, 2026-10-01): IPM asked for the deployment to be held, it was never
+  installed, and the allocated equipment/services were repurposed. One went to RH at 265
+  Greenwich Ave, Greenwich CT (T-Mobile …8836, "256 RH Greenwich - Elevator"). Two others
+  were repurposed at another customer (T-Mobile labels "Yorktown Elevator 1/2"; unconfirmed).
+  The device-health sync looks devices up in Vola by serial and writes liveness onto the
+  Belle-Terre-sited rows, so the repurposed hardware makes Belle Terre look alive.
+- **Decision:**
+  1. These are separate concepts and never collapse into one another: allocation/staging
+     history · deployment lifecycle · current source subscription ownership · physical
+     hardware placement · customer/tenant ownership · service classification · E911
+     registration · monitoring/health.
+  2. A device once allocated to a site never thereby establishes its current deployment
+     location. Device-health synchronization against a seeded site never establishes
+     physical installation there.
+  3. Belle Terre at Sunrise is recorded as **NEVER_INSTALLED (cancelled)** on operator
+     authority: *"IPM requested deployment hold; allocated equipment/services were
+     subsequently repurposed."* It is to leave current operational/customer inventory,
+     with zero current services, connections, devices, SIMs, E911 requirements and
+     monitoring/health contribution, while all history is preserved.
+  4. A carrier label is evidence, not placement. The Greenwich placement of …8836 rests
+     on operator confirmation. The Yorktown placements stay unresolved until
+     independently corroborated.
+- **Consequences:** Governed design in `BELLE_TERRE_RETIREMENT_AND_REALLOCATION.md`. No
+  data has changed.
+  - A status change alone cannot retire the site, because current read paths do not
+    exclude sites by status. A deployment-lifecycle axis and a "current inventory"
+    predicate come first.
+  - Hardware in service elsewhere is never decommissioned.
+  - Carrier-side E911 for the three numbers is checked by the operator before any True911
+    change.
