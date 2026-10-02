@@ -125,9 +125,27 @@ drift where a flag is active on `api` but inert on `worker` (PR #63).
 - Feature surfaces self-gate: routers like `llm`, `device_health`, `assurance`
   are registered unconditionally but return **404 when their flag is off**, so
   deploying the code is a no-op until the env var flips.
-- Public, unauthenticated probes exist: `GET /api/health`, `GET /api/config/features`,
-  `GET /api/debug/cors`. `GET /api/health/auth` is SuperAdmin-only and returns a
-  JWT-secret *fingerprint* (never the secret).
+- Public, unauthenticated probes exist: `GET /api/health`, `GET /api/health/system`
+  and `GET /api/config/features` (four feature-flag booleans; intentionally left public
+  for the smoke tooling, see BACKLOG A15).
+- SuperAdmin-only (`GLOBAL_ADMIN`) diagnostics:
+  - `GET /api/health/auth` returns a JWT-secret *fingerprint* (never the secret).
+  - `GET /api/debug/cors` returns the resolved CORS config.
+- **CORS configuration** (`config.parse_cors_origins`):
+  - `CORS_ORIGINS` must be one line of comma-separated (or a JSON list of)
+    `http(s)://host[:port]` origins. It is validated when `Settings` is constructed,
+    so a malformed value fails startup and the deploy never becomes healthy.
+  - Rejected: line breaks, empty entries, `=`, whitespace inside an origin, paths,
+    queries, credentials, bad ports, and `*` outside demo.
+  - Unset or empty: `APP_MODE=demo` gets `*` for local development; anything else
+    allows **no** cross-origin access (fail-closed, the same rule as API docs).
+- **Production frontend mapping (verified 2026-10-02):** `www.true911.com` is a CNAME
+  of `true911-web-demo.onrender.com`, the Render service *named* `true911-web-demo`,
+  which serves the production bundle. `true911.com` 301-redirects to www. No service
+  answers at `true911-web-prod.onrender.com`. Allowed production origins are
+  `https://true911.com`, `https://www.true911.com` and
+  `https://true911-web-demo.onrender.com`. `PUBLIC_URL` (invite and reset links) is
+  `https://www.true911.com`.
 
 ## 4. Integrations
 

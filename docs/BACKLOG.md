@@ -61,13 +61,17 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
     `ARCHITECTURE.md`.
   - **No business API behaviour changed.**
   - **Exposure audit (read-only, 2026-10-02).** Separate findings, NOT fixed by PP-0:
-    - **`/api/debug/cors` is unauthenticated.** It returns the resolved CORS config. It
-      also revealed a **malformed production `CORS_ORIGINS`**: the last origin carries a
-      newline plus `PUBLIC_URL=…`, apparently two Render env vars pasted into one value.
-      That origin can never match, and `PUBLIC_URL` may be unset. This is an operator
-      Render fix (not done). Separately, decide whether the debug route should require
-      auth or be removed.
-    - **`/api/config/features` is unauthenticated** and returns four feature-flag
+    - **RESOLVED: malformed production `CORS_ORIGINS`.** The last origin carried a
+      newline plus `PUBLIC_URL=…`. Stuart corrected it in Render on 2026-10-02, and it
+      was verified live: exactly the three intended origins, preflights correct.
+    - **RESOLVED in "Security: Harden Production CORS Diagnostics":**
+      - `/api/debug/cors` is now SuperAdmin-only (`GLOBAL_ADMIN`).
+      - `CORS_ORIGINS` is validated at startup, so a malformed value fails the deploy.
+      - An unset value fails closed outside `APP_MODE=demo` (no `*`).
+      - `render.yaml` no longer lists the dead `true911-web-prod` origin and records
+        the verified frontend mapping (www → the service named `true911-web-demo`).
+    - **DEFERRED (intentionally unchanged): `/api/config/features` is unauthenticated**
+      and returns four feature-flag
       booleans. Low sensitivity; decide whether to gate it.
     - **`GET /tmobile/wholesale/callback/subscriber-status`** has no auth dependency (a
       carrier callback; WAF-fronted on the PIT host per `ARCHITECTURE.md`). Review it
@@ -895,9 +899,10 @@ live T-Mobile activation enters RH's path.
 - **M2 — Per-flag graduation/removal plan.** ~16 `FEATURE_*` flags. Each should have
   an owner, a soak-exit criterion, and a removal target so flags don't accumulate.
   *Maintainability.*
-- **M3 — Restrict/disable public debug endpoints.** `GET /api/debug/cors` and
-  `GET /api/config/features` are public. Gate `debug/cors` behind SuperAdmin or
-  remove. *Security (low data sensitivity, but unnecessary surface).*
+- **M3 — Restrict/disable public debug endpoints.** `GET /api/debug/cors` is now
+  SuperAdmin-only (see A15). `GET /api/config/features` stays public on purpose: the
+  smoke/runbook tooling calls it without a token. Gating it is a separate small item.
+  *Security (low data sensitivity).*
 - **M4 — Worker/api flag-parity guard.** Add a check or doc that any behavior flag
   must be set on both `true911-api` and `true911-worker` (PR #63 pitfall).
   *Reliability.*

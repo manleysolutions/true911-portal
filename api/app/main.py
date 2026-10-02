@@ -90,7 +90,11 @@ async def startup():
     else:
         await ensure_bootstrap_admin()
 
-# CORS — when CORS_ORIGINS is "*" (the default), we use allow_origin_regex
+# CORS_ORIGINS is validated at startup (config.parse_cors_origins); a malformed
+# value fails configuration so a bad deploy never becomes healthy.  Unset means
+# "*" only with APP_MODE=demo, otherwise no cross-origin access (fail-closed).
+#
+# CORS — when origins resolve to "*" (demo only), we use allow_origin_regex
 # to match any origin.  This lets Starlette echo the actual origin back
 # (instead of "*"), which is required for credentialed requests (requests
 # that include Authorization headers).
@@ -107,6 +111,9 @@ if settings.cors_is_wildcard:
         allow_headers=["*"],
     )
 else:
+    if not settings.cors_origin_list:
+        logger.warning("CORS_ORIGINS is not set: no browser origin may call this API "
+                       "(fail-closed; set CORS_ORIGINS for the deployed frontends)")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -286,10 +293,13 @@ async def health_auth():
     }
 
 
-@app.get("/api/debug/cors")
+@app.get(
+    "/api/debug/cors",
+    dependencies=[_AuthDepends(_require_permission("GLOBAL_ADMIN"))],
+)
 async def debug_cors():
-    """Return resolved CORS config so we can verify from the browser.
-    Only exposes non-sensitive values (origin list and credential flag)."""
+    """Return the resolved CORS config.  SuperAdmin only (same gate as
+    /api/health/auth): an operator diagnostic, not a public endpoint."""
     return {
         "allow_origins": settings.cors_origin_list,
         "allow_credentials": True,

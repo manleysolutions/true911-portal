@@ -24,8 +24,11 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      # Single line, comma-separated, validated at startup (a malformed value fails
+      # the deploy).  Matches production as verified 2026-10-02.  The former
+      # true911-web-prod.onrender.com origin was removed: no service answers there.
       - key: CORS_ORIGINS
-        value: "https://true911.com,https://www.true911.com,https://true911-web-demo.onrender.com,https://true911-web-prod.onrender.com"
+        value: "https://true911.com,https://www.true911.com,https://true911-web-demo.onrender.com"
       - key: APP_MODE
         value: production
       - key: REDIS_URL
@@ -151,6 +154,11 @@ services:
         sync: false
 
   # React Frontend (Static Site)
+  # NOTE (verified 2026-10-02): production www.true911.com is served by the Render
+  # service named "true911-web-demo" (DNS: www.true911.com CNAME
+  # true911-web-demo.onrender.com; it serves the production bundle).  No service
+  # answers at true911-web-prod.onrender.com.  This blueprint block is therefore not
+  # the live frontend; it is kept unchanged pending a deliberate service decision.
   - type: web
     name: true911-web-prod
     runtime: static
