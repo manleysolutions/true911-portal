@@ -29,7 +29,7 @@ import json
 from datetime import datetime, timezone
 
 from app.services.canonical import vocab as V
-from app.services.canonical.normalize import n10, nid
+from app.services.canonical.normalize import n10, nid, radio_id
 
 
 class DecisionError(ValueError):
@@ -79,6 +79,29 @@ def _numbers(values, what) -> list[str]:
     if len(set(out)) != len(out):
         raise DecisionError("%s contains duplicates" % what)
     return sorted(out)
+
+
+def _radios(values) -> list[str]:
+    if not isinstance(values, list) or not values:
+        raise DecisionError("radios must be a non-empty list of communicator radio ids")
+    out = []
+    for v in values:
+        r = radio_id(v)
+        if not r:
+            raise DecisionError("radios: '%s' is not a radio id (serial / IMEI / ICCID / "
+                                "telephone shapes are refused)" % v)
+        out.append(r)
+    if len(set(out)) != len(out):
+        raise DecisionError("radios contains duplicates")
+    return sorted(out)
+
+
+def _ref(subject, field, dtype) -> str:
+    ref = str(subject.get(field) or "").strip()
+    if not ref:
+        raise DecisionError("%s: subject.%s is required (a stable operator handle, e.g. "
+                            "'FACP 1')" % (dtype, field))
+    return ref
 
 
 def _date(value):
@@ -153,6 +176,48 @@ def normalize_entry(entry: dict, buildings: list[dict]) -> dict:
         subj = {"building_id": bid, "number": n}
         state = {"service_type": st, "label": new_state.get("label")}
         key = "%s:b%d:%s" % (dtype, bid, n)
+    elif dtype == V.D_FACP_SERVICE:
+        # the radio set lives in new_state so a changed set SUPERSEDES the
+        # decision (the key is the stable operator handle)
+        bid = resolve_building(subject, buildings)
+        ref = _ref(subject, "service_ref", dtype)
+        subj = {"building_id": bid, "service_ref": ref}
+        state = {"radios": _radios(new_state.get("radios")), "label": new_state.get("label")}
+        key = "%s:b%d:%s" % (dtype, bid, ref.upper())
+    elif dtype == V.D_SOURCE_RECORD:
+        src = str(subject.get("source") or "").strip().upper()
+        if src not in (V.SRC_ZOHO, V.SRC_TRUE911):
+            raise DecisionError("SOURCE_RECORD: subject.source must be ZOHO or TRUE911")
+        rec = str(subject.get("record_id") or "").strip()
+        if not rec:
+            raise DecisionError("SOURCE_RECORD: subject.record_id is required")
+        disp = str(new_state.get("disposition") or "").strip().upper()
+        if disp not in V.RECORD_DISPOSITIONS:
+            raise DecisionError("disposition '%s' must be one of %s"
+                                % (disp, ", ".join(V.RECORD_DISPOSITIONS)))
+        state = {"disposition": disp, "duplicate_of": new_state.get("duplicate_of")}
+        if disp == V.REC_OUTSIDE:
+            loc = str(new_state.get("location") or "").strip()
+            if not loc:
+                raise DecisionError("OUTSIDE_PORTFOLIO: new_state.location is required")
+            state["location"] = loc
+        if disp == V.REC_BUILDING:
+            state["building_id"] = resolve_building(new_state, buildings)
+        subj = {"source": src, "record_id": rec}
+        key = "%s:%s:%s" % (dtype, src, rec)
+    elif dtype == V.D_SERVICE_POOL:
+        bid = resolve_building(subject, buildings)
+        ref = _ref(subject, "pool_ref", dtype)
+        alias = {"FAX": V.OTHER, "OTHER": V.OTHER, "EPH": V.EMERGENCY_PHONE}
+        types = sorted({alias.get(str(t).strip().upper(), str(t).strip().upper())
+                        for t in new_state.get("service_types") or []})
+        if not types or any(t not in V.POOL_SERVICE_TYPES for t in types):
+            raise DecisionError("service_types must be a non-empty subset of %s"
+                                % ", ".join(V.POOL_SERVICE_TYPES))
+        subj = {"building_id": bid, "pool_ref": ref}
+        state = {"numbers": _numbers(new_state.get("numbers"), "numbers"),
+                 "service_types": types, "label": new_state.get("label")}
+        key = "%s:b%d:%s" % (dtype, bid, ref.upper())
     else:  # SERVICE_APPROVAL
         bid = resolve_building(subject, buildings)
         skey = str(subject.get("service_key") or "").strip()

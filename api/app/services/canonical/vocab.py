@@ -136,8 +136,30 @@ D_CARRIER_MIGRATION = "CARRIER_MIGRATION"
 D_ASSET_LIFECYCLE = "ASSET_LIFECYCLE"
 D_SERVICE_CLASSIFICATION = "SERVICE_CLASSIFICATION"
 D_SERVICE_APPROVAL = "SERVICE_APPROVAL"
+# ONE FACP service at a building and the communicator radio(s) that serve it
+# (service != communications asset: 1 FACP may have 2 radios)
+D_FACP_SERVICE = "FACP_SERVICE"
+# disposition of ONE source record: a duplicate, a placeholder with no physical
+# location, or a record that belongs to a different building
+D_SOURCE_RECORD = "SOURCE_RECORD"
+# aggregate operator knowledge: these lines are collectively e.g. emergency
+# phone / fax, but which line is which is NOT known - no per-line class implied
+D_SERVICE_POOL = "SERVICE_POOL"
 DECISION_TYPES = (D_BUILDING_IDENTITY_SUSPECT, D_CARRIER_MIGRATION, D_ASSET_LIFECYCLE,
-                  D_SERVICE_CLASSIFICATION, D_SERVICE_APPROVAL)
+                  D_SERVICE_CLASSIFICATION, D_SERVICE_APPROVAL, D_FACP_SERVICE,
+                  D_SOURCE_RECORD, D_SERVICE_POOL)
+
+# SOURCE_RECORD dispositions
+REC_DUPLICATE = "DUPLICATE"            # evidence already carried by another record
+REC_PLACEHOLDER = "PLACEHOLDER"        # belongs to no physical location
+REC_BUILDING = "BUILDING"              # belongs to the named building
+# belongs to a real location that is NOT an approved building of this portfolio
+# (e.g. a store not yet in the registry): never placed in any approved building
+REC_OUTSIDE = "OUTSIDE_PORTFOLIO"
+RECORD_DISPOSITIONS = (REC_DUPLICATE, REC_PLACEHOLDER, REC_BUILDING, REC_OUTSIDE)
+REC_EXCLUDING = (REC_DUPLICATE, REC_PLACEHOLDER, REC_OUTSIDE)
+# service types a SERVICE_POOL may name (OTHER = fax / desk / data)
+POOL_SERVICE_TYPES = (ELEVATOR, EMERGENCY_PHONE, OTHER)
 
 # ── findings ────────────────────────────────────────────────────────────
 HIGH = "HIGH"

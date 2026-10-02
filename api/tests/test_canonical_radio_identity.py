@@ -29,7 +29,6 @@ from tests.test_canonical_engine import (
     live,
     site,
     snap,
-    svc,
     zrow,
 )
 

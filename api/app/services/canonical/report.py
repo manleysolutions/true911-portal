@@ -150,6 +150,17 @@ def render(res: dict, *, snap: dict | None = None, targets=(), mode: str = "DRY-
         L.append("(nothing moved or deleted - operator decides)")
 
     L.append("")
+    L.append("=== OPERATOR SERVICE POOLS (aggregate knowledge - no per-line class) ===")
+    for p in res.get("operator_pools") or []:
+        L.append(_line(names.get(p["building_id"]), p["ref"], "/".join(p["service_types"]),
+                       "%d lines" % len(p["numbers"]), p.get("label") or "-"))
+    L.append("")
+    L.append("=== EXCLUDED SOURCE RECORDS (operator disposition - kept for audit) ===")
+    for e in res.get("excluded_records") or []:
+        L.append(_line(e["record"], e["disposition"],
+                       e.get("duplicate_of") or e.get("location") or "-",
+                       e.get("location_text") or "-"))
+    L.append("")
     L.append("=== LIFECYCLE EVENTS (operator) ===")
     for ev in res["lifecycle_events"]:
         L.append(_line(names.get(ev["building_id"]), ev["event_type"], "effective=%s" % ev.get("effective_at"),

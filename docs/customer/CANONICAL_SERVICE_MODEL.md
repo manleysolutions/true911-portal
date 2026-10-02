@@ -237,6 +237,53 @@ subject, previous state, new state, effective date, reason, `recorded_by`,
 | `ASSET_LIFECYCLE` | `asset_type` (TELEPHONE_NUMBER…), `value` | `lifecycle`, optional `reason` |
 | `SERVICE_CLASSIFICATION` | `building`, `number` | `service_type` ∈ ELEVATOR, EMERGENCY_PHONE, FACP_ASSET, OTHER_NON_LIFE_SAFETY, UNCLASSIFIED; optional `label` |
 | `SERVICE_APPROVAL` | `building`, `service_key` | `approval` ∈ APPROVED, REJECTED, NONE |
+| `FACP_SERVICE` | `building`, `service_ref` (stable operator handle) | `radios[]` (radio-shaped ids only; serial / IMEI / ICCID / phone refused), optional `label` |
+| `SOURCE_RECORD` | `source` ∈ ZOHO, TRUE911; `record_id` | `disposition` ∈ DUPLICATE, PLACEHOLDER, BUILDING (+ `building`); optional `duplicate_of` |
+| `SERVICE_POOL` | `building`, `pool_ref` (stable operator handle) | `numbers[]`, `service_types[]` ⊆ ELEVATOR, EMERGENCY_PHONE, OTHER (alias FAX), optional `label` |
+
+**Operator decisions are their own evidence class.** They are kept as
+`OPERATOR` provenance and never rewritten as Zoho or NAPCO evidence. They need
+no source corroboration to be recognised in True911, and they never edit a
+source system. Correcting Zoho is a separate, separately reviewed operation.
+
+- **`FACP_SERVICE`: service ≠ communications asset.** One decision is one FACP
+  service; its `radios` are that service's communicators.
+  - The service key is `FACP:radio:<id>[+<id>…]`: one radio gives the inferred
+    key, two radios give one service with two `NAPCO_RADIO` assets.
+  - Identity and classification are CONFIRMED (operator). No fire label is
+    needed, and the service is not capped by NAPCO silence (`RADIO_NOT_IN_NAPCO`
+    is still reported).
+  - Each radio is operator-placed at the building. Every record carrying that
+    radio follows it, so a source naming another building creates no service
+    there.
+  - Two decisions are two services. A radio named by two decisions is a
+    `DECISION_CONFLICT`, and neither decision applies.
+  - The radio set lives in `new_state`, so changing it supersedes the decision.
+  - The decision does **not** imply CURRENT: deployment still needs §5b
+    liveness. An old "last signalled" radio is placed and CONFIRMED, but its
+    lifecycle is UNKNOWN until an `ASSET_LIFECYCLE` decision or new activity.
+- **`SOURCE_RECORD`.** `DUPLICATE` and `PLACEHOLDER` remove one record from the
+  projection. It is listed under "EXCLUDED SOURCE RECORDS" for audit and is
+  never deleted. Other sources' evidence of the same number or radio still
+  stands, because the disposition is per record. `BUILDING` operator-places the
+  record, its identifiers and every other record of the same radio, which beats
+  any CRM or registry association.
+- **`SERVICE_POOL`.** It records aggregate knowledge, e.g. "these five lines are
+  emergency phone / fax, but which is the fax is unknown".
+  - The numbers are operator-placed. A per-line class is **never** inferred
+    from the pool.
+  - A source label inside the pool is capped at PROBABLE, because the operator
+    says the set is mixed. A class outside the pool's types is a
+    `POOL_CLASSIFICATION_CONFLICT`.
+  - An explicit `SERVICE_CLASSIFICATION` for one number holds.
+  - Unassigned members are reported (`SERVICE_POOL_UNASSIGNED`), never counted
+    one by one.
+- **History without invented lineage.** `CARRIER_MIGRATION` records sets of
+  legacy and replacement numbers with an effective date, never 1:1 pairs. A move
+  is the old radio set to `ASSET_LIFECYCLE HISTORICAL` (it keeps its historical
+  placement) and the new one as the building's service. A building has one
+  registry address, so a move updates the registry address (registry
+  remediation) and never adds a second current location.
 
 `building` is the exact canonical building name (or `building_id`). Template
 (synthetic numbers — real ones belong only in the external file):

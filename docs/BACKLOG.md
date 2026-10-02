@@ -186,6 +186,24 @@ Branch `fix/canonical-radio-identity`.
     registry mapping or operator placement reads `ACTIVE_PLACEMENT_UNVERIFIED`.
     It needs registry phone/radio mappings or operator decisions before it can
     count.
+  - **Stuart's 2026-10-02 decisions:** expressible with the generic decision types
+    (`FACP_SERVICE`, `SOURCE_RECORD`, `SERVICE_POOL`, plus the existing
+    `CARRIER_MIGRATION` / `SERVICE_CLASSIFICATION` / `ASSET_LIFECYCLE`). A
+    validated draft file is kept **outside the repo**. It is not recorded, and
+    recording it needs approval.
+    - **Blocked on registry remediation.** These buildings are not approved
+      PortfolioBuildings, so the engine refuses their decisions: Leawood (two
+      FACP services, elevator), Raleigh (one FACP, two radios) and Boston #142.
+    - **Registry renames needed:** "Beverly Modern Gallery" (mixed Leawood
+      evidence) and "San Rafael … (9000 Northgate Drive)" (its name carries the
+      historical address).
+    - **Still open, never guessed:**
+      - which Jacksonville line is the fax;
+      - whether 9046242986 is a seventh legacy line;
+      - the Houston, Roseville and Boston radio ids;
+      - the store for 3109276001;
+      - the Melrose ZIP;
+      - any replacement lineage not explicitly decided.
 - **Not engine work.** These remain registry/operator decisions, deliberately not
   "fixed" in code:
   - Beverly Modern / Leawood;
