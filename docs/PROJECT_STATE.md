@@ -6,8 +6,8 @@
 > per the Documentation Freshness rule (P2 / Operating Loop §0a).
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
-> Last updated: 2026-10-01. Branch at time of writing:
-> `fix/durable-public-acquisition`.
+> Last updated: 2026-10-02. Branch at time of writing:
+> `fix/acquisition-failure-boundaries`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -24,10 +24,42 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — Durable public acquisition foundation (D-030..D-033) — branch `fix/durable-public-acquisition` [2026-10-01]
+## 0·IN REVIEW — Harden public acquisition failure boundaries — branch `fix/acquisition-failure-boundaries` [2026-10-02]
 
-PR "Fix: Establish Durable Public Acquisition Foundation" — **NOT merged; awaiting
-Stuart.** Full detail: `docs/ACQUISITION.md`.
+PR "Fix: Harden Public Acquisition Failure Boundaries" is **not merged and awaits
+Stuart's approval.** No migration. Detail: `docs/ACQUISITION.md` §2a, §6, §6a, §6b, §12.
+- **Wizard atomicity:** the registration and its acquisition record now commit
+  together, as do submit and its acquisition status. A failure returns an
+  accurate 503 ("nothing was stored" / "still a draft"). This fixes the #198
+  defect where a saved registration was reported as a 500, which happened because
+  `rollback()` expired the committed row and serialization raised `MissingGreenlet`.
+- **Wizard client:** a retry reuses the created draft instead of creating another,
+  and a 409 counts as submitted only after a token-authenticated read-back confirms it.
+- **Rate-limit identity: unchanged and NOT solved.** Per Stuart's split decision
+  (2026-10-02), the client key is still the first `X-Forwarded-For` entry, as in
+  #198, so it is spoofable. It is deferred to BACKLOG A14 (topology: Cloudflare →
+  Render load balancer → app; the trustworthy boundary is not established). The
+  limiter is process-local, not fleet-wide.
+- **Sanitized 500s:** the global handler returns a generic `internal_error` body
+  with a request_id; the full traceback is logged. The site-import 500 is also
+  sanitized. Vendor 502 passthroughs were audited but not changed (BACKLOG A13).
+- Conversion truth (`Site status="Connected"`, prospect address in `e911_*`) is
+  **deliberately untouched**. It is the next architectural workstream.
+
+## 0·DONE — Durable public acquisition foundation (D-030..D-033) — PR #198 MERGED `a59ee3c`, live [2026-10-02]
+
+PR #198 is merged as `a59ee3c` and auto-deployed on 2026-10-02.
+- **Migration 056 is presumed applied from deployment evidence.** The API start
+  command runs `alembic upgrade head` before uvicorn. After the deploy, an
+  unauthenticated `GET /api/acquisition/records` returned 401 (it was 404 before),
+  so the new code is serving. **There has been no direct DB check yet** of
+  `alembic_version = 056` or the table's row count.
+- **Rollback rule:** migration 056 is permanent history. Never use Render
+  "Rollback" to a pre-#198 build, and never revert in a way that removes
+  `056_acquisition_records.py`. Roll back with a forward commit that keeps the
+  migration history (`ACQUISITION.md` §12).
+
+What #198 delivered (written while it was in review). Full detail: `docs/ACQUISITION.md`.
 - **Invariant (D-031):** a prospect is told "received" only after the submission is
   committed. `/quote` and `/get-started` previously showed success on 404/network
   errors and persisted nothing. Now each submission writes an `acquisition_records` row

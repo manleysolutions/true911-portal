@@ -15,7 +15,7 @@
  * users) are created on this surface.  Conversion is a later phase.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Shield, ArrowLeft, ArrowRight, CheckCircle2, AlertTriangle, Plus, Trash2,
@@ -26,6 +26,7 @@ import PublicNav from "./PublicNav";
 import PublicFooter from "./PublicFooter";
 import { RegistrationAPI } from "@/api/registrations";
 import { getAttribution } from "@/lib/acquisition";
+import { createAndSubmit } from "@/lib/registrationSubmit";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -1131,30 +1132,25 @@ export default function Register() {
   const goNext = () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
 
+  // The draft this attempt already created (id + resume token).  A retry with
+  // the same answers reuses it instead of creating a duplicate (D-031).
+  const createdDraft = useRef(null);
+
   const handleSubmit = async () => {
     setError("");
     setSubmitting(true);
     try {
       const payload = { ...buildPayload(draft), attribution: getAttribution() };
-      const created = await RegistrationAPI.create(payload);
-      const regId = created?.registration?.registration_id;
-      const token = created?.resume_token;
-      if (!regId || !token) {
-        throw new Error("Unexpected response from server. Please try again.");
-      }
-
-      // Persist the just-issued id+token for the thanks/view pages
-      // before we wipe the draft.  Without this, a refresh of the
-      // thank-you page loses the resume link.
-      sessionStorage.setItem(
-        "t911_registration_last",
-        JSON.stringify({ registration_id: regId, resume_token: token }),
+      // Create (if not already created by an earlier attempt), then submit
+      // immediately — the wizard captured all info.  The id+token are
+      // persisted for the thanks/view pages as soon as create succeeds, so a
+      // refresh of the thank-you page keeps the resume link.
+      const { registration_id: regId } = await createAndSubmit(
+        RegistrationAPI, payload, createdDraft,
+        (ids) => sessionStorage.setItem("t911_registration_last", JSON.stringify(ids)),
       );
 
-      // Submit immediately — the wizard captured all info, so there's
-      // no value in leaving the row in "draft".
-      await RegistrationAPI.submit(regId, token);
-
+      createdDraft.current = null;
       resetDraft();
       navigate(`/register/${regId}/thanks`);
     } catch (err) {

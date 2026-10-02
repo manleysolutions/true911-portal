@@ -38,6 +38,36 @@ and the acquisition row links to it by `registration_ref`. Submit moves the row 
 `assessment_submitted`, and a real (non-dry-run) internal conversion moves it to
 `converted`.
 
+### 2a. Wizard failure boundaries (hardened after #198)
+
+A response must describe durable state.
+
+- **Create is atomic.** The registration and its acquisition record are one
+  logical operation: the record is staged through
+  `create_registration(..., before_commit=…)` and the two commit together. If
+  the record write or the commit fails, both roll back and the client gets
+  **503 "We couldn't save your registration, and nothing was stored."** A retry
+  creates exactly one registration and one record.
+- **Submit is atomic.** The `draft → submitted` transition and the record's move
+  to `assessment_submitted` commit together through
+  `transition_status(..., before_commit=…)`. On failure the client gets **503 "It
+  is still saved as a draft"**, and the draft is still there: the resume token
+  keeps working and a retry submits it once. A further submit still returns 409.
+- **Notifications come after the commit.** A failed internal notification never
+  changes the response. The handler reloads the registration from committed
+  state before replying, and the quote/assessment receipt is built before
+  `notify()` runs.
+- **The client never duplicates on retry.** Once create succeeds, the wizard
+  keeps that draft's id and resume token (`web/src/lib/registrationSubmit.js`). A
+  retry with the same answers only resubmits it. A 409 counts as "submitted" only
+  after the client reads the registration back with its token and sees it is no
+  longer a draft. Changing answers after a failure starts a new registration; the
+  earlier draft stays visible in the internal queue.
+- **Residual limitation.** If the connection drops after the server commits but
+  before the client receives the response, the client has no id or token, and a
+  retry creates a second draft. Closing that gap needs idempotent create with
+  resume-token re-issue (BACKLOG A12).
+
 ## 3. Acquisition lifecycle (separate from deployment)
 
 `inquiry → assessment_draft → assessment_submitted → under_review → qualified → converted → closed`
@@ -93,14 +123,60 @@ Abuse controls:
 - a honeypot field `website`: a non-empty value gives 422, never a receipt;
 - per-client rate limits: 5 per 10 min and 30 per day on creates/submits, 60 per 10 min
   on resume-token lookups, giving 429;
-- safe error messages.
+- safe error messages (see §6b).
 
 **CAPTCHA is deliberately not added.** A third-party CAPTCHA adds a vendor, a
 privacy surface and accessibility friction. Honeypot + rate limit + size caps are
 proportionate at current volume. Revisit if `acquisition_records` shows abuse.
 
-Limitation: the limiter is in-process, per API instance. A shared store can
-replace `RateLimiter` without changing callers (BACKLOG).
+**The limiter is process-local, not fleet-wide.** Counts live in the memory of one
+Python process. They reset on every deploy or restart, aren't shared between
+uvicorn workers or API instances, and would multiply if the service scaled out.
+Production runs one instance with one process. A shared store can replace
+`RateLimiter` without changing callers (BACKLOG A6). This is not a global
+rate limit and must not be described as one.
+
+### 6a. Client identity for rate limiting: KNOWN LIMITATION, deferred
+
+**Unchanged since #198.** The limiter keys on the **first** `X-Forwarded-For` entry,
+falling back to the socket peer.
+
+- Honest browsers get a correct per-visitor key.
+- A determined sender can put arbitrary values first and rotate them to get fresh
+  buckets.
+- The honeypot, size caps and validation still apply.
+- **This is not solved.** It must not be described as trustworthy client identity.
+
+**Known topology.** Cloudflare → Render load balancer → application. Render's
+documentation says all web-service traffic passes through Cloudflare and Render's
+load balancers, and that the app should read `X-Forwarded-For` for the client IP.
+Cloudflare documents that it appends the connecting client to an existing header.
+
+**Not established.** What Render's load balancer adds, if anything, and therefore
+which entry is trustworthy for our deployment.
+
+Until that is established:
+- no hop count is guessed;
+- no Cloudflare-CIDR parser is added;
+- uvicorn's `--forwarded-allow-ips` is not changed.
+
+A wrong hop count would key visitors on Cloudflare edge addresses and throttle
+legitimate prospects together, which is worse than today's behaviour. Follow-up:
+BACKLOG A14 ("Public rate-limit client identity").
+
+### 6b. Server errors
+
+- Unhandled exceptions return a stable body:
+  `{"detail": "Internal server error.", "error": "internal_error", "request_id": …}`.
+  It never includes exception text, SQL, stack traces, file paths or secrets.
+- The full traceback, exception type, method, path and `request_id` are logged
+  server-side. Quote the `X-Request-ID` to find the log line.
+- 4xx responses are unchanged: 422 keeps field-level validation detail, and
+  401/403/404/409/410/429 keep their messages.
+- The internal site-CSV import's 500 no longer echoes the exception.
+- **Audited, not changed:** the authenticated operator consoles return 502s that
+  pass through upstream vendor error text (`vola`, `zoho_crm`, `carrier_verizon`,
+  `sims`). They don't include SQL, but they are listed for review (BACKLOG A13).
 
 ## 7. Assessment vs deployment (D-032)
 
@@ -184,7 +260,16 @@ tracking is installed. Server-confirmed events (`lead_created` and later ones) a
 emitted only from durable state: the client emits `lead_created` only from a real
 receipt.
 
-## 12. Future direction
+## 12. Migration 056 is permanent history
+
+`056_acquisition_records.py` is applied in production (presumed from deployment
+evidence). Never remove, rewrite or renumber it, and never roll back by deleting
+it: a build without 056 can't start against a database at 056 (`Can't locate
+revision '056'`). That rules out Render "Rollback" to a pre-#198 deploy and a
+wholesale `git revert` of #198. Roll back with a forward commit that keeps the
+migration history.
+
+## 13. Future direction
 
 - Internal acquisition review UI (statuses `under_review` / `qualified` / `closed`).
 - Prospect acknowledgement email.
