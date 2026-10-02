@@ -15,11 +15,52 @@ from typing import Callable, Optional
 from sqlalchemy import select
 
 from app.services.canonical import decisions as D
+from app.services.canonical.normalize import radio_id
 
 ZOHO_MODULE = "Subscription_Mgmnt"
 ZOHO_MAX_PAGES = 300
-_FIELD_TOKENS = ("imei", "sim", "iccid", "starlink", "radio", "facility", "serial",
+# Identifier tokens first: discovered fields are requested in this order and
+# the request is capped, so a radio / SIM / IMEI field is never crowded out.
+_FIELD_TOKENS = ("starlink", "radio", "imei", "iccid", "sim", "serial", "facility",
                  "carrier", "created", "activ")
+ZOHO_MAX_FIELDS = 50
+# A radio identity is read ONLY from a field named for the radio, and never from
+# one that names another identifier or attribute of the record (e.g. a
+# "Starlink Serial", "Radio Plan" or "Starlink Status" field).
+_RADIO_FIELD_TOKENS = ("starlink", "radio")
+_NOT_RADIO_FIELD_TOKENS = ("serial", "imei", "iccid", "sim", "plan", "type", "status",
+                           "date", "time", "name", "account", "sku", "model", "mobile",
+                           "msisdn", "phone", "mdn", "note")
+_RADIO_FIELD_PREFERRED = ("Starlink_ID", "Radio_Number", "RadioNumber")
+
+
+def radio_field_names(names) -> list[str]:
+    """Field names that may carry a communicator radio id, preferred first."""
+    def ok(k):
+        lk = k.lower()
+        return (any(t in lk for t in _RADIO_FIELD_TOKENS)
+                and not any(t in lk for t in _NOT_RADIO_FIELD_TOKENS))
+    names = [k for k in names if ok(k)]
+    return sorted(names, key=lambda k: (k not in _RADIO_FIELD_PREFERRED,
+                                        _RADIO_FIELD_PREFERRED.index(k)
+                                        if k in _RADIO_FIELD_PREFERRED else 0))
+
+
+def zoho_radio(rec: dict) -> str | None:
+    """The raw value of the record's radio field.  The first radio-named field
+    whose value has a radio shape wins; failing that, the first non-empty one is
+    returned so the engine can report it as a rejected radio value.  A serial /
+    IMEI / ICCID field is never consulted."""
+    first = None
+    for k in radio_field_names(rec.keys()):
+        v = rec.get(k)
+        if isinstance(v, (dict, list)) or v in (None, ""):
+            continue
+        v = str(v).strip()
+        if radio_id(v):
+            return v
+        first = first or v
+    return first
 
 
 def _now():
@@ -44,9 +85,14 @@ async def fetch_zoho_rows(row_filter: Callable[..., bool]) -> tuple[list[dict], 
                 api = f.get("api_name") or ""
                 if any(t in api.lower() for t in _FIELD_TOKENS) and api not in fields:
                     fields.append(api)
+            base = len(DEFAULT_FIELDS)
+            rank = {t: i for i, t in enumerate(_FIELD_TOKENS)}
+            fields[base:] = sorted(fields[base:], key=lambda f: min(
+                rank[t] for t in _FIELD_TOKENS if t in f.lower()))
         except Exception as exc:            # field discovery is optional
             info["field_discovery"] = "failed: %s" % str(exc)[:120]
-        fields = fields[:50]
+        fields = fields[:ZOHO_MAX_FIELDS]
+        info["radio_fields"] = radio_field_names(fields)
         raw, token, page = [], None, 1
         for _ in range(ZOHO_MAX_PAGES):
             params = {"per_page": 200, "fields": ",".join(fields)}
@@ -106,11 +152,52 @@ async def fetch_zoho_rows(row_filter: Callable[..., bool]) -> tuple[list[dict], 
             "activation": look(r, "Device_Activation_Status"),
             "created": look(r, "Created_Time"), "modified": look(r, "Modified_Time"),
             "imei": look_like(r, "imei"), "sim": look_like(r, "iccid", "sim_n", "sim_i", "sim"),
-            "starlink": look_like(r, "starlink", "radio"), "serial": look_like(r, "serial"),
+            "starlink": zoho_radio(r), "serial": look_like(r, "serial"),
         })
     info.update(status="ok", retrieved_at=_now().isoformat(), scanned=len(raw),
                 tenant_rows=len(rows), fields=len(fields))
     return rows, info
+
+
+async def load_napco_radios(db, tenant_id: str) -> tuple[list[str] | None, dict]:
+    """Radio ids in the tenant's LATEST imported NAPCO radiolist snapshot
+    (D-024; immutable, tenant-attributed rows only).  -> (radios, source info);
+    radios is None when no snapshot exists - NAPCO evidence is then absent, which
+    is reported, never assumed."""
+    from app.models.source_snapshot import SourceSnapshot, SourceSnapshotRecord
+    info = {"system": "napco_radiolist_snapshot", "required": False}
+    try:
+        async with db.begin_nested():      # a missing table must not poison the session
+            snap, vals = await _latest_napco(db, tenant_id, SourceSnapshot, SourceSnapshotRecord)
+    except Exception as exc:
+        info["status"] = "unavailable: %s" % str(exc)[:120]
+        return None, info
+    if snap is None:
+        info["status"] = "none loaded"
+        return None, info
+    radios = sorted({r for r in (radio_id(v) for v in vals) if r})
+    info.update(status="ok", snapshot_id=snap.id, radios=len(radios),
+                source_effective_at=snap.source_effective_at.isoformat()
+                if snap.source_effective_at else None,
+                imported_at=snap.imported_at.isoformat() if snap.imported_at else None)
+    return radios, info
+
+
+async def _latest_napco(db, tenant_id, SourceSnapshot, SourceSnapshotRecord):
+    snap = (await db.execute(
+        select(SourceSnapshot)
+        .where(SourceSnapshot.tenant_id == tenant_id, SourceSnapshot.source_system == "NAPCO")
+        .order_by(SourceSnapshot.source_effective_at.desc().nullslast(),
+                  SourceSnapshot.imported_at.desc(), SourceSnapshot.id.desc())
+        .limit(1))).scalars().first()
+    if snap is None:
+        return None, []
+    vals = (await db.execute(
+        select(SourceSnapshotRecord.napco_radio)
+        .where(SourceSnapshotRecord.snapshot_id == snap.id,
+               SourceSnapshotRecord.tenant_id == tenant_id,
+               SourceSnapshotRecord.source_system == "NAPCO"))).scalars().all()
+    return snap, vals
 
 
 async def build_snapshot(db, tenant_id: str, *, zoho: str = "live",
@@ -205,10 +292,12 @@ async def build_snapshot(db, tenant_id: str, *, zoho: str = "live",
     else:
         zrows = []
         sources["zoho"] = {"system": "zoho_crm", "required": True, "status": "skipped"}
+    napco_radios, sources["napco_snapshot"] = await load_napco_radios(db, tenant_id)
     sources["operator_decisions"] = {"system": "true911_db", "required": False, "status": "ok",
                                      "active": len(active),
                                      "proposed_preview": len(proposed_decisions or [])}
     return {"tenant_id": tenant_id, "started_at": started, "buildings": buildings,
             "aliases": aliases, "mappings": mappings, "fused_groups": fused, "sites": sites,
             "devices": devices, "lines": lines, "units": units, "zoho_rows": zrows,
-            "decisions": decisions, "sources": sources, "generic_names": list(generic_names)}
+            "decisions": decisions, "sources": sources, "generic_names": list(generic_names),
+            "napco_radios": napco_radios}

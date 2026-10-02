@@ -157,6 +157,35 @@ deliberately NOT patched in the frontend:
   time. Acceptable for now: it avoids hidden-container sizing bugs, and the refit is
   now signature-gated.
 
+## 🔧 RH certification — canonical engine fixed BEFORE the first apply [2026-10-02]
+
+Branch `fix/canonical-radio-identity`.
+- **The 2026-10-02 15:38Z RH dry-run MUST NOT be used as an apply manifest.** It
+  stays preserved as audit evidence of the defects below. No `--apply` was run.
+- **Defects fixed** (detail: `docs/customer/CANONICAL_SERVICE_MODEL.md` §5a):
+  1. Device serials, IMEIs and ICCIDs became NAPCO radio ids (Houston, Jacksonville
+     shapes).
+  2. One radio became two services: the Zoho record's radio field was not
+     extracted, so a `FACP:zoho:` service appeared next to a `FACP:napco:` one.
+  3. `napco:` was asserted from Zoho, True911 or registry values with no NAPCO
+     evidence. Absence from NAPCO is now a confidence cap, never a lifecycle.
+  4. A SKU subscription type and Alarm-Panel telephone lines were taken as FACP
+     evidence.
+- **Next, operator-gated, not done:**
+  - CG-NAPCO: import the NAPCO radiolist snapshot (#187 importer, governed
+    `--apply`, Stuart approval). Without it every radio reports `NOT_LOADED`, and
+    Zoho+True911/registry radios such as Houston 1554387 can still read CONFIRMED.
+  - Then run a fresh read-only dry-run and rebuild the certification matrix.
+- **Not engine work.** These remain registry/operator decisions, deliberately not
+  "fixed" in code:
+  - Beverly Modern / Leawood;
+  - Hollywood / Melrose;
+  - Memphis;
+  - Southgate / Edmonton;
+  - San Rafael;
+  - Edina;
+  - Raleigh.
+
 ## ⭐ PRIMARY (RH) — RH Customer Completion Program: #187 → #193 [2026-09-30]
 
 Program: `docs/customer/RH_COMPLETION_PROGRAM.md` (D-025). Do not invite Judy; do

@@ -161,7 +161,8 @@ async def apply_projection(db, result: dict, *, run_by: str) -> int:
         await db.flush()
         evidence("SERVICE", s["service_key"], "ENGINE", "SERVICE:%s" % s["service_type"],
                  conf=s["confidence"], payload={"evidence": s["evidence"],
-                                                "approval": s["approval"]})
+                                                "approval": s["approval"],
+                                                "provenance": s.get("provenance")})
         wanted = {c["ordinal"]: c for c in result["connections"]
                   if c["building_id"] == s["building_id"] and c["service_key"] == s["service_key"]}
         existing = {c.ordinal: c for c in (await db.execute(select(LifeSafetyConnection).where(

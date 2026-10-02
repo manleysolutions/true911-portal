@@ -7,7 +7,7 @@ reconciliation figures - they are NOT customer-facing in PR #186a.
 from __future__ import annotations
 
 from app.services.canonical import vocab as V
-from app.services.canonical.normalize import naddr, words
+from app.services.canonical.normalize import mask, naddr, words
 
 
 def _line(*parts) -> str:
@@ -118,6 +118,11 @@ def render(res: dict, *, snap: dict | None = None, targets=(), mode: str = "DRY-
         L.append(_line(names.get(s["building_id"]), s["service_key"], s["service_type"],
                        s["display_name"], s["confidence"], "approval=%s" % s["approval"],
                        s["lifecycle"], "COUNTED" if s["counts"] else "-"))
+        pv = s.get("provenance")
+        if pv:
+            L.append("     provenance: sources=%s napco=%s%s" % (
+                ",".join(pv["sources"]) or "-", pv["napco_evidence"],
+                " radio=%s" % ",".join(mask(x) for x in pv["radio_ids"]) if pv["radio_ids"] else ""))
 
     for sr in res["suspect_reports"]:
         L.append("")

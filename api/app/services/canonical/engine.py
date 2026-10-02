@@ -37,11 +37,13 @@ from datetime import datetime, timezone
 from app.services.canonical import vocab as V
 from app.services.canonical.normalize import (
     classify_label,
+    is_sku_label,
     mask,
     n10,
     naddr,
     nalias,
     nid,
+    radio_id,
     source_lifecycle,
     store_number,
     words,
@@ -287,9 +289,18 @@ def place(ix: _Index, rec: dict, operator_bid=None) -> dict:
 # ──────────────────────────────────────────────────────────── records ──
 
 def _is_napco_device(d: dict) -> bool:
+    """NAPCO / StarLink communicator hardware.  A populated ``starlink_id`` only
+    counts when it has the shape of a radio number - a serial, IMEI, ICCID or
+    telephone number typed into that column is not radio evidence."""
     t = words("%s %s %s" % (d.get("manufacturer"), d.get("model"), d.get("identifier_type")))
     return (" napco" in t or " starlink" in t or " slelte" in t or " sle " in t
-            or bool(d.get("starlink_id")))
+            or bool(radio_id(d.get("starlink_id"))))
+
+
+def _rejected(raw, radio):
+    """The normalised value of a radio-typed field that was refused as a radio
+    identity (for the RADIO_ID_REJECTED finding), else None."""
+    return (nid(raw) or None) if raw and not radio else None
 
 
 def _is_facp_device(d: dict, units: list[dict]) -> bool:
@@ -312,14 +323,22 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
 
     recs = []
     for z in snap.get("zoho_rows") or []:
-        label = " ".join(x for x in (z.get("connection_type"), z.get("subscription_type")) if x)
+        # A Subscription_Type that is a device SKU / plan ("SLELTE - Fire (Dual
+        # Line)", often mass-updated) says nothing about the service: ignored.
+        sub = z.get("subscription_type")
+        label = " ".join(x for x in (z.get("connection_type"),
+                                     None if is_sku_label(sub) else sub) if x)
         cat, strength = classify_label(label)
+        radio = radio_id(z.get("starlink"))
         idents = [i for i in (nid(z.get("starlink")), nid(z.get("sim")), nid(z.get("imei")),
                               nid(z.get("serial"))) if i]
         recs.append({
             "rid": "zoho:%s" % z.get("zoho_id"), "source": V.SRC_ZOHO,
             "numbers": [n for n in [n10(z.get("msisdn"))] if n], "idents": idents,
-            "napco": nid(z.get("starlink")) or None,
+            "napco": radio, "radio_rejected": _rejected(z.get("starlink"), radio),
+            # a telephone line (valid MSISDN, no radio) - e.g. a dialer line
+            # labelled "Alarm Panel" - is FACP equipment, never an FACP service
+            "is_line": bool(n10(z.get("msisdn"))) and not radio,
             "iccid": nid(z.get("sim")) or None, "imei": nid(z.get("imei")) or None,
             "facility": [z.get("facility")] if z.get("facility") else [],
             "account": [z.get("account")] if z.get("account") else [],
@@ -342,7 +361,8 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
         recs.append({
             "rid": "device:%s" % d["device_id"], "source": V.SRC_TRUE911, "device": d,
             "numbers": nums, "idents": idents,
-            "napco": nid(d.get("starlink_id")) if _is_napco_device(d) and d.get("starlink_id") else None,
+            "napco": radio_id(d.get("starlink_id")) if _is_napco_device(d) else None,
+            "radio_rejected": _rejected(d.get("starlink_id"), radio_id(d.get("starlink_id"))),
             "iccid": nid(d.get("iccid")) or None, "imei": nid(d.get("imei")) or None,
             "facility": [site.get("site_name")] if site.get("site_name") else [],
             "account": [], "parent": [],
@@ -359,13 +379,15 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
         if kind in ("phone", "genesis_msisdn") and n10(val):
             rec = {"numbers": [n10(val)], "idents": []}
         elif kind in ("napco_radio", "iccid", "imei") and nid(val):
-            rec = {"numbers": [], "idents": [nid(val)],
-                   "napco": nid(val) if kind == "napco_radio" else None,
+            radio = radio_id(val) if kind == "napco_radio" else None
+            rec = {"numbers": [], "idents": [nid(val)], "napco": radio,
+                   "radio_rejected": _rejected(val, radio) if kind == "napco_radio" else None,
                    "iccid": nid(val) if kind == "iccid" else None,
                    "imei": nid(val) if kind == "imei" else None}
         else:
             continue
-        recs.append(dict({"napco": None, "iccid": None, "imei": None}, **rec, **{
+        recs.append(dict({"napco": None, "radio_rejected": None, "iccid": None, "imei": None},
+                         **rec, **{
             "rid": "registry:%s#%s" % (kind, m.get("id")), "source": V.SRC_REGISTRY,
             "facility": [], "account": [], "parent": [], "address": None,
             "support_bids": set(), "lifecycle": None, "status": "mapped",
@@ -399,6 +421,22 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
     for r in recs:
         op_bid = next((dec["place"][n] for n in r["numbers"] if n in dec["place"]), None)
         r["placement"] = place(ix, r, op_bid)
+        if r.get("radio_rejected"):
+            finding("RADIO_ID_REJECTED", V.INFO, r["placement"]["building_id"],
+                    "%s %s" % (r["rid"], mask(r["radio_rejected"])),
+                    "value in a radio field has the shape of a serial / IMEI / ICCID / "
+                    "telephone number - not used as a radio identity")
+
+    # NAPCO evidence = the tenant's latest imported NAPCO radiolist snapshot
+    # (D-024).  None = no snapshot loaded: radio ids are then unchecked, never
+    # "NAPCO-backed".  Absence from a loaded snapshot caps confidence only; it
+    # never changes lifecycle (it is not evidence of decommissioning).
+    napco = snap.get("napco_radios")
+    napco = None if napco is None else {radio_id(x) for x in napco if radio_id(x)}
+    if napco is None:
+        finding("NAPCO_EVIDENCE_NOT_LOADED", V.INFO, None, "napco_snapshot",
+                "no NAPCO radiolist snapshot loaded - FACP radio ids are not checked "
+                "against NAPCO and none is NAPCO-backed")
 
     # ── assets ─────────────────────────────────────────────────────
     assets = {}
@@ -453,7 +491,8 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
             by_bldg[r["placement"]["building_id"]].append(r)
     fused = [[i for i in g if i] for g in snap.get("fused_groups") or []]
     for bid in sorted(ix.buildings):
-        services.extend(_facp_services(bid, by_bldg.get(bid, []), fused, assets, finding))
+        services.extend(_facp_services(bid, by_bldg.get(bid, []), fused, assets, finding,
+                                       napco))
 
     # ── telephone services ─────────────────────────────────────────
     for a in sorted(assets.values(), key=lambda x: x["key"]):
@@ -665,9 +704,15 @@ def _classify_number(a, dec, finding):
                 "no source labels this line's service")
 
 
-def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
+def _facp_services(bid, recs, fused, assets, finding, napco=None) -> list[dict]:
+    """FACP services for one building.  A service is keyed by its radio
+    identity (``FACP:radio:<id>``) whatever source reported it; which sources
+    did is PROVENANCE (``provenance.sources``), and only a radio present in a
+    loaded NAPCO snapshot is ``napco_backed``.  Joins are exact normalised
+    identifiers only - never fuzzy, never dropped-digit."""
     uf = _UF()
-    napcos = {}                                # napco id -> placement confidence
+    napcos = {}                                # radio id -> placement confidence
+    radio_src = defaultdict(set)               # radio id -> sources claiming it
     members = {}                               # record key -> record
     kinds = defaultdict(set)
     for r in recs:
@@ -675,9 +720,10 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
             napcos[r["napco"]] = max(napcos.get(r["napco"], V.UNRESOLVED),
                                      r["placement"]["confidence"],
                                      key=lambda c: V.CONFIDENCE_RANK[c])
+            radio_src[r["napco"]].add(r["source"])
             uf.find("I:" + r["napco"])
         is_facp_rec = (r["source"] == V.SRC_TRUE911 and r["is_facp"]) or (
-            r["source"] == V.SRC_ZOHO and r["cat"] == V.FACP
+            r["source"] == V.SRC_ZOHO and r["cat"] == V.FACP and not r.get("is_line")
             and not (r["lifecycle"] and r["lifecycle"][0] in V.NOT_CURRENT))
         joinable = is_facp_rec or (r["source"] == V.SRC_TRUE911 and r["is_napco"])
         if not joinable:
@@ -708,11 +754,42 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
             comps[uf.find(node)]["kinds"] |= ks
 
     out = []
+    flagged = set()
 
     def svc(key, conf, comp_recs, naps, evidence):
         placement = [r["placement"]["confidence"] for r in comp_recs]
         placement += [napcos[n] for n in naps if n in napcos]
         conf = V.weakest(conf, *placement) if placement else conf
+        evidence = list(evidence)
+        claimed = set().union(*(radio_src.get(n, set()) for n in naps)) if naps else set()
+        backed = bool(naps) and napco is not None and all(n in napco for n in naps)
+        sources = claimed | {r["source"] for r in comp_recs}
+        if backed:
+            sources.add(V.SRC_NAPCO)
+        if naps and not backed and not (claimed - {V.SRC_ZOHO}) and conf == V.CONFIRMED:
+            # a radio id only Zoho reports is Zoho evidence, not NAPCO evidence
+            conf = V.PROBABLE
+            evidence.append("radio id reported only by Zoho - not corroborated by NAPCO, "
+                            "True911 or the registry")
+            finding("FACP_RADIO_SINGLE_SOURCE", V.MEDIUM, bid,
+                    "radio " + ",".join(mask(n) for n in sorted(naps)),
+                    "FACP radio identity rests on Zoho alone - capped at PROBABLE")
+        if naps and napco is not None and not backed:
+            conf = V.weakest(conf, V.PROBABLE)
+            absent = sorted(n for n in naps if n not in napco)
+            evidence.append("radio %s absent from the NAPCO radiolist snapshot"
+                            % ",".join(mask(n) for n in absent))
+            for n in absent:
+                if n not in flagged:
+                    flagged.add(n)
+                    finding("RADIO_NOT_IN_NAPCO", V.MEDIUM, bid, "radio " + mask(n),
+                            "not in the loaded NAPCO radiolist snapshot - capped at PROBABLE; "
+                            "lifecycle unchanged (absence is not decommissioning)")
+        prov = {"radio_ids": sorted(naps), "sources": sorted(sources),
+                "napco_evidence": ("NOT_LOADED" if napco is None else
+                                   "PRESENT" if backed else
+                                   "ABSENT" if naps else "NO_RADIO"),
+                "napco_backed": backed}
         states = [r["lifecycle"][0] for r in comp_recs if r["lifecycle"]]
         if any(s == V.CURRENT for s in states):
             lc, why = V.CURRENT, V.REASON_SOURCE_ACTIVE
@@ -730,7 +807,8 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
                     linked.append((k, V.REL_SERVICE_EQUIPMENT))
         out.append({"building_id": bid, "service_key": key, "service_type": V.FACP,
                     "display_name": _DISPLAY[V.FACP], "confidence": conf, "lifecycle": lc,
-                    "lifecycle_reason": why, "assets": linked, "evidence": evidence})
+                    "lifecycle_reason": why, "assets": linked, "evidence": evidence,
+                    "provenance": prov})
 
     nap_only, rec_only = [], []
     for c in comps.values():
@@ -738,17 +816,17 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
             devs = [r for r in c["recs"] if r["source"] == V.SRC_TRUE911]
             if devs and len(c["nap"]) != len(devs):
                 for n in sorted(c["nap"]):
-                    svc("FACP:napco:%s" % n, V.UNRESOLVED, c["recs"], {n},
-                        ["%d NAPCO ids vs %d FACP devices joined" % (len(c["nap"]), len(devs))])
-                finding("FACP_UNRESOLVED", V.MEDIUM, bid, "napco " + ",".join(
+                    svc("FACP:radio:%s" % n, V.UNRESOLVED, c["recs"], {n},
+                        ["%d radio ids vs %d FACP devices joined" % (len(c["nap"]), len(devs))])
+                finding("FACP_UNRESOLVED", V.MEDIUM, bid, "radio " + ",".join(
                     mask(n) for n in sorted(c["nap"])), "count mismatch in joined component")
                 continue
-            ev = ["NAPCO %s joined to %s via %s" % (
+            ev = ["radio %s joined to %s via %s" % (
                 ",".join(mask(n) for n in sorted(c["nap"])),
                 ",".join(r["rid"] for r in c["recs"]),
                 ",".join(sorted(c["kinds"])) or "shared identifier")]
             for n in sorted(c["nap"]):
-                svc("FACP:napco:%s" % n, V.CONFIRMED, c["recs"], {n}, ev)
+                svc("FACP:radio:%s" % n, V.CONFIRMED, c["recs"], {n}, ev)
         elif c["nap"]:
             nap_only.append(c)
         elif c["recs"]:
@@ -756,8 +834,8 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
     if len(nap_only) == 1 and len(rec_only) == 1:
         c, rc = nap_only[0], rec_only[0]
         for n in sorted(c["nap"]):
-            svc("FACP:napco:%s" % n, V.CONFIRMED, rc["recs"], {n},
-                ["unique one-to-one in building: NAPCO %s <-> %s" % (
+            svc("FACP:radio:%s" % n, V.CONFIRMED, rc["recs"], {n},
+                ["unique one-to-one in building: radio %s <-> %s" % (
                     mask(n), ",".join(r["rid"] for r in rc["recs"]))])
     else:
         naps = sorted(n for c in nap_only for n in c["nap"])
@@ -765,24 +843,24 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
         pairs = min(len(naps), len(rcs))
         for i, n in enumerate(naps):
             if i < pairs:
-                svc("FACP:napco:%s" % n, V.PROBABLE, rcs[i]["recs"], {n},
-                    ["%d NAPCO ids + %d FACP records - pairing ambiguous" % (len(naps), len(rcs))])
+                svc("FACP:radio:%s" % n, V.PROBABLE, rcs[i]["recs"], {n},
+                    ["%d radio ids + %d FACP records - pairing ambiguous" % (len(naps), len(rcs))])
             else:
-                svc("FACP:napco:%s" % n, V.UNRESOLVED, [], {n},
-                    ["NAPCO id without FACP evidence"])
+                svc("FACP:radio:%s" % n, V.UNRESOLVED, [], {n},
+                    ["radio id without FACP evidence"])
         for c in rcs[pairs:]:
             r0 = c["recs"][0]
             svc("FACP:%s" % r0["rid"], V.PROBABLE if not naps else V.UNRESOLVED, c["recs"],
-                set(), ["FACP record without NAPCO identity"])
+                set(), ["FACP record without a radio identity"])
         if naps and rcs:
-            finding("FACP_PROBABLE", V.MEDIUM, bid, "%d NAPCO / %d records" % (len(naps), len(rcs)),
+            finding("FACP_PROBABLE", V.MEDIUM, bid, "%d radio / %d records" % (len(naps), len(rcs)),
                     "pairing is ambiguous - operator review")
         elif naps:
-            finding("FACP_UNRESOLVED", V.MEDIUM, bid, "napco " + ",".join(mask(n) for n in naps),
-                    "NAPCO id(s) without FACP evidence")
+            finding("FACP_UNRESOLVED", V.MEDIUM, bid, "radio " + ",".join(mask(n) for n in naps),
+                    "radio id(s) without FACP evidence")
         elif rcs:
             finding("FACP_PROBABLE", V.MEDIUM, bid, ",".join(c["recs"][0]["rid"] for c in rcs),
-                    "FACP record(s) without NAPCO identity")
+                    "FACP record(s) without a radio identity")
     return out
 
 

@@ -79,13 +79,74 @@ approval (Decision 1).
 
 ## 5. FACP joins
 
-Per building, FACP evidence is joined across sources with a union-find over NAPCO
-radio id, serial, ICCID, IMEI, approved registry linkage (fused device groups) and
-shared numbers. NAPCO id + joined FACP record → CONFIRMED (one service per NAPCO
-id). A unique one-to-one pairing in a building → CONFIRMED. Several NAPCO ids and
-FACP records without a join → PROBABLE (pairing ambiguous). A NAPCO id with no FACP
+Per building, FACP evidence is joined across sources with a union-find over radio
+id, serial, ICCID, IMEI, approved registry linkage (fused device groups) and
+shared numbers. Radio id + joined FACP record → CONFIRMED (one service per radio
+id). A unique one-to-one pairing in a building → CONFIRMED. Several radio ids and
+FACP records without a join → PROBABLE (pairing ambiguous). A radio id with no FACP
 evidence, or a count mismatch → UNRESOLVED. Service confidence is capped by the
-weakest placement of its evidence.
+weakest placement of its evidence. Joins use exact normalised identifiers only:
+there is no fuzzy, prefix or dropped-digit matching (`1187020` ≠ `11187020`).
+
+### 5a. Radio identity (fix after the 2026-10-02 RH dry-run)
+
+- **Only a radio-typed field can yield a radio id.** These are Zoho fields named
+  for the Starlink/radio, but never a field that also names a serial, IMEI, SIM,
+  plan, type, status, date or name. They also include True911 `Device.starlink_id`
+  and registry `napco_radio` mappings. A device serial, IMEI or ICCID is never a
+  radio id, whatever field it was typed into.
+- **Shape rule** (`normalize.radio_id`, generic): 4–12 characters after
+  normalisation, and not a 10/11-digit NANP telephone number. This rejects:
+  - 13+ character device serials (the MS130 `2023…`/`2021…` shapes);
+  - 15-digit IMEIs;
+  - 19/20-digit ICCIDs.
+
+  A rejected value stays an ordinary identifier, so it can still link records
+  of the same device. It never becomes a `NAPCO_RADIO` asset or an FACP service,
+  and it produces a `RADIO_ID_REJECTED` finding (INFO).
+- **Service key.** It is `FACP:radio:<id>`, whichever source reported the radio,
+  so the key is stable when NAPCO evidence arrives later. Before this fix the key
+  was `FACP:napco:<id>`; nothing was ever applied, so no persisted key changes.
+- **Provenance.** Each FACP service carries `provenance`:
+  - `radio_ids`;
+  - `sources` (ZOHO / TRUE911 / REGISTRY / NAPCO);
+  - `napco_evidence`: PRESENT / ABSENT / NOT_LOADED / NO_RADIO;
+  - `napco_backed`.
+
+  A Zoho record carrying the same normalised radio id as another source's radio
+  joins that service as supporting provenance; it is not a second service.
+- **NAPCO evidence** means only the tenant's latest imported NAPCO radiolist
+  snapshot (`source_snapshot_records`, D-024; source `napco_snapshot`, not
+  required).
+  - A Zoho, True911 or registry radio id is never "NAPCO-backed".
+  - With no snapshot loaded, every radio is `NOT_LOADED`, and the run reports
+    `NAPCO_EVIDENCE_NOT_LOADED`.
+  - A radio absent from a loaded snapshot is capped at PROBABLE
+    (`RADIO_NOT_IN_NAPCO`). **Its lifecycle is not changed**: absence from NAPCO is
+    not decommissioning.
+- **A Zoho-only radio id is Zoho evidence.** A radio that no NAPCO snapshot,
+  True911 device or registry mapping corroborates is capped at PROBABLE
+  (`FACP_RADIO_SINGLE_SOURCE`).
+- **FACP evidence is a genuine fire-alarm / FACP service type only.** These are
+  *not* FACP evidence:
+  - a device or plan SKU in `Subscription_Type` ("SLELTE - Fire (Dual Line)",
+    "SLEMAXVI-FIRE (Dual Line 5G)", "MS130v4", "… Service Pack"), which is ignored
+    (`normalize.is_sku_label`);
+  - "Voice";
+  - a carrier;
+  - a telephone number;
+  - a serial or a NAPCO-like number;
+  - Zoho `Emergency_Line` or the "Validated" tag (neither is read).
+
+  A Zoho telephone-line record (a valid MSISDN and no radio) labelled "Alarm
+  Panel" is FACP *equipment*: its number is `FACP_ASSET`, and it never creates an
+  FACP service.
+- **Unchanged:**
+  - lifecycle semantics: CONFIRMED ≠ CURRENT, NAPCO existence ≠ CURRENT, Zoho
+    "Activated" is a source status and not deployment proof, and UNKNOWN stays
+    UNKNOWN;
+  - an FACP still requires exactly 2 connections, and only once the service is
+    CONFIRMED (or APPROVED) and CURRENT.
 
 ## 6. Operator decisions (Decision 2)
 

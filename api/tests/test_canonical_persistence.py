@@ -104,7 +104,7 @@ def test_loader_reads_only_approved_buildings_and_projects():
         snap, res = await project(S)
         assert [b["name"] for b in snap["buildings"]] == ["RH Chicago", "RH Jacksonville"]
         counted = sorted(s["service_key"] for s in res["services"] if s["counts"])
-        assert counted == ["ELEV:tel:2025550101", "EPH:tel:2025550102", "FACP:napco:NAP0001"]
+        assert counted == ["ELEV:tel:2025550101", "EPH:tel:2025550102", "FACP:radio:NAP0001"]
         assert res["portfolio"]["confirmed_required_connections"] == 4
     asyncio.run(go())
 
@@ -132,7 +132,7 @@ def test_apply_is_idempotent_and_never_deletes():
                 CanonicalEvidence.projection_run_id == r2))).scalar()
             assert ev > 0
             svc = (await db.execute(select(LifeSafetyService).where(
-                LifeSafetyService.service_key == "FACP:napco:NAP0001"))).scalar_one()
+                LifeSafetyService.service_key == "FACP:radio:NAP0001"))).scalar_one()
             assert (svc.confidence, svc.lifecycle, svc.last_projection_run_id) == \
                 (V.CONFIRMED, V.CURRENT, r2)
             sim = (await db.execute(select(CommunicationsAsset).where(

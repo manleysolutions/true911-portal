@@ -117,7 +117,7 @@ def _facp_device(dev_id, site_id, nap, **kw):
 def test_confirmed_facp_requires_exactly_two_connections_and_fabricates_no_number():
     res = engine.project(snap(sites=[site("S-147", "RH Chicago #147")],
                               devices=[_facp_device("F1", "S-147", "NAP-0001")]))
-    s = svc(res, "FACP:napco:NAP0001")
+    s = svc(res, "FACP:radio:NAP0001")
     assert (s["confidence"], s["lifecycle"], s["counts"]) == (V.CONFIRMED, V.CURRENT, True)
     c = conns(res, 1)
     assert [x["ordinal"] for x in c] == [1, 2]
