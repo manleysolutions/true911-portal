@@ -173,15 +173,19 @@ Branch `fix/canonical-radio-identity`.
      evidence.
   5. Zoho "Activated" (or any administrative "active" status) made services
      CURRENT and counted. Deployment is now a separate axis (§5b).
+     DEPLOYED needs liveness **and** deterministic building placement (operator
+     decision or an exact registry identifier/phone mapping). Activity is not
+     location. Operator truth does not age out.
 - **No new import is needed.** The engine reads the 2026-09-30 RH NAPCO radiolist
   snapshot that is already stored (D-024 source records) as-is. No duplicate
   ingestion.
 - **Next, after merge and deploy:** run a fresh read-only dry-run and rebuild the
   certification matrix. Expect far fewer counted services: only those with
   independent deployment evidence count.
-  - **Stuart decision (open):** whether more evidence classes may establish
-    deployment. Candidates are a carrier "Active" status with recent usage
-    minutes, and Verizon (which has no activity column).
+  - **Operator work this exposes (not done):** live RH equipment without an exact
+    registry mapping or operator placement reads `ACTIVE_PLACEMENT_UNVERIFIED`.
+    It needs registry phone/radio mappings or operator decisions before it can
+    count.
 - **Not engine work.** These remain registry/operator decisions, deliberately not
   "fixed" in code:
   - Beverly Modern / Leawood;

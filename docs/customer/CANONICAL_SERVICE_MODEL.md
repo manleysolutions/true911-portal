@@ -171,36 +171,54 @@ A service has four independent axes:
   Spare, staged, moved, stale or never-installed equipment can carry any of
   these. With only such a status, lifecycle is `UNKNOWN` with reason
   `ADMIN_STATUS_ONLY`.
-- **CURRENT requires deployment evidence**, one of:
-  1. an operator `ASSET_LIFECYCLE` decision of CURRENT (including a carrier
-     migration's replacements);
-  2. True911 telemetry, meaning a device `last_heartbeat` within
-     `DEPLOYMENT_ACTIVITY_DAYS` (30) of the run (`DEPLOYMENT_TELEMETRY`);
-  3. source-native activity in an already-imported snapshot
-     (`DEPLOYMENT_ACTIVITY`):
-     - qualifying activity: the NAPCO `LastSignalReceived` or the T-Mobile
-       `Last CDR date`, within 30 days;
-     - the source's own lifecycle for that record must not be not-current (a
-       terminated SIM never counts);
-     - the source's location hint must not name another store. If it does, the
-       run reports `DEPLOYMENT_LOCATION_CONFLICT`, because the equipment may
-       have been moved.
+- **DEPLOYED requires BOTH of the following.** Activity proves the equipment
+  is alive, never where it is.
+  - **(a) Liveness**, one of:
+    1. an operator `ASSET_LIFECYCLE` decision of CURRENT (including a carrier
+       migration's replacements);
+    2. a True911 device `last_heartbeat` within `DEPLOYMENT_ACTIVITY_DAYS` (30)
+       of the run;
+    3. recent activity in an already-imported snapshot, from
+       `DEPLOYMENT_ACTIVITY_SOURCES` only: NAPCO `LastSignalReceived` or T-Mobile
+       `Last CDR date`, within 30 days, where the record's own source lifecycle
+       is not not-current. Verizon and Red Pocket exports carry inventory status
+       only and never count. Usage minutes are not read.
+  - **(b) Deterministic placement** at that building (`DEPLOYMENT_PLACEMENT_BASES`):
+    - an operator placement (carrier migration or service classification
+      decision); or
+    - an exact registry identifier or telephone mapping (`ASSET_IDENTIFIER`,
+      `TELEPHONE_MAPPING`), with placement confidence CONFIRMED.
 
-     Verizon exports carry no activity column, so they give no deployment
-     evidence.
+    These do **not** count as placement: Zoho facility, store-number, address
+    or account text; a True911 site name; or a historical site link. All of them
+    describe where a record *says* the equipment is.
+  - **What liveness without (b) gives:** lifecycle `UNKNOWN` (reason
+    `ACTIVE_PLACEMENT_UNVERIFIED`), with the liveness kept separately on the
+    asset (`liveness_source`, `liveness_at`) and an INFO finding
+    `ACTIVE_PLACEMENT_UNVERIFIED`. A heartbeat counts only through an exactly
+    mapped identifier of that device.
+- **Source labels.** A carrier or NAPCO label naming the same store only
+  *supports* placement. A blank, generic or even matching label never
+  establishes it. A label naming a different store raises
+  `DEPLOYMENT_LOCATION_CONFLICT` (the equipment may have been moved), and that
+  activity is never carried to this building.
+- **Operator CURRENT without deterministic placement** keeps lifecycle CURRENT
+  (operator truth) but is not DEPLOYED (`DEPLOYMENT_PLACEMENT_UNVERIFIED`).
+- **Durability:**
+  - Source-derived (inferred) liveness ages out: once an export no longer shows
+    activity within 30 days of the run, that service returns to UNKNOWN.
+  - Governed operator truth never ages out. An operator CURRENT decision with
+    deterministic placement stays DEPLOYED until it is superseded or retired, or
+    stronger evidence is raised for review.
+  - The engine never modifies decisions, so customer certification does not
+    decay merely because a source export gets old.
 - **Negative statuses are still honoured:** de-activated or suspended stays
   not-current when nothing shows activity. Recent activity against a
-  de-activated record makes it CURRENT and raises `LIFECYCLE_CONFLICT` for the
-  operator.
+  de-activated record raises `LIFECYCLE_CONFLICT` for the operator.
 - **Counted** = life-safety type, not REJECTED, CONFIRMED (or APPROVED),
-  lifecycle CURRENT **and** deployment `DEPLOYED`. A confirmed service whose
-  deployment is not established is reported (`LIFECYCLE_UNKNOWN`), never counted.
-- **Residual limits:**
-  - Activity proves the equipment works, and placement evidence says where. A
-    staged or moved radio that still signals and whose source label names no
-    store can therefore read DEPLOYED at its recorded building. The location
-    check catches only a contradicting store number.
-  - Building placement must still be CONFIRMED for the service to count.
+  lifecycle CURRENT **and** deployment `DEPLOYED`. A confirmed service that is
+  not deployed is reported (`LIFECYCLE_UNKNOWN` / `DEPLOYMENT_NOT_ESTABLISHED`),
+  never counted.
 
 ## 6. Operator decisions (Decision 2)
 

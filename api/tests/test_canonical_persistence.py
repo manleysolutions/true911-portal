@@ -97,6 +97,12 @@ async def seed(Session):
             PortfolioDeviceMapping(tenant_id=T, building_id=1, kind="true911_device",
                                    value="S-147", value_normalized="S147", source="test",
                                    active=True),
+            # deterministic placement (exact registry identifier / telephone mappings)
+            *[PortfolioDeviceMapping(tenant_id=T, building_id=1, kind=k, value=v,
+                                     value_normalized=n, source="test", active=True)
+              for k, v, n in (("napco_radio", "NAP-0001", "NAP0001"),
+                              ("phone", "2025550101", "2025550101"),
+                              ("phone", "2025550102", "2025550102"))],
         ])
         await db.commit()
 
@@ -322,7 +328,13 @@ def _fixture(tmp_path):
     d = tmp_path / "decisions.json"
     d.write_text(json.dumps({"tenant": T, "decisions": [
         {"type": "BUILDING_IDENTITY_SUSPECT", "subject": {"building": "RH Memphis"},
-         "new_state": {"suspect": True}, "reason": "historically merged"}]}))
+         "new_state": {"suspect": True}, "reason": "historically merged"},
+        {"type": "SERVICE_CLASSIFICATION",
+         "subject": {"building": "RH Memphis", "number": "2025550400"},
+         "new_state": {"service_type": "ELEVATOR"}, "reason": "site visit"},
+        {"type": "SERVICE_CLASSIFICATION",
+         "subject": {"building": "RH Cleveland", "number": "2025550401"},
+         "new_state": {"service_type": "ELEVATOR"}, "reason": "site visit"}]}))
     return str(p), str(d)
 
 

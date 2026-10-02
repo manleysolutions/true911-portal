@@ -196,10 +196,11 @@ def test_8_provenance_from_every_source_survives_the_merge():
 # ── 9-10: lifecycle independence and FACP cardinality ─────────────────
 
 def test_9_lifecycle_is_independent_of_identity_and_confidence():
-    # PROBABLE (Zoho only) + recent NAPCO signal -> CURRENT lifecycle, still not counted
+    # PROBABLE (Zoho only) + recent NAPCO signal but no deterministic placement
     a = facps(engine.project(snap(zoho_rows=[z("RH Princeton", "Fire Alarm", starlink="77187020")],
                                   source_activity=live("77187020"))), 7)[0]
-    assert (a["confidence"], a["lifecycle"], a["counts"]) == (V.PROBABLE, V.CURRENT, False)
+    assert (a["confidence"], a["lifecycle"], a["counts"]) == (V.PROBABLE, V.UNKNOWN, False)
+    assert a["lifecycle_reason"] == V.REASON_PLACEMENT_UNVERIFIED
     # absent from a loaded NAPCO snapshot -> never DECOMMISSIONED by that absence
     b = facps(engine.project(snap(zoho_rows=[z("RH Princeton", "Fire Alarm", starlink="7700099",
                                                  status="Suspended")],
@@ -220,7 +221,7 @@ def test_10_facp_has_two_connections_only_once_the_service_is_established():
     b = next(b for b in before["building_summaries"] if b["building_id"] == 7)
     assert b["probable_additional_connections"] == 2
     after = engine.project(snap(zoho_rows=rows, napco_radios=["77187020"],
-                                source_activity=live("77187020")))
+                                source_activity=live("77187020"), mappings=[reg(1, 7, "77187020")]))
     c = conns(after, 7)
     assert [x["ordinal"] for x in c] == [1, 2]
     assert all(x["connection_type"] == "FACP_PATH" for x in c)

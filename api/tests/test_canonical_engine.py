@@ -19,6 +19,13 @@ T = "tenant-test"
 RECENT = datetime.now(timezone.utc) - timedelta(days=1)
 
 
+def pin(bid, *ids, start=900):
+    """Deterministic placement: exact registry phone / radio mappings."""
+    return [{"id": start + k, "building_id": bid,
+             "kind": "phone" if len(i) == 10 and i.isdigit() else "napco_radio", "value": i}
+            for k, i in enumerate(ids)]
+
+
 def live(*ids, at=None, lifecycle="CURRENT", hint=None):
     """Source-native ACTIVITY rows (independent deployment evidence): a
     10-digit id is a carrier line (last CDR), anything else a NAPCO radio
@@ -113,7 +120,7 @@ def asset(res, atype, value):
 
 def test_confirmed_elevator_requires_exactly_one_connection():
     res = engine.project(snap(zoho_rows=[zrow("RH Chicago #147", "2025550101", "Elevator")],
-                              source_activity=live("2025550101")))
+                              source_activity=live("2025550101"), mappings=pin(1, "2025550101")))
     s = svc(res, "ELEV:tel:2025550101")
     assert (s["service_type"], s["confidence"], s["lifecycle"], s["counts"]) == \
         (V.ELEVATOR, V.CONFIRMED, V.CURRENT, True)
@@ -124,7 +131,7 @@ def test_confirmed_elevator_requires_exactly_one_connection():
 
 def test_confirmed_emergency_phone_requires_exactly_one_connection():
     res = engine.project(snap(zoho_rows=[zrow("RH Chicago #147", "2025550102", "Emergency Phone")],
-                              source_activity=live("2025550102")))
+                              source_activity=live("2025550102"), mappings=pin(1, "2025550102")))
     assert svc(res, "EPH:tel:2025550102")["counts"]
     assert len(conns(res, 1)) == 1
 
@@ -137,7 +144,8 @@ def _facp_device(dev_id, site_id, nap, **kw):
 
 def test_confirmed_facp_requires_exactly_two_connections_and_fabricates_no_number():
     res = engine.project(snap(sites=[site("S-147", "RH Chicago #147")],
-                              devices=[_facp_device("F1", "S-147", "NAP-0001")]))
+                              devices=[_facp_device("F1", "S-147", "NAP-0001")],
+                              mappings=pin(1, "NAP-0001")))
     s = svc(res, "FACP:radio:NAP0001")
     assert (s["confidence"], s["lifecycle"], s["counts"]) == (V.CONFIRMED, V.CURRENT, True)
     c = conns(res, 1)
@@ -153,7 +161,7 @@ def test_confirmed_facp_requires_exactly_two_connections_and_fabricates_no_numbe
 def test_nyc_guesthouse_four_facps_make_eight_connections():
     devs = [_facp_device("G%d" % i, "S-G", "NAP-G%d" % i) for i in range(1, 5)]
     res = engine.project(snap(sites=[site("S-G", "RH NYC Guesthouse", "6 Test Pl", "New York", "NY")],
-                              devices=devs))
+                              devices=devs, mappings=pin(6, *("NAP-G%d" % i for i in range(1, 5)))))
     facps = [s for s in res["services"] if s["building_id"] == 6 and s["service_type"] == V.FACP]
     assert len(facps) == 4 and all(s["counts"] for s in facps)
     assert len(conns(res, 6)) == 8
@@ -283,17 +291,19 @@ def test_probable_and_unresolved_are_never_confirmed():
 
 
 def test_operator_approval_and_rejection_are_separate_from_confidence():
-    rows = [zrow("RH Houston #130", None, "Fire Alarm", starlink="NAP-H1"),
+    # two mapped radios + two FACP records that do not join -> PROBABLE pairing
+    rows = [zrow("RH Houston #130", None, "Fire Alarm"), zrow("RH Houston #130", None, "Fire Alarm"),
             zrow("RH Chicago #147", "2025550140", "Elevator")]
-    act = live("NAP-H1", "2025550140")
-    base = engine.project(snap(zoho_rows=rows, source_activity=act))
+    act = live("NAP-H1", "NAP-H2", "2025550140")
+    maps = pin(4, "NAP-H1", "NAP-H2") + pin(1, "2025550140", start=950)
+    base = engine.project(snap(zoho_rows=rows, source_activity=act, mappings=maps))
     fkey = next(s["service_key"] for s in base["services"] if s["building_id"] == 4)
     decs = [decision(V.D_SERVICE_APPROVAL, {"building": "RH Houston", "service_key": fkey},
                      {"approval": "APPROVED"}),
             decision(V.D_SERVICE_APPROVAL, {"building": "RH Chicago",
                                             "service_key": "ELEV:tel:2025550140"},
                      {"approval": "REJECTED"})]
-    res = engine.project(snap(zoho_rows=rows, decisions=decs, source_activity=act))
+    res = engine.project(snap(zoho_rows=rows, decisions=decs, source_activity=act, mappings=maps))
     f = svc(res, fkey)
     assert (f["confidence"], f["approval"], f["counts"]) == (V.PROBABLE, V.APPROVED, True)
     e = svc(res, "ELEV:tel:2025550140")
@@ -397,7 +407,11 @@ def _memphis():
               "line_type": "Elevator", "description": None, "notes": None},
              {"line_id": "LT", "device_id": "TOR1", "did": "2025550408", "status": "active",
               "line_type": "Elevator", "description": None, "notes": None}]
-    decs = [decision(V.D_BUILDING_IDENTITY_SUSPECT, {"building": "RH Memphis"}, {"suspect": True})]
+    decs = [decision(V.D_BUILDING_IDENTITY_SUSPECT, {"building": "RH Memphis"}, {"suspect": True}),
+            # a suspect building's registry mappings are demoted: only an operator
+            # decision can deterministically place its genuine line
+            decision(V.D_SERVICE_CLASSIFICATION, {"building": "RH Memphis", "number": "2025550400"},
+                     {"service_type": "ELEVATOR", "label": "Elevator"})]
     return engine.project(snap(mappings=maps, aliases=aliases, zoho_rows=rows, sites=sites,
                                devices=devs, lines=lines, decisions=decs,
                                source_activity=live("2025550400")))

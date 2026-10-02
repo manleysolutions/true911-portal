@@ -25,10 +25,13 @@ or an operator decision can place a record there.
 
 Confidence, approval, lifecycle and DEPLOYMENT stay separate.  PROBABLE /
 UNRESOLVED never become CONFIRMED here.  An administrative status (Zoho
-"Activated", a True911 or carrier "active") never makes anything CURRENT: CURRENT
-needs independent deployment evidence - an operator lifecycle decision, recent
-True911 telemetry, or recent source-native activity in an imported snapshot.
-Negative statuses (de-activated / suspended) are still honoured.  E911 is not an input or an output of this engine.
+"Activated", a True911 or carrier "active") never makes anything CURRENT.
+DEPLOYED needs BOTH (a) liveness - an operator lifecycle decision, recent True911
+telemetry or recent NAPCO / T-Mobile activity in an imported snapshot - AND (b)
+deterministic placement at that building (operator placement or an exact
+registry identifier / telephone mapping).  Activity proves the equipment is
+alive, never where it is.  Negative statuses (de-activated / suspended) are
+still honoured.  E911 is not an input or an output of this engine.
 
 Snapshot shape (all lists of plain dicts): see ``loader.build_snapshot``.
 """
@@ -558,6 +561,10 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
                 "confidence": V.CONFIRMED if s["confidence"] == V.CONFIRMED else s["confidence"],
                 "links": links})
     for s in services:
+        if s["service_type"] in V.LIFE_SAFETY_TYPES and s["lifecycle"] == V.CURRENT \
+                and s["confidence"] == V.CONFIRMED and s.get("deployment") != V.DEPLOYED:
+            finding("DEPLOYMENT_NOT_ESTABLISHED", V.INFO, s["building_id"], s["service_key"],
+                    "CURRENT but not deterministically deployed at this building - not counted")
         if s["service_type"] in V.LIFE_SAFETY_TYPES and s["lifecycle"] == V.UNKNOWN \
                 and s["confidence"] == V.CONFIRMED:
             finding("LIFECYCLE_UNKNOWN", V.INFO, s["building_id"], s["service_key"],
@@ -644,20 +651,28 @@ def _activity_index(rows) -> dict:
     return ix
 
 
-def _deployment(a, activity, now, ix, finding):
-    """Independent evidence that the asset is in service now, or None.
-    -> (basis/reason, source, observed_at)."""
+def _placed_deterministically(a) -> bool:
+    """Placement independent of the record's own CRM location fields."""
+    return (a.get("building_id") is not None and a.get("placement_confidence") == V.CONFIRMED
+            and a.get("placement_basis") in V.DEPLOYMENT_PLACEMENT_BASES)
+
+
+def _liveness(a, activity, now, ix, finding):
+    """Recent evidence that the equipment is ALIVE (not where it is), or None.
+    -> (reason, source, observed_at)."""
     for r in a["records"]:
         if r["source"] == V.SRC_TRUE911 and _recent(r["device"].get("last_heartbeat"), now):
             return V.REASON_DEPLOYMENT_TELEMETRY, V.SRC_TRUE911, r["device"]["last_heartbeat"]
     bstore = (ix.buildings.get(a.get("building_id")) or {}).get("store_number")
     for row in activity.get((a["asset_type"], a["normalized_value"]), ()):
+        if row.get("source") not in V.DEPLOYMENT_ACTIVITY_SOURCES:
+            continue                           # inventory status only (e.g. Verizon)
         if row.get("lifecycle") in V.NOT_CURRENT or not _recent(row.get("activity_at"), now):
             continue
         hint = store_number(row.get("location_hint"))
         if bstore and hint and str(hint) != str(bstore).lstrip("0"):
-            # the source places the active equipment at another store: it may
-            # have been moved - not deployment evidence for THIS building
+            # the source names another store: possibly moved - never carried to
+            # THIS building
             finding("DEPLOYMENT_LOCATION_CONFLICT", V.MEDIUM, a.get("building_id"),
                     a["display_value"], "%s reports recent activity under store %s"
                     % (row["source"], hint))
@@ -669,14 +684,22 @@ def _deployment(a, activity, now, ix, finding):
 def _asset_lifecycle(a, dec, activity=None, now=None, ix=None, finding=None):
     a.update(effective_from=None, effective_to=None, lifecycle_event_key=None,
              deployment=V.DEPLOYMENT_NOT_ESTABLISHED, deployment_basis=None,
-             deployment_observed_at=None, source_status=None)
+             deployment_observed_at=None, source_status=None,
+             liveness_source=None, liveness_at=None)
+    placed = _placed_deterministically(a)
     op = dec["lifecycle"].get(a["key"])
     if op:
+        # governed operator truth: never ages out with source exports
         a.update(lifecycle=op["lifecycle"], lifecycle_reason=op.get("reason"),
                  lifecycle_source=V.SRC_OPERATOR, effective_from=op.get("effective_from"),
                  effective_to=op.get("effective_to"), lifecycle_event_key=op.get("event_key"))
         if op["lifecycle"] == V.CURRENT:
-            a.update(deployment=V.DEPLOYED, deployment_basis=V.REASON_OPERATOR)
+            if placed:
+                a.update(deployment=V.DEPLOYED, deployment_basis=V.REASON_OPERATOR)
+            elif finding:
+                finding("DEPLOYMENT_PLACEMENT_UNVERIFIED", V.MEDIUM, a.get("building_id"),
+                        a["display_value"], "operator says CURRENT but the building "
+                        "placement is not deterministic - not DEPLOYED")
         if op.get("carrier"):
             a["carrier"] = op["carrier"]
         return
@@ -696,16 +719,26 @@ def _asset_lifecycle(a, dec, activity=None, now=None, ix=None, finding=None):
         admin = (lc[0], lc[1], src)
         a["source_status"] = "%s:%s" % (src, lc[0])
         break
-    dep = _deployment(a, activity or {}, now, ix, finding) if ix is not None else None
-    if dep:
-        a.update(lifecycle=V.CURRENT, lifecycle_reason=dep[0], lifecycle_source=dep[1],
-                 deployment=V.DEPLOYED, deployment_basis=dep[0],
-                 deployment_observed_at=dep[2])
+    live = _liveness(a, activity or {}, now, ix, finding) if ix is not None else None
+    if live:
+        a.update(liveness_source=live[1], liveness_at=live[2])
         if admin and admin[0] in V.NOT_CURRENT and finding:
             finding("LIFECYCLE_CONFLICT", V.MEDIUM, a.get("building_id"), a["display_value"],
-                    "%s says %s but %s shows recent activity" % (admin[2], admin[0], dep[1]))
+                    "%s says %s but %s shows recent activity" % (admin[2], admin[0], live[1]))
+    if live and placed:
+        a.update(lifecycle=V.CURRENT, lifecycle_reason=live[0], lifecycle_source=live[1],
+                 deployment=V.DEPLOYED, deployment_basis=live[0],
+                 deployment_observed_at=live[2])
     elif admin and admin[0] in V.NOT_CURRENT:
         a.update(lifecycle=admin[0], lifecycle_reason=admin[1], lifecycle_source=admin[2])
+    elif live:
+        # alive somewhere - but nothing independent says it is at THIS building
+        a.update(lifecycle=V.UNKNOWN, lifecycle_reason=V.REASON_PLACEMENT_UNVERIFIED,
+                 lifecycle_source=live[1])
+        if finding and a.get("building_id") is not None:
+            finding("ACTIVE_PLACEMENT_UNVERIFIED", V.INFO, a["building_id"], a["display_value"],
+                    "%s shows recent activity, but the building placement (%s) is not "
+                    "deterministic - not DEPLOYED" % (live[1], a.get("placement_basis")))
     elif admin:
         a.update(lifecycle=V.UNKNOWN, lifecycle_reason=V.REASON_ADMIN_STATUS_ONLY,
                  lifecycle_source=admin[2])
@@ -889,7 +922,9 @@ def _facp_services(bid, recs, fused, assets, finding, napco=None) -> list[dict]:
         # "Activated" alone leaves UNKNOWN.
         equip = [assets[k] for k, _r in linked if k in assets]
         op = [a for a in equip if a.get("lifecycle_source") == V.SRC_OPERATOR]
-        deployed = [a for a in equip if a.get("deployment") == V.DEPLOYED]
+        deployed = [a for a in equip if a.get("deployment") == V.DEPLOYED
+                    and a.get("building_id") == bid]
+        unplaced = [a for a in equip if a.get("lifecycle_reason") == V.REASON_PLACEMENT_UNVERIFIED]
         states = [r["lifecycle"][0] for r in comp_recs if r["lifecycle"]]
         dep, dep_basis = V.DEPLOYMENT_NOT_ESTABLISHED, None
         if op and all(a["lifecycle"] in V.NOT_CURRENT for a in op):
@@ -897,6 +932,10 @@ def _facp_services(bid, recs, fused, assets, finding, napco=None) -> list[dict]:
         elif deployed:
             lc, why = V.CURRENT, deployed[0]["lifecycle_reason"]
             dep, dep_basis = V.DEPLOYED, deployed[0]["deployment_basis"]
+        elif op and any(a["lifecycle"] == V.CURRENT for a in op):
+            lc, why = V.CURRENT, V.REASON_OPERATOR        # operator truth, placement unverified
+        elif unplaced:
+            lc, why = V.UNKNOWN, V.REASON_PLACEMENT_UNVERIFIED
         elif states and all(s in V.NOT_CURRENT for s in states):
             lc, why = states[0], V.REASON_SOURCE_DEACTIVATED
         else:

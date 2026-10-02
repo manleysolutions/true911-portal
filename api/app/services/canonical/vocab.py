@@ -56,7 +56,16 @@ REASON_ADMIN_STATUS_ONLY = "ADMIN_STATUS_ONLY"
 # evidence leaves NOT_ESTABLISHED - never "not deployed".
 DEPLOYED = "DEPLOYED"
 DEPLOYMENT_NOT_ESTABLISHED = "NOT_ESTABLISHED"
-DEPLOYMENT_ACTIVITY_DAYS = 30                 # "recent" activity window (days before run)
+# Window for SOURCE-DERIVED (inferred) liveness only: inferred deployment ages
+# out when exports stop showing activity.  Operator lifecycle decisions never
+# age - they persist until superseded.
+DEPLOYMENT_ACTIVITY_DAYS = 30
+# Sources whose activity column is a genuine liveness signal (NAPCO
+# LastSignalReceived, T-Mobile Last CDR).  Verizon / Red Pocket exports carry
+# inventory status only and never establish deployment.
+DEPLOYMENT_ACTIVITY_SOURCES = ("NAPCO", "T_MOBILE")
+# reason when equipment is live but not deterministically placed at the building
+REASON_PLACEMENT_UNVERIFIED = "ACTIVE_PLACEMENT_UNVERIFIED"
 
 # ── service types ───────────────────────────────────────────────────────
 FACP = "FACP"
@@ -116,6 +125,10 @@ PLACEMENT_PRIORITY = {
 STRONG_BASES = (P_ASSET_IDENTIFIER, P_TELEPHONE_MAPPING)
 LOCATION_BASES = (P_FACILITY, P_STORE_NUMBER, P_ADDRESS, P_ACCOUNT_ALIAS)
 SUPPORT_BASES = (P_EXISTING_MAPPING, P_GENERIC_ALIAS)
+# Placement that is independent of the record's own CRM location fields: only
+# this can carry liveness to DEPLOYED at a building (activity proves the
+# equipment is alive, never WHERE it is).
+DEPLOYMENT_PLACEMENT_BASES = (P_OPERATOR,) + STRONG_BASES
 
 # ── operator decision types ─────────────────────────────────────────────
 D_BUILDING_IDENTITY_SUSPECT = "BUILDING_IDENTITY_SUSPECT"
