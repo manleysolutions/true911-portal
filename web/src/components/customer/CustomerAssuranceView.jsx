@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { MapPin, ChevronRight, Search, Map as MapIcon, TriangleAlert } from "lucide-react";
+import { MapPin, ChevronRight, Search, Map as MapIcon, TriangleAlert, X } from "lucide-react";
 import PageWrapper from "@/components/PageWrapper";
 import { apiFetch } from "@/api/client";
 import LocationCommandCenter from "@/components/customer/LocationCommandCenter";
 import ActionCenter from "@/components/customer/ActionCenter";
 import { locationOperational, customerLocationName } from "@/components/customer/selfService";
 import { filterLocations } from "@/components/customer/portfolioMap";
-import { statusStatement, opTiles, tokenFor, OP_TOKEN, e911Display } from "@/components/customer/commandCenter";
+import { statusStatement, opTiles, tokenFor, OP_TOKEN, e911Display, parseView, exceptionsPreview } from "@/components/customer/commandCenter";
 import { StatusStatement, OpTile, StatusChip, E911Badge, CommandSkeleton } from "@/components/customer/command/CommandParts";
 import CommandMap from "@/components/customer/command/CommandMap";
 import { useCustomerNav } from "@/components/customer/command/CustomerShell";
@@ -74,13 +74,6 @@ function useIsDesktop() {
   return on;
 }
 
-function scrollToSection(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-}
-
 // ── Enterprise search ────────────────────────────────────────────────
 function SearchBox({ search, setSearch, searchResults, onPick }) {
   return (
@@ -102,6 +95,34 @@ function SearchBox({ search, setSearch, searchResults, onPick }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── One location row (Overview preview + Locations workspace) ─────────
+function LocationRow({ loc, actionRefs, highlightRef, setHighlightRef, onOpen }) {
+  const tok = OP_TOKEN[loc.op.tone];
+  const needsYou = actionRefs.has(loc.location_ref);
+  const e9 = needsYou ? e911Display("customer_confirmation_required")
+    : loc.emergency_address_state ? e911Display(loc.emergency_address_state) : null;
+  return (
+    <li>
+      <button type="button" onClick={() => onOpen({ ref: loc.location_ref, name: loc.location })}
+        onMouseEnter={() => setHighlightRef(loc.location_ref)} onMouseLeave={() => setHighlightRef(null)}
+        onFocus={() => setHighlightRef(loc.location_ref)} onBlur={() => setHighlightRef(null)}
+        className={`cc-focus w-full flex items-center gap-3 px-4 sm:px-5 py-3 min-h-[56px] text-left transition-colors ${highlightRef === loc.location_ref ? "bg-slate-50" : "hover:bg-slate-50"}`}>
+        <span className={`w-1 self-stretch rounded-full ${tokenFor(loc.op.tone).accent}`} aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <p className="text-[13.5px] font-medium text-slate-900 truncate leading-tight">{loc.location}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11.5px] text-slate-500">
+            {(loc.city || loc.state) && <span>{[loc.city, loc.state].filter(Boolean).join(", ")}</span>}
+            <StatusChip token={tok}>{loc.op.label}</StatusChip>
+            {e9 && <span className="inline-flex items-center gap-1"><E911Badge />
+              {needsYou ? <StatusChip token="attention">{e9.label}</StatusChip> : <span className="text-slate-600">{e9.label}</span>}</span>}
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" aria-hidden="true" />
+      </button>
+    </li>
   );
 }
 
@@ -149,13 +170,6 @@ export default function CustomerAssuranceView() {
   const searchAbort = useRef(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const isDesktop = useIsDesktop();
-
-  // Primary navigation = the sections this page really renders (no fake items).
-  useCustomerNav([
-    { id: "cc-overview", label: "Overview", icon: "overview" },
-    ...(actionCenter ? [{ id: "cc-actions", label: "Action Center", icon: "actions" }] : []),
-    { id: "cc-locations", label: "Locations", icon: "locations" },
-  ]);
 
   // Permanent, shareable, customer-safe deep-link: ?location=<ref>.
   const openLocation = useCallback((loc) => {
@@ -234,109 +248,132 @@ export default function CustomerAssuranceView() {
   const statement = useMemo(() => statusStatement(summary, actionCenter, locations), [summary, actionCenter, locations]);
   const tiles = useMemo(() => opTiles(summary, actionCenter, locations), [summary, actionCenter, locations]);
 
+  // ── Workspace views: Overview · Action Center · Locations (?view=) ──
+  const view = parseView(searchParams.get("view"), { hasActions: loading || Boolean(actionCenter) });
+  const setView = useCallback((v) => {
+    const next = new URLSearchParams(searchParams);
+    if (v === "overview") next.delete("view"); else next.set("view", v);
+    setSearchParams(next, { replace: false });
+    window.scrollTo({ top: 0 });
+  }, [searchParams, setSearchParams]);
+  const hrefFor = (v) => (v === "overview" ? "?" : `?view=${v}`);
+  // Primary navigation = the views that really exist (no fake items).
+  useCustomerNav([
+    { id: "overview", label: "Overview", icon: "overview", href: hrefFor("overview"), current: view === "overview", onSelect: () => setView("overview") },
+    ...(actionCenter ? [{ id: "actions", label: "Action Center", icon: "actions", href: hrefFor("actions"), current: view === "actions", onSelect: () => setView("actions") }] : []),
+    { id: "locations", label: "Locations", icon: "locations", href: hrefFor("locations"), current: view === "locations", onSelect: () => setView("locations") },
+  ]);
+
   const tileClick = (tile) => {
-    if (tile.target === "locations") return () => scrollToSection("cc-locations");
-    if (tile.target === "attention" && tile.value > 0) return () => { setStatusFilter("Needs attention"); scrollToSection("cc-locations"); };
-    if (tile.target === "actions" && actionCenter) return () => scrollToSection("cc-actions");
+    if (tile.target === "locations") return () => setView("locations");
+    if (tile.target === "attention" && tile.value > 0) return () => { setStatusFilter("Needs attention"); setView("locations"); };
+    if (tile.target === "actions" && actionCenter) return () => setView("actions");
     return null;
   };
 
   const m = summary || {};
   const selectCls = "cc-focus h-10 px-3 text-[12.5px] rounded-lg bg-white ring-1 ring-inset ring-slate-200 text-slate-700";
   const single = locations.length === 1;
-  const showMap = isDesktop || mobileMap;
+  const filtersOn = statusFilter !== "all" || e911Filter !== "all";
+  const preview = exceptionsPreview(filtered, actionRefs, 5);
+  const rowProps = { actionRefs, highlightRef, setHighlightRef, onOpen: openLocation };
+  const searchBox = (
+    <SearchBox search={search} setSearch={setSearch} searchResults={searchResults}
+      onPick={(r) => { openLocation({ ref: r.location_ref, name: r.location }); setSearch(""); setSearchResults(null); }} />
+  );
+  const clearFilters = () => { setStatusFilter("all"); setE911Filter("all"); };
+  const go = (v) => (e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setView(v); };
 
   return (
     <PageWrapper>
-      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-5 sm:py-7 space-y-4 sm:space-y-5">
+      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-4 space-y-3 lg:space-y-3.5">
         {loading ? <CommandSkeleton /> : error ? (
           <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-6"><p className="text-[13px] text-slate-600">{error}</p></div>
+        ) : view === "actions" ? (
+          /* ACTION CENTER view: the complete queues, full width */
+          <div id="cc-actions" className="max-w-[1100px] mx-auto">
+            <ActionCenter data={actionCenter} onOpenLocation={openLocation} mode="full" />
+          </div>
+        ) : view === "locations" ? (
+          /* LOCATIONS view: the inventory workspace */
+          <section id="cc-locations" aria-labelledby="cc-locations-title" className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 overflow-hidden">
+            <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-3 lg:justify-between">
+              <h1 id="cc-locations-title" className="text-[18px] font-semibold text-slate-900 tracking-tight">
+                Locations <span className="ml-1 text-[13px] font-medium text-slate-400 tabular-nums">{filtered.length} of {locations.length}</span>
+              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                {searchBox}
+                <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+                  <option value="all">All statuses</option>{statusOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <select aria-label="Filter by E911" value={e911Filter} onChange={(e) => setE911Filter(e.target.value)} className={selectCls}>
+                  <option value="all">All E911</option>{e911Options.map((o) => <option key={o} value={o}>{e911Display(o).label}</option>)}
+                </select>
+                <button type="button" onClick={() => setMobileMap((v) => !v)} aria-pressed={mobileMap}
+                  className="cc-focus inline-flex items-center gap-1.5 h-10 px-3 rounded-lg ring-1 ring-inset ring-slate-200 text-[12.5px] font-medium text-slate-700">
+                  <MapIcon className="w-4 h-4" aria-hidden="true" />{mobileMap ? "Hide map" : "Show map"}
+                </button>
+              </div>
+            </div>
+            {mobileMap && (
+              <div className="p-3 h-[380px] lg:h-[440px]"><CommandMap locations={filtered} actionRefs={actionRefs} highlightRef={highlightRef}
+                onHover={setHighlightRef} onOpen={openLocation} single={single} className="h-full" /></div>
+            )}
+            <ul className="divide-y divide-slate-100" aria-label="Location list">
+              {filtered.length === 0 && <li className="px-5 py-10 text-center text-[12.5px] text-slate-500">No locations match your filters.</li>}
+              {filtered.map((loc) => <LocationRow key={loc.location_ref} loc={loc} {...rowProps} />)}
+            </ul>
+          </section>
         ) : (
+          /* OVERVIEW view: statement, instrument row, map + summary rail, exceptions preview */
           <>
-            <div id="cc-overview" tabIndex={-1} className="scroll-mt-20 outline-none">
+            <div id="cc-overview">
               <StatusStatement statement={statement} name={m.portfolio_name || "Your Portfolio"}
                 freshness={updatedAt} onRefresh={refresh} refreshing={refreshing}>
-                <SearchBox search={search} setSearch={setSearch} searchResults={searchResults}
-                  onPick={(r) => { openLocation({ ref: r.location_ref, name: r.location }); setSearch(""); setSearchResults(null); }} />
+                {searchBox}
               </StatusStatement>
             </div>
 
-            <div className="flex flex-col gap-4 sm:gap-5">
-              {/* Operational tiles — after the Action Center on mobile, before it on desktop */}
-              <section aria-label="Operational summary" className="order-2 lg:order-1 grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="flex flex-col gap-3 lg:gap-3.5">
+              {/* instrument row: after the Action Center on mobile, before it on desktop */}
+              <section aria-label="Operational summary" className="order-2 lg:order-1 grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3">
                 {tiles.map((t, i) => <OpTile key={t.key} tile={t} index={i} onClick={tileClick(t)} />)}
               </section>
 
-              {/* Command grid: map (desktop) + Action Center / exceptions rail */}
-              <div className="order-1 lg:order-2 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+              <div id="cc-command" className="order-1 lg:order-2 grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-3.5 items-start">
                 {isDesktop && (
-                  <div className={`lg:col-span-8 ${single ? "h-[380px]" : "h-[600px]"}`}>
+                  // stretches to the rail's height (aligned bottoms), within a 430-480px base and a 560px cap
+                  <div className={`lg:col-span-8 relative self-stretch ${single ? "min-h-[380px]" : "min-h-[clamp(430px,calc(100vh-400px),480px)]"} max-h-[560px]`}>
                     <CommandMap locations={filtered} actionRefs={actionRefs} highlightRef={highlightRef}
                       onHover={setHighlightRef} onOpen={openLocation} single={single} className="h-full" />
+                    {filtersOn && (
+                      <button type="button" onClick={clearFilters}
+                        className="cc-focus absolute top-3 right-14 inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-[11.5px] font-medium text-slate-700 shadow ring-1 ring-slate-200" style={{ zIndex: 600 }}>
+                        Showing filtered locations <X className="w-3.5 h-3.5" aria-hidden="true" /><span className="sr-only">Clear filters</span>
+                      </button>
+                    )}
                   </div>
                 )}
-                <div id="cc-actions" tabIndex={-1} className={`scroll-mt-20 outline-none ${isDesktop ? "lg:col-span-4 lg:sticky lg:top-20" : ""}`}>
+                <div id="cc-actions" className={isDesktop ? "lg:col-span-4" : ""}>
                   {actionCenter
-                    ? <ActionCenter data={actionCenter} onOpenLocation={openLocation} />
+                    ? <ActionCenter data={actionCenter} onOpenLocation={openLocation} mode="summary" onViewAll={() => setView("actions")} />
                     : <ExceptionsRail locations={locations} onOpen={openLocation} />}
                 </div>
               </div>
 
-              {/* Locations — list (with the map on demand on small screens) */}
-              <section id="cc-locations" tabIndex={-1} aria-labelledby="cc-locations-title" className="order-3 scroll-mt-20 outline-none rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 overflow-hidden">
-                <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-                  <h2 id="cc-locations-title" className="text-[14px] font-semibold text-slate-900">
-                    Locations <span className="ml-1 text-[12px] font-medium text-slate-400 tabular-nums">{filtered.length}/{locations.length}</span>
+              {/* concise exceptions-first preview; the full inventory is the Locations view */}
+              <section id="cc-locations" aria-labelledby="cc-preview-title" className="order-3 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 overflow-hidden">
+                <div className="px-4 sm:px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                  <h2 id="cc-preview-title" className="text-[14px] font-semibold text-slate-900">
+                    Locations <span className="ml-1 text-[12px] font-medium text-slate-400">exceptions first</span>
                   </h2>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
-                      <option value="all">All statuses</option>{statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <select aria-label="Filter by E911" value={e911Filter} onChange={(e) => setE911Filter(e.target.value)} className={selectCls}>
-                      <option value="all">All E911</option>{e911Options.map((s) => <option key={s} value={s}>{e911Display(s).label}</option>)}
-                    </select>
-                    {!isDesktop && (
-                      <button type="button" onClick={() => setMobileMap((v) => !v)} aria-pressed={mobileMap}
-                        className="cc-focus inline-flex items-center gap-1.5 h-10 px-3 rounded-lg ring-1 ring-inset ring-slate-200 text-[12.5px] font-medium text-slate-700">
-                        <MapIcon className="w-4 h-4" aria-hidden="true" />{mobileMap ? "Hide map" : "Show map"}
-                      </button>
-                    )}
-                  </div>
+                  <a href={hrefFor("locations")} onClick={go("locations")}
+                    className="cc-focus inline-flex items-center gap-1 min-h-[36px] text-[12.5px] font-semibold text-slate-900 hover:underline">
+                    View all {locations.length} locations <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                  </a>
                 </div>
-
-                {!isDesktop && showMap && (
-                  <div className="p-3 h-[380px]"><CommandMap locations={filtered} actionRefs={actionRefs} highlightRef={highlightRef}
-                    onHover={setHighlightRef} onOpen={openLocation} single={single} className="h-full" /></div>
-                )}
-
-                <ul className="divide-y divide-slate-100 max-h-[620px] overflow-y-auto" aria-label="Location list">
-                  {filtered.length === 0 && <li className="px-5 py-10 text-center text-[12.5px] text-slate-500">No locations match your filters.</li>}
-                  {filtered.map((loc) => {
-                    const tok = OP_TOKEN[loc.op.tone];
-                    const needsYou = actionRefs.has(loc.location_ref);
-                    const e9 = needsYou ? e911Display("customer_confirmation_required")
-                      : loc.emergency_address_state ? e911Display(loc.emergency_address_state) : null;
-                    return (
-                      <li key={loc.location_ref}>
-                        <button type="button" onClick={() => openLocation({ ref: loc.location_ref, name: loc.location })}
-                          onMouseEnter={() => setHighlightRef(loc.location_ref)} onMouseLeave={() => setHighlightRef(null)}
-                          onFocus={() => setHighlightRef(loc.location_ref)} onBlur={() => setHighlightRef(null)}
-                          className={`cc-focus w-full flex items-center gap-3 px-4 sm:px-5 py-3 min-h-[56px] text-left transition-colors ${highlightRef === loc.location_ref ? "bg-slate-50" : "hover:bg-slate-50"}`}>
-                          <span className={`w-1 self-stretch rounded-full ${tokenFor(loc.op.tone).accent}`} aria-hidden="true" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13.5px] font-medium text-slate-900 truncate leading-tight">{loc.location}</p>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11.5px] text-slate-500">
-                              {(loc.city || loc.state) && <span>{[loc.city, loc.state].filter(Boolean).join(", ")}</span>}
-                              <StatusChip token={tok}>{loc.op.label}</StatusChip>
-                              {e9 && <span className="inline-flex items-center gap-1"><E911Badge />
-                                {needsYou ? <StatusChip token="attention">{e9.label}</StatusChip> : <span className="text-slate-600">{e9.label}</span>}</span>}
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" aria-hidden="true" />
-                        </button>
-                      </li>
-                    );
-                  })}
+                <ul className="divide-y divide-slate-100" aria-label="Location preview">
+                  {preview.map((loc) => <LocationRow key={loc.location_ref} loc={loc} {...rowProps} />)}
                 </ul>
               </section>
             </div>

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   STATUS_TOKENS, OP_TOKEN, tokenFor, e911Display, E911_PROVIDER_VERIFICATION_AVAILABLE,
   statusStatement, opTiles, markerView, MAP_LEGEND_ITEMS, ownership, heroChips,
+  parseView, summarizeTiers, actionTotal, exceptionsPreview, SUMMARY_TIERS,
 } from "./commandCenter.js";
 import { locationOperational, actionCenterSections, actionCenterTiers } from "./selfService.js";
 import { mapMarkers } from "./portfolioMap.js";
@@ -230,10 +231,60 @@ test("reduced motion is honoured and motion never encodes state", () => {
 test("navigation shows only real destinations; internal roles keep their shell", () => {
   assert.doesNotMatch(SHELL, /Reports|Coming soon|Soon\b|Billing|Documents/);
   assert.match(VIEW, /useCustomerNav\(\[/);
-  assert.match(VIEW, /\.\.\.\(actionCenter \? \[\{ id: "cc-actions"/, "Action Center appears only when it exists");
-  for (const id of ["cc-overview", "cc-actions", "cc-locations"]) assert.match(VIEW, new RegExp(`id="${id}"`));
+  assert.match(VIEW, /\.\.\.\(actionCenter \? \[\{ id: "actions"/, "Action Center appears only when it exists");
+  assert.match(SHELL, /aria-current=\{i\.current \? "page" : undefined\}/);
+  assert.match(SHELL, /href=\{i\.href\}/);
+  assert.doesNotMatch(SHELL, /IntersectionObserver|scrollIntoView/, "views, not in-page anchors");
   // customer roles branch BEFORE the sidebar; the sidebar path is untouched
   assert.match(LAYOUT, /if \(isCustomerApiRole\(user\.role\)\) \{\s*return \(\s*<>\s*<CustomerShell/);
   assert.match(LAYOUT, /<div className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-\[252px\] z-30">/);
   assert.match(LAYOUT, /const NOC_NAV = \[/);
+});
+
+test("Overview, Action Center and Locations are real views (?view=), not page sections", () => {
+  assert.equal(parseView(null), "overview");
+  assert.equal(parseView("locations"), "locations");
+  assert.equal(parseView("actions"), "actions");
+  assert.equal(parseView("actions", { hasActions: false }), "overview", "no Action Center -> no dead view");
+  assert.equal(parseView("reports"), "overview", "unknown views never render");
+  // the Locations view renders the inventory only: no Overview map, rail or statement above it
+  const loc = VIEW.slice(VIEW.indexOf('view === "locations" ? ('), VIEW.indexOf('<div id="cc-overview">'));
+  assert.ok(loc.length > 200);
+  assert.doesNotMatch(loc, /<ActionCenter|<StatusStatement|<OpTile|id="cc-command"/);
+  for (const f of ["Filter by status", "Filter by E911", "Location list", "Show map", "{searchBox}"]) assert.ok(loc.includes(f), f);
+  // the Action Center view is the full queue
+  const act = VIEW.slice(VIEW.indexOf('view === "actions" ? ('), VIEW.indexOf('view === "locations" ? ('));
+  assert.match(act, /<ActionCenter data=\{actionCenter\} onOpenLocation=\{openLocation\} mode="full" \/>/);
+  assert.doesNotMatch(act, /<CommandMap|<StatusStatement/);
+  // the Overview rail is the summary, with a way to the full queue
+  assert.match(VIEW, /mode="summary" onViewAll=\{\(\) => setView\("actions"\)\}/);
+});
+
+test("Overview rail summarizes: first items + totals + View all; no nested scrolling", async () => {
+  const { actionCenterTiers } = await import("./selfService.js");
+  const many = { ...AC_DATA, e911_confirmation_required: Array.from({ length: 35 }, (_, i) => ({ location_ref: `b${i}`, location: `L${i}` })) };
+  const full = actionCenterTiers(many);
+  const sum = summarizeTiers(full);
+  assert.deepEqual(sum.map((t) => t.tier), full.map((t) => t.tier).filter((t) => SUMMARY_TIERS.includes(t)));
+  const act = sum.find((t) => t.tier === "action_needed");
+  assert.equal(act.sections.reduce((n, s) => n + s.items.length, 0), 3, "3 items shown");
+  assert.equal(act.total, 36); assert.equal(act.hidden, 33);
+  assert.equal(act.sections.find((s) => s.key === "e911_confirmation_required").total, 35, "header keeps the real total");
+  assert.equal(actionTotal(full), 36);
+  // ownership and order are untouched: the first E911 row is still the first item
+  assert.equal(act.sections[1].items[0].location_ref, "b0");
+  // full view keeps every item
+  assert.equal(full.find((t) => t.tier === "action_needed").sections.find((s) => s.key === "e911_confirmation_required").items.length, 35);
+  assert.match(AC, /View all \$\{waiting\} actions/);
+  assert.doesNotMatch(AC, /overflow-y-auto|max-h-/, "no nested scroll regions in the Action Center");
+  assert.doesNotMatch(VIEW, /max-h-\[\d+px\] overflow-y-auto/, "location list scrolls with the page");
+});
+
+test("Overview location preview is exceptions-first and never relabels a location", () => {
+  const ls = [loc("ok1", "Protected"), loc("unk", "Unknown", { monitoring_linked: false }), loc("att", "Attention Needed"),
+    loc("crit", "Critical"), loc("ok2", "Protected")];
+  const pv = exceptionsPreview(ls, new Set(["ok2"]), 4);
+  assert.deepEqual(pv.map((l) => l.location_ref), ["crit", "att", "ok2", "unk"]);
+  assert.deepEqual(pv.map((l) => l.op.label), ["Needs attention", "Needs attention", "Monitored", "Monitoring record being confirmed"]);
+  assert.match(VIEW, /View all \{locations\.length\} locations/);
 });
