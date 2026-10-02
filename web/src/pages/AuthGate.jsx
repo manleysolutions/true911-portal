@@ -341,10 +341,6 @@ export default function AuthGate() {
           </div>
 
           <div className="text-center mt-6 flex items-center justify-center gap-3">
-            <span className="text-blue-400 text-xs font-bold">Made in USA</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-500 text-xs font-medium">NDAA-TAA Compliant</span>
-            <span className="text-slate-600">·</span>
             <span className="text-slate-500 text-xs">© 2026 Manley Solutions</span>
           </div>
         </div>
@@ -470,10 +466,6 @@ export default function AuthGate() {
           </div>
 
           <div className="text-center mt-6 flex items-center justify-center gap-3">
-            <span className="text-blue-400 text-xs font-bold">Made in USA</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-500 text-xs font-medium">NDAA-TAA Compliant</span>
-            <span className="text-slate-600">·</span>
             <span className="text-slate-500 text-xs">© 2026 Manley Solutions</span>
           </div>
         </div>
@@ -542,10 +534,6 @@ export default function AuthGate() {
           </div>
 
           <div className="text-center mt-6 flex items-center justify-center gap-3">
-            <span className="text-blue-400 text-xs font-bold">Made in USA</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-500 text-xs font-medium">NDAA-TAA Compliant</span>
-            <span className="text-slate-600">·</span>
             <span className="text-slate-500 text-xs">© 2026 Manley Solutions</span>
           </div>
         </div>
@@ -772,10 +760,6 @@ export default function AuthGate() {
         </div>
 
         <div className="text-center mt-6 flex items-center justify-center gap-3">
-          <span className="text-blue-400 text-xs font-bold">Made in USA</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-slate-500 text-xs font-medium">NDAA-TAA Compliant</span>
-          <span className="text-slate-600">·</span>
           <span className="text-slate-500 text-xs">© 2026 Manley Solutions</span>
         </div>
       </div>

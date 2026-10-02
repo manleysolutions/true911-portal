@@ -5,9 +5,10 @@
  * MANAGE_REGISTRATIONS for any action button (transition, request
  * info, cancel, edit reviewer notes).
  *
- * No conversion logic on this page — converting a registration into
- * production rows lives in Phase R4 behind the CONVERT_REGISTRATIONS
- * permission.
+ * Conversion into production rows is available here (dry-run first) for
+ * users holding CONVERT_REGISTRATIONS (Admin / SuperAdmin) via
+ * POST /api/registrations/{id}/convert.  See docs/ACQUISITION.md for what
+ * conversion creates and what it must not be read as proving.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";

@@ -149,6 +149,9 @@ class RegistrationCreate(BaseModel):
     """
 
     submitter_email: EmailStr
+    # acquisition provenance (normalized server-side; D-031) + honeypot
+    attribution: Optional[dict[str, Optional[str]]] = None
+    website: Optional[str] = Field(None, max_length=200)
     submitter_name: Optional[str] = Field(None, max_length=255)
     submitter_phone: Optional[str] = Field(None, max_length=50)
     customer_name: Optional[str] = Field(None, max_length=255)

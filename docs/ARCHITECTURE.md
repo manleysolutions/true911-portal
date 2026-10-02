@@ -164,7 +164,7 @@ safety mechanism. Current production overrides come from `render.yaml`.
 | `FEATURE_SAMANTHA` | false | off | AI/Samantha nav item |
 | `FEATURE_LINE_INTELLIGENCE` | false | off | Line Intelligence Engine endpoints |
 | `FEATURE_CANONICAL_SERVICE_MODEL` | false | off | RESERVED for PR #186b canonical customer read model (+ `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST`); nothing reads it in #186a |
-| `ALLOW_PUBLIC_REGISTRATION` | false | off | Public self-registration |
+| `ALLOW_PUBLIC_REGISTRATION` | false | off | User-account self-registration at `POST /api/auth/register` only. Does **not** gate the `/register` assessment wizard (`/api/public/registrations`) or the public lead forms — see `ACQUISITION.md` |
 
 Frontend mirror flags (`VITE_FEATURE_*`) control whether the UI *renders* a
 surface; the backend flag controls whether the data exists. Both must agree.

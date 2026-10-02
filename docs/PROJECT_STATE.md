@@ -7,7 +7,7 @@
 >
 > **Authority Level:** 3 — Execution. **Governed by:** `CONSTITUTION.md`.
 > Last updated: 2026-10-01. Branch at time of writing:
-> `docs/project-state-190-merged`.
+> `fix/durable-public-acquisition`.
 >
 > **PR #181 has MERGED** (`bbde649`) — the carrier-state reconciliation and the
 > maturity/authorization split are on `main`, which is what Render is running.
@@ -23,6 +23,37 @@
 > sections below that describe it as "PR open, NOT merged" were accurate on
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
+
+## 0·IN REVIEW — Durable public acquisition foundation (D-030..D-033) — branch `fix/durable-public-acquisition` [2026-10-01]
+
+PR "Fix: Establish Durable Public Acquisition Foundation" — **NOT merged; awaiting
+Stuart.** Full detail: `docs/ACQUISITION.md`.
+- **Invariant (D-031):** a prospect is told "received" only after the submission is
+  committed. `/quote` and `/get-started` previously showed success on 404/network
+  errors and persisted nothing. Now each submission writes an `acquisition_records` row
+  (migration **056**, additive), and the client shows success only for a server
+  receipt with a `record_ref`. Retries are idempotent.
+- **Notifications** are post-persistence, escaped, and recorded per row (`sent`, `failed`
+  or `not_configured`). SMTP is not configured in production, so rows will read
+  `not_configured`. Leads can be read at `GET /api/acquisition/records` (platform
+  `VIEW_REGISTRATIONS`). There is no internal UI yet.
+- **Wizard linked:** `/register` creates an `assessment` record (`assessment_draft` →
+  `assessment_submitted`); a real conversion marks it `converted`. No new lead
+  architecture.
+- **Abuse:** honeypot, rate limits, payload caps. No CAPTCHA (documented).
+- **Public claims (D-030):** Class D claims removed; Kari's / RAY BAUM'S kept as neutral
+  context only; "Made in USA"/NDAA removed from the public footer, login screen and
+  portal sidebar; the dead flyer CTA removed; "Free Audit" and "True911+" removed from
+  the touched flow.
+- **CTA (D-032):** "Start a Life-Safety Assessment"; login is in the header only.
+- **Brand (D-033):** navy/blue for action, red reserved for risk.
+- **Bundle:** the public entry went from 1,991.97 kB (476.41 gzip) to 294.47 kB
+  (90.67 gzip); the portal is a lazy chunk.
+- **SEO:** canonical/OG tags, `robots.txt`, `sitemap.xml`.
+- **Conversion truth:** `Site status="Connected"` and copied `e911_*` were
+  **characterized, not changed**. The remediation is proposed in ACQUISITION.md §9
+  and awaits approval.
+- No production writes, no emails, no Zoho, no Render env changes. Judy not invited.
 
 ## 0·DONE — Customer generic terminology + status clarity (D-028) — PR #190 MERGED `ca403f2` [2026-10-01]
 

@@ -609,3 +609,62 @@ side effect of bookkeeping rather than as a decision anybody made.
   `awaiting_your_response`). Regression tests:
   `web/src/components/customer/customerTerminology.test.js`,
   `api/tests/test_customer_terminology.py`.
+
+### D-030 — Public claims inherit the platform truth rules
+- **Date:** 2026-10-01 · **Status:** Accepted
+- **Context:** The public site promised guaranteed connectivity, instant alerts,
+  automatic E911/Kari's Law enforcement, universal four-path failover, inspection-proof
+  compliance and blanket "Made in USA"/NDAA-TAA, none of which the platform can evidence.
+  The product's own truth rules (UNKNOWN ≠ healthy; address ≠ E911 verified; Constitution
+  §7.3 veto on guaranteeing 911 connectivity) applied inside the portal but not on the
+  public site.
+- **Decision:** Public marketing copy is held to the same truth rules as the product.
+  No guarantees of connectivity, no instant/seconds claims, no claim that True911
+  enforces, verifies or certifies compliance or carrier E911 registration, no universal
+  failover, no blanket origin/procurement claims (NDAA/TAA only on a specific offering
+  with evidence). Kari's Law / RAY BAUM'S appear as neutral context only. Product
+  screenshots come from sanitized fixture data, labelled "Product UI · Sample data".
+- **Consequences:** Landing and platform pages rewritten within their existing
+  structure; "Made in USA"/NDAA removed from the public footer, login screen and portal
+  sidebar. Guarded by `web/src/pages/public/publicPages.test.js`. See `ACQUISITION.md` §10.
+
+### D-031 — Durable before success
+- **Date:** 2026-10-01 · **Status:** Accepted
+- **Context:** `/quote` and `/get-started` showed "submitted" on 404 and network errors;
+  the server persisted nothing and only attempted an unescaped email. Leads could be
+  lost silently.
+- **Decision:** True911 never tells a prospect "received" until the submission exists
+  durably in True911. The database (`acquisition_records`) is the system of record;
+  notification, CRM and analytics are post-persistence side effects whose outcome is
+  recorded on the row and can never delete or duplicate the lead. Retries are idempotent
+  by client key. `not_configured` is never reported as `sent`.
+- **Consequences:** Migration 056 (additive). Receipt-only success in
+  `web/src/lib/acquisition.js`. Honeypot, rate limits and payload caps; no third-party
+  CAPTCHA (documented). Internal read: `GET /api/acquisition/records`. See `ACQUISITION.md`.
+
+### D-032 — Assessment direction: self-service assessment, sales-assisted qualification, True911-operated deployment
+- **Date:** 2026-10-01 · **Status:** Accepted
+- **Context:** The public path offered a "Free Audit" that did not exist, a NOC-tier
+  quote vocabulary, and a separate email-only lead path alongside the registration wizard.
+- **Decision:** The primary public CTA is **Start a Life-Safety Assessment**; login stays
+  in the header only. The registration pipeline is the assessment foundation — no second
+  lead architecture; quote and assessment requests are recorded as `inquiry` acquisition
+  records, and wizard submissions link by `registration_ref`. Acquisition status
+  (inquiry … converted/closed) is separate from deployment status. No pricing, billing or
+  checkout in the assessment. Audience order: multi-location enterprise/retail/property
+  portfolios, public sector/campuses, healthcare, channel/MSP. No customer-specific
+  marketing.
+- **Consequences:** Life-safety vocabulary on `/quote` (service interests and needs,
+  server allow-listed). Conversion's `Site status="Connected"`/E911-copy behaviour is
+  characterized, with remediation proposed for approval (`ACQUISITION.md` §9).
+
+### D-033 — Brand colour roles: navy/blue for brand and action, red reserved for risk
+- **Date:** 2026-10-01 · **Status:** Accepted
+- **Context:** The public site used red for the logo, every CTA and every accent, so
+  the colour that should signal risk carried no meaning; the Beacon identity (#197)
+  is navy/blue.
+- **Decision:** Navy `#0B1F3B` / Blue `#2D8CFF` / Light `#60A9FF` carry brand and action
+  (buttons with white text use `#1C6FE6` for contrast); red is reserved for risk, errors
+  and problem framing. The Beacon replaces the red shield in public chrome.
+- **Consequences:** Public nav/footer/forms/pages updated. Internal portal colour use is
+  unchanged in this PR.
