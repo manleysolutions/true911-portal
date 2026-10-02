@@ -148,13 +148,7 @@ If a reviewer can't tell what an image is for within about 5 seconds, it is too
 obscured.
 
 **Larger disclosure vectors found during this review (more significant than any screenshot):**
-1. **The production API publishes its full schema.** `/docs`, `/redoc` and
-   `/openapi.json` (≈548 KB) are publicly reachable on `true911-api.onrender.com`.
-   They reveal every endpoint and model: canonical inventory, reconciliation,
-   Action Center, E911 and customer self-service.
-   **Recommendation (needs approval; it is a live change):** disable these in
-   production (`FastAPI(docs_url=None, redoc_url=None, openapi_url=None)` when
-   `APP_MODE=production`, or gate them behind internal auth).
+1. **The production API published its full schema. FIXED by PP-0 (PR #203, `56ab75b`, verified live 2026-10-02).** `/docs`, `/redoc`, `/openapi.json` and `/docs/oauth2-redirect` now return 404 in production; they are served only with `APP_MODE=demo`.
 2. **The portal JavaScript chunk is publicly downloadable**, though minified and
    without source maps (verified: no `sourceMappingURL`). Its UI logic and copy can
    be inspected. This is inherent to an SPA. Keep proprietary logic server-side,
@@ -234,7 +228,7 @@ Guards to add in PP-3:
 
 | Slice | Scope | Notes |
 |---|---|---|
-| **PP-0** (**DONE: PR #203 merged `56ab75b`, verified live**) | Disable `/docs`, `/redoc`, `/openapi.json` (and `/docs/oauth2-redirect`) in production | Docs are served only when `APP_MODE` is exactly `demo`; production, missing or unknown values disable them. Exposure-audit findings (debug CORS route, malformed production `CORS_ORIGINS`, public feature flags) are in BACKLOG A15, not fixed by PP-0 |
+| **PP-0** (**DONE: PR #203 merged `56ab75b`, verified live**) | Disable `/docs`, `/redoc`, `/openapi.json` (and `/docs/oauth2-redirect`) in production | Docs are served only when `APP_MODE` is exactly `demo`; production, missing or unknown values disable them. The related findings are resolved (BACKLOG A15, closed): CORS was corrected and is validated at startup (#204), and `/api/debug/cors` is SuperAdmin-only. `/api/config/features` is deferred as A16 |
 | **PP-1** | Synthetic marketing fixture specification + fixture file | Truth-model tests over the fixture |
 | **PP-2** | Capture build: render the customer components from the fixture, local/CI only | Not a production route; reuses the headless-Edge capture method |
 | **PP-3** | Homepage product-proof band with P1 | Asset guards (§7); D-030 copy review; LCP/performance budget |

@@ -140,41 +140,34 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
   - **Constraints:** do NOT guess a hop count, and do not weaken or remove rate
     limiting. A Cloudflare-range-aware parser is one candidate design, not
     approved. See `ACQUISITION.md` §6a.
-- **A15. PP-0: production API documentation exposure. DONE: PR #203 merged
-  `56ab75b`, verified live 2026-10-02 (`/docs`, `/redoc`, `/openapi.json`,
-  `/docs/oauth2-redirect` all 404 in production).** The exposure-audit findings below
-  remain open.
-  - **Before:** production publicly served `/docs` (200), `/redoc` (200),
-    `/openapi.json` (200, about 548 KB: the full API surface and models) and
-    `/docs/oauth2-redirect` (200).
-  - **After:** all four are absent unless `APP_MODE=demo`. The rule is in
-    `ARCHITECTURE.md`.
-  - **No business API behaviour changed.**
-  - **Exposure audit (read-only, 2026-10-02).** Separate findings, NOT fixed by PP-0:
-    - **RESOLVED: malformed production `CORS_ORIGINS`.** The last origin carried a
-      newline plus `PUBLIC_URL=…`. Stuart corrected it in Render on 2026-10-02, and it
-      was verified live: exactly the three intended origins, preflights correct.
-    - **RESOLVED in "Security: Harden Production CORS Diagnostics":**
-      - `/api/debug/cors` is now SuperAdmin-only (`GLOBAL_ADMIN`).
-      - `CORS_ORIGINS` is validated at startup, so a malformed value fails the deploy.
-      - An unset value fails closed outside `APP_MODE=demo` (no `*`).
-      - `render.yaml` no longer lists the dead `true911-web-prod` origin and records
-        the verified frontend mapping (www → the service named `true911-web-demo`).
-    - **DEFERRED (intentionally unchanged): `/api/config/features` is unauthenticated**
-      and returns four feature-flag
-      booleans. Low sensitivity; decide whether to gate it.
-    - **`GET /tmobile/wholesale/callback/subscriber-status`** has no auth dependency (a
-      carrier callback; WAF-fronted on the PIT host per `ARCHITECTURE.md`). Review it
-      with the callback auth work.
-    - **Clean:**
-      - no GraphQL; no `/metrics`, `/routes` or `/debug` index;
-      - no alternate OpenAPI/Swagger paths (`/api/openapi.json`, `/swagger.json`,
-        `/openapi.yaml`, `/.well-known/openapi.json` all 404);
-      - `/api/health/auth` requires `GLOBAL_ADMIN` (401);
-      - no schema or source-map files in the repo or the web build (no
-        `sourceMappingURL`); `www.true911.com/openapi.json` is just the SPA page.
-    - **Inherent:** the logged-in portal JS chunk is downloadable (minified, no source
-      maps). Keep proprietary logic server-side (`PUBLIC_PRODUCT_PROOF.md` §6, in #201).
+- **A15. ✅ CLOSED (2026-10-02): production API exposure and CORS hardening.** Verified live.
+  - **PP-0 (PR #203, `56ab75b`):** FastAPI docs and schema are disabled in production:
+    `/docs`, `/redoc`, `/openapi.json` and `/docs/oauth2-redirect` all return 404. They
+    are served only when `APP_MODE=demo`. Before the change, the full schema (≈548 KB)
+    was public.
+  - **Render configuration:** the malformed `CORS_ORIGINS` (a newline plus a pasted
+    `PUBLIC_URL=` assignment) was corrected operationally by Stuart. The allowed origins
+    are now exactly `https://true911.com`, `https://www.true911.com` and
+    `https://true911-web-demo.onrender.com`; `true911-web-prod.onrender.com` and foreign
+    origins are refused. `PUBLIC_URL` is `https://www.true911.com`.
+  - **Hardening (PR #204, `e421861`):**
+    - `CORS_ORIGINS` is validated at startup, so a malformed value fails the deploy.
+    - Production and non-demo modes fail closed when it is unset (no `*`).
+    - `/api/debug/cors` is SuperAdmin-only (401 unauthenticated).
+  - **Topology recorded:** the real production frontend is currently the Render service
+    **named `true911-web-demo`** (`www.true911.com` is a CNAME of
+    `true911-web-demo.onrender.com`). No service answers at
+    `true911-web-prod.onrender.com`. Services were not renamed.
+  - **Spun out (separately scoped, they do not keep A15 open):** A16 below, and the
+    T-Mobile callback authentication item already tracked in the T-Mobile section.
+- **A16. `/api/config/features` hardening (deferred).** Unauthenticated; returns four
+  feature-flag booleans (low sensitivity). The web app doesn't call it (it uses
+  build-time `VITE_FEATURE_*`), but `scripts/lllm_phase1a_smoke.ps1`, the runbooks and
+  two test files call it without a token. If gated, require any authenticated internal
+  user and update that tooling in the same change.
+- **T-Mobile `GET /tmobile/wholesale/callback/subscriber-status`** has no auth
+  dependency (a carrier callback, WAF-fronted on the PIT host). It stays with the
+  separate callback-authentication verification work; deliberately unchanged.
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 
