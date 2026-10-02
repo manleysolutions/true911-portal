@@ -56,6 +56,11 @@ from app.models.customer_self_service import (
 )
 from app.services.customer import physical_devices as pdev
 from app.services.customer.refs import decode_ref, encode_ref
+
+
+def _cs():
+    from app.services.customer import serialize
+    return serialize
 from app.services.rbac import can as rbac_can
 
 # ══════════════════════════════════════════════════════════════════════
@@ -269,7 +274,8 @@ async def resolve_location_context(db: AsyncSession, tenant_id: str, ref: str, n
             return None
         return LocationContext(
             ref=ref, key=f"site:{site.site_id}", mode="site", site=site,
-            canonical_name=site.site_name, address=site.e911_street, city=site.e911_city,
+            canonical_name=_cs().customer_name(site.site_name), address=site.e911_street,
+            city=site.e911_city,
             state=site.e911_state, zip=site.e911_zip)
 
     raw_b = decode_ref("bldg", ref)
@@ -286,7 +292,8 @@ async def resolve_location_context(db: AsyncSession, tenant_id: str, ref: str, n
         return None
     ctx = LocationContext(
         ref=ref, key=f"bldg:{b.id}", mode="registry", building_id=b.id,
-        canonical_name=b.canonical_name, address=b.address, city=b.city, state=b.state,
+        canonical_name=_cs().customer_name(b.canonical_name), address=b.address, city=b.city,
+        state=b.state,
         zip=b.zip, store_number=b.store_number, site_type=b.site_type)
     if full:
         records = await prv.load_customer_buildings(db, tenant_id, now) or []
@@ -1061,6 +1068,9 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
             "location_ref": ctx.ref,
             "canonical_name": display_default,
             "display_name": loc_overlay.get("display_name") or display_default,
+            # #186b canonical service inventory - present ONLY when enabled
+            **({"service_inventory": (ctx.record or {})["service_inventory"]}
+               if ctx.mode == "registry" and "service_inventory" in (ctx.record or {}) else {}),
             "address": address,
             "store_number": ctx.store_number if cs.valid_store_number(ctx.store_number) else None,
             "building_type": category,
@@ -1131,7 +1141,8 @@ async def _portfolio_locations(db, tenant_id, now) -> list[dict]:
         return out
     for site, protection in await cportfolio.load_portfolio(db, tenant_id, now):
         out.append({"ref": encode_ref("loc", site.id), "key": f"site:{site.site_id}",
-                    "name": site.site_name, "protection": protection, "monitoring_linked": True,
+                    "name": cs.customer_name(site.site_name), "protection": protection,
+                    "monitoring_linked": True,
                     "has_address": bool(site.e911_street),
                     "official_verified": (site.e911_status or "").lower() in _E911_VERIFIED,
                     "site": site,

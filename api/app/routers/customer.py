@@ -457,8 +457,10 @@ async def customer_location_services(
         detail = prv.building_detail(records, location_ref)
         if detail is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
-        return {"as_of": now.isoformat(),
-                "data": {"location": detail["display_name"], "services": detail["services"]}}
+        data = {"location": detail["display_name"], "services": detail["services"]}
+        if "service_inventory" in detail:
+            data["service_inventory"] = detail["service_inventory"]
+        return {"as_of": now.isoformat(), "data": data}
     data = await cc.load_location_services(db, current_user.tenant_id, location_ref, now)
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")

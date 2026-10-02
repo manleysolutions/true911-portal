@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.customer import canonical_view as cview
 from app.services.customer import command_center as cc
 from app.services.customer import physical_devices as pdev
 from app.services.customer import portfolio as cportfolio
@@ -75,6 +76,10 @@ async def _visible_building_rows(db, tenant_id):
     include_pending = _include_pending(tenant_id)
     out = []
     for b in rows:
+        # CG-1 L4: only ACTIVE buildings reach a customer (a retired / merged /
+        # inactive registry row is never shown, approved or not)
+        if (b.status or "active").strip().lower() != "active":
+            continue
         if b.approved:
             out.append((b, False))
         elif include_pending:
@@ -208,6 +213,16 @@ async def load_customer_buildings(db: AsyncSession, tenant_id: str, now):
             signals = {d["key"]: d["met"] for d in rec["maturity"]["dimensions"]}
             rec["maturity"] = cs.building_maturity({**signals, "contacts": True})
         records.append(rec)
+    # #186b: the canonical service inventory, ONLY when explicitly enabled for the
+    # tenant (flag + allowlist + durable ref secret + a clean APPLY run).  Absent
+    # otherwise, so the customer payload is unchanged.
+    inv = await cview.load_inventory(db, tenant_id)
+    if inv is not None:
+        for rec in records:
+            rec["service_inventory"] = cview.building_inventory(
+                inv, rec["id"], approved=bool(rec.get("approved")),
+                active=(rec.get("status") or "active").strip().lower() == "active",
+                pending=bool(rec.get("pending")))
     return records
 
 
@@ -386,7 +401,15 @@ def summary(records: list[dict], company, now) -> dict:
         "monthly_health_score": health,
         "upcoming_maintenance": [],
         "recent_activity": [],
+        **_inventory_summary(records),
     }
+
+
+def _inventory_summary(records) -> dict:
+    """{"service_inventory": <portfolio roll-up>} when the canonical inventory is
+    attached to the records, else {} (payload unchanged)."""
+    blocks = [r["service_inventory"] for r in records if "service_inventory" in r]
+    return {"service_inventory": cview.portfolio_inventory(blocks)} if blocks else {}
 
 
 def health(records: list[dict]) -> dict:
@@ -414,6 +437,7 @@ def services_summary(records: list[dict]) -> dict:
         "protected_services": protected,
         "attention_services": attention,
         "inventory": [{"service": k, "count": v} for k, v in inv.most_common()],
+        **_inventory_summary(records),
     }
 
 
@@ -441,7 +465,7 @@ def search(records, q) -> dict:
 
 def _matches(r, ql) -> bool:
     hay = " ".join(str(x or "").lower() for x in (
-        r.get("canonical_name"), cs.building_display_name(r.get("canonical_name"),
+        cs.customer_name(r.get("canonical_name"), ""), cs.building_display_name(r.get("canonical_name"),
                                                           r.get("store_number"), r.get("city"),
                                                           r.get("site_type")),
         r.get("store_number"), r.get("city"), r.get("state")))

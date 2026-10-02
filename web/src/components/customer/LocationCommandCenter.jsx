@@ -14,6 +14,7 @@ import {
 } from "@/components/customer/selfService";
 import { motion, useReducedMotion } from "framer-motion";
 import { e911Display } from "@/components/customer/commandCenter";
+import { locationInventoryView } from "@/components/customer/serviceInventory";
 
 // ════════════════════════════════════════════════════════════════════
 // LocationCommandCenter — one location, in four places:
@@ -293,6 +294,8 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
   const contribOf = (t) => (contributions?.contributions || []).filter((c) => c.type === t);
   const svcList = useMemo(() => services?.services || [], [services]);
   const groups = useMemo(() => groupConnectionsByService(svcList, ws?.connections || []), [svcList, ws]);
+  // canonical service inventory (#186b) - present only when enabled for the tenant
+  const invView = locationInventoryView(ws?.location?.service_inventory);
 
   // Operational status (evidence-based; neutral when unknown).
   const op = ws?.location?.operational_state ? operationalView(ws.location.operational_state)
@@ -477,6 +480,22 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                 </Block>
               )}
             </>
+          )}
+
+          {detail && tab === "connections" && invView && (
+            <Block title="Service inventory" icon={ShieldCheck}>
+              <p className="text-[12px] text-slate-600">{invView.message}</p>
+              {invView.services.length > 0 && (
+                <ul className="mt-2 divide-y divide-slate-100">
+                  {invView.services.map((s) => (
+                    <li key={s.key} className="py-1.5 flex items-center justify-between gap-3 text-[12px]">
+                      <span className="text-slate-900">{s.label}</span>
+                      <span className="text-slate-500">{[s.paths, s.phone].filter(Boolean).join(" · ")}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Block>
           )}
 
           {detail && tab === "connections" && (

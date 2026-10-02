@@ -385,3 +385,78 @@ replaced by "Portfolio inventory — Being reconciled"; per-location wording say
 "Manage Telephone Lines". API field names are unchanged. `FEATURE_CANONICAL_SERVICE_MODEL`
 + `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST` are reserved (off) for #186b, which
 will expose canonical figures only once the projection is approved for customer use.
+
+### 10a. #186b canonical customer service inventory (implemented, flag OFF)
+
+`app/services/customer/canonical_view.py` is a read-only reader over the
+**latest** APPLY projection. If that run is degraded or unfinished, nothing is
+served; there is no fallback to an older run.
+
+**Gating.** The view is active only when all of these hold:
+- `FEATURE_CANONICAL_SERVICE_MODEL == "true"`;
+- the tenant is in `CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST`;
+- the durable `CUSTOMER_REF_SECRET` is configured;
+- registry mode is on.
+
+If any of these fails, the view fails closed: the `service_inventory` field is
+absent and every customer payload is byte-for-byte unchanged. Rollback is the
+flag or the allowlist, with no deploy and no data change.
+
+**This is inventory truth.** It is never regulatory certification, E911
+verification, monitoring certification or customer attestation, so the word
+"certified" is not used anywhere in the customer API or UI.
+
+**READY.** A service is READY only when all of these hold:
+- it is in the latest clean APPLY run;
+- its type is FACP, ELEVATOR or EMERGENCY_PHONE;
+- it is not REJECTED;
+- it is CONFIRMED, or APPROVED by the operator;
+- it is CURRENT;
+- it has at least one REQUIRED connection. The writer creates connections only
+  for counted services, so this is the persisted "counted" signal and no
+  migration is needed;
+- its building is approved, active, not pending and not
+  `BUILDING_IDENTITY_SUSPECT`.
+
+**Other services:**
+- HISTORICAL, DECOMMISSIONED and REJECTED services are never shown.
+- Every other current record (PROBABLE, UNRESOLVED, UNCLASSIFIED, or CONFIRMED but
+  not counted) only makes its building "being finalized". It is never listed or
+  counted as inventory.
+
+**Per-building `service_inventory` states:**
+
+| State | Customer message |
+|---|---|
+| `READY` | Service inventory confirmed by True911 |
+| `PARTIALLY_READY` | Some service inventory is confirmed. Additional records are being finalized by True911. |
+| `BEING_FINALIZED` | Being finalized by True911 |
+| `NO_SERVICES_ON_RECORD` | No life-safety services on record |
+
+Each block also carries `ready_services[]`, where every entry has:
+- `service_ref` (opaque `lss_…`);
+- `service` (Fire Alarm / Elevator / Emergency Phone);
+- `name`;
+- `required_paths`: a requirement only; a path is never named, numbered or given
+  an IP;
+- `telephone_number`: only for a READY Elevator / Emergency Phone service, taken
+  from its own active CARRIER_LINE link. It is **always null for an FACP**, and is
+  never a Device or SIM MSISDN, ICCID, IMEI or radio identity.
+
+**Portfolio roll-up.** It reports location counts per state,
+`ready_services_by_type` and `records_being_finalized`. There is **no** service
+grand total, **no** connection total and **no** probable or unresolved count.
+
+**E911** is never an input or an output of this reader.
+
+**Operator preview** (read-only, ignores the flag, includes a leak scan):
+`python -m scripts.canonical_customer_preview --tenant restoration-hardware`.
+
+**CG-1 fixes.** These apply always, whatever the flag:
+- **L1 refs:** opaque AES-SIV refs (see `CUSTOMER_API_CONTRACTS.md`).
+- **L2 names:** internal record-name markers are stripped from every customer
+  name.
+- **L3 numbers:** `Device.msisdn` and `genesis_msisdn` (SIM MSISDN) are never
+  customer numbers. Only `Line.did` and registry `phone` mappings are. The E911
+  callback endpoint is unchanged.
+- **L4 buildings:** only `status == active` buildings are shown.

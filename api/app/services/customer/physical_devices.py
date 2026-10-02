@@ -150,12 +150,14 @@ def building_physical_devices(mappings, site_devices=(), fused_groups=()) -> int
 
 
 def building_phone_numbers(mappings, service_phones=()) -> list[str]:
-    """Distinct 10-digit connection numbers from registry phone mappings + the
-    phone numbers already on the building's services (deduplicated)."""
+    """Distinct 10-digit connection numbers from registry ``phone`` mappings + the
+    phone numbers already on the building's services (deduplicated).  A
+    ``genesis_msisdn`` mapping is a SIM MSISDN, never a customer telephone
+    number (CG-1 L3)."""
     nums: set[str] = set()
     for m in mappings or []:
         get = m.get if isinstance(m, dict) else (lambda k, _m=m: getattr(_m, k, None))
-        if get("active") is False or get("kind") not in ("phone", "genesis_msisdn"):
+        if get("active") is False or get("kind") != "phone":
             continue
         p = norm_phone(get("value"))
         if p:
