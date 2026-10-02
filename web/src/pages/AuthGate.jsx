@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPageUrl } from "@/utils";
-import { Shield, Eye, EyeOff, Lock, AlertTriangle, UserPlus, Mail, CheckCircle, ArrowLeft, KeyRound } from "lucide-react";
+import { Eye, EyeOff, Lock, AlertTriangle, Mail, CheckCircle, ArrowLeft, KeyRound } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isDemo } from "@/config";
 import { apiFetch, setTokens } from "@/api/client";
@@ -252,11 +252,9 @@ export default function AuthGate() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col justify-center items-center px-4">
         <div className="w-full max-w-lg">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-2xl shadow-2xl mb-4 ring-4 ring-red-500/20">
-              <Shield className="w-8 h-8 text-white" />
-            </div>
+            <img src="/brand/true911-beacon-reversed.svg" alt="" aria-hidden="true" width="64" height="64" className="inline-block w-16 h-16 mb-4" />
             <div className="text-3xl font-bold text-white tracking-tight">
-              True911<span className="text-red-500">+</span>
+              True<span className="text-[#60A9FF]">911</span>
             </div>
           </div>
 
@@ -360,11 +358,9 @@ export default function AuthGate() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col justify-center items-center px-4">
         <div className="w-full max-w-lg">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-2xl shadow-2xl mb-4 ring-4 ring-red-500/20">
-              <Shield className="w-8 h-8 text-white" />
-            </div>
+            <img src="/brand/true911-beacon-reversed.svg" alt="" aria-hidden="true" width="64" height="64" className="inline-block w-16 h-16 mb-4" />
             <div className="text-3xl font-bold text-white tracking-tight">
-              True911<span className="text-red-500">+</span>
+              True<span className="text-[#60A9FF]">911</span>
             </div>
             <div className="text-xs text-slate-400 mt-1 font-medium tracking-widest uppercase">NOC Portal</div>
           </div>
@@ -491,11 +487,9 @@ export default function AuthGate() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col justify-center items-center px-4">
         <div className="w-full max-w-lg">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-2xl shadow-2xl mb-4 ring-4 ring-red-500/20">
-              <Shield className="w-8 h-8 text-white" />
-            </div>
+            <img src="/brand/true911-beacon-reversed.svg" alt="" aria-hidden="true" width="64" height="64" className="inline-block w-16 h-16 mb-4" />
             <div className="text-3xl font-bold text-white tracking-tight">
-              True911<span className="text-red-500">+</span>
+              True<span className="text-[#60A9FF]">911</span>
             </div>
           </div>
 
@@ -565,11 +559,9 @@ export default function AuthGate() {
       <div className="w-full max-w-lg">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-2xl shadow-2xl mb-4 ring-4 ring-red-500/20">
-            <Shield className="w-8 h-8 text-white" />
-          </div>
+          <img src="/brand/true911-beacon-reversed.svg" alt="" aria-hidden="true" width="64" height="64" className="inline-block w-16 h-16 mb-4" />
           <div className="text-3xl font-bold text-white tracking-tight">
-            True911<span className="text-red-500">+</span>
+            True<span className="text-[#60A9FF]">911</span>
           </div>
           <div className="text-xs text-slate-400 mt-1 font-medium tracking-widest uppercase">{isDemo ? "NOC Demo Portal" : "NOC Portal"}</div>
           <p className="text-sm text-slate-400 mt-2">Life-Safety Device Monitoring & Management</p>

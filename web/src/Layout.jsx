@@ -394,9 +394,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
       {/* ── Branding ── */}
       <div className="px-5 pt-5 pb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shadow-sm ring-1 ring-inset ${isNOC ? "bg-red-600 ring-red-500/40" : "bg-slate-800 ring-slate-700/60"}`}>
-            <Shield className="w-[18px] h-[18px] text-white" />
-          </div>
+          <img src="/brand/true911-beacon-reversed.svg" alt="" aria-hidden="true" width="36" height="36" className="w-9 h-9 flex-shrink-0" />
           <div className="min-w-0">
             <div className="text-[15px] font-semibold text-white leading-none tracking-tight">
               True911<span className={isNOC ? "text-red-500" : "text-slate-400"}>+</span>
@@ -875,9 +873,7 @@ function AppLayout({ children, currentPageName }) {
             <Menu className="w-5 h-5 text-slate-700" />
           </button>
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isNOC ? "bg-red-600" : "bg-slate-800"}`}>
-              <Shield className="w-3 h-3 text-white" />
-            </div>
+            <img src="/brand/true911-beacon.svg" alt="" aria-hidden="true" width="24" height="24" className="w-6 h-6" />
             <span className="font-semibold text-slate-900">True911<span className={isNOC ? "text-red-600" : "text-slate-500"}>+</span></span>
           </div>
           <div className="w-9" />

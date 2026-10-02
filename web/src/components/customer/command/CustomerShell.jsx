@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Shield, Eye, XCircle, ChevronDown, KeyRound, LogOut, HelpCircle, LayoutDashboard, Inbox, Building2 } from "lucide-react";
+import { Eye, XCircle, ChevronDown, KeyRound, LogOut, HelpCircle, LayoutDashboard, Inbox, Building2 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
@@ -14,6 +14,9 @@ import {
 // ════════════════════════════════════════════════════════════════════
 
 const NavCtx = createContext({ items: [], setItems: () => {} });
+// Production brand assets (web/public/brand) — never the reference concept boards.
+export const BEACON_REVERSED = "/brand/true911-beacon-reversed.svg";
+const APP_TITLE = "True911 — Life-Safety Command Center";
 const NAV_ICON = { overview: LayoutDashboard, actions: Inbox, locations: Building2 };
 
 // Page-side hook: declare the real sections this page renders.
@@ -37,6 +40,12 @@ export default function CustomerShell({ user, impersonation, onExitImpersonation
   const [items, setItemsState] = useState([]);
   const setItems = useCallback((v) => setItemsState(v), []);
   const ctx = useMemo(() => ({ items, setItems }), [items, setItems]);
+  // the customer application's tab title; the general brand title is restored on exit
+  useEffect(() => {
+    const prev = document.title;
+    document.title = APP_TITLE;
+    return () => { document.title = prev; };
+  }, []);
 
   return (
     <NavCtx.Provider value={ctx}>
@@ -53,9 +62,10 @@ export default function CustomerShell({ user, impersonation, onExitImpersonation
         <header className="sticky top-0 z-40 bg-slate-950 text-white shadow-[0_1px_0_rgba(255,255,255,0.04)]">
           <div className="mx-auto max-w-[1440px] h-14 px-4 sm:px-6 flex items-center gap-4">
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className="inline-flex w-9 h-9 items-center justify-center rounded-lg bg-white text-slate-950 shadow-sm"><Shield className="w-[18px] h-[18px]" strokeWidth={2.2} aria-hidden="true" /></span>
+              {/* Beacon mark — decorative here: the wordmark beside it carries the name */}
+              <img src={BEACON_REVERSED} alt="" aria-hidden="true" width="34" height="34" className="w-[34px] h-[34px] flex-shrink-0" />
               <span className="leading-none min-w-0">
-                <span className="block text-[17px] font-bold tracking-tight">True911</span>
+                <span className="block text-[17px] font-bold tracking-tight">True<span className="text-[#60A9FF]">911</span></span>
                 <span className="block text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-300 mt-1 truncate">Life-Safety Command Center</span>
               </span>
             </div>
