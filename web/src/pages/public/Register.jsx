@@ -25,6 +25,7 @@ import {
 import PublicNav from "./PublicNav";
 import PublicFooter from "./PublicFooter";
 import { RegistrationAPI } from "@/api/registrations";
+import { getAttribution } from "@/lib/acquisition";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -1134,7 +1135,7 @@ export default function Register() {
     setError("");
     setSubmitting(true);
     try {
-      const payload = buildPayload(draft);
+      const payload = { ...buildPayload(draft), attribution: getAttribution() };
       const created = await RegistrationAPI.create(payload);
       const regId = created?.registration?.registration_id;
       const token = created?.resume_token;
@@ -1175,7 +1176,7 @@ export default function Register() {
             <div className="inline-flex items-center justify-center w-14 h-14 bg-red-600 rounded-2xl shadow-2xl mb-4 ring-4 ring-red-500/20">
               <Shield className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight mb-2">Start Service with True911+</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-2">Register with True911</h1>
             <p className="text-slate-400 text-sm">
               {step.help}
             </p>

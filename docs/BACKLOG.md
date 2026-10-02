@@ -13,6 +13,30 @@
 
 ---
 
+## 📥 Public acquisition — deferrals from the durable-acquisition PR (D-030..D-033) [2026-10-01]
+
+Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundation"
+(see `ACQUISITION.md`):
+- **A1. Conversion truth remediation (needs approval).** Conversion currently writes
+  `Site.status="Connected"` and copies the prospect address into `e911_*`. Proposed fix
+  in ACQUISITION.md §9; characterization tests in
+  `api/tests/test_conversion_truth_characterization.py`.
+- **A2. Internal acquisition review UI.** List/filter records and set `under_review` /
+  `qualified` / `closed`. Today the read is API-only (`GET /api/acquisition/records`).
+- **A3. Configure SMTP for internal notifications.** Production rows read
+  `not_configured` until it is set. Operator step; do not invent configuration.
+- **A4. Prospect acknowledgement email.** Design only. Must never claim to have been
+  sent unless the transport accepted it.
+- **A5. Zoho lead sync** as a recorded side effect. Not authorised yet.
+- **A6. Shared rate limiter** (the current one is in-process per API instance).
+- **A7. CAPTCHA review**, only if `acquisition_records` shows abuse.
+- **A8. Analytics vendor.** The event boundary exists; no vendor is approved.
+- **A9. Homepage redesign** on sanitized product proof (hero O1, "Product UI · Sample data").
+- **A10. Remaining blanket claims outside the touched flow.** "NDAA-TAA Compliant" and
+  "True911+" in the Reports/SyncStatus export footers; "True911+" in internal UI titles.
+- **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
+  and billing fields. Align the assessment with "no billing in the assessment".
+
 ## 🗣️ Customer terminology / internal-language findings (D-028) [2026-10-01]
 
 Found during the generic-terminology pass (branch `feat/customer-generic-terminology`).

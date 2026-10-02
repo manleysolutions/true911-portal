@@ -4,10 +4,11 @@ This router backs the operations queue at /api/registrations.  All
 endpoints are authenticated and gated by either VIEW_REGISTRATIONS or
 MANAGE_REGISTRATIONS.
 
-Conversion of a registration into production rows (customers, sites,
-service_units, users) is deliberately NOT part of this surface — the
-CONVERT_REGISTRATIONS permission key exists in permissions.json but
-no endpoint currently consumes it.  Conversion lands in Phase R4.
+Conversion of a registration into production rows (tenant, customer,
+sites, service_units, optional pending subscription) IS part of this
+surface: POST /{registration_id}/convert, gated by CONVERT_REGISTRATIONS
+(Admin / SuperAdmin), dry-run first.  See docs/ACQUISITION.md for what it
+creates (and what it must not be read as proving).
 
 The internal queue is intentionally global: registrations live in the
 "ops" tenant until conversion, so tenant-scoping the list would hide
@@ -446,6 +447,17 @@ async def convert_registration(
                 "details": exc.details,
             },
         )
+
+    # Acquisition record follows the real (non-dry-run) conversion.  Acquisition
+    # state only — conversion never makes a site deployed or E911-verified.
+    if not body.dry_run:
+        try:
+            from app.services import acquisition_service as acq
+            await acq.set_registration_status(db, result.registration.registration_id, "converted")
+        except Exception:   # noqa: BLE001 — conversion already committed
+            import logging
+            logging.getLogger("true911.registrations").exception(
+                "acquisition status update failed for %s", result.registration.registration_id)
 
     # Reload the registration with children + timeline for the response.
     detail = await _build_detail(db, result.registration)

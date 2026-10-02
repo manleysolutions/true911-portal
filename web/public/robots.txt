@@ -1,0 +1,8 @@
+# True911 public site.  The portal and resumable registrations are not for indexing.
+User-agent: *
+Allow: /
+Disallow: /register
+Disallow: /login
+Disallow: /api/
+
+Sitemap: https://www.true911.com/sitemap.xml

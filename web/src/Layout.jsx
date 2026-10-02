@@ -520,11 +520,7 @@ function Sidebar({ currentPageName, onClose, onChangePassword, onViewAs }) {
           </div>
         )}
         <div className="mt-4 px-3 flex items-center justify-between text-[9px] text-slate-600">
-          <div className="flex items-center gap-1.5">
-            <span className="text-blue-400 font-semibold tracking-wide">Made in USA</span>
-            <span className="text-slate-700">·</span>
-            <span>NDAA-TAA</span>
-          </div>
+          <span>True911</span>
           <span className="text-slate-700">© 2026</span>
         </div>
       </div>

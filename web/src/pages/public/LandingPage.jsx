@@ -1,363 +1,210 @@
 import { Link } from "react-router-dom";
 import {
-  Shield, Radio, MapPin, AlertOctagon, Activity, Cpu,
-  Phone, CheckCircle, ArrowRight, Building2, Layers,
-  Globe, Zap, Lock, BarChart3, Users, AlertTriangle,
-  Wifi, Signal, Satellite, RefreshCw, XCircle, Eye,
+  MapPin, AlertOctagon, Activity, Cpu, CheckCircle, ArrowRight, Building2, Layers,
+  Globe, Users, AlertTriangle, XCircle, Eye, BarChart3, Wrench, Radio,
 } from "lucide-react";
 import PublicNav from "./PublicNav";
 import PublicFooter from "./PublicFooter";
+import usePublicPage from "./usePublicPage";
+import { rememberCta } from "@/lib/acquisition";
 
-/* ── Data ───────────────────────────────────────────────────────── */
+// Public claims inherit the platform truth rules (D-030): no guaranteed
+// connectivity, no "instant" alerts, no automated compliance, no universal
+// failover, no blanket origin/procurement claims.  Brand blue for action; red
+// only for risk (D-033).  Structure kept — the full redesign is a later PR.
 
 const BENEFITS = [
-  {
-    icon: Eye,
-    title: "Know Immediately When a Device Fails",
-    desc: "Every elevator phone, fire panel, and emergency endpoint is monitored 24/7. If a device goes offline, you know in seconds — not after someone calls 911 and nothing happens.",
-  },
-  {
-    icon: MapPin,
-    title: "Stay Compliant Without Manual Tracking",
-    desc: "Automated E911 address validation, Kari's Law, and RAY BAUM's Act compliance tracking. No more spreadsheets, no more guesswork, no more audit surprises.",
-  },
-  {
-    icon: AlertOctagon,
-    title: "Respond Faster and Document Everything",
-    desc: "Structured incident workflows with automatic escalation, acknowledgment tracking, and full audit trails. Every action timestamped and recorded.",
-  },
-  {
-    icon: Activity,
-    title: "See Your Entire Portfolio in One View",
-    desc: "One dashboard for every site, every device, every line. Property managers and facilities directors get real-time visibility across hundreds of locations.",
-  },
-  {
-    icon: Cpu,
-    title: "Fix Issues Without Dispatching a Technician",
-    desc: "Remote diagnostics, firmware updates, and configuration changes from the portal. Fewer truck rolls, faster resolution, lower cost.",
-  },
-  {
-    icon: Phone,
-    title: "Never Rely on a Single Network Again",
-    desc: "Multi-carrier connectivity with automatic failover. If one path goes down, traffic reroutes instantly. No single point of failure.",
-  },
-];
-
-const FAILOVER_PATHS = [
-  { icon: Wifi, label: "WiFi", desc: "Primary broadband connection" },
-  { icon: Globe, label: "Ethernet", desc: "Wired network backup" },
-  { icon: Signal, label: "Cellular", desc: "LTE/5G failover" },
-  { icon: Satellite, label: "Satellite", desc: "Last-resort connectivity" },
+  { icon: Eye, title: "Status across every location",
+    desc: "One view of the elevator phones, fire alarm communicators and emergency phones True911 monitors for you. When status can't be confirmed, it's shown as unknown — never as healthy." },
+  { icon: AlertOctagon, title: "Find failures sooner than manual testing",
+    desc: "Monitored devices report in on a schedule. When one stops reporting or degrades, your team is alerted instead of waiting for the next walk-through test." },
+  { icon: MapPin, title: "Location records you can act on",
+    desc: "Keep the address and location details for each line in one place, with what's been confirmed kept clearly separate from what's only on file." },
+  { icon: Activity, title: "Documented incident handling",
+    desc: "Incidents are tracked with acknowledgement and a timestamped history, so you can see what happened and who responded." },
+  { icon: Cpu, title: "Remote diagnostics where supported",
+    desc: "On supported equipment, many issues can be investigated and resolved remotely — fewer truck rolls and faster answers." },
+  { icon: Wrench, title: "Operated by True911",
+    desc: "True911 plans, deploys and operates the service with you. You get a partner accountable for the life-safety lines — not another box to manage." },
 ];
 
 const INDUSTRIES = [
-  {
-    icon: Building2,
-    title: "Commercial Real Estate",
-    desc: "Elevator phones, fire panels, and emergency call stations across multi-tenant buildings, office parks, and mixed-use developments. Eliminate copper from your portfolio.",
-  },
-  {
-    icon: Layers,
-    title: "Healthcare & Senior Living",
-    desc: "Hospitals, clinics, and assisted living facilities where a failed emergency phone is a life-safety liability. Continuous monitoring, zero blind spots.",
-  },
-  {
-    icon: Globe,
-    title: "Government & Public Sector",
-    desc: "Campus safety systems, blue light phones, and emergency infrastructure with NDAA-TAA compliance built in. Procurement-ready from day one.",
-  },
-  {
-    icon: Users,
-    title: "MSPs & Integrators",
-    desc: "Manage life-safety devices across your entire customer base from a single NOC. White-glove service without white-knuckle monitoring.",
-  },
+  { icon: Building2, title: "Multi-location portfolios",
+    desc: "Retail chains, enterprise real estate and property-management portfolios with elevator phones, fire alarm lines and emergency phones spread across dozens or hundreds of sites." },
+  { icon: Globe, title: "Public sector & campuses",
+    desc: "Campus emergency phones, call stations and building life-safety lines across facilities managed by one team." },
+  { icon: Layers, title: "Healthcare & senior living",
+    desc: "Facilities where an emergency phone that quietly stops working is a real risk to residents, patients and staff." },
+  { icon: Users, title: "Channel partners & MSPs",
+    desc: "Integrators and managed-service providers who support life-safety communications for many customers." },
 ];
 
-const COMPLIANCE_ITEMS = [
-  { label: "NDAA-TAA Compliant", desc: "No banned components. Meets federal procurement requirements." },
-  { label: "Kari's Law", desc: "Direct 911 dialing and automatic notification — verified and enforced." },
-  { label: "RAY BAUM's Act", desc: "Dispatchable location data delivered with every emergency call." },
-  { label: "Made in USA", desc: "Designed, built, and supported domestically." },
-];
-
-/* ── Component ──────────────────────────────────────────────────── */
+function Cta({ to, cta, primary, children }) {
+  return (
+    <Link to={to} onClick={() => rememberCta(cta)}
+      className={primary
+        ? "w-full sm:w-auto min-h-[48px] px-8 py-3.5 bg-[#1C6FE6] hover:bg-[#12408F] text-white font-semibold rounded-xl transition-colors text-sm shadow-lg shadow-[#1C6FE6]/20 flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#60A9FF]"
+        : "w-full sm:w-auto min-h-[48px] px-8 py-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold rounded-xl transition-colors text-sm border border-white/15 flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#60A9FF]"}>
+      {children}
+    </Link>
+  );
+}
 
 export default function LandingPage() {
+  usePublicPage({
+    title: "True911 — The Operating System for Life-Safety Communications",
+    description: "True911 helps multi-location organizations replace aging copper lines and see the status of elevator phones, fire alarm communications and emergency phones across every location.",
+    path: "/",
+  });
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <PublicNav />
 
-      {/* ════════════════════════════════════════════════════════════
-          HERO
-          ════════════════════════════════════════════════════════════ */}
+      {/* HERO */}
       <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900" />
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-red-600/5 rounded-full blur-3xl" />
-
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0B1F3B] via-slate-950 to-slate-900" />
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#2D8CFF]/10 rounded-full blur-3xl" />
         <div className="relative max-w-5xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-red-600/10 border border-red-500/20 rounded-full px-4 py-1.5 mb-6">
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-            <span className="text-sm text-red-400 font-medium">Copper Lines Are Failing. Your Compliance Clock Is Ticking.</span>
-          </div>
-
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
-            Your Elevator Phones Still Run
-            <br />
-            <span className="text-red-500">on Copper. That's a Problem.</span>
-          </h1>
-
-          <p className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            POTS lines are being decommissioned. Carriers are raising rates. And when a copper line
-            fails silently, your emergency phones don't work — and you won't know until someone's life depends on it.
-            True911 replaces copper with monitored, multi-path connectivity you can actually trust.
+          <p className="inline-flex items-center gap-2 bg-[#2D8CFF]/10 border border-[#60A9FF]/30 rounded-full px-4 py-1.5 mb-6 text-sm text-[#9CC8FF] font-medium">
+            <Radio className="w-4 h-4" aria-hidden="true" /> Elevator phones · Fire alarm communications · Emergency phones
           </p>
-
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
+            The Operating System for
+            <br />
+            <span className="text-[#60A9FF]">Life-Safety Communications</span>
+          </h1>
+          <p className="text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed">
+            Copper phone lines are being retired, and the life-safety lines that depend on them are easy to lose
+            track of. True911 replaces aging lines with a managed service and gives your team one place to see
+            what&apos;s installed, what&apos;s reporting and what needs attention — across every location.
+          </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              to="/quote"
-              className="w-full sm:w-auto px-8 py-3.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors text-sm shadow-lg shadow-red-600/20 flex items-center justify-center gap-2"
-            >
-              Get a Quote <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              to="/get-started"
-              className="w-full sm:w-auto px-8 py-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold rounded-xl transition-colors text-sm border border-white/10 flex items-center justify-center gap-2"
-            >
-              Start Free Audit
-            </Link>
-            <Link
-              to="/login"
-              className="w-full sm:w-auto px-8 py-3.5 text-slate-400 hover:text-white font-medium text-sm transition-colors flex items-center justify-center gap-2"
-            >
-              Portal Login <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-
-          {/* Trust badges */}
-          <div className="mt-14 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-              <span>NDAA-TAA Compliant</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Kari's Law</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-              <span>RAY BAUM's Act</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-blue-400 font-bold">Made in USA</span>
-            </div>
+            <Cta to="/get-started" cta="hero_assessment" primary>
+              Start a Life-Safety Assessment <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Cta>
+            <Cta to="/quote" cta="hero_quote">Request a quote</Cta>
           </div>
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          THE PROBLEM
-          ════════════════════════════════════════════════════════════ */}
+      {/* THE PROBLEM — risk framing is the one place red is used */}
       <section id="problem" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Copper Is Dying. <span className="text-red-500">Your Life-Safety Lines Are at Risk.</span>
+              Copper is being retired. <span className="text-red-400">Life-safety lines are exposed.</span>
             </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              This isn't a future problem. It's happening right now, in buildings across the country.
+            <p className="text-slate-300 max-w-2xl mx-auto">
+              Most organizations can&apos;t say with confidence how many of these lines they have, where they are,
+              or whether they work today.
             </p>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {[
-              {
-                icon: XCircle,
-                title: "Carriers Are Abandoning POTS",
-                desc: "AT&T, Verizon, and CenturyLink are actively decommissioning copper infrastructure. Rates are doubling and tripling. In many areas, you can't even order a new POTS line.",
-              },
-              {
-                icon: AlertTriangle,
-                title: "Silent Failures Kill",
-                desc: "A copper line can fail with no warning. No alarm, no notification. The elevator phone looks fine — until someone pushes the button and gets silence.",
-              },
-              {
-                icon: MapPin,
-                title: "Compliance Is Getting Stricter",
-                desc: "Kari's Law and RAY BAUM's Act require dispatchable location data and direct 911 dialing. Copper lines can't deliver that. Inspectors are checking.",
-              },
-              {
-                icon: BarChart3,
-                title: "Manual Testing Doesn't Scale",
-                desc: "If you're testing elevator phones by riding to each floor with a clipboard, you're burning time and still missing failures between tests. There's a better way.",
-              },
+              { icon: XCircle, title: "Carriers are retiring POTS",
+                desc: "Major carriers are winding down copper networks. In many areas POTS lines are getting more expensive, slower to repair, or unavailable to order." },
+              { icon: AlertTriangle, title: "Failures can be silent",
+                desc: "A copper line can stop working without any alarm. The elevator phone looks fine until someone presses the button." },
+              { icon: MapPin, title: "Rules depend on accurate records",
+                desc: "Federal rules such as Kari's Law and RAY BAUM'S Act address direct 911 dialing, notification and dispatchable location for many multi-line telephone systems. Meeting them starts with knowing what's installed where." },
+              { icon: BarChart3, title: "Manual testing doesn't scale",
+                desc: "Walk-through tests with a clipboard take time across many sites and still miss failures that happen between tests." },
             ].map((item) => (
-              <div
-                key={item.title}
-                className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-6"
-              >
+              <div key={item.title} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-6">
                 <div className="w-10 h-10 bg-red-600/10 rounded-lg flex items-center justify-center mb-4">
-                  <item.icon className="w-5 h-5 text-red-400" />
+                  <item.icon className="w-5 h-5 text-red-400" aria-hidden="true" />
                 </div>
                 <h3 className="text-base font-semibold mb-2">{item.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{item.desc}</p>
+                <p className="text-sm text-slate-300 leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          THE SOLUTION
-          ════════════════════════════════════════════════════════════ */}
+      {/* THE SOLUTION */}
       <section id="solution" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Replace Copper. <span className="text-red-500">Monitor Everything. Stay Compliant.</span>
+              Assess. Replace. <span className="text-[#60A9FF]">Operate with visibility.</span>
             </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              True911 is the managed platform that replaces your POTS lines with resilient, monitored
-              connectivity — and gives you real-time visibility into every life-safety device you're responsible for.
+            <p className="text-slate-300 max-w-2xl mx-auto">
+              True911 starts with a Life-Safety Assessment of your locations, then deploys and operates a managed
+              replacement for the lines that need it.
             </p>
           </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
-              "Replace copper with multi-path IP connectivity that fails over automatically",
-              "Monitor every elevator phone, fire panel, and emergency endpoint 24/7",
-              "Enforce E911 compliance automatically — Kari's Law and RAY BAUM's Act",
-              "Manage your entire portfolio from a single NOC dashboard",
-              "Get alerted in seconds when any device goes offline or degrades",
-              "Reduce truck rolls with remote diagnostics and firmware management",
-            ].map((text, i) => (
-              <div key={i} className="flex items-start gap-3 p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-                <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                <span className="text-sm text-slate-300 leading-relaxed">{text}</span>
+              "An assessment of the life-safety lines across your locations",
+              "Managed replacement of copper lines, designed per location",
+              "Monitoring of the devices True911 deploys or integrates",
+              "Alerts when a monitored device stops reporting or degrades",
+              "One portfolio view of status, locations and open issues",
+              "Location and address records kept with each line",
+            ].map((text) => (
+              <div key={text} className="flex items-start gap-3 p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+                <CheckCircle className="w-5 h-5 text-[#60A9FF] mt-0.5 flex-shrink-0" aria-hidden="true" />
+                <span className="text-sm text-slate-200 leading-relaxed">{text}</span>
               </div>
             ))}
           </div>
-
-          <div className="mt-10 text-center">
-            <Link
-              to="/quote"
-              className="inline-flex items-center gap-2 px-8 py-3.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors text-sm shadow-lg shadow-red-600/20"
-            >
-              Get a Quote <ArrowRight className="w-4 h-4" />
-            </Link>
+          <div className="mt-10 flex justify-center">
+            <Cta to="/get-started" cta="solution_assessment" primary>
+              Start a Life-Safety Assessment <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Cta>
           </div>
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          BENEFITS (outcome-driven)
-          ════════════════════════════════════════════════════════════ */}
+      {/* BENEFITS */}
       <section id="benefits" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              What Changes When You <span className="text-red-500">Switch to True911</span>
-            </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              Not features. Outcomes. Here's what your day-to-day actually looks like.
-            </p>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">What changes with True911</h2>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {BENEFITS.map((item) => (
-              <div
-                key={item.title}
-                className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6 hover:border-slate-600/50 transition-colors group"
-              >
-                <div className="w-10 h-10 bg-red-600/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-red-600/20 transition-colors">
-                  <item.icon className="w-5 h-5 text-red-500" />
+              <div key={item.title} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+                <div className="w-10 h-10 bg-[#2D8CFF]/10 rounded-lg flex items-center justify-center mb-4">
+                  <item.icon className="w-5 h-5 text-[#60A9FF]" aria-hidden="true" />
                 </div>
                 <h3 className="text-base font-semibold mb-2">{item.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{item.desc}</p>
+                <p className="text-sm text-slate-300 leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          FAILOVER / RELIABILITY
-          ════════════════════════════════════════════════════════════ */}
-      <section id="failover" className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Four Paths. <span className="text-red-500">Zero Single Points of Failure.</span>
-            </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              Copper gives you one path. When it fails, you're dark. True911 devices connect
-              through up to four independent paths and fail over automatically — no human intervention required.
-            </p>
-          </div>
-
-          {/* Failover path diagram */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-            {FAILOVER_PATHS.map((path, i) => (
-              <div key={path.label} className="relative">
-                <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5 text-center hover:border-red-500/30 transition-colors">
-                  <div className="w-12 h-12 bg-red-600/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <path.icon className="w-6 h-6 text-red-400" />
-                  </div>
-                  <div className="text-sm font-semibold mb-0.5">{path.label}</div>
-                  <div className="text-xs text-slate-500">{path.desc}</div>
-                  <div className="mt-2">
-                    <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded-full">
-                      Path {i + 1}
-                    </span>
-                  </div>
-                </div>
-                {/* Arrow between cards */}
-                {i < 3 && (
-                  <div className="hidden sm:flex absolute top-1/2 -right-2.5 -translate-y-1/2 z-10">
-                    <RefreshCw className="w-4 h-4 text-slate-600" />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="bg-slate-800/30 border border-slate-700/30 rounded-xl p-6 text-center">
-            <p className="text-sm text-slate-300 leading-relaxed max-w-2xl mx-auto">
-              If WiFi drops, traffic moves to Ethernet. If Ethernet fails, cellular takes over.
-              If cellular goes down, satellite keeps the connection alive. Every failover is automatic,
-              every transition is logged, and you're notified the moment any path degrades.
-              <span className="text-red-400 font-medium"> Your emergency phones stay online. Period.</span>
-            </p>
-          </div>
+      {/* CONNECTIVITY — designed per location, never a universal promise */}
+      <section id="connectivity" className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-3xl sm:text-4xl font-bold mb-4">Connectivity designed for each location</h2>
+          <p className="text-slate-300 max-w-2xl mx-auto leading-relaxed">
+            Every building is different. During the assessment, True911 recommends the connectivity for each
+            location based on its equipment and site conditions — commonly cellular, with additional paths where
+            the site and equipment support them. What&apos;s available varies by location, and the design is
+            reviewed with you before deployment.
+          </p>
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          INDUSTRIES
-          ════════════════════════════════════════════════════════════ */}
+      {/* WHO IT'S FOR */}
       <section id="industries" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Built for the People <span className="text-red-500">Responsible for Safety</span>
-            </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              Property managers, facilities directors, and integrators who can't afford a gap in life-safety coverage.
-            </p>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Built for teams responsible for many locations</h2>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {INDUSTRIES.map((ind) => (
-              <div
-                key={ind.title}
-                className="flex items-start gap-4 bg-slate-800/30 border border-slate-700/40 rounded-xl p-6 hover:border-slate-600/50 transition-colors"
-              >
+              <div key={ind.title} className="flex items-start gap-4 bg-slate-800/30 border border-slate-700/40 rounded-xl p-6">
                 <div className="w-12 h-12 bg-slate-700/50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <ind.icon className="w-6 h-6 text-red-400" />
+                  <ind.icon className="w-6 h-6 text-[#60A9FF]" aria-hidden="true" />
                 </div>
                 <div>
                   <h3 className="text-base font-semibold mb-1">{ind.title}</h3>
-                  <p className="text-sm text-slate-400 leading-relaxed">{ind.desc}</p>
+                  <p className="text-sm text-slate-300 leading-relaxed">{ind.desc}</p>
                 </div>
               </div>
             ))}
@@ -365,66 +212,47 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          TRUST / COMPLIANCE
-          ════════════════════════════════════════════════════════════ */}
+      {/* REGULATORY CONTEXT — neutral, never a compliance determination */}
       <section id="compliance" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Procurement-Ready. <span className="text-red-500">Inspection-Proof.</span>
-            </h2>
-            <p className="text-slate-400 max-w-xl mx-auto">
-              True911 is built to pass the audits your current setup can't.
+          <div className="text-center mb-10">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Regulatory context</h2>
+            <p className="text-slate-300 max-w-2xl mx-auto">
+              These federal rules shape how many organizations think about emergency calling.
             </p>
           </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {COMPLIANCE_ITEMS.map((item) => (
-              <div key={item.label} className="flex items-start gap-3 p-5 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-                <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <div className="text-sm font-semibold mb-0.5">{item.label}</div>
-                  <div className="text-xs text-slate-400">{item.desc}</div>
-                </div>
+            {[
+              { label: "Kari's Law", desc: "Addresses direct 911 dialing and on-site notification for many multi-line telephone systems." },
+              { label: "RAY BAUM'S Act", desc: "Addresses dispatchable location information sent with 911 calls." },
+            ].map((item) => (
+              <div key={item.label} className="p-5 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+                <div className="text-sm font-semibold mb-1">{item.label}</div>
+                <div className="text-sm text-slate-300">{item.desc}</div>
               </div>
             ))}
           </div>
+          <p className="mt-6 text-xs text-slate-400 text-center max-w-2xl mx-auto">
+            True911 helps you organize the location and device information these rules depend on. It does not
+            certify compliance; how the rules apply to your systems is a determination for you and your advisors.
+          </p>
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          FINAL CTA
-          ════════════════════════════════════════════════════════════ */}
+      {/* FINAL CTA — no login here; login lives in the header */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 rounded-2xl p-10 sm:p-14">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-              Stop Paying More for Lines That Don't Work.
-            </h2>
-            <p className="text-slate-400 mb-8 max-w-xl mx-auto">
-              Get a custom quote to replace your copper lines, or let us audit your current life-safety
-              infrastructure for free. Either way, you'll know exactly where you stand.
+          <div className="bg-gradient-to-br from-[#0B1F3B] to-slate-900 border border-slate-700/50 rounded-2xl p-10 sm:p-14">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Know where every life-safety line stands.</h2>
+            <p className="text-slate-300 mb-8 max-w-xl mx-auto">
+              Start with a Life-Safety Assessment: a True911 specialist reviews your locations with you and
+              recommends next steps. Prefer to start with numbers? Request a quote.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link
-                to="/quote"
-                className="w-full sm:w-auto px-8 py-3.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors text-sm shadow-lg shadow-red-600/20 flex items-center justify-center gap-2"
-              >
-                Get a Quote <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link
-                to="/get-started"
-                className="w-full sm:w-auto px-8 py-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold rounded-xl transition-colors text-sm border border-white/10 flex items-center justify-center gap-2"
-              >
-                Start Free Audit
-              </Link>
-              <Link
-                to="/login"
-                className="w-full sm:w-auto px-8 py-3.5 text-slate-400 hover:text-white font-medium text-sm transition-colors flex items-center justify-center gap-2"
-              >
-                Customer Login <ArrowRight className="w-4 h-4" />
-              </Link>
+              <Cta to="/get-started" cta="final_assessment" primary>
+                Start a Life-Safety Assessment <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </Cta>
+              <Cta to="/quote" cta="final_quote">Request a quote</Cta>
             </div>
           </div>
         </div>
