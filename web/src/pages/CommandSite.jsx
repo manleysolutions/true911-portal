@@ -334,10 +334,13 @@ export default function CommandSite() {
                 </div>
                 <div className="p-5 space-y-3">
                   {categories.map((cat) => {
+                    // "pending" = planned site, nothing installed yet: neutral (CT-1).
                     const statusColor = cat.status === "healthy" ? "text-emerald-400" :
-                      cat.status === "warning" ? "text-amber-400" : "text-red-400";
+                      cat.status === "warning" ? "text-amber-400" :
+                      cat.status === "pending" ? "text-slate-400" : "text-red-400";
                     const statusDot = cat.status === "healthy" ? "bg-emerald-500" :
-                      cat.status === "warning" ? "bg-amber-500" : "bg-red-500";
+                      cat.status === "warning" ? "bg-amber-500" :
+                      cat.status === "pending" ? "bg-slate-400" : "bg-red-500";
                     return (
                       <div key={cat.key} className="flex items-center justify-between bg-slate-800/50 rounded-lg px-4 py-3 border border-slate-700/30">
                         <div>

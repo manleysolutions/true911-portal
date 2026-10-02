@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, computed_field
+
+from app.services.site_lifecycle import ONBOARDING_STATUSES
 
 _SITE_FIELDS = {
     "last_checkin": (Optional[datetime], None),
@@ -136,6 +138,9 @@ class SiteCreate(BaseModel):
 
 
 class SiteUpdate(BaseModel):
+    # Operator promotion path for a planned site (CT-1): onboarding moves to a live
+    # value only by a deliberate internal edit, restricted to the known vocabulary.
+    onboarding_status: Optional[Literal[ONBOARDING_STATUSES]] = None
     site_name: Optional[str] = None
     customer_name: Optional[str] = None
     customer_id: Optional[int] = None

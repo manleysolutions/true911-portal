@@ -199,30 +199,63 @@ route is not linked from public navigation and is `Disallow`ed in `robots.txt`.
 `ALLOW_PUBLIC_REGISTRATION` does **not** gate this wizard. It gates only user-account
 self-registration at `POST /api/auth/register`.
 
-## 9. Conversion truth — characterized, NOT changed (approval required)
+## 9. Conversion truth: conversion creates a PLANNED portfolio (CT-1, D-034)
 
-`registration_conversion._materialize_sites` currently writes:
+`registration_conversion` creates sites and services that are **planned**, never
+operational. The values come from `app/services/site_lifecycle.py`:
 
-- `Site.status = "Connected"`;
-- `onboarding_status = "active"`;
-- the prospect-entered address copied into `e911_street/city/state/zip`;
-- `e911_status` left unset.
+| Field | Before (#198) | Now (future conversions) |
+|---|---|---|
+| `Site.status` | `"Connected"` | `"Pending Install"` |
+| `Site.onboarding_status` | `"active"` | `"pending"`. The assurance engine treats this as **Pending Install**, never Critical. |
+| `e911_street/city/state/zip` | prospect address | same, kept as an **address on file** |
+| `e911_status` | NULL | `"unverified"` |
+| `e911_confirmation_required` | false | **true** |
+| `address_source` | NULL | `"registration"` |
+| `address_notes` | dropped | `"Customer-provided location detail (not verified): …"` |
+| `poc_name/phone/email` | dropped | copied from the location |
+| `ServiceUnit.status` | `pending_install` | unchanged (already truthful) |
+| requested phone / hardware / carrier / quantity | dropped | `ServiceUnit.meta.requested` (never serialized to customers) |
+| acquisition `converted` | separate best-effort commit | **same commit** as the conversion |
 
-Under the truth rules a converted prospect address is not a connected location, and
-an address on file is not E911 verification. This PR pins the behaviour with
-`api/tests/test_conversion_truth_characterization.py` and does not change it.
+**Never created by conversion:** a Line (from a typed phone number), a Device (from
+requested hardware), a placement, a verified E911 status, or a live onboarding value.
 
-**Proposed remediation (awaiting Stuart):**
+**Promotion is a later, evidence-backed act:**
+- **Operations:** an internal site edit (`EDIT_SITES`; DataEntry excluded) may set
+  `onboarding_status` to a live value from the known vocabulary.
+- **E911:** the existing provider-evidence verification path (`verify_rh_e911` /
+  `record_verification_test`) sets a verified status and clears confirmation.
 
-1. Create converted sites with a non-operational status (e.g. `Pending Install` /
-   `onboarding_status="pending"`) until a device reports.
-2. Store the prospect address as the site's postal/service address. Write `e911_*`
-   only with an explicit unverified marker (or leave it for the E911 workflow), and
-   set `e911_status` to an explicit "unverified / customer-provided" value.
-3. Add a regression test that conversion never yields Connected/verified.
+**Readers updated:**
+- `command.py`: a planned site category is `pending`, not `critical`.
+- `digest_engine.py`: a planned site is not an attention item.
+- `actions.py`: ping and reboot never simulate equipment, telemetry or check-ins
+  on a planned site.
+- `StatusBadge` / `CommandSite`: neutral slate.
+- `attention.js`: customer label "Being set up", unless device evidence says reporting.
+- The customer API already reads Pending Install as "This location is being set up."
 
-Before applying, confirm in a read-only check that no existing converted site
-depends on the current values.
+**Existing converted rows are NOT changed.** The read-only audit
+(`python -m app.audit_registration_conversions`, PR #200) classifies converted sites
+as A planned / B deployed with evidence / C ambiguous, using evidence only.
+
+The read-only audit (PR #200, merged `56bbc8c`) was **run in production on
+2026-10-02**: **2 converted sites from 1 registration; A = 0, B = 0, C = 2.**
+- Both sites belong to registration `REG-EE9B668655CC` (tenant
+  `integrity-property-management`): `TIFFANY-GARDENS-EAST` (site_pk 691) and
+  `TIFFANY-GARDENS-NORTH` (site_pk 692).
+- Both are now `status=archived`, `onboarding_status=retired`, `e911_status` NULL,
+  confirmation not required, `address_source` NULL.
+- Neither has **recorded** deployment evidence: 0 lines, 0 devices, 0 heartbeats,
+  0 telemetry (0 simulated), 0 provisioning rows, 0 E911 change logs or reviews, and
+  no invite issued.
+- They are class **C**, not A, only because each was edited after conversion and
+  has one operator audit row (the conservative rule). This does not prove they were
+  never deployed. It records that no deployment evidence exists in True911.
+
+**Stuart's decision: NO remediation.** They are historical records. No backfill
+script is created, and CT-1 changes only future conversions.
 
 ## 10. Public truth rules (D-030)
 

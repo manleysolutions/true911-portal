@@ -24,10 +24,57 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
-## 0·IN REVIEW — Harden public acquisition failure boundaries — branch `fix/acquisition-failure-boundaries` [2026-10-02]
+## 0·IN REVIEW — Conversion creates a planned customer portfolio (CT-1 + CT-2, D-034/D-035) [2026-10-02]
 
-PR "Fix: Harden Public Acquisition Failure Boundaries" is **not merged and awaits
-Stuart's approval.** No migration. Detail: `docs/ACQUISITION.md` §2a, §6, §6a, §6b, §12.
+PR "Fix: Conversion Creates Planned Customer Portfolio" (branch
+`fix/conversion-planned-portfolio`, rebased onto `main` after #199 and #200 merged).
+**Not merged; awaiting Stuart.**
+No migration. Detail: `ACQUISITION.md` §9.
+- **Future conversions:** site `Pending Install` / onboarding `pending`; E911
+  `unverified` + confirmation required + `address_source="registration"`. POC and the
+  dispatchable-description candidate are kept. Requested phone, hardware, carrier and
+  quantity go in `ServiceUnit.meta.requested`; no Line or Device is created. The
+  acquisition record moves to `converted` in the same commit.
+- **Readers made neutral:** command categories, digest, simulated ping/reboot, badges
+  and the customer "Being set up" label. The operator promotion path is
+  `onboarding_status` on the internal site edit (validated vocabulary).
+- **CT-2:** the self-service invite is now `CUSTOMER_ADMIN` (no `INTERNAL_OPS`). A
+  pending legacy `"User"` invite is moved on reuse; accepted users are untouched.
+- **Existing production rows: NOT changed.**
+  The read-only audit (PR #200, merged `56bbc8c`) was **run in production on
+  2026-10-02**: **2 converted sites from 1 registration; A = 0, B = 0, C = 2.**
+  - Both sites belong to registration `REG-EE9B668655CC` (tenant
+    `integrity-property-management`): `TIFFANY-GARDENS-EAST` (site_pk 691) and
+    `TIFFANY-GARDENS-NORTH` (site_pk 692).
+  - Both are now `status=archived`, `onboarding_status=retired`, `e911_status` NULL,
+    confirmation not required, `address_source` NULL.
+  - Neither has **recorded** deployment evidence: 0 lines, 0 devices, 0 heartbeats,
+    0 telemetry (0 simulated), 0 provisioning rows, 0 E911 change logs or reviews, and
+    no invite issued.
+  - They are class **C**, not A, only because each was edited after conversion and
+    has one operator audit row (the conservative rule). This does not prove they were
+    never deployed. It records that no deployment evidence exists in True911.
+
+  **Stuart's decision: NO remediation.** They are historical records. No backfill
+  script is created, and CT-1 changes only future conversions.
+- **Activation consequence:** a newly activated `CUSTOMER_ADMIN` still needs the
+  tenant enabled through the existing `CUSTOMER_API_TENANT_ALLOWLIST` (and
+  `FEATURE_CUSTOMER_API`) before the Command Center customer API serves data.
+  Until then it shows "Your portal is being finalized". The allowlist
+  architecture is unchanged.
+- **Confirmed separately (not fixed):** CT-4, a dry-run conversion into an existing
+  tenant fails with `MissingGreenlet`. CT-3, a pre-set `target_tenant_id` silently
+  overrides `tenant_choice`. Both are in BACKLOG A1.
+
+## 0·DONE — Read-only registration-conversion audit — PR #200 MERGED `56bbc8c`, run in production [2026-10-02]
+
+`python -m app.audit_registration_conversions` was run in production: A = 0, B = 0,
+C = 2. See the CT entry above for the detail and Stuart's no-remediation decision.
+
+## 0·DONE — Harden public acquisition failure boundaries — PR #199 MERGED `912bf41` [2026-10-02]
+
+PR "Fix: Harden Public Acquisition Failure Boundaries" was **merged 2026-10-02 as
+`912bf41`**. Stuart split it: client identity is deferred (A14). No migration. Detail: `docs/ACQUISITION.md` §2a, §6, §6a, §6b, §12.
 - **Wizard atomicity:** the registration and its acquisition record now commit
   together, as do submit and its acquisition status. A failure returns an
   accurate 503 ("nothing was stored" / "still a draft"). This fixes the #198

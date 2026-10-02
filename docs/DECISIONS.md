@@ -668,3 +668,47 @@ side effect of bookkeeping rather than as a decision anybody made.
   and problem framing. The Beacon replaces the red shield in public chrome.
 - **Consequences:** Public nav/footer/forms/pages updated. Internal portal colour use is
   unchanged in this PR.
+
+### D-034 — Conversion creates a planned customer portfolio, never operational truth
+- **Date:** 2026-10-02 · **Status:** Accepted (Stuart; CT-1 approved in principle)
+- **Context:** Registration conversion wrote `Site.status="Connected"` and onboarding
+  `active`, and copied the prospect address into `e911_*` with no status. The same
+  never-installed location read green "Connected" in the legacy UI and Critical
+  ("E911 unverified, no active device") in the customer API.
+- **Decision:** ASSESSMENT ≠ DEPLOYMENT · CUSTOMER CREATED ≠ CONNECTED · ADDRESS
+  PROVIDED ≠ E911 VERIFIED · SERVICE REQUESTED ≠ INSTALLED · PHONE PROVIDED ≠ VERIFIED
+  CONNECTION · DEVICE REQUESTED ≠ DEVICE PRESENT.
+  - Conversion writes only planned states: site `Pending Install` / onboarding
+    `pending`; E911 `unverified` with confirmation required and
+    `address_source="registration"`.
+  - Requested phone, device and carrier details are planning metadata. Conversion
+    never creates a Line or Device from them.
+  - Operational and E911 promotion are later, evidence-backed acts.
+  - Existing converted rows change only after a read-only audit and a separately
+    approved, dry-run-first remediation.
+- **Consequences:** `app/services/site_lifecycle.py`. Readers made neutral for planned
+  sites (see `ACQUISITION.md` §9). No migration. Audit tool:
+  `app.audit_registration_conversions`.
+  - **Production audit (2026-10-02):** 2 converted sites, 1 registration; A = 0,
+    B = 0, C = 2. Both are archived/retired Tiffany Gardens sites with no recorded
+    deployment evidence. They are C because of post-conversion edits.
+  - **Stuart decided no remediation**: they are kept as historical records.
+  - The operator promotion path is `onboarding_status` on the internal site edit
+    (`EDIT_SITES`, DataEntry excluded, validated vocabulary). E911 promotion uses
+    the existing provider-evidence verification scripts.
+
+### D-035 — Self-service registration activation invites CUSTOMER_ADMIN
+- **Date:** 2026-10-02 · **Status:** Accepted (Stuart, CT-2)
+- **Context:** Activation invited the submitter as the legacy `"User"` role. That role
+  belongs to the internal plane and holds `INTERNAL_OPS`, so a self-service customer
+  landed outside the customer Command Center with internal-ops permission.
+- **Decision:**
+  - The primary self-service invite role is `CUSTOMER_ADMIN`, a customer-plane role
+    with no `INTERNAL_OPS`.
+  - A not-yet-accepted invite still on the legacy `"User"` role moves to
+    `CUSTOMER_ADMIN` when activation reuses or rotates it, recorded as a status event.
+  - Users who have already accepted are not changed. Customer user management is
+    out of scope.
+- **Consequences:** The customer sees the Command Center. Until their tenant is in
+  `CUSTOMER_API_TENANT_ALLOWLIST` with `FEATURE_CUSTOMER_API` on, it shows "Your
+  portal is being finalized". Enabling the tenant is an operator step.

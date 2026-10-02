@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import AsyncSessionLocal
 from ..dependencies import get_db, get_current_user, require_permission
 from ..models.site import Site
+from ..services.site_lifecycle import is_planned_site
 from ..models.device import Device
 from ..models.incident import Incident
 from ..models.command_activity import CommandActivity
@@ -750,7 +751,11 @@ async def command_site_detail(
         site_cats[cat] = {"key": cat, "label": label, "device_count": 0, "active_count": 0}
     system_categories = []
     for c in site_cats.values():
-        st = "healthy" if site.status == "Connected" else ("warning" if site.status == "Attention Needed" else "critical")
+        # A planned (not yet installed) site is neutral "pending", never "critical" (CT-1).
+        st = ("healthy" if site.status == "Connected"
+              else "warning" if site.status == "Attention Needed"
+              else "pending" if is_planned_site(site.status)
+              else "critical")
         system_categories.append({**c, "status": st})
 
     incident_list = [_serialize_incident(inc) for inc in incidents]

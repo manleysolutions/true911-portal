@@ -62,6 +62,7 @@ from app.models.service_unit import ServiceUnit
 from app.models.site import Site
 from app.models.subscription import Subscription
 from app.models.tenant import Tenant
+from app.services import site_lifecycle as lifecycle
 from app.services.registration_service import Status
 from app.services.site_customer_resolution import (
     CustomerNotFoundError,
@@ -515,19 +516,33 @@ async def _materialize_sites(
 
         base = _slugify(loc.location_label)
         site_id = await _next_available_site_id(db, base)
+        # CT-1: conversion creates a PLANNED site, never an operational one.
+        # The prospect address is kept as an address ON FILE (the only address
+        # columns on Site are e911_*), explicitly unverified and needing
+        # confirmation; nothing here asserts connectivity, installation or a
+        # dispatchable location.  Promotion is a later, evidence-backed act.
         site = Site(
             site_id=site_id,
             tenant_id=tenant.tenant_id,
             site_name=loc.location_label or site_id,
             customer_name=customer.name,
             customer_id=customer.id,
-            status="Connected",
+            status=lifecycle.SITE_STATUS_PENDING_INSTALL,
             e911_street=loc.street,
             e911_city=loc.city,
             e911_state=loc.state,
             e911_zip=loc.zip,
+            e911_status=lifecycle.E911_STATUS_UNVERIFIED,
+            e911_confirmation_required=True,
+            address_source=lifecycle.ADDRESS_SOURCE_REGISTRATION,
+            address_notes=(f"Customer-provided location detail (not verified): "
+                           f"{loc.dispatchable_description}"[:2000]
+                           if loc.dispatchable_description else None),
+            poc_name=loc.poc_name,
+            poc_phone=loc.poc_phone,
+            poc_email=loc.poc_email,
             notes=loc.access_notes,
-            onboarding_status="active",
+            onboarding_status=lifecycle.ONBOARDING_PENDING,
         )
         db.add(site)
         try:
@@ -658,6 +673,17 @@ async def _materialize_service_units(
             install_type=ru.install_type,
             notes=ru.notes,
             status="pending_install",
+            # CT-1: what the customer ASKED for, kept as planning metadata.  A typed
+            # phone number is not a Line, a requested model is not a Device, and
+            # neither places anything (never customer-serialized).
+            meta={"requested": {
+                "source": "registration",
+                "registration_service_unit_id": ru.id,
+                "phone_number_existing": ru.phone_number_existing,
+                "hardware_model_request": ru.hardware_model_request,
+                "carrier_request": ru.carrier_request,
+                "quantity": ru.quantity,
+            }},
         )
         db.add(unit)
         try:
@@ -1043,6 +1069,11 @@ async def convert_registration(
                 tenant=tenant_out, customer=customer_out,
                 sites=sites_out, service_units=units_out, subscription=sub_out,
             )
+
+        # The acquisition record moves to "converted" inside the SAME commit as the
+        # conversion, so the two can never disagree (same seam as #199).
+        from app.services import acquisition_service as acq
+        await acq.stage_registration_status(db, registration.registration_id, "converted")
 
         await db.commit()
         await db.refresh(registration)

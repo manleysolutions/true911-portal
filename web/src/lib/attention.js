@@ -232,6 +232,7 @@ export function getAttentionSites(data) {
 // their UX.
 
 export const CUSTOMER_STATUS = {
+  BEING_SET_UP:        "being_set_up",
   REPORTING:           "reporting",
   INVENTORY:           "inventory",
   ATTENTION_NEEDED:    "attention_needed",
@@ -244,6 +245,7 @@ export const CUSTOMER_STATUS = {
 // INVENTORY / NOT_REPORTING / …) are kept stable so consumers don't
 // need to update — only the visible strings shift.
 const CUSTOMER_LABELS = {
+  being_set_up:        "Being set up",
   reporting:           "Connected",
   inventory:           "Registered",
   attention_needed:    "Attention Needed",
@@ -252,6 +254,11 @@ const CUSTOMER_LABELS = {
 };
 
 const CUSTOMER_COLORS = {
+  being_set_up: {
+    // Planned location (CT-1): neutral slate — nothing installed, nothing wrong.
+    dot: "bg-slate-400", text: "text-slate-700",
+    bg:  "bg-slate-50",  border: "border-slate-200",
+  },
   reporting: {
     dot: "bg-emerald-500", text: "text-emerald-700",
     bg:  "bg-emerald-50",  border: "border-emerald-200",
@@ -321,6 +328,13 @@ export function isCustomerRole(role) {
  */
 export function toCustomerStatus(site) {
   const canonical = toCanonical(site);
+
+  // A planned site reads "Being set up" unless independent evidence (the
+  // attention engine's device-based status) says it is actually reporting.
+  if (site?.status === "Pending Install" && canonical !== CANONICAL.CONNECTED
+      && canonical !== CANONICAL.ATTENTION) {
+    return CUSTOMER_STATUS.BEING_SET_UP;
+  }
 
   if (canonical === CANONICAL.CONNECTED) {
     return CUSTOMER_STATUS.REPORTING;

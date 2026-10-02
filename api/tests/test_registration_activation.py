@@ -410,7 +410,7 @@ class TestIssueInviteCreate:
         u = users[0]
         assert u.email == "cindy@example.com"
         assert u.tenant_id == tenant.tenant_id
-        assert u.role == "User"
+        assert u.role == "CUSTOMER_ADMIN"   # CT-2: customer plane, no INTERNAL_OPS
         assert u.is_active is False
         assert u.must_change_password is True
         assert u.invite_token == outcome.invite_token
