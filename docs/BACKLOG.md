@@ -101,6 +101,22 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
 - **A7. CAPTCHA review**, only if `acquisition_records` shows abuse.
 - **A8. Analytics vendor.** The event boundary exists; no vendor is approved.
 - **A9. Homepage redesign** on sanitized product proof (hero O1, "Product UI · Sample data").
+  The product-proof strategy is planned in `PUBLIC_PRODUCT_PROOF.md` (proposed, not
+  implemented), with slices PP-0 to PP-5:
+  - **PP-0 (needs approval; a live change, recommended first):** disable the public
+    `/docs`, `/redoc` and `/openapi.json` on the production API. The full schema
+    (≈548 KB) is currently public, a larger IP exposure than any screenshot.
+  - **PP-1:** synthetic "True911 Demo Portfolio" fixture that obeys the truth model.
+    The existing `seed.py` demo data names real agencies and real addresses, so it is
+    unsuitable for marketing.
+  - **PP-2:** local/CI-only capture build from the fixture (no production API/DB, no
+    public route).
+  - **PP-3:** homepage product-proof band (P1), with asset guards: allow-listed files,
+    metadata stripped, "Sample data" caption.
+  - **PP-4:** platform-page crops (P2–P5).
+  - **PP-5:** controlled sales demo environment (Level 3, not public).
+  - **Proposed decision D-040** (public product proof): wording awaits Stuart. Not
+    mixed with conversion-truth work (#202).
 - **A10. Remaining blanket claims outside the touched flow.** "NDAA-TAA Compliant" and
   "True911+" in the Reports/SyncStatus export footers; "True911+" in internal UI titles.
 - **A12. Idempotent wizard create.** If the connection drops after the server

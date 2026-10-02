@@ -479,7 +479,9 @@ The customer's questions map onto it like this:
 ## I. End-to-end lifecycle
 
 ```
-PUBLIC SITE ─► LIFE-SAFETY ASSESSMENT ─► acquisition_records (inquiry→assessment_submitted)   [#198/#199]
+PUBLIC SITE ─► PRODUCT PROOF (synthetic, controlled; PUBLIC_PRODUCT_PROOF.md) ─►
+            LIFE-SAFETY ASSESSMENT ─► acquisition_records (inquiry→assessment_submitted)   [#198/#199]
+                   │ (qualified prospects ─► CONTROLLED DEMO, Level 3, not public)
                    │ (+ optional portfolio file = evidence, sha256)
                    ▼
             INTERNAL QUALIFICATION (registrations review states)                   acquisition: under_review/qualified
@@ -509,6 +511,7 @@ PUBLIC SITE ─► LIFE-SAFETY ASSESSMENT ─► acquisition_records (inquiry→
 - **D-037 (proposed; partly decided above):** Billing boundary. True911 represents, the processor executes, QuickBooks Online records. No card or bank data in True911 (SAQ-A target). An invoice line is linked to a service only with a basis.
 - **D-038 (proposed; partly decided above):** First-login guidance is customer-plane only, skippable, and persisted per user and version. It asserts nothing beyond the existing truth rules.
 - **D-039 (proposed):** Client-IP trust model for public rate limiting, only after the trustworthy parsing boundary is established (BACKLOG A14).
+- **D-040 (proposed; wording awaits Stuart):** Public product proof uses synthetic data only, flattened and redacted assets, and a dual disclosure review. Full workflows are only shown in controlled demos (`PUBLIC_PRODUCT_PROOF.md` §9).
 
 (D-029 is reserved by the unmerged #193.)
 

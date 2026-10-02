@@ -54,6 +54,7 @@ Then consult the level-specific docs relevant to the task.
 - `BACKLOG.md` — prioritized work + tech debt.
 - `PROJECT_STATE.md` — resumable current state (read first each session).
 - `CUSTOMER_LIFECYCLE_PLAN.md` — PROPOSED (not approved) customer-lifecycle architecture: conversion truth, first login, portfolio reconciliation, billing.
+- `PUBLIC_PRODUCT_PROOF.md` — PROPOSED controlled public product imagery: synthetic data only, disclosure levels, sanitization pipeline, competitive review.
 
 ### Level 4 — Process (HOW WE WORK)
 - `OPERATING_LOOP.md` — the development loop, SWAT discipline, steward workflow,
