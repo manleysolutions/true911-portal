@@ -238,10 +238,16 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
       Houston 7134464506 and the Starlink IDs absent from NAPCO, Leawood's two radios,
       Hollywood #4515, the San Rafael move, Edina 5483291 (NAPCO calls it Raleigh),
       #953 "Restoration Main Account", and the Melrose ZIP.
-  - **Status:** the 45-row matrix still needs the run's PER BUILDING / SERVICES /
-    FINDINGS sections (or its JSON). Those were not available to the analysis.
-    **No operator decisions recorded; no canonical apply; nothing customer-visible
-    changed.**
+  - **Matrix done:** `docs/customer/RH_CERTIFICATION_GAP_2026-10-02.md` (fresh
+    dry-run + Zoho/NAPCO). The result is A 5 · B 10 · C 16 · D 5 · E 9 = 45, with a
+    first slice of 20 services at 14 locations.
+    - **Engine corrections found:** an MS130 device serial is read as a NAPCO FACP
+      (Houston's counted FACP); Zoho FACP records are not merged with their radio;
+      "napco:" keys are not checked against the NAPCO export.
+    - **Registry identity defects:** Beverly Modern Gallery (holds store 150 / Leawood)
+      and Hollywood Gallery (holds Melrose #146).
+    - **No operator decisions recorded; no canonical apply; nothing customer-visible
+      changed.**
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 
