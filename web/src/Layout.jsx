@@ -15,6 +15,7 @@ import { apiFetch } from "@/api/client";
 import { toast } from "sonner";
 import { config } from "@/config";
 import { isCustomerApiRole } from "@/lib/attention";
+import CustomerShell from "@/components/customer/command/CustomerShell";
 
 // ── Role hierarchy ──────────────────────────────────────────────
 const ROLE_LEVEL = { User: 1, DataEntry: 1.5, DataSteward: 1.7, Manager: 2, Admin: 3, SuperAdmin: 4 };
@@ -799,7 +800,7 @@ function ViewAsModal({ onClose }) {
 const PUBLIC_PAGES = ["AuthGate"];
 
 function AppLayout({ children, currentPageName }) {
-  const { user, ready, impersonation, stopImpersonation, isRealSuperAdmin } = useAuth();
+  const { user, ready, impersonation, stopImpersonation, isRealSuperAdmin, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
   const [showViewAs, setShowViewAs] = useState(false);
@@ -818,6 +819,22 @@ function AppLayout({ children, currentPageName }) {
   if (!user) {
     window.location.href = "/login";
     return null;
+  }
+
+  // CUSTOMER_* roles get the Life-Safety Command Center shell (top bar +
+  // mobile bottom bar).  Every other role keeps the sidebar below, unchanged.
+  if (isCustomerApiRole(user.role)) {
+    return (
+      <>
+        <CustomerShell user={user} impersonation={impersonation}
+          onExitImpersonation={() => { stopImpersonation(); window.location.reload(); }}
+          onChangePassword={() => setShowChangePwd(true)} onLogout={logout}>
+          {children}
+        </CustomerShell>
+        {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+        <Toaster position="top-right" />
+      </>
+    );
   }
 
   const isNOC = roleLevel(user.role) >= ROLE_LEVEL.Admin;

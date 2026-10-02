@@ -41,6 +41,15 @@ These are data or follow-ups, deliberately NOT solved with presentation logic:
 - **T6. Operational-state copy exists in two places** (`serialize.OPERATIONAL_STATES`
   and `selfService.js` `OPERATIONAL`, where the UNKNOWN states use the web copy).
   Keep them in step, or make the API keys-only.
+- **T7. Location record still shows legacy per-location service / telephone counts.**
+  The location record header ("2 monitored life-safety services · 2 telephone lines")
+  and the location list API (`life_safety_services_count`, `phone_number_count`) still
+  come from legacy service units and distinct numbers. That is how Gallery #653
+  shows "Monitored · 0 life-safety services · 0 telephone lines". The Command Center
+  (PR #194) shows no service or connection totals until the canonical inventory is
+  certified (D-023). The location record must follow, with canonical services →
+  required connections → assets, as part of the canonical location-record work. It was
+  deliberately not changed in #194.
 
 ## 🗺️ RH map — coordinate source defects found during the basemap fix (D-027) [2026-10-01]
 
