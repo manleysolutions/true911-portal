@@ -90,11 +90,20 @@ there is no fuzzy, prefix or dropped-digit matching (`1187020` ≠ `11187020`).
 
 ### 5a. Radio identity (fix after the 2026-10-02 RH dry-run)
 
-- **Only a radio-typed field can yield a radio id.** These are Zoho fields named
-  for the Starlink/radio, but never a field that also names a serial, IMEI, SIM,
-  plan, type, status, date or name. They also include True911 `Device.starlink_id`
-  and registry `napco_radio` mappings. A device serial, IMEI or ICCID is never a
-  radio id, whatever field it was typed into.
+- **Only a radio-typed field can yield a radio id.** The sources are:
+  - **A Zoho field** whose API name **or display label** names the
+    Starlink/radio, and where neither the API name nor the label names a serial,
+    IMEI, SIM, phone, plan, type, status, date or name. Zoho custom fields keep
+    the API name they were created with, so a field labelled "Starlink ID" can
+    have an API name that says nothing about Starlink.
+  - **True911** `Device.starlink_id`.
+  - **Registry** `napco_radio` mappings.
+
+  A device serial, IMEI or ICCID is never a radio id, whatever field it was
+  typed into. Discovered radio fields are requested ahead of the 50-field cap,
+  and the SOURCES line reports them as `radio_fields=[<api> (<label>)]`. A live
+  pull that finds none raises `ZOHO_RADIO_FIELD_MISSING` (HIGH): without it,
+  every Zoho FACP record would split from its radio's service.
 - **Shape rule** (`normalize.radio_id`, generic): 4–12 characters after
   normalisation, and not a 10/11-digit NANP telephone number. This rejects:
   - 13+ character device serials (the MS130 `2023…`/`2021…` shapes);

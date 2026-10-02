@@ -451,6 +451,13 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
     for rad in dec["group_conflicts"]:
         finding("DECISION_CONFLICT", V.HIGH, None, "radio " + mask(rad),
                 "named by more than one FACP_SERVICE decision - none of them applied")
+    zs = sources.get("zoho") or {}
+    if zs.get("status") == "ok" and "radio_fields" in zs and not zs["radio_fields"]:
+        # the live pull found no Starlink / radio field: every Zoho FACP record
+        # would lose its radio identity and split from its radio's service
+        finding("ZOHO_RADIO_FIELD_MISSING", V.HIGH, None, "zoho",
+                "no Starlink / radio field was discovered or requested - Zoho records carry "
+                "no radio identity in this run; FACP joins with Zoho are incomplete")
     recs, excluded = [], []
     for r in _records(snap, ix):
         rd = dec["records"].get(r["rid"])

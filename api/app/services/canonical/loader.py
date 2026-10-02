@@ -34,25 +34,69 @@ _NOT_RADIO_FIELD_TOKENS = ("serial", "imei", "iccid", "sim", "plan", "type", "st
 _RADIO_FIELD_PREFERRED = ("Starlink_ID", "Radio_Number", "RadioNumber")
 
 
-def radio_field_names(names) -> list[str]:
-    """Field names that may carry a communicator radio id, preferred first."""
-    def ok(k):
-        lk = k.lower()
-        return (any(t in lk for t in _RADIO_FIELD_TOKENS)
-                and not any(t in lk for t in _NOT_RADIO_FIELD_TOKENS))
-    names = [k for k in names if ok(k)]
+def _is_radio_field(api: str, label: str = "") -> bool:
+    """A field carries a radio id when its API name OR its display label names
+    the radio, and NEITHER names another identifier / attribute.  (Zoho custom
+    fields keep the API name they were created with: a field labelled
+    "Starlink ID" may have an API name that says nothing about Starlink.)"""
+    api, label = (api or "").lower(), (label or "").lower()
+    return (any(t in api or t in label for t in _RADIO_FIELD_TOKENS)
+            and not any(t in api or t in label for t in _NOT_RADIO_FIELD_TOKENS))
+
+
+def _preferred(names) -> list[str]:
     return sorted(names, key=lambda k: (k not in _RADIO_FIELD_PREFERRED,
                                         _RADIO_FIELD_PREFERRED.index(k)
                                         if k in _RADIO_FIELD_PREFERRED else 0))
 
 
-def zoho_radio(rec: dict) -> str | None:
-    """The raw value of the record's radio field.  The first radio-named field
-    whose value has a radio shape wins; failing that, the first non-empty one is
+def radio_field_names(names) -> list[str]:
+    """Field (API) names that may carry a communicator radio id, judged by the
+    name alone (no metadata), preferred first."""
+    return _preferred([k for k in names if _is_radio_field(k)])
+
+
+def discover_fields(meta_fields) -> tuple[list[str], dict]:
+    """Zoho field metadata -> (API names worth requesting, identifier roles).
+    Both the API name and the display label are matched, so a relabelled
+    custom field is still found.  Roles map radio / imei / sim / serial to the
+    API names that carry them, in priority order."""
+    wanted, roles, labels = [], {"radio": [], "imei": [], "sim": [], "serial": []}, {}
+    for f in meta_fields or []:
+        api = f.get("api_name") or ""
+        if not api:
+            continue
+        label = f.get("field_label") or f.get("display_label") or ""
+        text = ("%s %s" % (api, label)).lower()
+        if any(t in text for t in _FIELD_TOKENS):
+            wanted.append(api)
+            labels[api] = label
+        if _is_radio_field(api, label):
+            roles["radio"].append(api)
+        elif "imei" in text:
+            roles["imei"].append(api)
+        elif "iccid" in text or "sim" in text:
+            roles["sim"].append(api)
+        elif "serial" in text:
+            roles["serial"].append(api)
+    roles["radio"] = _preferred(roles["radio"])
+    roles["labels"] = {k: labels.get(k, "") for k in roles["radio"]}
+    rank = {t: i for i, t in enumerate(_FIELD_TOKENS)}
+    radio = set(roles["radio"])
+    wanted = sorted(dict.fromkeys(wanted), key=lambda a: (
+        a not in radio, min([rank[t] for t in _FIELD_TOKENS
+                             if t in ("%s %s" % (a, labels.get(a, ""))).lower()] or [99])))
+    return wanted, roles
+
+
+def zoho_radio(rec: dict, fields=None) -> str | None:
+    """The raw value of the record's radio field.  The first radio field whose
+    value has a radio shape wins; failing that, the first non-empty one is
     returned so the engine can report it as a rejected radio value.  A serial /
-    IMEI / ICCID field is never consulted."""
+    IMEI / ICCID field is never consulted.  ``fields``: the radio fields found
+    by metadata discovery (falls back to judging the record's own keys)."""
     first = None
-    for k in radio_field_names(rec.keys()):
+    for k in (fields if fields is not None else radio_field_names(rec.keys())):
         v = rec.get(k)
         if isinstance(v, (dict, list)) or v in (None, ""):
             continue
@@ -79,20 +123,23 @@ async def fetch_zoho_rows(row_filter: Callable[..., bool]) -> tuple[list[dict], 
             info["status"] = "not configured in this environment"
             return [], info
         fields = list(DEFAULT_FIELDS)
+        roles = None
         try:
             meta = await zoho_crm._zoho_get("/settings/fields", params={"module": ZOHO_MODULE})
-            for f in meta.get("fields") or []:
-                api = f.get("api_name") or ""
-                if any(t in api.lower() for t in _FIELD_TOKENS) and api not in fields:
-                    fields.append(api)
-            base = len(DEFAULT_FIELDS)
-            rank = {t: i for i, t in enumerate(_FIELD_TOKENS)}
-            fields[base:] = sorted(fields[base:], key=lambda f: min(
-                rank[t] for t in _FIELD_TOKENS if t in f.lower()))
+            wanted, roles = discover_fields(meta.get("fields") or [])
+            # discovered identifier fields (radio first) come right after the
+            # defaults, so the request cap can never crowd them out
+            fields += [a for a in wanted if a not in fields]
         except Exception as exc:            # field discovery is optional
             info["field_discovery"] = "failed: %s" % str(exc)[:120]
         fields = fields[:ZOHO_MAX_FIELDS]
-        info["radio_fields"] = radio_field_names(fields)
+        if roles is not None:
+            roles = {k: ([a for a in v if a in fields] if isinstance(v, list) else v)
+                     for k, v in roles.items()}
+            info["radio_fields"] = ["%s (%s)" % (a, roles["labels"].get(a) or "-")
+                                    for a in roles["radio"]]
+        else:
+            info["radio_fields"] = radio_field_names(fields)
         raw, token, page = [], None, 1
         for _ in range(ZOHO_MAX_PAGES):
             params = {"per_page": 200, "fields": ",".join(fields)}
@@ -138,6 +185,10 @@ async def fetch_zoho_rows(row_filter: Callable[..., bool]) -> tuple[list[dict], 
                 return str(v).strip()
         return None
 
+    def role(rec, name):
+        """First non-empty value among the metadata-discovered fields of a role."""
+        return look(rec, *roles[name]) if roles is not None and roles.get(name) else None
+
     rows = []
     for r in raw:
         acct, parent = look(r, "Account", "Account_Name"), look(r, "Parent_Account")
@@ -151,8 +202,10 @@ async def fetch_zoho_rows(row_filter: Callable[..., bool]) -> tuple[list[dict], 
             "subscription_type": look(r, "Subscription_Type"),
             "activation": look(r, "Device_Activation_Status"),
             "created": look(r, "Created_Time"), "modified": look(r, "Modified_Time"),
-            "imei": look_like(r, "imei"), "sim": look_like(r, "iccid", "sim_n", "sim_i", "sim"),
-            "starlink": zoho_radio(r), "serial": look_like(r, "serial"),
+            "imei": role(r, "imei") or look_like(r, "imei"),
+            "sim": role(r, "sim") or look_like(r, "iccid", "sim_n", "sim_i", "sim"),
+            "starlink": zoho_radio(r, roles["radio"] if roles is not None else None),
+            "serial": role(r, "serial") or look_like(r, "serial"),
         })
     info.update(status="ok", retrieved_at=_now().isoformat(), scanned=len(raw),
                 tenant_rows=len(rows), fields=len(fields))
