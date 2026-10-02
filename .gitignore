@@ -63,3 +63,6 @@ dist/
 # extracted contract/response-code data live here and stay out of git.
 # Narrow by design: matches only this directory, never normal source files.
 .private-evidence/
+
+# brand asset generator scratch (tools/brand/build_beacon_assets.py)
+.brand-raster/
