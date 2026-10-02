@@ -68,10 +68,10 @@ export default function CustomerShell({ user, impersonation, onExitImpersonation
         <header className="sticky top-0 z-40 bg-slate-950 text-white shadow-[0_1px_0_rgba(255,255,255,0.04)]">
           <div className="mx-auto max-w-[1440px] h-14 px-4 sm:px-6 flex items-center gap-4">
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className="inline-flex w-8 h-8 items-center justify-center rounded-lg bg-white/10 ring-1 ring-inset ring-white/15"><Shield className="w-4 h-4" aria-hidden="true" /></span>
+              <span className="inline-flex w-9 h-9 items-center justify-center rounded-lg bg-white text-slate-950 shadow-sm"><Shield className="w-[18px] h-[18px]" strokeWidth={2.2} aria-hidden="true" /></span>
               <span className="leading-none min-w-0">
-                <span className="block text-[15px] font-semibold tracking-tight">True911</span>
-                <span className="block text-[10px] uppercase tracking-[0.16em] text-slate-400 mt-0.5 truncate">Life-Safety Command Center</span>
+                <span className="block text-[17px] font-bold tracking-tight">True911</span>
+                <span className="block text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-300 mt-1 truncate">Life-Safety Command Center</span>
               </span>
             </div>
 

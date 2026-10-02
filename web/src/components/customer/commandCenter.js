@@ -103,7 +103,7 @@ export function statusStatement(summary, ac, locations = []) {
   } else if (attention > 0) {
     tone = "attention"; title = `${plural(attention, "location needs", "locations need")} attention`;
   } else {
-    title = "No known service issues";
+    title = "No known issues requiring attention";
     // green only when EVERY location is evidence-backed monitored
     tone = monitored === total ? "good" : "unknown";
   }
@@ -117,6 +117,19 @@ export function statusStatement(summary, ac, locations = []) {
     customerActions: hero.customerActions,
     true911Work: hero.operationsActions,
   };
+}
+
+// ── Hero chips: at most 3, the most important only ──────────────────
+// Customer actions first (never optional setup), then ONE piece of True911 work
+// that the qualifying line does not already say.  Everything else stays in the
+// Action Center — nothing is removed from the application.
+export function heroChips(statement, max = 3) {
+  const mine = (statement?.customerActions || []).filter((a) => a.key !== "contacts").slice(0, 2)
+    .map((a) => ({ key: `c-${a.key}`, owner: "customer", token: "attention", text: a.text }));
+  const saidAlready = (a) => a.key === "reconcile" && /monitoring information/.test(statement?.detail || "");
+  const ours = (statement?.true911Work || []).filter((a) => !saidAlready(a))
+    .slice(0, 1).map((a) => ({ key: `t-${a.key}`, owner: "true911", token: "working", text: a.text }));
+  return [...mine, ...ours].slice(0, max);
 }
 
 // ── The four operational tiles ──────────────────────────────────────

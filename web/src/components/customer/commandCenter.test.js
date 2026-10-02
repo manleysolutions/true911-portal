@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   STATUS_TOKENS, OP_TOKEN, tokenFor, e911Display, E911_PROVIDER_VERIFICATION_AVAILABLE,
-  statusStatement, opTiles, markerView, MAP_LEGEND_ITEMS, ownership,
+  statusStatement, opTiles, markerView, MAP_LEGEND_ITEMS, ownership, heroChips,
 } from "./commandCenter.js";
 import { locationOperational, actionCenterSections, actionCenterTiers } from "./selfService.js";
 import { mapMarkers } from "./portfolioMap.js";
@@ -49,7 +49,8 @@ const loc = (ref, protection, extra = {}) => ({ location_ref: ref, location: ref
 // ── UNKNOWN is never GOOD and never FAILED ───────────────────────────
 test("UNKNOWN is not rendered as GOOD", () => {
   const st = statusStatement(SUMMARY, AC_DATA, []);
-  assert.equal(st.title, "No known service issues");
+  assert.equal(st.title, "No known issues requiring attention");
+  assert.match(st.detail, /^True911 is confirming monitoring information at 16 locations/);
   assert.equal(st.tone, "unknown", "16 unconfirmed locations: the statement is not green");
   assert.notEqual(statusStatement({ ...SUMMARY, operational_states: { ...SUMMARY.operational_states, being_reconciled: 0, not_yet_confirmed: 16 } }, AC_DATA).tone, "good");
   const unk = loc("bldg:168", "Protected", { monitoring_linked: false });       // evidence lacks a link
@@ -173,9 +174,26 @@ test("customer-required work remains clearly actionable", () => {
   assert.equal(mv.action, true);
   assert.match(mv.ariaLabel, /Your action needed$/);
   assert.equal(opTiles(SUMMARY, AC_DATA).find((t) => t.key === "e911").token, "attention");
-  assert.match(AC, /action && <span[^>]*>\{action\.label\}<\/span>/);
-  // optional setup (contacts) is never presented at action severity in the statement
-  assert.match(PARTS, /a\.key === "contacts"\s*\? <StatusChip key=\{a\.key\} token="neutral">Optional:/);
+  // button styling only on customer-owned rows; True911-owned rows get a quiet link
+  assert.match(AC, /action && \(own\.owner === "customer"\s*\? <span className="[^"]*ring-1 ring-inset ring-slate-300">\{action\.label\}<\/span>\s*: <span className="text-\[11\.5px\] text-slate-500 flex-shrink-0">/);
+  // ownership is visibly different on every row: icon + word + colour
+  assert.match(AC, /customer: \{ icon: UserCheck, word: "Your action"/);
+  assert.match(AC, /true911: \{ icon: Wrench, word: "True911"/);
+});
+
+test("hero shows at most 3 summaries, never optional setup, never repeats the qualifying line", () => {
+  const st = statusStatement(SUMMARY, AC_DATA);
+  const chips = heroChips(st);
+  assert.ok(chips.length <= 3);
+  assert.ok(!chips.some((c) => /contact/i.test(c.text)), "contacts are optional setup -> Action Center only");
+  assert.ok(!chips.some((c) => c.key === "t-reconcile"), "the qualifying line already says it");
+  assert.deepEqual(chips.map((c) => c.owner), ["customer", "customer", "true911"], "customer actions first, then one True911 item");
+  assert.ok(chips.every((c) => (c.owner === "customer") === (c.token === "attention")));
+  assert.match(PARTS, /heroChips\(statement\)\.map/);
+  // nothing is lost: the Action Center still lists contacts and True911's work
+  const keys = actionCenterSections({ ...AC_DATA, missing_contact_information: [{ location_ref: "x", location: "x" }] })
+    .filter((s) => s.items.length).map((s) => s.key);
+  assert.ok(keys.includes("missing_contact_information") && keys.includes("being_reconciled") && keys.includes("e911_not_ready"));
 });
 
 // ── Map truth ────────────────────────────────────────────────────────

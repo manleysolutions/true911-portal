@@ -4,7 +4,7 @@ import {
   Building2, TriangleAlert, OctagonAlert, CircleCheck, CircleDashed, Wrench, Shield, PhoneCall,
   RefreshCw, ChevronRight,
 } from "lucide-react";
-import { STATUS_TOKENS, E911_IDENTITY, freshnessText } from "@/components/customer/commandCenter";
+import { STATUS_TOKENS, E911_IDENTITY, freshnessText, heroChips } from "@/components/customer/commandCenter";
 
 // ════════════════════════════════════════════════════════════════════
 // Command Center building blocks — presentation only.  Every status element
@@ -67,13 +67,12 @@ export function StatusStatement({ statement, name, freshness, onRefresh, refresh
               <p className="mt-1 text-[13.5px] text-slate-600">{statement.detail}</p>
             </div>
           </div>
-          {(statement.customerActions.length > 0 || statement.true911Work.length > 0) && (
+          {/* at most 3 summaries; the full breakdown lives in the Action Center */}
+          {heroChips(statement).length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
-              {/* contacts are optional portfolio setup — never shown at action severity */}
-              {statement.customerActions.map((a) => (a.key === "contacts"
-                ? <StatusChip key={a.key} token="neutral">Optional: {a.text}</StatusChip>
-                : <StatusChip key={a.key} token="attention">For you: {a.text}</StatusChip>))}
-              {statement.true911Work.map((a) => <StatusChip key={a.key} token="working">True911: {a.text}</StatusChip>)}
+              {heroChips(statement).map((c) => (
+                <StatusChip key={c.key} token={c.token}>{c.owner === "customer" ? "For you" : "True911"}: {c.text}</StatusChip>
+              ))}
             </div>
           )}
         </div>
@@ -111,21 +110,22 @@ export function OpTile({ tile, onClick, index = 0 }) {
     <>
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className={`inline-flex w-8 h-8 items-center justify-center rounded-lg ${tile.token === "neutral" ? "bg-slate-100 text-slate-600" : t.chip}`}>
-            {Icon && <Icon className="w-4 h-4" aria-hidden="true" />}
+          <span className={`inline-flex w-10 h-10 items-center justify-center rounded-xl ${tile.token === "neutral" ? "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200" : t.chip}`}>
+            {Icon && <Icon className="w-5 h-5" strokeWidth={1.9} aria-hidden="true" />}
           </span>
           <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{tile.title}</span>
         </span>
         {tile.e911 && <E911Badge />}
       </div>
-      <div className="mt-3">
+      <span className={`mt-3 block h-0.5 w-8 rounded-full ${tile.token === "neutral" ? "bg-slate-200" : t.accent}`} aria-hidden="true" />
+      <div className="mt-4">
         {tile.numeric ? (
-          <p className={`text-[34px] leading-none font-semibold tracking-tight ${tile.token === "neutral" ? "text-slate-900" : t.text}`}>
+          <p className={`text-[40px] leading-none font-bold tracking-tight ${tile.token === "neutral" ? "text-slate-900" : t.text}`}>
             <CountUp value={tile.value} />
             {tile.caption && <span className="ml-2 text-[13px] font-medium tracking-normal text-slate-600">{tile.caption}</span>}
           </p>
         ) : (
-          <p className={`text-[17px] leading-snug font-semibold ${tile.token === "neutral" ? "text-slate-800" : t.text}`}>{tile.value}</p>
+          <p className={`text-[19px] leading-snug font-semibold tracking-tight ${tile.token === "neutral" ? "text-slate-900" : t.text}`}>{tile.value}</p>
         )}
         <p className="mt-2 text-[12px] text-slate-500 leading-snug">{tile.detail}</p>
       </div>

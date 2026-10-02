@@ -28,34 +28,61 @@ const TIER_LOOK = {
   activity: { icon: History, token: "neutral" },
 };
 
+// Ownership tag shown on every row: the customer's work and True911's work must
+// never look alike (icon + word + colour; colour is never the only signal).
+const OWNER_TAG = {
+  customer: { icon: UserCheck, word: "Your action", text: "text-amber-900", rule: "before:bg-amber-400" },
+  true911: { icon: Wrench, word: "True911", text: "text-blue-800", rule: "before:bg-blue-400" },
+};
+
+function OwnerLine({ own }) {
+  if (!own.text) return null;
+  const tag = OWNER_TAG[own.owner];
+  if (!tag) return <span className="block text-[11.5px] mt-0.5 text-slate-500">{own.text}</span>;
+  const Icon = tag.icon;
+  return (
+    <span className={`mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] leading-snug ${tag.text}`}>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <Icon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+        <span className="font-semibold uppercase tracking-[0.06em] text-[10.5px]">{tag.word}</span>
+        <span aria-hidden="true">·</span>
+      </span>
+      <span className="min-w-0">{own.text}</span>
+    </span>
+  );
+}
+
 function Rows({ section, onOpen }) {
   const { title, subtitle, items, row, action, noOpen, key } = section;
   return (
-    <div className="py-2">
+    <div className="py-3">
       <div className="flex items-baseline gap-2">
         <p className="text-[12.5px] font-medium text-slate-800">{title}</p>
         <span className="text-[11px] text-slate-400 tabular-nums">{items.length}</span>
       </div>
-      {subtitle && <p className="text-[11.5px] text-slate-500 leading-snug">{subtitle}</p>}
-      <ul className="mt-1.5 rounded-xl ring-1 ring-slate-100 divide-y divide-slate-100 max-h-56 overflow-y-auto">
+      {subtitle && <p className="text-[11.5px] text-slate-500 leading-snug mt-0.5">{subtitle}</p>}
+      <ul className="mt-2 rounded-xl ring-1 ring-slate-100 divide-y divide-slate-100 max-h-64 overflow-y-auto">
         {items.slice(0, 25).map((it, i) => {
           const own = ownership(key, it);
-          const ownLine = own.text && (
-            <span className={`block text-[11px] mt-0.5 ${STATUS_TOKENS[own.token]?.text || "text-slate-500"}`}>{own.text}</span>
-          );
+          const ownLine = <OwnerLine own={own} />;
+          const rule = OWNER_TAG[own.owner]?.rule;
+          const ruleCls = rule ? `relative before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full ${rule}` : "";
           return (
             <li key={i}>
               {noOpen || !it.location_ref ? (
-                <div className="px-3 py-2 text-[12.5px] text-slate-600"><span className="block truncate">{row(it)}</span></div>
+                <div className="px-3.5 py-2.5 text-[12.5px] text-slate-600"><span className="block truncate">{row(it)}</span></div>
               ) : (
                 <button type="button"
                   onClick={() => onOpen({ ref: it.location_ref, name: it.location, intent: action?.intent || null })}
-                  className="cc-focus w-full text-left px-3 py-2 min-h-[44px] hover:bg-slate-50 flex items-center gap-2">
+                  className={`cc-focus w-full text-left px-3.5 py-2.5 min-h-[48px] hover:bg-slate-50 flex items-center gap-2 ${ruleCls}`}>
                   <span className="flex-1 min-w-0">
                     <span className="block text-[12.5px] text-slate-800 truncate">{row(it)}</span>
                     {ownLine}
                   </span>
-                  {action && <span className="text-[11.5px] font-semibold text-slate-900 flex-shrink-0 rounded-md px-2 py-1 ring-1 ring-inset ring-slate-300">{action.label}</span>}
+                  {/* a BUTTON only where the customer must act; otherwise a quiet link to the location */}
+                  {action && (own.owner === "customer"
+                    ? <span className="text-[11.5px] font-semibold text-slate-900 flex-shrink-0 rounded-md px-2 py-1 ring-1 ring-inset ring-slate-300">{action.label}</span>
+                    : <span className="text-[11.5px] text-slate-500 flex-shrink-0">{action.label}</span>)}
                   <ChevronRight className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" aria-hidden="true" />
                 </button>
               )}
@@ -76,7 +103,7 @@ function Tier({ t, onOpen }) {
   const tok = STATUS_TOKENS[look.token];
   const actionable = t.tier === "action_needed" && t.count > 0;
   return (
-    <div className="px-4 sm:px-5 py-2.5">
+    <div className="px-4 sm:px-5 py-3.5">
       <h3>
         <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={panelId}
           className="cc-focus w-full flex items-center gap-2.5 min-h-[44px] text-left rounded-lg">
