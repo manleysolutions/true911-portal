@@ -39,6 +39,10 @@ CLASSES = {
 }
 # A site edited more than this long after it was created was touched after conversion.
 EDIT_GRACE = timedelta(minutes=5)
+# Telemetry written by the internal action SIMULATOR (app/routers/actions.py) is an
+# operator click, not a device report: it never counts as operational evidence.
+SIMULATED_TELEMETRY_PREFIXES = ("Ping from ", "Reboot initiated by ", "Container '",
+                                "E911 address updated by ", "Update channel switched to ")
 _LIVE_LINE = {"active"}
 _LIVE_DEVICE = {"active"}
 
@@ -73,7 +77,8 @@ class SiteEvidence:
     devices_active: int = 0
     devices_with_heartbeat: int = 0
     last_heartbeat: Optional[str] = None
-    telemetry_events: int = 0
+    telemetry_events: int = 0             # genuine telemetry (simulator events excluded)
+    simulated_action_events: int = 0      # simulator clicks — never deployment evidence
     service_unit_statuses: dict = field(default_factory=dict)
     provisioning_rows: int = 0
     operator_audit_rows: int = 0          # audit_log_entries for the site, excluding conversion's own
@@ -101,7 +106,7 @@ def classify(ev: SiteEvidence) -> tuple[str, list[str]]:
         live.append(f"{ev.devices_active} active device(s)")
     any_artifact = (ev.lines_total or ev.devices_total or ev.provisioning_rows or ev.telemetry_events)
     touched = (ev.operator_audit_rows or ev.action_audit_rows or ev.e911_change_logs
-               or ev.e911_review_actions or ev.edited_after_conversion)
+               or ev.e911_review_actions or ev.edited_after_conversion or ev.simulated_action_events)
 
     # B needs operational signal (heartbeat/telemetry) AND an inventory artifact in service.
     if (ev.devices_with_heartbeat or ev.telemetry_events) and (ev.devices_active or ev.lines_active):
@@ -120,6 +125,9 @@ def classify(ev: SiteEvidence) -> tuple[str, list[str]]:
         reasons.append(f"{ev.operator_audit_rows + ev.action_audit_rows} operator/audit action(s)")
     if ev.e911_change_logs or ev.e911_review_actions:
         reasons.append("E911 change/review activity exists")
+    if ev.simulated_action_events:
+        reasons.append(f"{ev.simulated_action_events} simulated action event(s) (operator clicks, "
+                       "not device evidence)")
     return "C", reasons or ["evidence incomplete"]
 
 
@@ -174,8 +182,11 @@ async def collect(db) -> list[SiteEvidence]:
         beats = [hb for _, hb in devs if hb is not None]
         ev.devices_with_heartbeat = len(beats)
         ev.last_heartbeat = _iso(max(beats)) if beats else None
-        ev.telemetry_events = (await db.execute(select(func.count()).select_from(TelemetryEvent)
-                                                .where(TelemetryEvent.site_id == sid))).scalar() or 0
+        msgs = (await db.execute(select(TelemetryEvent.message)
+                                 .where(TelemetryEvent.site_id == sid))).scalars().all()
+        ev.simulated_action_events = sum(1 for m in msgs
+                                         if (m or "").startswith(SIMULATED_TELEMETRY_PREFIXES))
+        ev.telemetry_events = len(msgs) - ev.simulated_action_events
         for st, n in (await db.execute(select(ServiceUnit.status, func.count())
                                        .where(ServiceUnit.site_id == sid)
                                        .group_by(ServiceUnit.status))).all():
@@ -242,7 +253,8 @@ def _print(report: dict) -> None:
               f"address_source={s['address_source']!r}")
         print(f"    lines {s['lines_active']}/{s['lines_total']} active · devices {s['devices_active']}/"
               f"{s['devices_total']} active, {s['devices_with_heartbeat']} with heartbeat "
-              f"(last {s['last_heartbeat']}) · telemetry {s['telemetry_events']} · units "
+              f"(last {s['last_heartbeat']}) · telemetry {s['telemetry_events']} "
+              f"(+{s['simulated_action_events']} simulated) · units "
               f"{s['service_unit_statuses']}")
         print(f"    provisioning {s['provisioning_rows']} · audit {s['operator_audit_rows']} · actions "
               f"{s['action_audit_rows']} · e911 logs {s['e911_change_logs']} / reviews "

@@ -119,6 +119,23 @@ def test_audit_never_writes():
     run(go())
 
 
+def test_simulated_ping_telemetry_is_never_deployment_evidence():
+    async def go():
+        _, sm = await _db()
+        async with sm() as s:
+            site = await _converted(s, 4)
+            # what POST /api/actions/ping writes on a never-installed site
+            s.add(TelemetryEvent(event_id="EVT-1", site_id=site.site_id, tenant_id="acme", timestamp=T0,
+                                 category="network", severity="info", message="Ping from Ops: OK"))
+            s.add(Device(tenant_id="acme", site_id=site.site_id, device_id="D-4", status="active"))
+            await s.commit()
+        async with sm() as s:
+            (ev,) = await audit.collect(s)
+        assert (ev.telemetry_events, ev.simulated_action_events) == (0, 1)
+        assert ev.classification == "C"          # not B: an operator click is not a device report
+    run(go())
+
+
 def test_email_masking():
     assert audit.mask_email("judy@rh.example") == "j***@rh.example"
     assert audit.mask_email(None) is None
