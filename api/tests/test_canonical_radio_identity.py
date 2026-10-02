@@ -22,7 +22,16 @@ from app.models.source_snapshot import SourceSnapshot, SourceSnapshotRecord
 from app.services.canonical import engine, loader, report
 from app.services.canonical import vocab as V
 from app.services.canonical.normalize import is_sku_label, radio_id
-from tests.test_canonical_engine import _facp_device, conns, device, site, snap, svc, zrow
+from tests.test_canonical_engine import (
+    _facp_device,
+    conns,
+    device,
+    live,
+    site,
+    snap,
+    svc,
+    zrow,
+)
 
 SERIAL = "209901010000027"            # 15-char MS130-style device serial
 OLD_SERIAL = "209904030000068"        # an older device's serial (Jacksonville shape)
@@ -153,7 +162,8 @@ def test_6_roseville_pattern_is_not_napco_backed_merely_from_zoho():
     assert s["provenance"]["napco_evidence"] == "ABSENT"
     assert V.SRC_NAPCO not in s["provenance"]["sources"]
     assert s["confidence"] == V.PROBABLE and not s["counts"]
-    assert s["lifecycle"] == V.CURRENT                            # absence != decommissioned
+    # absence from NAPCO is not decommissioning; Zoho "Activated" is not deployment
+    assert (s["lifecycle"], s["lifecycle_reason"]) == (V.UNKNOWN, V.REASON_ADMIN_STATUS_ONLY)
     assert [f["building_id"] for f in codes(res, "RADIO_NOT_IN_NAPCO")] == [8]
 
 
@@ -161,7 +171,7 @@ def test_7_fuzzy_or_dropped_digit_radio_ids_never_merge():
     rows = [z("RH Princeton", "Fire Alarm", starlink="77187020"),
             z("RH Princeton", "Fire Alarm", starlink="7187020")]   # dropped digit
     res = engine.project(snap(zoho_rows=rows, mappings=[reg(1, 7, "77187020")],
-                              napco_radios=["77187020"]))
+                              napco_radios=["77187020"], source_activity=live("77187020")))
     by_key = {s["service_key"]: s for s in facps(res, 7)}
     assert sorted(by_key) == ["FACP:radio:7187020", "FACP:radio:77187020"]
     assert by_key["FACP:radio:77187020"]["confidence"] == V.CONFIRMED
@@ -186,9 +196,9 @@ def test_8_provenance_from_every_source_survives_the_merge():
 # ── 9-10: lifecycle independence and FACP cardinality ─────────────────
 
 def test_9_lifecycle_is_independent_of_identity_and_confidence():
-    # PROBABLE (Zoho only) but Zoho says Activated -> CURRENT lifecycle, still not counted
-    a = facps(engine.project(snap(zoho_rows=[z("RH Princeton", "Fire Alarm",
-                                                 starlink="77187020")])), 7)[0]
+    # PROBABLE (Zoho only) + recent NAPCO signal -> CURRENT lifecycle, still not counted
+    a = facps(engine.project(snap(zoho_rows=[z("RH Princeton", "Fire Alarm", starlink="77187020")],
+                                  source_activity=live("77187020"))), 7)[0]
     assert (a["confidence"], a["lifecycle"], a["counts"]) == (V.PROBABLE, V.CURRENT, False)
     # absent from a loaded NAPCO snapshot -> never DECOMMISSIONED by that absence
     b = facps(engine.project(snap(zoho_rows=[z("RH Princeton", "Fire Alarm", starlink="7700099",
@@ -209,7 +219,8 @@ def test_10_facp_has_two_connections_only_once_the_service_is_established():
     assert conns(before, 7) == []
     b = next(b for b in before["building_summaries"] if b["building_id"] == 7)
     assert b["probable_additional_connections"] == 2
-    after = engine.project(snap(zoho_rows=rows, napco_radios=["77187020"]))
+    after = engine.project(snap(zoho_rows=rows, napco_radios=["77187020"],
+                                source_activity=live("77187020")))
     c = conns(after, 7)
     assert [x["ordinal"] for x in c] == [1, 2]
     assert all(x["connection_type"] == "FACP_PATH" for x in c)

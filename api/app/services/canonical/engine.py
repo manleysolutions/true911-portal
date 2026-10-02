@@ -23,8 +23,12 @@ aliases / mappings / site links are demoted to supporting evidence as well:
 only the building's intrinsic identity (canonical name, store number, address)
 or an operator decision can place a record there.
 
-Confidence, approval and lifecycle stay separate.  PROBABLE / UNRESOLVED never
-become CONFIRMED here.  E911 is not an input or an output of this engine.
+Confidence, approval, lifecycle and DEPLOYMENT stay separate.  PROBABLE /
+UNRESOLVED never become CONFIRMED here.  An administrative status (Zoho
+"Activated", a True911 or carrier "active") never makes anything CURRENT: CURRENT
+needs independent deployment evidence - an operator lifecycle decision, recent
+True911 telemetry, or recent source-native activity in an imported snapshot.
+Negative statuses (de-activated / suspended) are still honoured.  E911 is not an input or an output of this engine.
 
 Snapshot shape (all lists of plain dicts): see ``loader.build_snapshot``.
 """
@@ -32,7 +36,7 @@ Snapshot shape (all lists of plain dicts): see ``loader.build_snapshot``.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.services.canonical import vocab as V
 from app.services.canonical.normalize import (
@@ -470,9 +474,10 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
                            "display_value": _display(atype, value), "records": [],
                            "carrier": None}
 
+    activity = _activity_index(snap.get("source_activity") or [])
     for a in assets.values():
         _place_asset(a, dec, finding, names)
-        _asset_lifecycle(a, dec)
+        _asset_lifecycle(a, dec, activity, now, ix, finding)
         if a["building_id"] is None and a["asset_type"] == V.TELEPHONE_NUMBER:
             finding("UNPLACED_ASSET", V.MEDIUM, None, a["display_value"],
                     "; ".join(sorted({r["placement"]["note"] or r["placement"]["basis"]
@@ -510,6 +515,8 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
             "display_name": a.get("classification_label") or _DISPLAY[cls],
             "confidence": conf, "lifecycle": a["lifecycle"],
             "lifecycle_reason": a["lifecycle_reason"],
+            "deployment": a["deployment"], "deployment_basis": a["deployment_basis"],
+            "source_status": a["source_status"],
             "assets": [(a["key"], V.REL_CARRIER_LINE)],
             "evidence": a["classification_evidence"],
         })
@@ -525,7 +532,8 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
         s["counts"] = (s["service_type"] in V.LIFE_SAFETY_TYPES
                        and s["approval"] != V.REJECTED
                        and (s["confidence"] == V.CONFIRMED or s["approval"] == V.APPROVED)
-                       and s["lifecycle"] == V.CURRENT)
+                       and s["lifecycle"] == V.CURRENT
+                       and s.get("deployment") == V.DEPLOYED)
         s["probable"] = (s["service_type"] in V.LIFE_SAFETY_TYPES and not s["counts"]
                          and s["approval"] != V.REJECTED and s["confidence"] == V.PROBABLE
                          and s["lifecycle"] not in V.NOT_CURRENT)
@@ -553,7 +561,8 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
         if s["service_type"] in V.LIFE_SAFETY_TYPES and s["lifecycle"] == V.UNKNOWN \
                 and s["confidence"] == V.CONFIRMED:
             finding("LIFECYCLE_UNKNOWN", V.INFO, s["building_id"], s["service_key"],
-                    "confirmed service whose lifecycle no source establishes - not counted")
+                    "confirmed service whose current deployment no independent evidence "
+                    "establishes (an administrative status alone is not deployment) - not counted")
 
     result = {
         "generated_at": now, "tenant_id": snap.get("tenant_id"), "sources": sources,
@@ -601,16 +610,77 @@ def _place_asset(a, dec, finding, names):
                  placement_basis="AMBIGUOUS" if len(prob) > 1 else "UNMATCHED")
 
 
-def _asset_lifecycle(a, dec):
-    a.update(effective_from=None, effective_to=None, lifecycle_event_key=None)
+def _aware(t):
+    if isinstance(t, str):
+        try:
+            t = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(t, datetime):
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def _recent(t, now) -> bool:
+    t = _aware(t)
+    return bool(t) and timedelta(0) - timedelta(days=1) <= now - t \
+        <= timedelta(days=V.DEPLOYMENT_ACTIVITY_DAYS)
+
+
+_ACTIVITY_FIELD = {V.TELEPHONE_NUMBER: "msisdn", V.NAPCO_RADIO: "napco_radio",
+                   V.SIM_ICCID: "iccid", V.DEVICE_IMEI: "imei"}
+
+
+def _activity_index(rows) -> dict:
+    """(field, normalised identifier) -> source activity rows."""
+    ix = defaultdict(list)
+    for row in rows:
+        for atype, field in _ACTIVITY_FIELD.items():
+            v = row.get(field)
+            v = (n10(v) if atype == V.TELEPHONE_NUMBER else
+                 radio_id(v) if atype == V.NAPCO_RADIO else nid(v)) if v else None
+            if v:
+                ix[(atype, v)].append(row)
+    return ix
+
+
+def _deployment(a, activity, now, ix, finding):
+    """Independent evidence that the asset is in service now, or None.
+    -> (basis/reason, source, observed_at)."""
+    for r in a["records"]:
+        if r["source"] == V.SRC_TRUE911 and _recent(r["device"].get("last_heartbeat"), now):
+            return V.REASON_DEPLOYMENT_TELEMETRY, V.SRC_TRUE911, r["device"]["last_heartbeat"]
+    bstore = (ix.buildings.get(a.get("building_id")) or {}).get("store_number")
+    for row in activity.get((a["asset_type"], a["normalized_value"]), ()):
+        if row.get("lifecycle") in V.NOT_CURRENT or not _recent(row.get("activity_at"), now):
+            continue
+        hint = store_number(row.get("location_hint"))
+        if bstore and hint and str(hint) != str(bstore).lstrip("0"):
+            # the source places the active equipment at another store: it may
+            # have been moved - not deployment evidence for THIS building
+            finding("DEPLOYMENT_LOCATION_CONFLICT", V.MEDIUM, a.get("building_id"),
+                    a["display_value"], "%s reports recent activity under store %s"
+                    % (row["source"], hint))
+            continue
+        return V.REASON_DEPLOYMENT_ACTIVITY, row["source"], row.get("activity_at")
+    return None
+
+
+def _asset_lifecycle(a, dec, activity=None, now=None, ix=None, finding=None):
+    a.update(effective_from=None, effective_to=None, lifecycle_event_key=None,
+             deployment=V.DEPLOYMENT_NOT_ESTABLISHED, deployment_basis=None,
+             deployment_observed_at=None, source_status=None)
     op = dec["lifecycle"].get(a["key"])
     if op:
         a.update(lifecycle=op["lifecycle"], lifecycle_reason=op.get("reason"),
                  lifecycle_source=V.SRC_OPERATOR, effective_from=op.get("effective_from"),
                  effective_to=op.get("effective_to"), lifecycle_event_key=op.get("event_key"))
+        if op["lifecycle"] == V.CURRENT:
+            a.update(deployment=V.DEPLOYED, deployment_basis=V.REASON_OPERATOR)
         if op.get("carrier"):
             a["carrier"] = op["carrier"]
         return
+    admin = None                               # (lifecycle, reason, source) - status words
     for src in (V.SRC_ZOHO, V.SRC_TRUE911):
         states = [r["lifecycle"] for r in a["records"] if r["source"] == src and r["lifecycle"]]
         if not states:
@@ -623,9 +693,24 @@ def _asset_lifecycle(a, dec):
             lc = states[0]
         if src == V.SRC_TRUE911:
             lc = (lc[0], V.REASON_TRUE911_STATUS)
-        a.update(lifecycle=lc[0], lifecycle_reason=lc[1], lifecycle_source=src)
-        return
-    a.update(lifecycle=V.UNKNOWN, lifecycle_reason=None, lifecycle_source=None)
+        admin = (lc[0], lc[1], src)
+        a["source_status"] = "%s:%s" % (src, lc[0])
+        break
+    dep = _deployment(a, activity or {}, now, ix, finding) if ix is not None else None
+    if dep:
+        a.update(lifecycle=V.CURRENT, lifecycle_reason=dep[0], lifecycle_source=dep[1],
+                 deployment=V.DEPLOYED, deployment_basis=dep[0],
+                 deployment_observed_at=dep[2])
+        if admin and admin[0] in V.NOT_CURRENT and finding:
+            finding("LIFECYCLE_CONFLICT", V.MEDIUM, a.get("building_id"), a["display_value"],
+                    "%s says %s but %s shows recent activity" % (admin[2], admin[0], dep[1]))
+    elif admin and admin[0] in V.NOT_CURRENT:
+        a.update(lifecycle=admin[0], lifecycle_reason=admin[1], lifecycle_source=admin[2])
+    elif admin:
+        a.update(lifecycle=V.UNKNOWN, lifecycle_reason=V.REASON_ADMIN_STATUS_ONLY,
+                 lifecycle_source=admin[2])
+    else:
+        a.update(lifecycle=V.UNKNOWN, lifecycle_reason=None, lifecycle_source=None)
 
 
 def _classify_number(a, dec, finding):
@@ -783,20 +868,14 @@ def _facp_services(bid, recs, fused, assets, finding, napco=None) -> list[dict]:
                 if n not in flagged:
                     flagged.add(n)
                     finding("RADIO_NOT_IN_NAPCO", V.MEDIUM, bid, "radio " + mask(n),
-                            "not in the loaded NAPCO radiolist snapshot - capped at PROBABLE; "
-                            "lifecycle unchanged (absence is not decommissioning)")
+                            "not among the tenant-attributed rows of the latest NAPCO "
+                            "radiolist snapshot - capped at PROBABLE; lifecycle unchanged "
+                            "(absence is not decommissioning)")
         prov = {"radio_ids": sorted(naps), "sources": sorted(sources),
                 "napco_evidence": ("NOT_LOADED" if napco is None else
                                    "PRESENT" if backed else
                                    "ABSENT" if naps else "NO_RADIO"),
                 "napco_backed": backed}
-        states = [r["lifecycle"][0] for r in comp_recs if r["lifecycle"]]
-        if any(s == V.CURRENT for s in states):
-            lc, why = V.CURRENT, V.REASON_SOURCE_ACTIVE
-        elif states and all(s in V.NOT_CURRENT for s in states):
-            lc, why = states[0], V.REASON_SOURCE_DEACTIVATED
-        else:
-            lc, why = V.UNKNOWN, None
         linked = [(_asset_key(V.NAPCO_RADIO, n), V.REL_SERVICE_EQUIPMENT) for n in sorted(naps)]
         for r in comp_recs:
             for k in r["asset_keys"]:
@@ -805,10 +884,31 @@ def _facp_services(bid, recs, fused, assets, finding, napco=None) -> list[dict]:
                     continue
                 if (k, V.REL_SERVICE_EQUIPMENT) not in linked:
                     linked.append((k, V.REL_SERVICE_EQUIPMENT))
+        # lifecycle: an operator decision on the equipment, else deployment
+        # evidence on any of it, else only a negative source status; a source's
+        # "Activated" alone leaves UNKNOWN.
+        equip = [assets[k] for k, _r in linked if k in assets]
+        op = [a for a in equip if a.get("lifecycle_source") == V.SRC_OPERATOR]
+        deployed = [a for a in equip if a.get("deployment") == V.DEPLOYED]
+        states = [r["lifecycle"][0] for r in comp_recs if r["lifecycle"]]
+        dep, dep_basis = V.DEPLOYMENT_NOT_ESTABLISHED, None
+        if op and all(a["lifecycle"] in V.NOT_CURRENT for a in op):
+            lc, why = op[0]["lifecycle"], op[0]["lifecycle_reason"]
+        elif deployed:
+            lc, why = V.CURRENT, deployed[0]["lifecycle_reason"]
+            dep, dep_basis = V.DEPLOYED, deployed[0]["deployment_basis"]
+        elif states and all(s in V.NOT_CURRENT for s in states):
+            lc, why = states[0], V.REASON_SOURCE_DEACTIVATED
+        else:
+            lc = V.UNKNOWN
+            why = V.REASON_ADMIN_STATUS_ONLY if V.CURRENT in states else None
         out.append({"building_id": bid, "service_key": key, "service_type": V.FACP,
                     "display_name": _DISPLAY[V.FACP], "confidence": conf, "lifecycle": lc,
-                    "lifecycle_reason": why, "assets": linked, "evidence": evidence,
-                    "provenance": prov})
+                    "lifecycle_reason": why, "deployment": dep, "deployment_basis": dep_basis,
+                    "source_status": ",".join(sorted({"%s:%s" % (r["source"], r["lifecycle"][0])
+                                                      for r in comp_recs if r["lifecycle"]}))
+                    or None,
+                    "assets": linked, "evidence": evidence, "provenance": prov})
 
     nap_only, rec_only = [], []
     for c in comps.values():

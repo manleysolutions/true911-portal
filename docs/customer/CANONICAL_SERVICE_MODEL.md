@@ -115,13 +115,19 @@ there is no fuzzy, prefix or dropped-digit matching (`1187020` ≠ `11187020`).
 
   A Zoho record carrying the same normalised radio id as another source's radio
   joins that service as supporting provenance; it is not a second service.
-- **NAPCO evidence** means only the tenant's latest imported NAPCO radiolist
-  snapshot (`source_snapshot_records`, D-024; source `napco_snapshot`, not
-  required).
+- **NAPCO evidence** means only the tenant's latest NAPCO radiolist snapshot
+  that the D-024 importer has **already stored**. It is read from
+  `source_snapshots` / `source_snapshot_records` (`source_system = 'NAPCO'`),
+  using the importer's own `latest_snapshot` ordering. Any parser version is read,
+  because every version stores `napco_radio` the same way. The engine never
+  imports anything; the source is reported as `napco_snapshot` (not required).
   - A Zoho, True911 or registry radio id is never "NAPCO-backed".
-  - With no snapshot loaded, every radio is `NOT_LOADED`, and the run reports
+  - With no stored snapshot, every radio is `NOT_LOADED`, and the run reports
     `NAPCO_EVIDENCE_NOT_LOADED`.
-  - A radio absent from a loaded snapshot is capped at PROBABLE
+  - The importer stores only rows it attributed to the tenant. "Absent" therefore
+    means *not among the tenant-attributed rows*: a radio the importer judged
+    ambiguous or excluded is also absent.
+  - A radio absent from the snapshot is capped at PROBABLE
     (`RADIO_NOT_IN_NAPCO`). **Its lifecycle is not changed**: absence from NAPCO is
     not decommissioning.
 - **A Zoho-only radio id is Zoho evidence.** A radio that no NAPCO snapshot,
@@ -141,12 +147,60 @@ there is no fuzzy, prefix or dropped-digit matching (`1187020` ≠ `11187020`).
   A Zoho telephone-line record (a valid MSISDN and no radio) labelled "Alarm
   Panel" is FACP *equipment*: its number is `FACP_ASSET`, and it never creates an
   FACP service.
-- **Unchanged:**
-  - lifecycle semantics: CONFIRMED ≠ CURRENT, NAPCO existence ≠ CURRENT, Zoho
-    "Activated" is a source status and not deployment proof, and UNKNOWN stays
-    UNKNOWN;
-  - an FACP still requires exactly 2 connections, and only once the service is
-    CONFIRMED (or APPROVED) and CURRENT.
+- **Unchanged:** an FACP still requires exactly 2 connections, and only once the
+  service is counted (§5b).
+
+### 5b. Deployment: its own axis
+
+A service has four independent axes:
+- **confidence:** identity and classification evidence;
+- **approval:** the operator's decision;
+- **lifecycle:** CURRENT / SUSPENDED / DECOMMISSIONED / … / UNKNOWN;
+- **deployment:** `DEPLOYED` or `NOT_ESTABLISHED`.
+
+`source_status` records what an administrative source *says* (e.g.
+`ZOHO:CURRENT`) and nothing more.
+
+- **An administrative status never makes anything CURRENT.** These are CRM or
+  provisioning bookkeeping, not proof that equipment is installed and serving
+  the building:
+  - Zoho Subscription_Mgmnt "Activated";
+  - a True911 device or line status of "active";
+  - a carrier or NAPCO SIM status of "Active".
+
+  Spare, staged, moved, stale or never-installed equipment can carry any of
+  these. With only such a status, lifecycle is `UNKNOWN` with reason
+  `ADMIN_STATUS_ONLY`.
+- **CURRENT requires deployment evidence**, one of:
+  1. an operator `ASSET_LIFECYCLE` decision of CURRENT (including a carrier
+     migration's replacements);
+  2. True911 telemetry, meaning a device `last_heartbeat` within
+     `DEPLOYMENT_ACTIVITY_DAYS` (30) of the run (`DEPLOYMENT_TELEMETRY`);
+  3. source-native activity in an already-imported snapshot
+     (`DEPLOYMENT_ACTIVITY`):
+     - qualifying activity: the NAPCO `LastSignalReceived` or the T-Mobile
+       `Last CDR date`, within 30 days;
+     - the source's own lifecycle for that record must not be not-current (a
+       terminated SIM never counts);
+     - the source's location hint must not name another store. If it does, the
+       run reports `DEPLOYMENT_LOCATION_CONFLICT`, because the equipment may
+       have been moved.
+
+     Verizon exports carry no activity column, so they give no deployment
+     evidence.
+- **Negative statuses are still honoured:** de-activated or suspended stays
+  not-current when nothing shows activity. Recent activity against a
+  de-activated record makes it CURRENT and raises `LIFECYCLE_CONFLICT` for the
+  operator.
+- **Counted** = life-safety type, not REJECTED, CONFIRMED (or APPROVED),
+  lifecycle CURRENT **and** deployment `DEPLOYED`. A confirmed service whose
+  deployment is not established is reported (`LIFECYCLE_UNKNOWN`), never counted.
+- **Residual limits:**
+  - Activity proves the equipment works, and placement evidence says where. A
+    staged or moved radio that still signals and whose source label names no
+    store can therefore read DEPLOYED at its recorded building. The location
+    check catches only a contradicting store number.
+  - Building placement must still be CONFIRMED for the service to count.
 
 ## 6. Operator decisions (Decision 2)
 

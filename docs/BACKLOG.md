@@ -171,11 +171,17 @@ Branch `fix/canonical-radio-identity`.
      evidence. Absence from NAPCO is now a confidence cap, never a lifecycle.
   4. A SKU subscription type and Alarm-Panel telephone lines were taken as FACP
      evidence.
-- **Next, operator-gated, not done:**
-  - CG-NAPCO: import the NAPCO radiolist snapshot (#187 importer, governed
-    `--apply`, Stuart approval). Without it every radio reports `NOT_LOADED`, and
-    Zoho+True911/registry radios such as Houston 1554387 can still read CONFIRMED.
-  - Then run a fresh read-only dry-run and rebuild the certification matrix.
+  5. Zoho "Activated" (or any administrative "active" status) made services
+     CURRENT and counted. Deployment is now a separate axis (§5b).
+- **No new import is needed.** The engine reads the 2026-09-30 RH NAPCO radiolist
+  snapshot that is already stored (D-024 source records) as-is. No duplicate
+  ingestion.
+- **Next, after merge and deploy:** run a fresh read-only dry-run and rebuild the
+  certification matrix. Expect far fewer counted services: only those with
+  independent deployment evidence count.
+  - **Stuart decision (open):** whether more evidence classes may establish
+    deployment. Candidates are a carrier "Active" status with recent usage
+    minutes, and Verizon (which has no activity column).
 - **Not engine work.** These remain registry/operator decisions, deliberately not
   "fixed" in code:
   - Beverly Modern / Leawood;

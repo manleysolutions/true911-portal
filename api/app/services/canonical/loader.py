@@ -159,45 +159,79 @@ async def fetch_zoho_rows(row_filter: Callable[..., bool]) -> tuple[list[dict], 
     return rows, info
 
 
+async def _snapshot_rows(db, tenant_id: str, source_system: str):
+    """The tenant's latest snapshot of ``source_system`` (the importer's own
+    ``latest_snapshot`` ordering) and its records - read in a savepoint, so a
+    missing table never poisons the session.  -> (snapshot | None, records)."""
+    from app.models.source_snapshot import SourceSnapshotRecord
+    from app.services.source_snapshots.importer import latest_snapshot
+    async with db.begin_nested():
+        snap = await latest_snapshot(db, tenant_id, source_system)
+        if snap is None:
+            return None, []
+        recs = (await db.execute(select(SourceSnapshotRecord).where(
+            SourceSnapshotRecord.snapshot_id == snap.id,
+            SourceSnapshotRecord.tenant_id == tenant_id,
+            SourceSnapshotRecord.source_system == source_system))).scalars().all()
+    return snap, recs
+
+
+def _snapshot_info(snap, label) -> dict:
+    return {"system": label, "required": False, "status": "ok", "snapshot_id": snap.id,
+            "parser_version": snap.parser_version,
+            "source_effective_at": snap.source_effective_at.isoformat()
+            if snap.source_effective_at else None,
+            "imported_at": snap.imported_at.isoformat() if snap.imported_at else None}
+
+
 async def load_napco_radios(db, tenant_id: str) -> tuple[list[str] | None, dict]:
-    """Radio ids in the tenant's LATEST imported NAPCO radiolist snapshot
-    (D-024; immutable, tenant-attributed rows only).  -> (radios, source info);
-    radios is None when no snapshot exists - NAPCO evidence is then absent, which
-    is reported, never assumed."""
-    from app.models.source_snapshot import SourceSnapshot, SourceSnapshotRecord
-    info = {"system": "napco_radiolist_snapshot", "required": False}
+    """Radio ids in the tenant's LATEST already-imported NAPCO radiolist snapshot
+    (D-024 ``source_snapshot_records``; immutable; only rows the importer
+    attributed to this tenant are stored).  Any parser version is read: every
+    version stores ``napco_radio`` the same way.  -> (radios, source info);
+    radios is None when no snapshot exists - reported, never assumed."""
     try:
-        async with db.begin_nested():      # a missing table must not poison the session
-            snap, vals = await _latest_napco(db, tenant_id, SourceSnapshot, SourceSnapshotRecord)
+        snap, recs = await _snapshot_rows(db, tenant_id, "NAPCO")
     except Exception as exc:
-        info["status"] = "unavailable: %s" % str(exc)[:120]
-        return None, info
+        return None, {"system": "napco_radiolist_snapshot", "required": False,
+                      "status": "unavailable: %s" % str(exc)[:120]}
     if snap is None:
-        info["status"] = "none loaded"
-        return None, info
-    radios = sorted({r for r in (radio_id(v) for v in vals) if r})
-    info.update(status="ok", snapshot_id=snap.id, radios=len(radios),
-                source_effective_at=snap.source_effective_at.isoformat()
-                if snap.source_effective_at else None,
-                imported_at=snap.imported_at.isoformat() if snap.imported_at else None)
+        return None, {"system": "napco_radiolist_snapshot", "required": False,
+                      "status": "none loaded"}
+    radios = sorted({r for r in (radio_id(x.napco_radio) for x in recs) if r})
+    info = _snapshot_info(snap, "napco_radiolist_snapshot")
+    info["radios"] = len(radios)
     return radios, info
 
 
-async def _latest_napco(db, tenant_id, SourceSnapshot, SourceSnapshotRecord):
-    snap = (await db.execute(
-        select(SourceSnapshot)
-        .where(SourceSnapshot.tenant_id == tenant_id, SourceSnapshot.source_system == "NAPCO")
-        .order_by(SourceSnapshot.source_effective_at.desc().nullslast(),
-                  SourceSnapshot.imported_at.desc(), SourceSnapshot.id.desc())
-        .limit(1))).scalars().first()
-    if snap is None:
-        return None, []
-    vals = (await db.execute(
-        select(SourceSnapshotRecord.napco_radio)
-        .where(SourceSnapshotRecord.snapshot_id == snap.id,
-               SourceSnapshotRecord.tenant_id == tenant_id,
-               SourceSnapshotRecord.source_system == "NAPCO"))).scalars().all()
-    return snap, vals
+async def load_source_activity(db, tenant_id: str) -> tuple[list[dict], dict]:
+    """Source-native ACTIVITY evidence (NAPCO last signal, carrier last CDR)
+    from each source's latest imported snapshot.  Activity timestamps - not
+    status words - are what may later establish deployment; the interpreted
+    source lifecycle travels with them so a terminated line never counts."""
+    from app.services.source_snapshots import status as ST
+    rows, info = [], {"system": "source_snapshots", "required": False, "status": "ok",
+                      "sources": {}}
+    for src in ST.SOURCE_SYSTEMS:
+        try:
+            snap, recs = await _snapshot_rows(db, tenant_id, src)
+        except Exception as exc:
+            info["sources"][src] = "unavailable: %s" % str(exc)[:80]
+            continue
+        if snap is None:
+            info["sources"][src] = "none loaded"
+            continue
+        n = 0
+        for x in recs:
+            if x.activity_at is None:
+                continue
+            n += 1
+            rows.append({"source": src, "msisdn": x.msisdn, "iccid": x.iccid, "imei": x.imei,
+                         "napco_radio": x.napco_radio, "lifecycle": x.lifecycle_interpretation,
+                         "activity_at": x.activity_at, "location_hint": x.location_hint,
+                         "snapshot_id": snap.id})
+        info["sources"][src] = "snapshot %s: %d records, %d with activity" % (snap.id, len(recs), n)
+    return rows, info
 
 
 async def build_snapshot(db, tenant_id: str, *, zoho: str = "live",
@@ -293,6 +327,7 @@ async def build_snapshot(db, tenant_id: str, *, zoho: str = "live",
         zrows = []
         sources["zoho"] = {"system": "zoho_crm", "required": True, "status": "skipped"}
     napco_radios, sources["napco_snapshot"] = await load_napco_radios(db, tenant_id)
+    activity, sources["source_activity"] = await load_source_activity(db, tenant_id)
     sources["operator_decisions"] = {"system": "true911_db", "required": False, "status": "ok",
                                      "active": len(active),
                                      "proposed_preview": len(proposed_decisions or [])}
@@ -300,4 +335,4 @@ async def build_snapshot(db, tenant_id: str, *, zoho: str = "live",
             "aliases": aliases, "mappings": mappings, "fused_groups": fused, "sites": sites,
             "devices": devices, "lines": lines, "units": units, "zoho_rows": zrows,
             "decisions": decisions, "sources": sources, "generic_names": list(generic_names),
-            "napco_radios": napco_radios}
+            "napco_radios": napco_radios, "source_activity": activity}

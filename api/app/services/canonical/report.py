@@ -118,6 +118,10 @@ def render(res: dict, *, snap: dict | None = None, targets=(), mode: str = "DRY-
         L.append(_line(names.get(s["building_id"]), s["service_key"], s["service_type"],
                        s["display_name"], s["confidence"], "approval=%s" % s["approval"],
                        s["lifecycle"], "COUNTED" if s["counts"] else "-"))
+        if s["service_type"] in V.LIFE_SAFETY_TYPES:
+            L.append("     deployment: %s%s  lifecycle_reason=%s  source_status=%s" % (
+                s.get("deployment"), " (%s)" % s["deployment_basis"] if s.get("deployment_basis")
+                else "", s.get("lifecycle_reason") or "-", s.get("source_status") or "-"))
         pv = s.get("provenance")
         if pv:
             L.append("     provenance: sources=%s napco=%s%s" % (

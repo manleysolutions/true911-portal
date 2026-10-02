@@ -41,6 +41,22 @@ REASON_SOURCE_DEACTIVATED = "SOURCE_DEACTIVATED"
 REASON_SOURCE_SUSPENDED = "SOURCE_SUSPENDED"
 REASON_SOURCE_ACTIVE = "SOURCE_ACTIVE"
 REASON_TRUE911_STATUS = "TRUE911_STATUS"
+# CURRENT established by independent deployment evidence (below)
+REASON_DEPLOYMENT_ACTIVITY = "DEPLOYMENT_ACTIVITY"     # recent source-native activity
+REASON_DEPLOYMENT_TELEMETRY = "DEPLOYMENT_TELEMETRY"   # recent True911 heartbeat
+# a source says "Active"/"Activated" but nothing shows the equipment deployed:
+# lifecycle stays UNKNOWN (an administrative status is never deployment proof)
+REASON_ADMIN_STATUS_ONLY = "ADMIN_STATUS_ONLY"
+
+# ── deployment: is the equipment shown to be in service now? ────────────
+# Its own axis, never inferred from confidence, approval or an administrative
+# status (Zoho "Activated", a True911 or carrier "active" status).  Only an
+# operator lifecycle decision, recent True911 telemetry or recent source-native
+# activity (NAPCO last signal, carrier last CDR) establishes it.  Absence of
+# evidence leaves NOT_ESTABLISHED - never "not deployed".
+DEPLOYED = "DEPLOYED"
+DEPLOYMENT_NOT_ESTABLISHED = "NOT_ESTABLISHED"
+DEPLOYMENT_ACTIVITY_DAYS = 30                 # "recent" activity window (days before run)
 
 # ── service types ───────────────────────────────────────────────────────
 FACP = "FACP"
