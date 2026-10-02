@@ -209,6 +209,35 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
       Modern / Hollywood; Roseville, Dawsonville and Long Beach duplicates.
     - **Not among the 45 approved buildings:** Edina #159 and Raleigh #178
       (unapproved candidates, operator review).
+  - **READ-ONLY ZOHO/NAPCO SOURCE RECONCILIATION (2026-10-02; Zoho Subscription_Mgmnt,
+    101 RH records; NAPCO radiolist 2026-09-30).** No Zoho record changed. SIM and
+    IMEI values are kept out of this document on purpose.
+    - **Portfolio-wide:**
+      - Zoho Account values are 2026 operator re-assignments, not original evidence.
+      - The device SKU "SLELTE - Fire (Dual Line)", `Emergency_Line=true` and the
+        "Validated" tag were all set by mass updates. None of them is purpose
+        evidence.
+    - **Safe Zoho correction candidates (not performed):**
+      - Princeton #265020: a duplicate of #578 (dropped-digit Starlink 1187020 vs
+        11187020; NAPCO has only 11187020).
+      - Jacksonville #915: a duplicate of #914 (identical identifiers).
+      - Raleigh #955: facility "#110" should be "#178" (110 is the suite).
+      - Leawood #940: its street is Beverly Modern's (8772 Beverly Blvd); likely
+        4800 West 119th St.
+      - Long Beach #4958: a de-activated duplicate of #4910. No Zoho change is needed;
+        treat it as a duplicate, not lineage.
+    - **Canonical associations to correct in True911 (not Zoho):**
+      - `337391000064115039` has no Houston association in Zoho and must not count
+        for Houston. Its Boston #142 account is a 2026 assignment, and Starlink
+        1380014 is not in NAPCO, so its placement is unresolved.
+      - Leawood vs Beverly Modern are separate facilities (stores 150 and 351); the
+        "collision" is a crossed street value.
+      - Long Beach duplicate is a single line.
+    - **Stuart / operator decisions:** listed in the 2026-10-02 certification report.
+      They cover Jacksonville's old six and the five Voice lines, Princeton #903,
+      Houston 7134464506 and the Starlink IDs absent from NAPCO, Leawood's two radios,
+      Hollywood #4515, the San Rafael move, Edina 5483291 (NAPCO calls it Raleigh),
+      #953 "Restoration Main Account", and the Melrose ZIP.
   - **Status:** the 45-row matrix still needs the run's PER BUILDING / SERVICES /
     FINDINGS sections (or its JSON). Those were not available to the analysis.
     **No operator decisions recorded; no canonical apply; nothing customer-visible
