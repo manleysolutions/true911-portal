@@ -35,10 +35,11 @@ Stuart's approval.** No migration. Detail: `docs/ACQUISITION.md` §2a, §6, §6a
   `rollback()` expired the committed row and serialization raised `MissingGreenlet`.
 - **Wizard client:** a retry reuses the created draft instead of creating another,
   and a 409 counts as submitted only after a token-authenticated read-back confirms it.
-- **Rate-limit identity:** the key is now the trusted-proxy hop of `X-Forwarded-For`
-  (`RATE_LIMIT_TRUSTED_PROXY_HOPS`, default 1), not the client-spoofable first
-  entry. Render's append behaviour is an **operator verification item**. The
-  limiter is still process-local, not fleet-wide.
+- **Rate-limit identity: unchanged and NOT solved.** Per Stuart's split decision
+  (2026-10-02), the client key is still the first `X-Forwarded-For` entry, as in
+  #198, so it is spoofable. It is deferred to BACKLOG A14 (topology: Cloudflare →
+  Render load balancer → app; the trustworthy boundary is not established). The
+  limiter is process-local, not fleet-wide.
 - **Sanitized 500s:** the global handler returns a generic `internal_error` body
   with a request_id; the full traceback is logged. The site-import 500 is also
   sanitized. Vendor 502 passthroughs were audited but not changed (BACKLOG A13).

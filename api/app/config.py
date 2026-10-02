@@ -290,12 +290,6 @@ class Settings(BaseSettings):
     ZOHO_DESK_ACCOUNTS_DOMAIN: str = "https://accounts.zoho.com"
 
     # ── SMTP Email (password resets, invites) ──────────────────────
-    # Public rate-limit client identity (docs/ACQUISITION.md §6): number of
-    # trusted proxies in front of the API that each APPEND to X-Forwarded-For.
-    # The client address is that many entries from the right; client-supplied
-    # entries to its left are ignored.  0 = ignore forwarding headers.
-    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 1
-
     SMTP_HOST: str = ""  # empty = log-only (safe for dev). e.g. smtp.sendgrid.net
     SMTP_PORT: int = 587
     SMTP_USER: str = ""  # e.g. "apikey" for SendGrid

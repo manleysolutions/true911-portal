@@ -4,7 +4,7 @@
    together, and so do submit and its acquisition status.  A partial failure
    rolls back to a state the response describes accurately, and a retry never
    duplicates anything (the old "saved but reported 500" condition is gone).
-2. Rate-limit identity: only the trusted proxy hop of X-Forwarded-For counts.
+2. Rate limiting is unchanged; its client-identity limitation is explicit.
 3. Unhandled 500s are generic; diagnostics stay in the server log.
 """
 
@@ -249,52 +249,23 @@ def test_quote_receipt_survives_a_notify_rollback(monkeypatch):
     run(go())
 
 
-# ── 2. rate-limit identity ───────────────────────────────────────────
-def _req(*xff, peer="10.0.0.5"):
-    hdrs = [("x-forwarded-for", v) for v in xff]
-
-    class _H:
-        def getlist(self, k):
-            return [v for n, v in hdrs if n == k]
-    return SimpleNamespace(headers=_H(), client=SimpleNamespace(host=peer))
+# ── 2. rate limiting: unchanged by this PR, limitation explicit ──────
+def _req(xff=None, peer="10.0.0.5"):
+    headers = {"x-forwarded-for": xff} if xff is not None else {}
+    return SimpleNamespace(headers=headers, client=SimpleNamespace(host=peer))
 
 
-def test_client_key_uses_only_the_trusted_hop():
-    assert acq.client_key(_req("203.0.113.9"), trusted_hops=1) == "203.0.113.9"
-    # Client-supplied entries to the left are ignored, so rotating them changes nothing.
-    keys = {acq.client_key(_req(f"198.51.100.{i}, 203.0.113.9"), trusted_hops=1) for i in range(20)}
-    assert keys == {"203.0.113.9"}
-    # A separate header line the client sent first cannot win either.
-    assert acq.client_key(_req("1.1.1.1", "203.0.113.9"), trusted_hops=1) == "203.0.113.9"
-    # Two trusted hops: the entry the outer proxy recorded.
-    assert acq.client_key(_req("6.6.6.6, 203.0.113.9, 172.16.0.2"), trusted_hops=2) == "203.0.113.9"
-
-
-def test_client_key_falls_back_to_the_socket_peer():
-    assert acq.client_key(_req(), trusted_hops=1) == "10.0.0.5"                 # local / tests
-    assert acq.client_key(_req("203.0.113.9"), trusted_hops=0) == "10.0.0.5"    # headers ignored
-    assert acq.client_key(_req("203.0.113.9"), trusted_hops=2) == "10.0.0.5"    # too few hops
-    assert acq.client_key(_req(" , "), trusted_hops=1) == "10.0.0.5"            # junk header
-
-
-def test_default_trust_model_is_one_appending_proxy():
+def test_client_identity_is_unchanged_from_198_and_not_claimed_trustworthy():
+    """Characterization, not endorsement: the key is still the FIRST
+    X-Forwarded-For entry (the #198 behaviour), so a client CAN rotate it.
+    The trustworthy parsing boundary is deferred (BACKLOG A14); this test pins
+    the behaviour so a future change is deliberate."""
+    assert acq.client_key(_req("203.0.113.9")) == "203.0.113.9"
+    assert acq.client_key(_req("198.51.100.1, 203.0.113.9")) == "198.51.100.1"   # spoofable
+    assert acq.client_key(_req()) == "10.0.0.5"                                  # local / tests
+    assert "KNOWN LIMITATION" in acq.client_key.__doc__
     from app.config import Settings
-    assert Settings.model_fields["RATE_LIMIT_TRUSTED_PROXY_HOPS"].default == 1
-
-
-def test_spoofed_forwarding_headers_cannot_rotate_past_the_limit():
-    async def go():
-        sm = await _db()
-        async with _client(_app(sm)) as c:
-            codes = []
-            for i in range(6):
-                codes.append((await c.post(
-                    "/api/public/quote-request",
-                    json={"company": "Acme", "name": "Pat", "email": "pat@example.com",
-                          "idempotency_key": f"spoof-rotation-{i:06d}"},
-                    headers={"x-forwarded-for": f"198.51.100.{i}, 203.0.113.9"})).status_code)
-        assert codes == [201] * 5 + [429]
-    run(go())
+    assert "RATE_LIMIT_TRUSTED_PROXY_HOPS" not in Settings.model_fields         # no guessed hop model
 
 
 def test_rate_limiter_is_documented_process_local():

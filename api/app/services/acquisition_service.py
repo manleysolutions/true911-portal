@@ -134,30 +134,19 @@ DAILY_LIMITER = RateLimiter(30, 86400)
 LOOKUP_LIMITER = RateLimiter(60, 600)
 
 
-def client_key(request, trusted_hops: Optional[int] = None) -> str:
-    """Client address for rate limiting.  Only ever used to throttle, never to
-    authenticate or authorise.
+def client_key(request) -> str:
+    """Client address for rate limiting: the FIRST X-Forwarded-For entry, else
+    the socket peer.  Only ever used to throttle, never to authenticate.
 
-    Trust model (docs/ACQUISITION.md §6): ``RATE_LIMIT_TRUSTED_PROXY_HOPS``
-    (default 1) is the number of proxies we operate in front of the API that
-    each APPEND the address they received the connection from to
-    X-Forwarded-For.  The client address is therefore the entry that many
-    places from the RIGHT.  Everything to the left of it is client-supplied and
-    is ignored, so a visitor cannot rotate their identity by sending their own
-    header.  0 = ignore forwarding headers entirely and use the socket peer.
-    With no usable header (local dev, tests) the socket peer is used.
+    KNOWN LIMITATION (docs/ACQUISITION.md §6a, BACKLOG A14): the first entry is
+    whatever the client sent, so a determined sender can rotate it.  Honest
+    browsers get a correct per-visitor key.  The trustworthy parsing boundary for
+    our Cloudflare -> Render load balancer -> app topology is not yet established,
+    so this deliberately keeps the #198 behaviour rather than guessing a hop count.
     """
-    if trusted_hops is None:
-        from app.config import settings
-        trusted_hops = settings.RATE_LIMIT_TRUSTED_PROXY_HOPS
-    peer = (request.client.host if request.client else "") or "unknown"
-    if trusted_hops and trusted_hops > 0:
-        # Several header lines are equivalent to one comma-joined list (RFC 7230).
-        raw = ",".join(request.headers.getlist("x-forwarded-for"))
-        hops = [h.strip() for h in raw.split(",") if h.strip()]
-        if len(hops) >= trusted_hops:
-            return hops[-trusted_hops][:64]
-    return peer[:64]
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    host = fwd or (request.client.host if request.client else "") or "unknown"
+    return host[:64]
 
 
 def allow_submission(request) -> bool:

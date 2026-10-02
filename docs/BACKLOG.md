@@ -43,9 +43,18 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
   `zoho_crm`, `carrier_verizon`, `sims`) return upstream error text in 502 bodies.
   It contains no SQL, but should be reviewed for URLs or credentials. Decide
   sanitize-and-log or keep for operator debugging.
-- **A14. Verify Render's X-Forwarded-For behaviour.** Confirm the edge appends the
-  connecting address and that there is one proxy layer for
-  `true911-api.onrender.com` (`ACQUISITION.md` §6a). Operator, read-only.
+- **A14. PUBLIC RATE-LIMIT CLIENT IDENTITY (deferred, split out of #199 on
+  2026-10-02).** The current key is the first `X-Forwarded-For` entry. Honest
+  browsers get a correct key, but a client can rotate it.
+  - **Topology:** Cloudflare → Render load balancer → application. Render says to
+    read `X-Forwarded-For`. Cloudflare appends the connecting client to an existing
+    header.
+  - **Still to establish:** what Render's load balancer appends, i.e. the
+    trustworthy parsing boundary for our deployment. Ask Render support, or capture
+    masked header shape with a flag-gated diagnostic.
+  - **Constraints:** do NOT guess a hop count, and do not weaken or remove rate
+    limiting. A Cloudflare-range-aware parser is one candidate design, not
+    approved. See `ACQUISITION.md` §6a.
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 

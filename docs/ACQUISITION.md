@@ -136,42 +136,33 @@ Production runs one instance with one process. A shared store can replace
 `RateLimiter` without changing callers (BACKLOG A6). This is not a global
 rate limit and must not be described as one.
 
-### 6a. Client identity for rate limiting (trusted-proxy model)
+### 6a. Client identity for rate limiting: KNOWN LIMITATION, deferred
 
-The limiter keys on a client address. `X-Forwarded-For` can be partly written by
-the client, so only the entry added by a proxy we trust is used:
+**Unchanged since #198.** The limiter keys on the **first** `X-Forwarded-For` entry,
+falling back to the socket peer.
 
-- `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default **1**) is the number of proxies in
-  front of the API that each **append** the address they received the connection
-  from.
-- The client address is that many entries from the **right**. Entries to its
-  left, including any the visitor sent, are ignored, so rotating a forged header
-  doesn't change the key. Repeated header lines are treated as one list.
-- `0` ignores forwarding headers and uses the socket peer.
-- With no usable header (local dev, tests) the socket peer is used.
-- The address is used only to throttle, never to authenticate or authorise.
+- Honest browsers get a correct per-visitor key.
+- A determined sender can put arbitrary values first and rotate them to get fresh
+  buckets.
+- The honeypot, size caps and validation still apply.
+- **This is not solved.** It must not be described as trustworthy client identity.
 
-**Why 1.** `render.yaml` points the production web at
-`https://true911-api.onrender.com/api` directly, so public form traffic crosses
-one proxy layer (Render's edge). The Cloudflare `CF-Connecting-IP` handling in
-`app/middleware.py` applies only to the T-Mobile PIT callback host. uvicorn
-doesn't rewrite `request.client` here: the start command passes no
-`--forwarded-allow-ips`, and uvicorn trusts only `127.0.0.1` by default. That is
-why the header is read explicitly.
+**Known topology.** Cloudflare → Render load balancer → application. Render's
+documentation says all web-service traffic passes through Cloudflare and Render's
+load balancers, and that the app should read `X-Forwarded-For` for the client IP.
+Cloudflare documents that it appends the connecting client to an existing header.
 
-**What an operator must still verify (not inferred).** Confirm with Render's
-documentation or support:
+**Not established.** What Render's load balancer adds, if anything, and therefore
+which entry is trustworthy for our deployment.
 
-1. Render's edge **appends** the connecting address as the last
-   `X-Forwarded-For` entry for `*.onrender.com` web services, rather than
-   forwarding the client's header unchanged.
-2. There is exactly one Render proxy layer in front of `true911-api`.
+Until that is established:
+- no hop count is guessed;
+- no Cloudflare-CIDR parser is added;
+- uvicorn's `--forwarded-allow-ips` is not changed.
 
-If Render replaces the header instead, 1 is still correct. If it forwards the
-client value without appending, no header-based key can be trusted: set the hop
-count to 0, accept that all clients share one bucket per proxy, and revisit.
-If a CDN or a custom domain is ever put in front of the API, raise the hop count
-to match.
+A wrong hop count would key visitors on Cloudflare edge addresses and throttle
+legitimate prospects together, which is worse than today's behaviour. Follow-up:
+BACKLOG A14 ("Public rate-limit client identity").
 
 ### 6b. Server errors
 
