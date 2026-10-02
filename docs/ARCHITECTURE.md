@@ -112,6 +112,12 @@ drift where a flag is active on `api` but inert on `worker` (PR #63).
   carrier callback surface).
 - Pydantic schemas in `app/schemas/`. Async SQLAlchemy sessions via
   `app/database.py` / `app/dependencies.py`.
+- API documentation exposure (PP-0): FastAPI's `/docs`, `/redoc`, `/openapi.json` (and
+  `/docs/oauth2-redirect`) are registered **only when `APP_MODE` is exactly `demo`**
+  (`config.api_docs_enabled`, applied at `FastAPI(...)` construction). Production, a
+  missing or empty value, and any unrecognised value disable them, matching
+  `APP_MODE`'s production-safe default. Local development uses `APP_MODE=demo`
+  (`.env.example`) and keeps the docs.
 - Cross-cutting: `RequestVisibilityMiddleware` stamps every response with
   `X-Request-ID` and logs one line per request; a global exception handler returns
   a generic JSON 500 (`internal_error` + request_id, never exception/SQL text) so CORS
