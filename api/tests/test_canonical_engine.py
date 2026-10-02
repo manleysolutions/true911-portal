@@ -90,12 +90,13 @@ def site(site_id, name, street=None, city=None, state=None):
 
 
 def device(device_id, site_id, *, device_type=None, model=None, starlink_id=None, msisdn=None,
-           status="active", iccid=None, manufacturer=None, last_heartbeat=None):
+           status="active", iccid=None, manufacturer=None, last_heartbeat=None,
+           override_service_type=None):
     return {"device_id": device_id, "site_id": site_id, "status": status,
             "device_type": device_type, "model": model, "manufacturer": manufacturer,
             "identifier_type": None, "msisdn": msisdn, "iccid": iccid, "imei": None,
             "serial": None, "starlink_id": starlink_id, "notes": None, "carrier": None,
-            "last_heartbeat": last_heartbeat, "override_service_type": None}
+            "last_heartbeat": last_heartbeat, "override_service_type": override_service_type}
 
 
 def decision(dtype, subject, new_state, reason="operator ground truth", eff=None):
@@ -138,6 +139,9 @@ def test_confirmed_emergency_phone_requires_exactly_one_connection():
 
 def _facp_device(dev_id, site_id, nap, **kw):
     kw.setdefault("last_heartbeat", RECENT)              # True911 telemetry
+    # equipment typing alone never confirms an FACP: this fixture device also
+    # carries an operator service-classification override (genuine evidence)
+    kw.setdefault("override_service_type", "Fire Alarm")
     return device(dev_id, site_id, device_type="Fire Alarm Control Panel", model="StarLink",
                   starlink_id=nap, manufacturer="Napco", **kw)
 

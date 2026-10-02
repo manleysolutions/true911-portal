@@ -152,6 +152,20 @@ there is no fuzzy, prefix or dropped-digit matching (`1187020` ≠ `11187020`).
   - a telephone number;
   - a serial or a NAPCO-like number;
   - Zoho `Emergency_Line` or the "Validated" tag (neither is read).
+  - **True911 equipment typing:** a device type or model naming fire-alarm
+    hardware, or a service unit inferred from it. It says what the hardware is,
+    not what service it provides.
+  - **An operator placement (`SOURCE_RECORD` BUILDING) or lifecycle
+    (`ASSET_LIFECYCLE`) decision.** These establish placement and lifecycle only:
+    PLACEMENT ≠ LIFECYCLE ≠ SERVICE CLASSIFICATION ≠ CERTIFICATION.
+
+  A CONFIRMED FACP needs one of three kinds of genuine service-type evidence:
+  - a Zoho fire-alarm / FACP label;
+  - an operator `FACP_SERVICE` decision;
+  - an operator service-classification override ("Fire Alarm").
+
+  Equipment typing alone caps the service at PROBABLE
+  (`FACP_TYPE_EQUIPMENT_ONLY`), so it is never counted.
 
   A Zoho telephone-line record (a valid MSISDN and no radio) labelled "Alarm
   Panel" is FACP *equipment*: its number is `FACP_ASSET`, and it never creates an
