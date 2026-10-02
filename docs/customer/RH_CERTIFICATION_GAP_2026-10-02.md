@@ -18,6 +18,20 @@
 > SIM/IMEI values are omitted. **No grand total is stated:** the engine itself
 > reports "no single precise total".
 
+> ⛔ **THE 2026-10-02 15:38Z DRY-RUN MUST NOT BE USED AS AN APPLY MANIFEST.**
+> It exposed canonical-engine defects:
+> 1. device serials became NAPCO radio keys;
+> 2. one radio became two services;
+> 3. `napco:` was asserted without NAPCO evidence;
+> 4. SKU and telephone-line records were taken as FACP evidence.
+>
+> These are fixed in `fix/canonical-radio-identity` (see
+> `CANONICAL_SERVICE_MODEL.md` §5a). The run is preserved unchanged as audit
+> evidence. Its service keys (`FACP:napco:…`, `FACP:zoho:…`) and the counts in
+> §1–§4 describe the defective engine. The matrix must be rebuilt from a fresh
+> read-only dry-run after that fix is merged and deployed, ideally after the
+> NAPCO radiolist snapshot import.
+
 ## 1. Engine baseline (fresh)
 
 | | Value |
@@ -242,13 +256,20 @@ customer-facing reads them until #186b.
 **MUST RESOLVE BEFORE THE FIRST RH APPLY** (so that nothing persisted as COUNTED is
 wrong):
 1. **Houston serial-FACP:** fix the engine so an MS130 serial is never a NAPCO FACP
-   key, or record a SERVICE_APPROVAL=REJECTED decision for it.
+   key, or record a SERVICE_APPROVAL=REJECTED decision for it. **Engine fix
+   implemented** (`fix/canonical-radio-identity`, not yet merged): serials, IMEIs and
+   ICCIDs can no longer become radio ids.
 2. **Beverly Modern Gallery:** BUILDING_IDENTITY_SUSPECT (or a registry split) so the
    mixed Leawood / Beverly Modern evidence is not persisted as one building's counted
    services.
 3. **Houston `…64115039`:** not placed to Houston.
 4. **Counted FACPs without NAPCO corroboration (Roseville 1015523):** either feed the
-   NAPCO export (source snapshots, #188) into confirmation, or do not count it.
+   NAPCO export (source snapshots, #188) into confirmation, or do not count it. **The
+   engine side is implemented** (`fix/canonical-radio-identity`): the engine now reads
+   the latest NAPCO radiolist snapshot; a radio absent from it is capped at PROBABLE,
+   with its lifecycle unchanged; a Zoho-only radio is PROBABLE. **Still required:**
+   the governed NAPCO snapshot import (operator `--apply`, Stuart approval).
+   Without it, radios report `NOT_LOADED`.
 
 **CAN REMAIN OPEN FOR THE FIRST INCREMENTAL APPLY** (they stay uncounted):
 - lifecycle-UNKNOWN FACPs and probable or duplicate Zoho FACP records;
