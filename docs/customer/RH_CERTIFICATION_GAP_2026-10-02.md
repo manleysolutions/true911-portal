@@ -271,8 +271,11 @@ wrong):
    the latest NAPCO radiolist snapshot; a radio absent from it is capped at PROBABLE,
    with its lifecycle unchanged; a Zoho-only radio is PROBABLE. It reads the
    **already-stored** 2026-09-30 RH NAPCO snapshot as-is; no new import is needed.
-   A service counts only with independent deployment evidence (e.g. a recent NAPCO
-   signal), never on Zoho "Activated" alone.
+   A service counts only when it is DEPLOYED, which needs two things. The first
+   is liveness: a recent NAPCO signal, a T-Mobile CDR, a heartbeat, or an
+   operator decision. The second is deterministic placement at the building: an
+   operator decision or an exact registry radio/phone mapping. A service never
+   counts on Zoho "Activated" alone, and never on activity alone.
 
 **CAN REMAIN OPEN FOR THE FIRST INCREMENTAL APPLY** (they stay uncounted):
 - lifecycle-UNKNOWN FACPs and probable or duplicate Zoho FACP records;
