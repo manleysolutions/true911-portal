@@ -7,7 +7,7 @@ reconciliation figures - they are NOT customer-facing in PR #186a.
 from __future__ import annotations
 
 from app.services.canonical import vocab as V
-from app.services.canonical.normalize import naddr, words
+from app.services.canonical.normalize import mask, naddr, words
 
 
 def _line(*parts) -> str:
@@ -118,6 +118,15 @@ def render(res: dict, *, snap: dict | None = None, targets=(), mode: str = "DRY-
         L.append(_line(names.get(s["building_id"]), s["service_key"], s["service_type"],
                        s["display_name"], s["confidence"], "approval=%s" % s["approval"],
                        s["lifecycle"], "COUNTED" if s["counts"] else "-"))
+        if s["service_type"] in V.LIFE_SAFETY_TYPES:
+            L.append("     deployment: %s%s  lifecycle_reason=%s  source_status=%s" % (
+                s.get("deployment"), " (%s)" % s["deployment_basis"] if s.get("deployment_basis")
+                else "", s.get("lifecycle_reason") or "-", s.get("source_status") or "-"))
+        pv = s.get("provenance")
+        if pv:
+            L.append("     provenance: sources=%s napco=%s%s" % (
+                ",".join(pv["sources"]) or "-", pv["napco_evidence"],
+                " radio=%s" % ",".join(mask(x) for x in pv["radio_ids"]) if pv["radio_ids"] else ""))
 
     for sr in res["suspect_reports"]:
         L.append("")
@@ -140,6 +149,17 @@ def render(res: dict, *, snap: dict | None = None, targets=(), mode: str = "DRY-
             L.append("     evidence: %s" % "; ".join(e["evidence"]))
         L.append("(nothing moved or deleted - operator decides)")
 
+    L.append("")
+    L.append("=== OPERATOR SERVICE POOLS (aggregate knowledge - no per-line class) ===")
+    for p in res.get("operator_pools") or []:
+        L.append(_line(names.get(p["building_id"]), p["ref"], "/".join(p["service_types"]),
+                       "%d lines" % len(p["numbers"]), p.get("label") or "-"))
+    L.append("")
+    L.append("=== EXCLUDED SOURCE RECORDS (operator disposition - kept for audit) ===")
+    for e in res.get("excluded_records") or []:
+        L.append(_line(e["record"], e["disposition"],
+                       e.get("duplicate_of") or e.get("location") or "-",
+                       e.get("location_text") or "-"))
     L.append("")
     L.append("=== LIFECYCLE EVENTS (operator) ===")
     for ev in res["lifecycle_events"]:

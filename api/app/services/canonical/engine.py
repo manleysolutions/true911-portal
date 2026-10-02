@@ -23,8 +23,15 @@ aliases / mappings / site links are demoted to supporting evidence as well:
 only the building's intrinsic identity (canonical name, store number, address)
 or an operator decision can place a record there.
 
-Confidence, approval and lifecycle stay separate.  PROBABLE / UNRESOLVED never
-become CONFIRMED here.  E911 is not an input or an output of this engine.
+Confidence, approval, lifecycle and DEPLOYMENT stay separate.  PROBABLE /
+UNRESOLVED never become CONFIRMED here.  An administrative status (Zoho
+"Activated", a True911 or carrier "active") never makes anything CURRENT.
+DEPLOYED needs BOTH (a) liveness - an operator lifecycle decision, recent True911
+telemetry or recent NAPCO / T-Mobile activity in an imported snapshot - AND (b)
+deterministic placement at that building (operator placement or an exact
+registry identifier / telephone mapping).  Activity proves the equipment is
+alive, never where it is.  Negative statuses (de-activated / suspended) are
+still honoured.  E911 is not an input or an output of this engine.
 
 Snapshot shape (all lists of plain dicts): see ``loader.build_snapshot``.
 """
@@ -32,16 +39,18 @@ Snapshot shape (all lists of plain dicts): see ``loader.build_snapshot``.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.services.canonical import vocab as V
 from app.services.canonical.normalize import (
     classify_label,
+    is_sku_label,
     mask,
     n10,
     naddr,
     nalias,
     nid,
+    radio_id,
     source_lifecycle,
     store_number,
     words,
@@ -85,7 +94,8 @@ def _display(atype: str, value: str) -> str:
 def interpret_decisions(decisions: list[dict]) -> dict:
     """Active operator decisions -> the lookups the engine applies."""
     out = {"suspect": set(), "lifecycle": {}, "place": {}, "classify": {},
-           "approval": {}, "events": []}
+           "approval": {}, "events": [], "facp_groups": [], "records": {}, "pools": [],
+           "place_asset": {}}
     ordered = sorted(decisions, key=lambda d: 1 if d["decision_type"] == V.D_ASSET_LIFECYCLE else 0)
     for d in ordered:
         t, s, ns = d["decision_type"], d["subject"], d["new_state"]
@@ -122,6 +132,29 @@ def interpret_decisions(decisions: list[dict]) -> dict:
             out["place"][s["number"]] = s["building_id"]
         elif t == V.D_SERVICE_APPROVAL:
             out["approval"][(s["building_id"], s["service_key"])] = ns["approval"]
+        elif t == V.D_FACP_SERVICE:
+            out["facp_groups"].append({"building_id": s["building_id"], "ref": s["service_ref"],
+                                       "radios": list(ns["radios"]), "label": ns.get("label"),
+                                       "decision_key": d["decision_key"]})
+        elif t == V.D_SOURCE_RECORD:
+            prefix = "zoho:" if s["source"] == V.SRC_ZOHO else "device:"
+            out["records"][prefix + s["record_id"]] = dict(ns, decision_key=d["decision_key"])
+        elif t == V.D_SERVICE_POOL:
+            out["pools"].append({"building_id": s["building_id"], "ref": s["pool_ref"],
+                                 "numbers": list(ns["numbers"]),
+                                 "service_types": list(ns["service_types"]),
+                                 "label": ns.get("label"), "decision_key": d["decision_key"]})
+    # a radio claimed by two FACP_SERVICE decisions is a conflict: neither applies
+    claims = Counter(r for g in out["facp_groups"] for r in g["radios"])
+    out["group_conflicts"] = sorted(r for r, c in claims.items() if c > 1)
+    out["facp_groups"] = [g for g in out["facp_groups"]
+                          if not set(g["radios"]) & set(out["group_conflicts"])]
+    for g in out["facp_groups"]:
+        for r in g["radios"]:
+            out["place_asset"][_asset_key(V.NAPCO_RADIO, r)] = g["building_id"]
+    for pool in out["pools"]:               # explicit per-number decisions win
+        for n in pool["numbers"]:
+            out["place"].setdefault(n, pool["building_id"])
     return out
 
 
@@ -287,9 +320,18 @@ def place(ix: _Index, rec: dict, operator_bid=None) -> dict:
 # ──────────────────────────────────────────────────────────── records ──
 
 def _is_napco_device(d: dict) -> bool:
+    """NAPCO / StarLink communicator hardware.  A populated ``starlink_id`` only
+    counts when it has the shape of a radio number - a serial, IMEI, ICCID or
+    telephone number typed into that column is not radio evidence."""
     t = words("%s %s %s" % (d.get("manufacturer"), d.get("model"), d.get("identifier_type")))
     return (" napco" in t or " starlink" in t or " slelte" in t or " sle " in t
-            or bool(d.get("starlink_id")))
+            or bool(radio_id(d.get("starlink_id"))))
+
+
+def _rejected(raw, radio):
+    """The normalised value of a radio-typed field that was refused as a radio
+    identity (for the RADIO_ID_REJECTED finding), else None."""
+    return (nid(raw) or None) if raw and not radio else None
 
 
 def _is_facp_device(d: dict, units: list[dict]) -> bool:
@@ -312,14 +354,22 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
 
     recs = []
     for z in snap.get("zoho_rows") or []:
-        label = " ".join(x for x in (z.get("connection_type"), z.get("subscription_type")) if x)
+        # A Subscription_Type that is a device SKU / plan ("SLELTE - Fire (Dual
+        # Line)", often mass-updated) says nothing about the service: ignored.
+        sub = z.get("subscription_type")
+        label = " ".join(x for x in (z.get("connection_type"),
+                                     None if is_sku_label(sub) else sub) if x)
         cat, strength = classify_label(label)
+        radio = radio_id(z.get("starlink"))
         idents = [i for i in (nid(z.get("starlink")), nid(z.get("sim")), nid(z.get("imei")),
                               nid(z.get("serial"))) if i]
         recs.append({
             "rid": "zoho:%s" % z.get("zoho_id"), "source": V.SRC_ZOHO,
             "numbers": [n for n in [n10(z.get("msisdn"))] if n], "idents": idents,
-            "napco": nid(z.get("starlink")) or None,
+            "napco": radio, "radio_rejected": _rejected(z.get("starlink"), radio),
+            # a telephone line (valid MSISDN, no radio) - e.g. a dialer line
+            # labelled "Alarm Panel" - is FACP equipment, never an FACP service
+            "is_line": bool(n10(z.get("msisdn"))) and not radio,
             "iccid": nid(z.get("sim")) or None, "imei": nid(z.get("imei")) or None,
             "facility": [z.get("facility")] if z.get("facility") else [],
             "account": [z.get("account")] if z.get("account") else [],
@@ -342,7 +392,8 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
         recs.append({
             "rid": "device:%s" % d["device_id"], "source": V.SRC_TRUE911, "device": d,
             "numbers": nums, "idents": idents,
-            "napco": nid(d.get("starlink_id")) if _is_napco_device(d) and d.get("starlink_id") else None,
+            "napco": radio_id(d.get("starlink_id")) if _is_napco_device(d) else None,
+            "radio_rejected": _rejected(d.get("starlink_id"), radio_id(d.get("starlink_id"))),
             "iccid": nid(d.get("iccid")) or None, "imei": nid(d.get("imei")) or None,
             "facility": [site.get("site_name")] if site.get("site_name") else [],
             "account": [], "parent": [],
@@ -359,13 +410,15 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
         if kind in ("phone", "genesis_msisdn") and n10(val):
             rec = {"numbers": [n10(val)], "idents": []}
         elif kind in ("napco_radio", "iccid", "imei") and nid(val):
-            rec = {"numbers": [], "idents": [nid(val)],
-                   "napco": nid(val) if kind == "napco_radio" else None,
+            radio = radio_id(val) if kind == "napco_radio" else None
+            rec = {"numbers": [], "idents": [nid(val)], "napco": radio,
+                   "radio_rejected": _rejected(val, radio) if kind == "napco_radio" else None,
                    "iccid": nid(val) if kind == "iccid" else None,
                    "imei": nid(val) if kind == "imei" else None}
         else:
             continue
-        recs.append(dict({"napco": None, "iccid": None, "imei": None}, **rec, **{
+        recs.append(dict({"napco": None, "radio_rejected": None, "iccid": None, "imei": None},
+                         **rec, **{
             "rid": "registry:%s#%s" % (kind, m.get("id")), "source": V.SRC_REGISTRY,
             "facility": [], "account": [], "parent": [], "address": None,
             "support_bids": set(), "lifecycle": None, "status": "mapped",
@@ -395,10 +448,60 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
                     "%s: %s - confidence capped at PROBABLE; nothing stale is presented as current"
                     % (name, s.get("status")))
 
-    recs = _records(snap, ix)
+    for rad in dec["group_conflicts"]:
+        finding("DECISION_CONFLICT", V.HIGH, None, "radio " + mask(rad),
+                "named by more than one FACP_SERVICE decision - none of them applied")
+    recs, excluded = [], []
+    for r in _records(snap, ix):
+        rd = dec["records"].get(r["rid"])
+        if rd and rd["disposition"] in V.REC_EXCLUDING:
+            # operator: not evidence of a service (kept for audit, never projected)
+            excluded.append({"record": r["rid"], "disposition": rd["disposition"],
+                             "duplicate_of": rd.get("duplicate_of"),
+                             "location": rd.get("location"),
+                             "location_text": r.get("location_text"),
+                             "numbers": r["numbers"]})
+            continue
+        recs.append(r)
+    for rid in sorted(set(dec["records"]) - {r["rid"] for r in recs}
+                      - {e["record"] for e in excluded}):
+        finding("DECISION_UNMATCHED", V.MEDIUM, None, rid,
+                "operator SOURCE_RECORD decision names a record no source reports")
+    # radios carried by a record the operator placed: every other record of the
+    # same radio follows it (one radio cannot be at two buildings)
+    rec_radio = {}
     for r in recs:
-        op_bid = next((dec["place"][n] for n in r["numbers"] if n in dec["place"]), None)
+        rd = dec["records"].get(r["rid"])
+        if rd and rd["disposition"] == V.REC_BUILDING and r.get("napco"):
+            rec_radio.setdefault(_asset_key(V.NAPCO_RADIO, r["napco"]), rd["building_id"])
+    for r in recs:
+        # operator placement, most specific first: the record itself, one of
+        # its numbers, or its operator-placed radio (a record follows the
+        # equipment the operator placed)
+        rd = dec["records"].get(r["rid"])
+        op_bid = rd["building_id"] if rd and rd["disposition"] == V.REC_BUILDING else None
+        if op_bid is None:
+            op_bid = next((dec["place"][n] for n in r["numbers"] if n in dec["place"]), None)
+        if op_bid is None and r.get("napco"):
+            k = _asset_key(V.NAPCO_RADIO, r["napco"])
+            op_bid = dec["place_asset"].get(k, rec_radio.get(k))
         r["placement"] = place(ix, r, op_bid)
+        if r.get("radio_rejected"):
+            finding("RADIO_ID_REJECTED", V.INFO, r["placement"]["building_id"],
+                    "%s %s" % (r["rid"], mask(r["radio_rejected"])),
+                    "value in a radio field has the shape of a serial / IMEI / ICCID / "
+                    "telephone number - not used as a radio identity")
+
+    # NAPCO evidence = the tenant's latest imported NAPCO radiolist snapshot
+    # (D-024).  None = no snapshot loaded: radio ids are then unchecked, never
+    # "NAPCO-backed".  Absence from a loaded snapshot caps confidence only; it
+    # never changes lifecycle (it is not evidence of decommissioning).
+    napco = snap.get("napco_radios")
+    napco = None if napco is None else {radio_id(x) for x in napco if radio_id(x)}
+    if napco is None:
+        finding("NAPCO_EVIDENCE_NOT_LOADED", V.INFO, None, "napco_snapshot",
+                "no NAPCO radiolist snapshot loaded - FACP radio ids are not checked "
+                "against NAPCO and none is NAPCO-backed")
 
     # ── assets ─────────────────────────────────────────────────────
     assets = {}
@@ -423,6 +526,15 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
             carrier = (r["device"].get("carrier") or "").strip() or None
             for k in r["asset_keys"]:
                 assets[k]["carrier"] = assets[k]["carrier"] or carrier
+    for g in dec["facp_groups"]:
+        for rad in g["radios"]:
+            key = _asset_key(V.NAPCO_RADIO, rad)
+            if key not in assets:
+                finding("OPERATOR_ASSET_WITHOUT_SOURCE", V.INFO, g["building_id"], mask(rad),
+                        "operator FACP_SERVICE '%s' names a radio no source reports" % g["ref"])
+                assets[key] = {"key": key, "asset_type": V.NAPCO_RADIO, "normalized_value": rad,
+                               "display_value": _display(V.NAPCO_RADIO, rad), "records": [],
+                               "carrier": None}
     for key in dec["lifecycle"]:
         if key not in assets:
             atype, value = key.split(":", 1)
@@ -432,9 +544,10 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
                            "display_value": _display(atype, value), "records": [],
                            "carrier": None}
 
+    activity = _activity_index(snap.get("source_activity") or [])
     for a in assets.values():
         _place_asset(a, dec, finding, names)
-        _asset_lifecycle(a, dec)
+        _asset_lifecycle(a, dec, activity, now, ix, finding)
         if a["building_id"] is None and a["asset_type"] == V.TELEPHONE_NUMBER:
             finding("UNPLACED_ASSET", V.MEDIUM, None, a["display_value"],
                     "; ".join(sorted({r["placement"]["note"] or r["placement"]["basis"]
@@ -444,6 +557,7 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
     for a in assets.values():
         if a["asset_type"] == V.TELEPHONE_NUMBER:
             _classify_number(a, dec, finding)
+    _apply_pools(assets, dec, finding)
 
     # ── FACP services (per building, joined across sources) ────────
     services = []
@@ -453,7 +567,9 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
             by_bldg[r["placement"]["building_id"]].append(r)
     fused = [[i for i in g if i] for g in snap.get("fused_groups") or []]
     for bid in sorted(ix.buildings):
-        services.extend(_facp_services(bid, by_bldg.get(bid, []), fused, assets, finding))
+        services.extend(_facp_services(
+            bid, by_bldg.get(bid, []), fused, assets, finding, napco,
+            groups=[g for g in dec["facp_groups"] if g["building_id"] == bid]))
 
     # ── telephone services ─────────────────────────────────────────
     for a in sorted(assets.values(), key=lambda x: x["key"]):
@@ -471,6 +587,8 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
             "display_name": a.get("classification_label") or _DISPLAY[cls],
             "confidence": conf, "lifecycle": a["lifecycle"],
             "lifecycle_reason": a["lifecycle_reason"],
+            "deployment": a["deployment"], "deployment_basis": a["deployment_basis"],
+            "source_status": a["source_status"],
             "assets": [(a["key"], V.REL_CARRIER_LINE)],
             "evidence": a["classification_evidence"],
         })
@@ -486,7 +604,8 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
         s["counts"] = (s["service_type"] in V.LIFE_SAFETY_TYPES
                        and s["approval"] != V.REJECTED
                        and (s["confidence"] == V.CONFIRMED or s["approval"] == V.APPROVED)
-                       and s["lifecycle"] == V.CURRENT)
+                       and s["lifecycle"] == V.CURRENT
+                       and s.get("deployment") == V.DEPLOYED)
         s["probable"] = (s["service_type"] in V.LIFE_SAFETY_TYPES and not s["counts"]
                          and s["approval"] != V.REJECTED and s["confidence"] == V.PROBABLE
                          and s["lifecycle"] not in V.NOT_CURRENT)
@@ -511,16 +630,22 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
                 "confidence": V.CONFIRMED if s["confidence"] == V.CONFIRMED else s["confidence"],
                 "links": links})
     for s in services:
+        if s["service_type"] in V.LIFE_SAFETY_TYPES and s["lifecycle"] == V.CURRENT \
+                and s["confidence"] == V.CONFIRMED and s.get("deployment") != V.DEPLOYED:
+            finding("DEPLOYMENT_NOT_ESTABLISHED", V.INFO, s["building_id"], s["service_key"],
+                    "CURRENT but not deterministically deployed at this building - not counted")
         if s["service_type"] in V.LIFE_SAFETY_TYPES and s["lifecycle"] == V.UNKNOWN \
                 and s["confidence"] == V.CONFIRMED:
             finding("LIFECYCLE_UNKNOWN", V.INFO, s["building_id"], s["service_key"],
-                    "confirmed service whose lifecycle no source establishes - not counted")
+                    "confirmed service whose current deployment no independent evidence "
+                    "establishes (an administrative status alone is not deployment) - not counted")
 
     result = {
         "generated_at": now, "tenant_id": snap.get("tenant_id"), "sources": sources,
         "degraded": degraded, "assets": assets, "services": services,
         "connections": connections, "findings": findings, "records": recs,
         "lifecycle_events": dec["events"], "suspect_building_ids": sorted(dec["suspect"]),
+        "excluded_records": excluded, "operator_pools": dec["pools"],
         "building_names": names,
     }
     result["building_summaries"] = _building_summaries(result, ix)
@@ -532,7 +657,13 @@ def project(snap: dict, *, now: datetime | None = None) -> dict:
 # ─────────────────────────────────────────────────────────── helpers ──
 
 def _place_asset(a, dec, finding, names):
-    op = dec["place"].get(a["normalized_value"]) if a["asset_type"] == V.TELEPHONE_NUMBER else None
+    op = (dec["place"].get(a["normalized_value"]) if a["asset_type"] == V.TELEPHONE_NUMBER
+          else dec["place_asset"].get(a["key"]))
+    if op is None:
+        # a record the operator placed carries its other identifiers with it
+        op_bids = {r["placement"]["building_id"] for r in a["records"]
+                   if r["placement"]["basis"] == V.P_OPERATOR}
+        op = next(iter(op_bids)) if len(op_bids) == 1 else None
     if op is not None:
         a.update(building_id=op, placement_confidence=V.CONFIRMED, placement_basis=V.P_OPERATOR)
         return
@@ -562,16 +693,93 @@ def _place_asset(a, dec, finding, names):
                  placement_basis="AMBIGUOUS" if len(prob) > 1 else "UNMATCHED")
 
 
-def _asset_lifecycle(a, dec):
-    a.update(effective_from=None, effective_to=None, lifecycle_event_key=None)
+def _aware(t):
+    if isinstance(t, str):
+        try:
+            t = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(t, datetime):
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def _recent(t, now) -> bool:
+    t = _aware(t)
+    return bool(t) and timedelta(0) - timedelta(days=1) <= now - t \
+        <= timedelta(days=V.DEPLOYMENT_ACTIVITY_DAYS)
+
+
+_ACTIVITY_FIELD = {V.TELEPHONE_NUMBER: "msisdn", V.NAPCO_RADIO: "napco_radio",
+                   V.SIM_ICCID: "iccid", V.DEVICE_IMEI: "imei"}
+
+
+def _activity_index(rows) -> dict:
+    """(field, normalised identifier) -> source activity rows."""
+    ix = defaultdict(list)
+    for row in rows:
+        for atype, field in _ACTIVITY_FIELD.items():
+            v = row.get(field)
+            v = (n10(v) if atype == V.TELEPHONE_NUMBER else
+                 radio_id(v) if atype == V.NAPCO_RADIO else nid(v)) if v else None
+            if v:
+                ix[(atype, v)].append(row)
+    return ix
+
+
+def _placed_deterministically(a) -> bool:
+    """Placement independent of the record's own CRM location fields."""
+    return (a.get("building_id") is not None and a.get("placement_confidence") == V.CONFIRMED
+            and a.get("placement_basis") in V.DEPLOYMENT_PLACEMENT_BASES)
+
+
+def _liveness(a, activity, now, ix, finding):
+    """Recent evidence that the equipment is ALIVE (not where it is), or None.
+    -> (reason, source, observed_at)."""
+    for r in a["records"]:
+        if r["source"] == V.SRC_TRUE911 and _recent(r["device"].get("last_heartbeat"), now):
+            return V.REASON_DEPLOYMENT_TELEMETRY, V.SRC_TRUE911, r["device"]["last_heartbeat"]
+    bstore = (ix.buildings.get(a.get("building_id")) or {}).get("store_number")
+    for row in activity.get((a["asset_type"], a["normalized_value"]), ()):
+        if row.get("source") not in V.DEPLOYMENT_ACTIVITY_SOURCES:
+            continue                           # inventory status only (e.g. Verizon)
+        if row.get("lifecycle") in V.NOT_CURRENT or not _recent(row.get("activity_at"), now):
+            continue
+        hint = store_number(row.get("location_hint"))
+        if bstore and hint and str(hint) != str(bstore).lstrip("0"):
+            # the source names another store: possibly moved - never carried to
+            # THIS building
+            finding("DEPLOYMENT_LOCATION_CONFLICT", V.MEDIUM, a.get("building_id"),
+                    a["display_value"], "%s reports recent activity under store %s"
+                    % (row["source"], hint))
+            continue
+        return V.REASON_DEPLOYMENT_ACTIVITY, row["source"], row.get("activity_at")
+    return None
+
+
+def _asset_lifecycle(a, dec, activity=None, now=None, ix=None, finding=None):
+    a.update(effective_from=None, effective_to=None, lifecycle_event_key=None,
+             deployment=V.DEPLOYMENT_NOT_ESTABLISHED, deployment_basis=None,
+             deployment_observed_at=None, source_status=None,
+             liveness_source=None, liveness_at=None)
+    placed = _placed_deterministically(a)
     op = dec["lifecycle"].get(a["key"])
     if op:
+        # governed operator truth: never ages out with source exports
         a.update(lifecycle=op["lifecycle"], lifecycle_reason=op.get("reason"),
                  lifecycle_source=V.SRC_OPERATOR, effective_from=op.get("effective_from"),
                  effective_to=op.get("effective_to"), lifecycle_event_key=op.get("event_key"))
+        if op["lifecycle"] == V.CURRENT:
+            if placed:
+                a.update(deployment=V.DEPLOYED, deployment_basis=V.REASON_OPERATOR)
+            elif finding:
+                finding("DEPLOYMENT_PLACEMENT_UNVERIFIED", V.MEDIUM, a.get("building_id"),
+                        a["display_value"], "operator says CURRENT but the building "
+                        "placement is not deterministic - not DEPLOYED")
         if op.get("carrier"):
             a["carrier"] = op["carrier"]
         return
+    admin = None                               # (lifecycle, reason, source) - status words
     for src in (V.SRC_ZOHO, V.SRC_TRUE911):
         states = [r["lifecycle"] for r in a["records"] if r["source"] == src and r["lifecycle"]]
         if not states:
@@ -584,9 +792,70 @@ def _asset_lifecycle(a, dec):
             lc = states[0]
         if src == V.SRC_TRUE911:
             lc = (lc[0], V.REASON_TRUE911_STATUS)
-        a.update(lifecycle=lc[0], lifecycle_reason=lc[1], lifecycle_source=src)
-        return
-    a.update(lifecycle=V.UNKNOWN, lifecycle_reason=None, lifecycle_source=None)
+        admin = (lc[0], lc[1], src)
+        a["source_status"] = "%s:%s" % (src, lc[0])
+        break
+    live = _liveness(a, activity or {}, now, ix, finding) if ix is not None else None
+    if live:
+        a.update(liveness_source=live[1], liveness_at=live[2])
+        if admin and admin[0] in V.NOT_CURRENT and finding:
+            finding("LIFECYCLE_CONFLICT", V.MEDIUM, a.get("building_id"), a["display_value"],
+                    "%s says %s but %s shows recent activity" % (admin[2], admin[0], live[1]))
+    if live and placed:
+        a.update(lifecycle=V.CURRENT, lifecycle_reason=live[0], lifecycle_source=live[1],
+                 deployment=V.DEPLOYED, deployment_basis=live[0],
+                 deployment_observed_at=live[2])
+    elif admin and admin[0] in V.NOT_CURRENT:
+        a.update(lifecycle=admin[0], lifecycle_reason=admin[1], lifecycle_source=admin[2])
+    elif live:
+        # alive somewhere - but nothing independent says it is at THIS building
+        a.update(lifecycle=V.UNKNOWN, lifecycle_reason=V.REASON_PLACEMENT_UNVERIFIED,
+                 lifecycle_source=live[1])
+        if finding and a.get("building_id") is not None:
+            finding("ACTIVE_PLACEMENT_UNVERIFIED", V.INFO, a["building_id"], a["display_value"],
+                    "%s shows recent activity, but the building placement (%s) is not "
+                    "deterministic - not DEPLOYED" % (live[1], a.get("placement_basis")))
+    elif admin:
+        a.update(lifecycle=V.UNKNOWN, lifecycle_reason=V.REASON_ADMIN_STATUS_ONLY,
+                 lifecycle_source=admin[2])
+    else:
+        a.update(lifecycle=V.UNKNOWN, lifecycle_reason=None, lifecycle_source=None)
+
+
+def _apply_pools(assets, dec, finding):
+    """SERVICE_POOL: the operator knows a SET of lines is e.g. emergency phone /
+    fax, not which line is which.  A member is never given a per-line class by
+    the pool; a source label on it can be at most PROBABLE (the pool says the
+    set is mixed); a class outside the pool's types is a conflict."""
+    for pool in dec["pools"]:
+        open_lines = 0
+        for n in pool["numbers"]:
+            a = assets.get(_asset_key(V.TELEPHONE_NUMBER, n))
+            if a is None:
+                finding("DECISION_UNMATCHED", V.MEDIUM, pool["building_id"], n,
+                        "SERVICE_POOL '%s' names a number no source reports" % pool["ref"])
+                continue
+            a["pool"] = pool["ref"]
+            note = "operator pool '%s' (%s): per-line purpose not assigned" % (
+                pool["ref"], "/".join(pool["service_types"]))
+            a["classification_evidence"] = list(a.get("classification_evidence") or []) + [note]
+            if n in dec["classify"]:
+                continue                      # an explicit per-number decision holds
+            cls = a.get("classification")
+            if cls in pool["service_types"]:
+                a["classification_confidence"] = V.weakest(a["classification_confidence"],
+                                                           V.PROBABLE)
+            elif cls not in (V.UNCLASSIFIED, None):
+                a.update(classification=V.UNCLASSIFIED, classification_confidence=V.UNRESOLVED)
+                finding("POOL_CLASSIFICATION_CONFLICT", V.MEDIUM, pool["building_id"], n,
+                        "source class %s is outside operator pool '%s'" % (cls, pool["ref"]))
+            if a.get("classification") in (V.UNCLASSIFIED, None) or \
+                    a.get("classification_confidence") != V.CONFIRMED:
+                open_lines += 1
+        finding("SERVICE_POOL_UNASSIGNED", V.INFO, pool["building_id"], pool["ref"],
+                "%d of %d pooled line(s) without a per-line purpose (%s) - not counted as "
+                "individual services" % (open_lines, len(pool["numbers"]),
+                                         "/".join(pool["service_types"])))
 
 
 def _classify_number(a, dec, finding):
@@ -665,19 +934,30 @@ def _classify_number(a, dec, finding):
                 "no source labels this line's service")
 
 
-def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
+def _facp_services(bid, recs, fused, assets, finding, napco=None, groups=()) -> list[dict]:
+    """FACP services for one building.  A service is keyed by its radio
+    identity (``FACP:radio:<id>``) whatever source reported it; which sources
+    did is PROVENANCE (``provenance.sources``), and only a radio present in a
+    loaded NAPCO snapshot is ``napco_backed``.  Joins are exact normalised
+    identifiers only - never fuzzy, never dropped-digit."""
     uf = _UF()
-    napcos = {}                                # napco id -> placement confidence
+    napcos = {}                                # radio id -> placement confidence
+    radio_src = defaultdict(set)               # radio id -> sources claiming it
     members = {}                               # record key -> record
     kinds = defaultdict(set)
+    # a radio the operator placed at ANOTHER building never forms a service here
+    elsewhere = {a["normalized_value"] for a in assets.values()
+                 if a["asset_type"] == V.NAPCO_RADIO and a.get("placement_basis") == V.P_OPERATOR
+                 and a.get("building_id") != bid}
     for r in recs:
-        if r.get("napco"):
+        if r.get("napco") and r["napco"] not in elsewhere:
             napcos[r["napco"]] = max(napcos.get(r["napco"], V.UNRESOLVED),
                                      r["placement"]["confidence"],
                                      key=lambda c: V.CONFIDENCE_RANK[c])
+            radio_src[r["napco"]].add(r["source"])
             uf.find("I:" + r["napco"])
         is_facp_rec = (r["source"] == V.SRC_TRUE911 and r["is_facp"]) or (
-            r["source"] == V.SRC_ZOHO and r["cat"] == V.FACP
+            r["source"] == V.SRC_ZOHO and r["cat"] == V.FACP and not r.get("is_line")
             and not (r["lifecycle"] and r["lifecycle"][0] in V.NOT_CURRENT))
         joinable = is_facp_rec or (r["source"] == V.SRC_TRUE911 and r["is_napco"])
         if not joinable:
@@ -690,6 +970,11 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
             kinds[key].add("identifier")
         for n in r["numbers"]:
             uf.union(key, "I:" + n)
+    for g in groups:                         # operator: these radios are ONE service
+        for rad in g["radios"]:
+            napcos[rad] = V.CONFIRMED
+            radio_src[rad].add(V.SRC_OPERATOR)
+            uf.union("I:" + g["radios"][0], "I:" + rad)
     known = set(uf.p)
     for grp in fused:
         nodes = ["I:" + (n10(i) or nid(i)) for i in grp]
@@ -708,18 +993,48 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
             comps[uf.find(node)]["kinds"] |= ks
 
     out = []
+    flagged = set()
 
-    def svc(key, conf, comp_recs, naps, evidence):
+    def svc(key, conf, comp_recs, naps, evidence, operator=False):
         placement = [r["placement"]["confidence"] for r in comp_recs]
         placement += [napcos[n] for n in naps if n in napcos]
         conf = V.weakest(conf, *placement) if placement else conf
-        states = [r["lifecycle"][0] for r in comp_recs if r["lifecycle"]]
-        if any(s == V.CURRENT for s in states):
-            lc, why = V.CURRENT, V.REASON_SOURCE_ACTIVE
-        elif states and all(s in V.NOT_CURRENT for s in states):
-            lc, why = states[0], V.REASON_SOURCE_DEACTIVATED
-        else:
-            lc, why = V.UNKNOWN, None
+        evidence = list(evidence)
+        claimed = set().union(*(radio_src.get(n, set()) for n in naps)) if naps else set()
+        backed = bool(naps) and napco is not None and all(n in napco for n in naps)
+        sources = claimed | {r["source"] for r in comp_recs}
+        if backed:
+            sources.add(V.SRC_NAPCO)
+        if operator:
+            sources.add(V.SRC_OPERATOR)
+        if naps and not operator and not backed and not (claimed - {V.SRC_ZOHO}) \
+                and conf == V.CONFIRMED:
+            # a radio id only Zoho reports is Zoho evidence, not NAPCO evidence
+            conf = V.PROBABLE
+            evidence.append("radio id reported only by Zoho - not corroborated by NAPCO, "
+                            "True911 or the registry")
+            finding("FACP_RADIO_SINGLE_SOURCE", V.MEDIUM, bid,
+                    "radio " + ",".join(mask(n) for n in sorted(naps)),
+                    "FACP radio identity rests on Zoho alone - capped at PROBABLE")
+        if naps and napco is not None and not backed:
+            # operator truth is not capped by a source's silence; it is still reported
+            if not operator:
+                conf = V.weakest(conf, V.PROBABLE)
+            absent = sorted(n for n in naps if n not in napco)
+            evidence.append("radio %s absent from the NAPCO radiolist snapshot"
+                            % ",".join(mask(n) for n in absent))
+            for n in absent:
+                if n not in flagged:
+                    flagged.add(n)
+                    finding("RADIO_NOT_IN_NAPCO", V.MEDIUM, bid, "radio " + mask(n),
+                            "not among the tenant-attributed rows of the latest NAPCO "
+                            "radiolist snapshot - capped at PROBABLE; lifecycle unchanged "
+                            "(absence is not decommissioning)")
+        prov = {"radio_ids": sorted(naps), "sources": sorted(sources),
+                "napco_evidence": ("NOT_LOADED" if napco is None else
+                                   "PRESENT" if backed else
+                                   "ABSENT" if naps else "NO_RADIO"),
+                "napco_backed": backed}
         linked = [(_asset_key(V.NAPCO_RADIO, n), V.REL_SERVICE_EQUIPMENT) for n in sorted(naps)]
         for r in comp_recs:
             for k in r["asset_keys"]:
@@ -728,27 +1043,67 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
                     continue
                 if (k, V.REL_SERVICE_EQUIPMENT) not in linked:
                     linked.append((k, V.REL_SERVICE_EQUIPMENT))
+        # lifecycle: an operator decision on the equipment, else deployment
+        # evidence on any of it, else only a negative source status; a source's
+        # "Activated" alone leaves UNKNOWN.
+        equip = [assets[k] for k, _r in linked if k in assets]
+        op = [a for a in equip if a.get("lifecycle_source") == V.SRC_OPERATOR]
+        deployed = [a for a in equip if a.get("deployment") == V.DEPLOYED
+                    and a.get("building_id") == bid]
+        unplaced = [a for a in equip if a.get("lifecycle_reason") == V.REASON_PLACEMENT_UNVERIFIED]
+        states = [r["lifecycle"][0] for r in comp_recs if r["lifecycle"]]
+        dep, dep_basis = V.DEPLOYMENT_NOT_ESTABLISHED, None
+        if op and all(a["lifecycle"] in V.NOT_CURRENT for a in op):
+            lc, why = op[0]["lifecycle"], op[0]["lifecycle_reason"]
+        elif deployed:
+            lc, why = V.CURRENT, deployed[0]["lifecycle_reason"]
+            dep, dep_basis = V.DEPLOYED, deployed[0]["deployment_basis"]
+        elif op and any(a["lifecycle"] == V.CURRENT for a in op):
+            lc, why = V.CURRENT, V.REASON_OPERATOR        # operator truth, placement unverified
+        elif unplaced:
+            lc, why = V.UNKNOWN, V.REASON_PLACEMENT_UNVERIFIED
+        elif states and all(s in V.NOT_CURRENT for s in states):
+            lc, why = states[0], V.REASON_SOURCE_DEACTIVATED
+        else:
+            lc = V.UNKNOWN
+            why = V.REASON_ADMIN_STATUS_ONLY if V.CURRENT in states else None
         out.append({"building_id": bid, "service_key": key, "service_type": V.FACP,
                     "display_name": _DISPLAY[V.FACP], "confidence": conf, "lifecycle": lc,
-                    "lifecycle_reason": why, "assets": linked, "evidence": evidence})
+                    "lifecycle_reason": why, "deployment": dep, "deployment_basis": dep_basis,
+                    "source_status": ",".join(sorted({"%s:%s" % (r["source"], r["lifecycle"][0])
+                                                      for r in comp_recs if r["lifecycle"]}))
+                    or None,
+                    "assets": linked, "evidence": evidence, "provenance": prov})
 
+    for g in groups:
+        c = comps.get(uf.find("I:" + g["radios"][0])) or {"nap": set(), "recs": [], "kinds": set()}
+        svc("FACP:radio:%s" % "+".join(g["radios"]), V.CONFIRMED, c["recs"], set(g["radios"]),
+            ["operator FACP_SERVICE '%s': one FACP served by %d communicator(s) %s"
+             % (g["ref"], len(g["radios"]), ",".join(mask(x) for x in g["radios"]))],
+            operator=True)
+        extra = c["nap"] - set(g["radios"])
+        if extra:
+            finding("FACP_OPERATOR_GROUP_EXTRA", V.MEDIUM, bid, "radio " + ",".join(
+                mask(x) for x in sorted(extra)), "joined to operator FACP '%s' by shared "
+                "identifiers but not named by it - left unresolved" % g["ref"])
+        c["nap"], c["recs"] = extra, []        # its records are now that service's evidence
     nap_only, rec_only = [], []
     for c in comps.values():
         if c["nap"] and c["recs"]:
             devs = [r for r in c["recs"] if r["source"] == V.SRC_TRUE911]
             if devs and len(c["nap"]) != len(devs):
                 for n in sorted(c["nap"]):
-                    svc("FACP:napco:%s" % n, V.UNRESOLVED, c["recs"], {n},
-                        ["%d NAPCO ids vs %d FACP devices joined" % (len(c["nap"]), len(devs))])
-                finding("FACP_UNRESOLVED", V.MEDIUM, bid, "napco " + ",".join(
+                    svc("FACP:radio:%s" % n, V.UNRESOLVED, c["recs"], {n},
+                        ["%d radio ids vs %d FACP devices joined" % (len(c["nap"]), len(devs))])
+                finding("FACP_UNRESOLVED", V.MEDIUM, bid, "radio " + ",".join(
                     mask(n) for n in sorted(c["nap"])), "count mismatch in joined component")
                 continue
-            ev = ["NAPCO %s joined to %s via %s" % (
+            ev = ["radio %s joined to %s via %s" % (
                 ",".join(mask(n) for n in sorted(c["nap"])),
                 ",".join(r["rid"] for r in c["recs"]),
                 ",".join(sorted(c["kinds"])) or "shared identifier")]
             for n in sorted(c["nap"]):
-                svc("FACP:napco:%s" % n, V.CONFIRMED, c["recs"], {n}, ev)
+                svc("FACP:radio:%s" % n, V.CONFIRMED, c["recs"], {n}, ev)
         elif c["nap"]:
             nap_only.append(c)
         elif c["recs"]:
@@ -756,8 +1111,8 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
     if len(nap_only) == 1 and len(rec_only) == 1:
         c, rc = nap_only[0], rec_only[0]
         for n in sorted(c["nap"]):
-            svc("FACP:napco:%s" % n, V.CONFIRMED, rc["recs"], {n},
-                ["unique one-to-one in building: NAPCO %s <-> %s" % (
+            svc("FACP:radio:%s" % n, V.CONFIRMED, rc["recs"], {n},
+                ["unique one-to-one in building: radio %s <-> %s" % (
                     mask(n), ",".join(r["rid"] for r in rc["recs"]))])
     else:
         naps = sorted(n for c in nap_only for n in c["nap"])
@@ -765,24 +1120,24 @@ def _facp_services(bid, recs, fused, assets, finding) -> list[dict]:
         pairs = min(len(naps), len(rcs))
         for i, n in enumerate(naps):
             if i < pairs:
-                svc("FACP:napco:%s" % n, V.PROBABLE, rcs[i]["recs"], {n},
-                    ["%d NAPCO ids + %d FACP records - pairing ambiguous" % (len(naps), len(rcs))])
+                svc("FACP:radio:%s" % n, V.PROBABLE, rcs[i]["recs"], {n},
+                    ["%d radio ids + %d FACP records - pairing ambiguous" % (len(naps), len(rcs))])
             else:
-                svc("FACP:napco:%s" % n, V.UNRESOLVED, [], {n},
-                    ["NAPCO id without FACP evidence"])
+                svc("FACP:radio:%s" % n, V.UNRESOLVED, [], {n},
+                    ["radio id without FACP evidence"])
         for c in rcs[pairs:]:
             r0 = c["recs"][0]
             svc("FACP:%s" % r0["rid"], V.PROBABLE if not naps else V.UNRESOLVED, c["recs"],
-                set(), ["FACP record without NAPCO identity"])
+                set(), ["FACP record without a radio identity"])
         if naps and rcs:
-            finding("FACP_PROBABLE", V.MEDIUM, bid, "%d NAPCO / %d records" % (len(naps), len(rcs)),
+            finding("FACP_PROBABLE", V.MEDIUM, bid, "%d radio / %d records" % (len(naps), len(rcs)),
                     "pairing is ambiguous - operator review")
         elif naps:
-            finding("FACP_UNRESOLVED", V.MEDIUM, bid, "napco " + ",".join(mask(n) for n in naps),
-                    "NAPCO id(s) without FACP evidence")
+            finding("FACP_UNRESOLVED", V.MEDIUM, bid, "radio " + ",".join(mask(n) for n in naps),
+                    "radio id(s) without FACP evidence")
         elif rcs:
             finding("FACP_PROBABLE", V.MEDIUM, bid, ",".join(c["recs"][0]["rid"] for c in rcs),
-                    "FACP record(s) without NAPCO identity")
+                    "FACP record(s) without a radio identity")
     return out
 
 

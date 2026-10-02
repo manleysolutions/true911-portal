@@ -79,13 +79,146 @@ approval (Decision 1).
 
 ## 5. FACP joins
 
-Per building, FACP evidence is joined across sources with a union-find over NAPCO
-radio id, serial, ICCID, IMEI, approved registry linkage (fused device groups) and
-shared numbers. NAPCO id + joined FACP record → CONFIRMED (one service per NAPCO
-id). A unique one-to-one pairing in a building → CONFIRMED. Several NAPCO ids and
-FACP records without a join → PROBABLE (pairing ambiguous). A NAPCO id with no FACP
+Per building, FACP evidence is joined across sources with a union-find over radio
+id, serial, ICCID, IMEI, approved registry linkage (fused device groups) and
+shared numbers. Radio id + joined FACP record → CONFIRMED (one service per radio
+id). A unique one-to-one pairing in a building → CONFIRMED. Several radio ids and
+FACP records without a join → PROBABLE (pairing ambiguous). A radio id with no FACP
 evidence, or a count mismatch → UNRESOLVED. Service confidence is capped by the
-weakest placement of its evidence.
+weakest placement of its evidence. Joins use exact normalised identifiers only:
+there is no fuzzy, prefix or dropped-digit matching (`1187020` ≠ `11187020`).
+
+### 5a. Radio identity (fix after the 2026-10-02 RH dry-run)
+
+- **Only a radio-typed field can yield a radio id.** These are Zoho fields named
+  for the Starlink/radio, but never a field that also names a serial, IMEI, SIM,
+  plan, type, status, date or name. They also include True911 `Device.starlink_id`
+  and registry `napco_radio` mappings. A device serial, IMEI or ICCID is never a
+  radio id, whatever field it was typed into.
+- **Shape rule** (`normalize.radio_id`, generic): 4–12 characters after
+  normalisation, and not a 10/11-digit NANP telephone number. This rejects:
+  - 13+ character device serials (the MS130 `2023…`/`2021…` shapes);
+  - 15-digit IMEIs;
+  - 19/20-digit ICCIDs.
+
+  A rejected value stays an ordinary identifier, so it can still link records
+  of the same device. It never becomes a `NAPCO_RADIO` asset or an FACP service,
+  and it produces a `RADIO_ID_REJECTED` finding (INFO).
+- **Service key.** It is `FACP:radio:<id>`, whichever source reported the radio,
+  so the key is stable when NAPCO evidence arrives later. Before this fix the key
+  was `FACP:napco:<id>`; nothing was ever applied, so no persisted key changes.
+- **Provenance.** Each FACP service carries `provenance`:
+  - `radio_ids`;
+  - `sources` (ZOHO / TRUE911 / REGISTRY / NAPCO);
+  - `napco_evidence`: PRESENT / ABSENT / NOT_LOADED / NO_RADIO;
+  - `napco_backed`.
+
+  A Zoho record carrying the same normalised radio id as another source's radio
+  joins that service as supporting provenance; it is not a second service.
+- **NAPCO evidence** means only the tenant's latest NAPCO radiolist snapshot
+  that the D-024 importer has **already stored**. It is read from
+  `source_snapshots` / `source_snapshot_records` (`source_system = 'NAPCO'`),
+  using the importer's own `latest_snapshot` ordering. Any parser version is read,
+  because every version stores `napco_radio` the same way. The engine never
+  imports anything; the source is reported as `napco_snapshot` (not required).
+  - A Zoho, True911 or registry radio id is never "NAPCO-backed".
+  - With no stored snapshot, every radio is `NOT_LOADED`, and the run reports
+    `NAPCO_EVIDENCE_NOT_LOADED`.
+  - The importer stores only rows it attributed to the tenant. "Absent" therefore
+    means *not among the tenant-attributed rows*: a radio the importer judged
+    ambiguous or excluded is also absent.
+  - A radio absent from the snapshot is capped at PROBABLE
+    (`RADIO_NOT_IN_NAPCO`). **Its lifecycle is not changed**: absence from NAPCO is
+    not decommissioning.
+- **A Zoho-only radio id is Zoho evidence.** A radio that no NAPCO snapshot,
+  True911 device or registry mapping corroborates is capped at PROBABLE
+  (`FACP_RADIO_SINGLE_SOURCE`).
+- **FACP evidence is a genuine fire-alarm / FACP service type only.** These are
+  *not* FACP evidence:
+  - a device or plan SKU in `Subscription_Type` ("SLELTE - Fire (Dual Line)",
+    "SLEMAXVI-FIRE (Dual Line 5G)", "MS130v4", "… Service Pack"), which is ignored
+    (`normalize.is_sku_label`);
+  - "Voice";
+  - a carrier;
+  - a telephone number;
+  - a serial or a NAPCO-like number;
+  - Zoho `Emergency_Line` or the "Validated" tag (neither is read).
+
+  A Zoho telephone-line record (a valid MSISDN and no radio) labelled "Alarm
+  Panel" is FACP *equipment*: its number is `FACP_ASSET`, and it never creates an
+  FACP service.
+- **Unchanged:** an FACP still requires exactly 2 connections, and only once the
+  service is counted (§5b).
+
+### 5b. Deployment: its own axis
+
+A service has four independent axes:
+- **confidence:** identity and classification evidence;
+- **approval:** the operator's decision;
+- **lifecycle:** CURRENT / SUSPENDED / DECOMMISSIONED / … / UNKNOWN;
+- **deployment:** `DEPLOYED` or `NOT_ESTABLISHED`.
+
+`source_status` records what an administrative source *says* (e.g.
+`ZOHO:CURRENT`) and nothing more.
+
+- **An administrative status never makes anything CURRENT.** These are CRM or
+  provisioning bookkeeping, not proof that equipment is installed and serving
+  the building:
+  - Zoho Subscription_Mgmnt "Activated";
+  - a True911 device or line status of "active";
+  - a carrier or NAPCO SIM status of "Active".
+
+  Spare, staged, moved, stale or never-installed equipment can carry any of
+  these. With only such a status, lifecycle is `UNKNOWN` with reason
+  `ADMIN_STATUS_ONLY`.
+- **DEPLOYED requires BOTH of the following.** Activity proves the equipment
+  is alive, never where it is.
+  - **(a) Liveness**, one of:
+    1. an operator `ASSET_LIFECYCLE` decision of CURRENT (including a carrier
+       migration's replacements);
+    2. a True911 device `last_heartbeat` within `DEPLOYMENT_ACTIVITY_DAYS` (30)
+       of the run;
+    3. recent activity in an already-imported snapshot, from
+       `DEPLOYMENT_ACTIVITY_SOURCES` only: NAPCO `LastSignalReceived` or T-Mobile
+       `Last CDR date`, within 30 days, where the record's own source lifecycle
+       is not not-current. Verizon and Red Pocket exports carry inventory status
+       only and never count. Usage minutes are not read.
+  - **(b) Deterministic placement** at that building (`DEPLOYMENT_PLACEMENT_BASES`):
+    - an operator placement (carrier migration or service classification
+      decision); or
+    - an exact registry identifier or telephone mapping (`ASSET_IDENTIFIER`,
+      `TELEPHONE_MAPPING`), with placement confidence CONFIRMED.
+
+    These do **not** count as placement: Zoho facility, store-number, address
+    or account text; a True911 site name; or a historical site link. All of them
+    describe where a record *says* the equipment is.
+  - **What liveness without (b) gives:** lifecycle `UNKNOWN` (reason
+    `ACTIVE_PLACEMENT_UNVERIFIED`), with the liveness kept separately on the
+    asset (`liveness_source`, `liveness_at`) and an INFO finding
+    `ACTIVE_PLACEMENT_UNVERIFIED`. A heartbeat counts only through an exactly
+    mapped identifier of that device.
+- **Source labels.** A carrier or NAPCO label naming the same store only
+  *supports* placement. A blank, generic or even matching label never
+  establishes it. A label naming a different store raises
+  `DEPLOYMENT_LOCATION_CONFLICT` (the equipment may have been moved), and that
+  activity is never carried to this building.
+- **Operator CURRENT without deterministic placement** keeps lifecycle CURRENT
+  (operator truth) but is not DEPLOYED (`DEPLOYMENT_PLACEMENT_UNVERIFIED`).
+- **Durability:**
+  - Source-derived (inferred) liveness ages out: once an export no longer shows
+    activity within 30 days of the run, that service returns to UNKNOWN.
+  - Governed operator truth never ages out. An operator CURRENT decision with
+    deterministic placement stays DEPLOYED until it is superseded or retired, or
+    stronger evidence is raised for review.
+  - The engine never modifies decisions, so customer certification does not
+    decay merely because a source export gets old.
+- **Negative statuses are still honoured:** de-activated or suspended stays
+  not-current when nothing shows activity. Recent activity against a
+  de-activated record raises `LIFECYCLE_CONFLICT` for the operator.
+- **Counted** = life-safety type, not REJECTED, CONFIRMED (or APPROVED),
+  lifecycle CURRENT **and** deployment `DEPLOYED`. A confirmed service that is
+  not deployed is reported (`LIFECYCLE_UNKNOWN` / `DEPLOYMENT_NOT_ESTABLISHED`),
+  never counted.
 
 ## 6. Operator decisions (Decision 2)
 
@@ -104,6 +237,53 @@ subject, previous state, new state, effective date, reason, `recorded_by`,
 | `ASSET_LIFECYCLE` | `asset_type` (TELEPHONE_NUMBER…), `value` | `lifecycle`, optional `reason` |
 | `SERVICE_CLASSIFICATION` | `building`, `number` | `service_type` ∈ ELEVATOR, EMERGENCY_PHONE, FACP_ASSET, OTHER_NON_LIFE_SAFETY, UNCLASSIFIED; optional `label` |
 | `SERVICE_APPROVAL` | `building`, `service_key` | `approval` ∈ APPROVED, REJECTED, NONE |
+| `FACP_SERVICE` | `building`, `service_ref` (stable operator handle) | `radios[]` (radio-shaped ids only; serial / IMEI / ICCID / phone refused), optional `label` |
+| `SOURCE_RECORD` | `source` ∈ ZOHO, TRUE911; `record_id` | `disposition` ∈ DUPLICATE, PLACEHOLDER, BUILDING (+ `building`); optional `duplicate_of` |
+| `SERVICE_POOL` | `building`, `pool_ref` (stable operator handle) | `numbers[]`, `service_types[]` ⊆ ELEVATOR, EMERGENCY_PHONE, OTHER (alias FAX), optional `label` |
+
+**Operator decisions are their own evidence class.** They are kept as
+`OPERATOR` provenance and never rewritten as Zoho or NAPCO evidence. They need
+no source corroboration to be recognised in True911, and they never edit a
+source system. Correcting Zoho is a separate, separately reviewed operation.
+
+- **`FACP_SERVICE`: service ≠ communications asset.** One decision is one FACP
+  service; its `radios` are that service's communicators.
+  - The service key is `FACP:radio:<id>[+<id>…]`: one radio gives the inferred
+    key, two radios give one service with two `NAPCO_RADIO` assets.
+  - Identity and classification are CONFIRMED (operator). No fire label is
+    needed, and the service is not capped by NAPCO silence (`RADIO_NOT_IN_NAPCO`
+    is still reported).
+  - Each radio is operator-placed at the building. Every record carrying that
+    radio follows it, so a source naming another building creates no service
+    there.
+  - Two decisions are two services. A radio named by two decisions is a
+    `DECISION_CONFLICT`, and neither decision applies.
+  - The radio set lives in `new_state`, so changing it supersedes the decision.
+  - The decision does **not** imply CURRENT: deployment still needs §5b
+    liveness. An old "last signalled" radio is placed and CONFIRMED, but its
+    lifecycle is UNKNOWN until an `ASSET_LIFECYCLE` decision or new activity.
+- **`SOURCE_RECORD`.** `DUPLICATE` and `PLACEHOLDER` remove one record from the
+  projection. It is listed under "EXCLUDED SOURCE RECORDS" for audit and is
+  never deleted. Other sources' evidence of the same number or radio still
+  stands, because the disposition is per record. `BUILDING` operator-places the
+  record, its identifiers and every other record of the same radio, which beats
+  any CRM or registry association.
+- **`SERVICE_POOL`.** It records aggregate knowledge, e.g. "these five lines are
+  emergency phone / fax, but which is the fax is unknown".
+  - The numbers are operator-placed. A per-line class is **never** inferred
+    from the pool.
+  - A source label inside the pool is capped at PROBABLE, because the operator
+    says the set is mixed. A class outside the pool's types is a
+    `POOL_CLASSIFICATION_CONFLICT`.
+  - An explicit `SERVICE_CLASSIFICATION` for one number holds.
+  - Unassigned members are reported (`SERVICE_POOL_UNASSIGNED`), never counted
+    one by one.
+- **History without invented lineage.** `CARRIER_MIGRATION` records sets of
+  legacy and replacement numbers with an effective date, never 1:1 pairs. A move
+  is the old radio set to `ASSET_LIFECYCLE HISTORICAL` (it keeps its historical
+  placement) and the new one as the building's service. A building has one
+  registry address, so a move updates the registry address (registry
+  remediation) and never adds a second current location.
 
 `building` is the exact canonical building name (or `building_id`). Template
 (synthetic numbers — real ones belong only in the external file):

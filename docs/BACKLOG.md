@@ -157,6 +157,68 @@ deliberately NOT patched in the frontend:
   time. Acceptable for now: it avoids hidden-container sizing bugs, and the refit is
   now signature-gated.
 
+## 🔧 RH certification — canonical engine fixed BEFORE the first apply [2026-10-02]
+
+Branch `fix/canonical-radio-identity`.
+- **The 2026-10-02 15:38Z RH dry-run MUST NOT be used as an apply manifest.** It
+  stays preserved as audit evidence of the defects below. No `--apply` was run.
+- **Defects fixed** (detail: `docs/customer/CANONICAL_SERVICE_MODEL.md` §5a):
+  1. Device serials, IMEIs and ICCIDs became NAPCO radio ids (Houston, Jacksonville
+     shapes).
+  2. One radio became two services: the Zoho record's radio field was not
+     extracted, so a `FACP:zoho:` service appeared next to a `FACP:napco:` one.
+  3. `napco:` was asserted from Zoho, True911 or registry values with no NAPCO
+     evidence. Absence from NAPCO is now a confidence cap, never a lifecycle.
+  4. A SKU subscription type and Alarm-Panel telephone lines were taken as FACP
+     evidence.
+  5. Zoho "Activated" (or any administrative "active" status) made services
+     CURRENT and counted. Deployment is now a separate axis (§5b).
+     DEPLOYED needs liveness **and** deterministic building placement (operator
+     decision or an exact registry identifier/phone mapping). Activity is not
+     location. Operator truth does not age out.
+- **No new import is needed.** The engine reads the 2026-09-30 RH NAPCO radiolist
+  snapshot that is already stored (D-024 source records) as-is. No duplicate
+  ingestion.
+- **Next, after merge and deploy:** run a fresh read-only dry-run and rebuild the
+  certification matrix. Expect far fewer counted services: only those with
+  independent deployment evidence count.
+  - **Operator work this exposes (not done):** live RH equipment without an exact
+    registry mapping or operator placement reads `ACTIVE_PLACEMENT_UNVERIFIED`.
+    It needs registry phone/radio mappings or operator decisions before it can
+    count.
+  - **Stuart's 2026-10-02 decisions:** expressible with the generic decision types
+    (`FACP_SERVICE`, `SOURCE_RECORD`, `SERVICE_POOL`, plus the existing
+    `CARRIER_MIGRATION` / `SERVICE_CLASSIFICATION` / `ASSET_LIFECYCLE`). A
+    validated draft file is kept **outside the repo**. It is not recorded, and
+    recording it needs approval.
+    - **Blocked on registry remediation.** These buildings are not approved
+      PortfolioBuildings, so the engine refuses their decisions: Leawood (two
+      FACP services, elevator), Raleigh (one FACP, two radios) and Boston #142.
+    - **Corrections (2026-10-02):**
+      - Jacksonville's historical set is all seven old numbers, including
+        9046242986 (8 records; 9046490389 appears twice but is one number).
+      - San Rafael 9872590 is operator-placed and CURRENT, but its service type
+        stays unresolved (Connection Type blank), so there is no FACP_SERVICE.
+      - No lifecycle decisions for the Houston elevators or the Princeton FACP.
+    - **Registry renames needed:** "Beverly Modern Gallery" (mixed Leawood
+      evidence) and "San Rafael … (9000 Northgate Drive)" (its name carries the
+      historical address).
+    - **Still open, never guessed:**
+      - which Jacksonville line is the fax;
+      - the Houston, Roseville and Boston radio ids;
+      - the store for 3109276001;
+      - the Melrose ZIP;
+      - any replacement lineage not explicitly decided.
+- **Not engine work.** These remain registry/operator decisions, deliberately not
+  "fixed" in code:
+  - Beverly Modern / Leawood;
+  - Hollywood / Melrose;
+  - Memphis;
+  - Southgate / Edmonton;
+  - San Rafael;
+  - Edina;
+  - Raleigh.
+
 ## ⭐ PRIMARY (RH) — RH Customer Completion Program: #187 → #193 [2026-09-30]
 
 Program: `docs/customer/RH_COMPLETION_PROGRAM.md` (D-025). Do not invite Judy; do

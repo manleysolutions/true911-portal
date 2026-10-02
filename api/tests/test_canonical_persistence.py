@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -31,6 +32,7 @@ from app.models.e911_change_log import E911ChangeLog
 from app.models.line import Line
 from app.models.portfolio_registry import PortfolioBuilding, PortfolioDeviceMapping
 from app.models.site import Site
+from app.models.source_snapshot import SourceSnapshot, SourceSnapshotRecord
 from app.services.canonical import decisions as D
 from app.services.canonical import engine, loader, writer
 from app.services.canonical import vocab as V
@@ -39,7 +41,9 @@ from tests import _customer_db as cdb
 T = "tenant-test"
 CANONICAL = [m.__table__ for m in (ProjectionRun, CommunicationsAsset, LifeSafetyService,
                                    LifeSafetyConnection, ConnectionAssetLink, AssetLifecycleEvent,
-                                   CanonicalEvidence, OperatorDecision)]
+                                   CanonicalEvidence, OperatorDecision,
+                                   SourceSnapshot, SourceSnapshotRecord)]
+RECENT = datetime.now(timezone.utc) - timedelta(days=1)
 
 
 async def make_db():
@@ -66,14 +70,39 @@ async def seed(Session):
                  e911_zip="60601", e911_status="pending"),
             Device(device_id="F1", tenant_id=T, site_id="S-147", status="active",
                    device_type="Fire Alarm Control Panel", model="StarLink", manufacturer="Napco",
-                   starlink_id="NAP-0001", iccid="8901000000000000009"),
+                   starlink_id="NAP-0001", iccid="8901000000000000009",
+                   last_heartbeat=RECENT),
             Device(device_id="E1", tenant_id=T, site_id="S-147", status="active",
-                   device_type="elevator", model="LM150", msisdn="2025550101"),
+                   device_type="elevator", model="LM150", msisdn="2025550101",
+                   last_heartbeat=RECENT),
+            # an already-imported carrier snapshot: recent activity on the
+            # emergency-phone line (deployment evidence; "Active" alone is not)
+            SourceSnapshot(id=1, tenant_id=T, source_system="T_MOBILE", source_label="infatrac",
+                           file_sha256="1" * 64, original_basename="infatrac.csv", file_size=1,
+                           parser_name="tmobile_infatrac", parser_version="tmobile_infatrac.v2",
+                           status_map_version="tmobile.infatrac.v1",
+                           attribution_rule_version="1", source_effective_at=RECENT,
+                           effective_at_basis="OPERATOR", imported_at=RECENT, imported_by="test",
+                           row_count_total=1, row_count_attributed=1, row_count_excluded=0,
+                           row_count_ambiguous=0, row_count_invalid=0),
+            SourceSnapshotRecord(snapshot_id=1, tenant_id=T, source_system="T_MOBILE",
+                                 row_number=1, source_record_key="2025550102",
+                                 identifier_type="MSISDN", normalized_identifier="2025550102",
+                                 msisdn="2025550102", source_status_raw="Active",
+                                 lifecycle_interpretation="CURRENT", interpretation_rule="t",
+                                 activity_at=RECENT, attribution_basis="test",
+                                 attribution_confidence="HIGH", row_hash="h1"),
             Line(line_id="L1", tenant_id=T, site_id="S-147", device_id="E1", provider="telnyx",
                  did="2025550101", status="active", line_type="Elevator"),
             PortfolioDeviceMapping(tenant_id=T, building_id=1, kind="true911_device",
                                    value="S-147", value_normalized="S147", source="test",
                                    active=True),
+            # deterministic placement (exact registry identifier / telephone mappings)
+            *[PortfolioDeviceMapping(tenant_id=T, building_id=1, kind=k, value=v,
+                                     value_normalized=n, source="test", active=True)
+              for k, v, n in (("napco_radio", "NAP-0001", "NAP0001"),
+                              ("phone", "2025550101", "2025550101"),
+                              ("phone", "2025550102", "2025550102"))],
         ])
         await db.commit()
 
@@ -104,7 +133,7 @@ def test_loader_reads_only_approved_buildings_and_projects():
         snap, res = await project(S)
         assert [b["name"] for b in snap["buildings"]] == ["RH Chicago", "RH Jacksonville"]
         counted = sorted(s["service_key"] for s in res["services"] if s["counts"])
-        assert counted == ["ELEV:tel:2025550101", "EPH:tel:2025550102", "FACP:napco:NAP0001"]
+        assert counted == ["ELEV:tel:2025550101", "EPH:tel:2025550102", "FACP:radio:NAP0001"]
         assert res["portfolio"]["confirmed_required_connections"] == 4
     asyncio.run(go())
 
@@ -132,7 +161,7 @@ def test_apply_is_idempotent_and_never_deletes():
                 CanonicalEvidence.projection_run_id == r2))).scalar()
             assert ev > 0
             svc = (await db.execute(select(LifeSafetyService).where(
-                LifeSafetyService.service_key == "FACP:napco:NAP0001"))).scalar_one()
+                LifeSafetyService.service_key == "FACP:radio:NAP0001"))).scalar_one()
             assert (svc.confidence, svc.lifecycle, svc.last_projection_run_id) == \
                 (V.CONFIRMED, V.CURRENT, r2)
             sim = (await db.execute(select(CommunicationsAsset).where(
@@ -290,13 +319,22 @@ def _fixture(tmp_path):
                            "connection_type": "Elevator", "activation": "Active"},
                           {"zoho_id": "Z2", "facility": "RH Cleveland", "msisdn": "2025550401",
                            "connection_type": "Elevator", "activation": "Active",
-                           "parent": "Restoration Hardware MEMPHIS"}]}
+                           "parent": "Restoration Hardware MEMPHIS"}],
+            "source_activity": [{"source": "T_MOBILE", "msisdn": n, "lifecycle": "CURRENT",
+                                 "activity_at": RECENT.isoformat()}
+                                for n in ("2025550400", "2025550401")]}
     p = tmp_path / "fixture.json"
     p.write_text(json.dumps(snap))
     d = tmp_path / "decisions.json"
     d.write_text(json.dumps({"tenant": T, "decisions": [
         {"type": "BUILDING_IDENTITY_SUSPECT", "subject": {"building": "RH Memphis"},
-         "new_state": {"suspect": True}, "reason": "historically merged"}]}))
+         "new_state": {"suspect": True}, "reason": "historically merged"},
+        {"type": "SERVICE_CLASSIFICATION",
+         "subject": {"building": "RH Memphis", "number": "2025550400"},
+         "new_state": {"service_type": "ELEVATOR"}, "reason": "site visit"},
+        {"type": "SERVICE_CLASSIFICATION",
+         "subject": {"building": "RH Cleveland", "number": "2025550401"},
+         "new_state": {"service_type": "ELEVATOR"}, "reason": "site visit"}]}))
     return str(p), str(d)
 
 
