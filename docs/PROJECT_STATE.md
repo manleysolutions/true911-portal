@@ -24,6 +24,28 @@
 > 2026-07-21 and are stale. `main` is at `306f359`; the certification *tooling*
 > is landed. What remains blocked is *execution*, and only on operator inputs.
 
+## 0·IN REVIEW — Conversion creates a planned customer portfolio (CT-1 + CT-2, D-034/D-035) [2026-10-02]
+
+PR "Fix: Conversion Creates Planned Customer Portfolio" (branch
+`fix/conversion-planned-portfolio`, stacked on #199). **Not merged; awaiting Stuart.**
+No migration. Detail: `ACQUISITION.md` §9.
+- **Future conversions:** site `Pending Install` / onboarding `pending`; E911
+  `unverified` + confirmation required + `address_source="registration"`. POC and the
+  dispatchable-description candidate are kept. Requested phone, hardware, carrier and
+  quantity go in `ServiceUnit.meta.requested`; no Line or Device is created. The
+  acquisition record moves to `converted` in the same commit.
+- **Readers made neutral:** command categories, digest, simulated ping/reboot, badges
+  and the customer "Being set up" label. The operator promotion path is
+  `onboarding_status` on the internal site edit (validated vocabulary).
+- **CT-2:** the self-service invite is now `CUSTOMER_ADMIN` (no `INTERNAL_OPS`). A
+  pending legacy `"User"` invite is moved on reuse; accepted users are untouched.
+- **Existing production rows: NOT changed.** The read-only audit (PR #200,
+  `python -m app.audit_registration_conversions`) **has not yet been run in
+  production**: it must merge and be run in the Render shell first.
+- **Confirmed separately (not fixed):** CT-4, a dry-run conversion into an existing
+  tenant fails with `MissingGreenlet`. CT-3, a pre-set `target_tenant_id` silently
+  overrides `tenant_choice`. Both are in BACKLOG A1.
+
 ## 0·IN REVIEW — Harden public acquisition failure boundaries — branch `fix/acquisition-failure-boundaries` [2026-10-02]
 
 PR "Fix: Harden Public Acquisition Failure Boundaries" is **not merged and awaits

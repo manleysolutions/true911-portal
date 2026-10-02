@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..dependencies import get_db, get_current_user, require_permission
 from ..models.action_audit import ActionAudit
 from ..models.telemetry_event import TelemetryEvent
+from ..services.site_lifecycle import is_planned_site
 from ..models.site import Site
 from ..models.e911_change_log import E911ChangeLog
 from ..models.user import User
@@ -120,6 +121,15 @@ async def ping_device(
     site = await _get_site(db, body.site_id, current_user.tenant_id)
     now = _now()
 
+    # A planned site has no installed equipment: never simulate a reply, and never
+    # write telemetry or a check-in that would later read as operational evidence.
+    if is_planned_site(site.status):
+        await _audit(db, current_user, "PING", body.site_id, "skipped",
+                     "Ping not sent: no equipment is installed at this location yet")
+        await db.commit()
+        return {"success": False, "latency_ms": None,
+                "message": "No equipment is installed at this location yet."}
+
     # Simulate ping result based on current status
     success = site.status != "Not Connected"
     latency = 42 if success else None
@@ -145,6 +155,9 @@ async def reboot_device(
     current_user: User = Depends(get_current_user),
 ):
     site = await _get_site(db, body.site_id, current_user.tenant_id)
+    if is_planned_site(site.status):
+        # Nothing to reboot; never flip a planned site to "Attention Needed".
+        raise HTTPException(409, "No equipment is installed at this location yet.")
 
     site.status = "Attention Needed"
     await _audit(db, current_user, "REBOOT", body.site_id, "success", "Remote reboot initiated")

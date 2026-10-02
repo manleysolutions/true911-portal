@@ -19,7 +19,9 @@ What R5 does NOT do
 ===================
 
   * Send the invite email — the operator copies the URL out-of-band
-  * Promote the invited user past ``role="User"``
+  * Change the role of a user who has already accepted their invite
+    (a never-accepted invite still on the legacy ``User`` role is moved to
+    ``INVITE_ROLE`` so activation never grants INTERNAL_OPS)
   * Create more than one invited user per registration
   * Call any external integration (T-Mobile, Field Nation, billing,
     E911 carrier, provisioning)
@@ -60,10 +62,13 @@ logger = logging.getLogger("true911.registration.activation")
 # portal account after their install is QA-approved.
 INVITE_TTL = timedelta(days=30)
 
-# Default role for the customer's first user account.  The R4 plan
-# locks this in: invite as ``User`` (read-only); operator promotes to
-# Admin manually via the existing /api/admin/users surface.
-INVITE_ROLE = "User"
+# Role for the self-service customer's first user account (CT-2, Stuart
+# 2026-10-02).  CUSTOMER_ADMIN is a customer-plane role: it lands in the
+# customer Command Center and holds NO INTERNAL_OPS.  The previous value,
+# "User", is the legacy internal-plane role and granted INTERNAL_OPS.
+INVITE_ROLE = "CUSTOMER_ADMIN"
+# Legacy role a not-yet-accepted registration invite may still carry.
+LEGACY_INVITE_ROLE = "User"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -320,6 +325,17 @@ async def issue_invite(
                 email=email,
                 action="skipped_active",
                 invite_expires_at=existing.invite_expires_at,
+            )
+
+        # A never-accepted invite created under the legacy internal role must not
+        # be redeemed with INTERNAL_OPS: move it to the customer-plane role.
+        if existing.role == LEGACY_INVITE_ROLE:
+            existing.role = INVITE_ROLE
+            _status_event(
+                db, registration,
+                note=(f"invite: user id={existing.id} not yet accepted; role "
+                      f"{LEGACY_INVITE_ROLE!r} -> {INVITE_ROLE!r} (no INTERNAL_OPS)"),
+                actor_user_id=actor_user_id, actor_email=actor_email,
             )
 
         # Inactive user with a still-valid invite — reuse without

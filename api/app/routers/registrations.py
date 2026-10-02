@@ -448,17 +448,6 @@ async def convert_registration(
             },
         )
 
-    # Acquisition record follows the real (non-dry-run) conversion.  Acquisition
-    # state only — conversion never makes a site deployed or E911-verified.
-    if not body.dry_run:
-        try:
-            from app.services import acquisition_service as acq
-            await acq.set_registration_status(db, result.registration.registration_id, "converted")
-        except Exception:   # noqa: BLE001 — conversion already committed
-            import logging
-            logging.getLogger("true911.registrations").exception(
-                "acquisition status update failed for %s", result.registration.registration_id)
-
     # Reload the registration with children + timeline for the response.
     detail = await _build_detail(db, result.registration)
 

@@ -22,6 +22,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.site import Site
+from app.services.site_lifecycle import is_planned_site
 from app.models.device import Device
 from app.models.incident import Incident
 from app.models.verification_task import VerificationTask
@@ -53,7 +54,8 @@ async def generate_daily_digest(
 
     sites_attention = [
         {"site_id": s.site_id, "name": s.site_name, "status": s.status}
-        for s in sites if s.status != "Connected"
+        # A planned (not yet installed) site is not an attention item (CT-1).
+        for s in sites if s.status != "Connected" and not is_planned_site(s.status)
     ]
 
     # Devices offline

@@ -17,10 +17,7 @@
 
 Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundation"
 (see `ACQUISITION.md`):
-- **A1. Conversion truth remediation (needs approval).** Conversion currently writes
-  `Site.status="Connected"` and copies the prospect address into `e911_*`. Proposed fix
-  in ACQUISITION.md §9; characterization tests in
-  `api/tests/test_conversion_truth_characterization.py`.
+- **A1. Conversion truth remediation: future conversions FIXED by CT-1 (PR "Fix: Conversion Creates Planned Customer Portfolio"). Remaining:** (a) run the read-only audit (PR #200) in production; (b) a dry-run-first backfill script for class-A rows only, if approved. Eligibility: materialized from a registration, zero credible lines/devices, no provisioning or operator promotion, no conflicting E911 evidence. Ambiguous rows stay with operators. (c) **CT-3:** refuse when a pre-set `target_tenant_id` disagrees with the request on a never-converted registration. (d) **CT-4 (confirmed):** a dry-run conversion into an EXISTING tenant fails with `MissingGreenlet` (it reads expired objects after the dry-run rollback). (e) **CT-5:** registration → canonical candidate feed (review items, PROBABLE/UNRESOLVED services, a REGISTRATION evidence source). (f) **Ops consequence of CT-2:** a self-service `CUSTOMER_ADMIN` sees "Your portal is being finalized" until the tenant is in `CUSTOMER_API_TENANT_ALLOWLIST` with `FEATURE_CUSTOMER_API` on. Historical note: conversion previously wrote `Site.status="Connected"` / onboarding `active` and left `e911_status` NULL. Now see ACQUISITION.md §9; regression tests in `api/tests/test_conversion_truth_characterization.py`.
 - **A2. Internal acquisition review UI.** List/filter records and set `under_review` /
   `qualified` / `closed`. Today the read is API-only (`GET /api/acquisition/records`).
 - **A3. Configure SMTP for internal notifications.** Production rows read
