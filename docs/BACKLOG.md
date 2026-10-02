@@ -140,8 +140,10 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
   - **Constraints:** do NOT guess a hop count, and do not weaken or remove rate
     limiting. A Cloudflare-range-aware parser is one candidate design, not
     approved. See `ACQUISITION.md` §6a.
-- **A15. PP-0: production API documentation exposure (in review: "Security: Disable
-  Public API Schema in Production").**
+- **A15. PP-0: production API documentation exposure. DONE: PR #203 merged
+  `56ab75b`, verified live 2026-10-02 (`/docs`, `/redoc`, `/openapi.json`,
+  `/docs/oauth2-redirect` all 404 in production).** The exposure-audit findings below
+  remain open.
   - **Before:** production publicly served `/docs` (200), `/redoc` (200),
     `/openapi.json` (200, about 548 KB: the full API surface and models) and
     `/docs/oauth2-redirect` (200).

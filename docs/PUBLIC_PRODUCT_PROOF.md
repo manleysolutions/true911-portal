@@ -234,7 +234,7 @@ Guards to add in PP-3:
 
 | Slice | Scope | Notes |
 |---|---|---|
-| **PP-0** (**in review: PR #203**) | Disable `/docs`, `/redoc`, `/openapi.json` (and `/docs/oauth2-redirect`) in production | Docs are served only when `APP_MODE` is exactly `demo`; production, missing or unknown values disable them. Exposure-audit findings (debug CORS route, malformed production `CORS_ORIGINS`, public feature flags) are in BACKLOG A15, not fixed by PP-0 |
+| **PP-0** (**DONE: PR #203 merged `56ab75b`, verified live**) | Disable `/docs`, `/redoc`, `/openapi.json` (and `/docs/oauth2-redirect`) in production | Docs are served only when `APP_MODE` is exactly `demo`; production, missing or unknown values disable them. Exposure-audit findings (debug CORS route, malformed production `CORS_ORIGINS`, public feature flags) are in BACKLOG A15, not fixed by PP-0 |
 | **PP-1** | Synthetic marketing fixture specification + fixture file | Truth-model tests over the fixture |
 | **PP-2** | Capture build: render the customer components from the fixture, local/CI only | Not a production route; reuses the headless-Edge capture method |
 | **PP-3** | Homepage product-proof band with P1 | Asset guards (§7); D-030 copy review; LCP/performance budget |
