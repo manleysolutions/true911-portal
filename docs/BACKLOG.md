@@ -13,6 +13,78 @@
 
 ---
 
+## 🧭 Customer lifecycle workstreams: PROPOSED, NOT APPROVED (2026-10-02)
+
+These are Stuart's product requirements, captured by an overnight architecture pass.
+Design: `docs/CUSTOMER_LIFECYCLE_PLAN.md`. Only items marked **Decided** (2026-10-02)
+are policy. Nothing is implemented unless it says *merged*. Each item enters work
+only through the Operating Loop (P4/P5).
+The RH Completion Program (D-025) remains the primary objective.
+
+| WS | Workstream | First slice (proposed) | Depends on | Migration? |
+|---|---|---|---|---|
+| E | **Conversion truth remediation** (plan §B) | CT-1 "Conversion creates planned locations": Site "Pending Install" / onboarding "pending" / `e911_status` "unverified" + `e911_confirmation_required` + `address_source`; requested phone/device/carrier in `ServiceUnit.meta.requested`; readers updated; acquisition `converted` in the same commit | Read-only prod audit of converted sites; CT-2 decision | **No** |
+| A | **Customer first-login guided experience** (plan §C) | FL-1 in-house coach-mark (Radix), six steps on the real UI, localStorage, `VITE_FEATURE_CUSTOMER_TOUR` | — (FL-2 server persistence needs a small table) | FL-2 only |
+| C | **Portfolio export / bulk reconciliation** (plan §E–F) | EX-1 read-only export (`t911.portfolio.v1`, registered, row_etag); then R1 staging + dry-run diff (internal) → R2 review UI → R3 apply customer-owned → R4 governed routing | EX-1 before R1; CUSTOMER evidence source | R1 (3 tables) |
+| D | **Initial portfolio import / onboarding** (plan §G) | R5: Onboarding mode of the same engine; template; candidates only; acquisition file carried by reference | C (R1–R4), E | via R1 |
+| B | **Billing Center** (plan §D) | B0 decision (issuing system + processor) → B1 read-only "Plan & charges" (spec PR-C3; RH Track D) | B0 | B2+ |
+| F | **Acquisition → Customer → Portfolio → Operations → Billing lifecycle** (plan §I) | Tie-ins: assessment file evidence (D), conversion truth (E), billing renewal (B) | E, D | — |
+
+**Proposed order:** resolve #199 (split/amend) → RH program continues → E (CT-1) →
+C/EX-1 export → A (FL-1, before RH acceptance) → B0/B1 → C/R1–R4 → D/R5 →
+B2–B7 → assessment redesign → homepage → analytics.
+
+**Findings recorded by this pass (not fixed):**
+- **#199 trust model.** Render's own article says traffic passes through Cloudflare
+  *and* Render's load balancers. Whether the load balancer appends Cloudflare's
+  edge IP is undocumented, so `RATE_LIMIT_TRUSTED_PROXY_HOPS=1` may key on edge IPs
+  (shared buckets, lost leads). **Decided: split.** #199 keeps the #198 client key
+  (`173ce92`), and client identity is deferred as A14.
+- **CT-2 (Decided: `CUSTOMER_ADMIN`, D-035).** Registration activation invited as the
+  legacy internal `"User"` role (`INTERNAL_OPS`). The fix is on branch
+  `fix/conversion-planned-portfolio`, not merged.
+- **CT-3.** The convert gate allows `pending_customer_info`, and a pre-set
+  `target_tenant_id` silently overrides `tenant_choice`.
+- **CT-4 (CONFIRMED by reproduction).** A dry-run conversion into an EXISTING
+  tenant raises `MissingGreenlet`: it reads expired objects after the dry-run
+  rollback. Separate fix.
+- **CT-6.** The E911 "verified" sets disagree: the engine includes `confirmed`, but
+  `serialize.py` and `e911_gaps.py` don't.
+- **Direct-write importers:** `subscriber_import.commit_import`, `site_import_engine`
+  commit and `csv_importer` (no preview) write production rows from CSV. They are the
+  anti-pattern the Reconciliation Engine must not repeat; review them for retirement.
+- **Customer self-service** checks field keys, not values, so an identifier pasted
+  into free text passes.
+- **`CUSTOMER_VIEW_BILLING`** is granted to MANAGER in `permissions.json`, but
+  `CUSTOMER_API_CONTRACTS.md` §8 says ADMIN and BILLING only.
+- **Stripe** packages in `web/package.json` are unused, and backend tests forbid
+  Stripe imports.
+- **RH program migration numbering: FIXED on this branch.** `RH_COMPLETION_PROGRAM.md` now starts the program's remaining migrations at 057 (056 was used by #198) and labels "#187–#193" as program slots, not GitHub PR numbers.
+- **The "Billing" placeholder conflicts with the tour.** `commandCenter.test.js`
+  forbids "Billing"/"Soon" in the shell, so the tour can't point at future Billing.
+
+**Decided 2026-10-02 (Stuart):**
+- #199 split (`173ce92`).
+- CT-1 approved in principle (D-034).
+- CT-2 = `CUSTOMER_ADMIN` (D-035).
+- QuickBooks Online remains the invoice/accounting system of record for now; the processor is a later decision.
+- No raw card or bank data in True911.
+- `CUSTOMER_MANAGER` may view billing but not pay or manage payment methods or autopay.
+- Billing B1 belongs in the RH program once the data is trustworthy.
+- The export includes telephone numbers only where the customer API already exposes them.
+- Tour:
+  - built before Judy's invite;
+  - no Billing/"Soon" references;
+  - FL-1 uses localStorage keyed by user + tour version.
+- Naming: Portfolio Reconciliation Engine internally; for customers "Portfolio Updates" / "Upload portfolio changes" / "Review changes".
+
+**Still open:**
+1. Tour events in the D-032 vocabulary?
+2. Retire or gate the direct-write CSV importers?
+3. Accept the proposed D-036 to D-039 (plan §J).
+4. Payment processor (later).
+5. A14 client-identity boundary (Render support answer or diagnostic).
+
 ## 📥 Public acquisition — deferrals from the durable-acquisition PR (D-030..D-033) [2026-10-01]
 
 Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundation"
@@ -29,6 +101,22 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
 - **A7. CAPTCHA review**, only if `acquisition_records` shows abuse.
 - **A8. Analytics vendor.** The event boundary exists; no vendor is approved.
 - **A9. Homepage redesign** on sanitized product proof (hero O1, "Product UI · Sample data").
+  The product-proof strategy is planned in `PUBLIC_PRODUCT_PROOF.md` (proposed, not
+  implemented), with slices PP-0 to PP-5:
+  - **PP-0 (needs approval; a live change, recommended first):** disable the public
+    `/docs`, `/redoc` and `/openapi.json` on the production API. The full schema
+    (≈548 KB) is currently public, a larger IP exposure than any screenshot.
+  - **PP-1:** synthetic "True911 Demo Portfolio" fixture that obeys the truth model.
+    The existing `seed.py` demo data names real agencies and real addresses, so it is
+    unsuitable for marketing.
+  - **PP-2:** local/CI-only capture build from the fixture (no production API/DB, no
+    public route).
+  - **PP-3:** homepage product-proof band (P1), with asset guards: allow-listed files,
+    metadata stripped, "Sample data" caption.
+  - **PP-4:** platform-page crops (P2–P5).
+  - **PP-5:** controlled sales demo environment (Level 3, not public).
+  - **Proposed decision D-040** (public product proof): wording awaits Stuart. Not
+    mixed with conversion-truth work (#202).
 - **A10. Remaining blanket claims outside the touched flow.** "NDAA-TAA Compliant" and
   "True911+" in the Reports/SyncStatus export footers; "True911+" in internal UI titles.
 - **A12. Idempotent wizard create.** If the connection drops after the server
@@ -52,39 +140,114 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
   - **Constraints:** do NOT guess a hop count, and do not weaken or remove rate
     limiting. A Cloudflare-range-aware parser is one candidate design, not
     approved. See `ACQUISITION.md` §6a.
-- **A15. PP-0: production API documentation exposure (in review: "Security: Disable
-  Public API Schema in Production").**
-  - **Before:** production publicly served `/docs` (200), `/redoc` (200),
-    `/openapi.json` (200, about 548 KB: the full API surface and models) and
-    `/docs/oauth2-redirect` (200).
-  - **After:** all four are absent unless `APP_MODE=demo`. The rule is in
-    `ARCHITECTURE.md`.
-  - **No business API behaviour changed.**
-  - **Exposure audit (read-only, 2026-10-02).** Separate findings, NOT fixed by PP-0:
-    - **RESOLVED: malformed production `CORS_ORIGINS`.** The last origin carried a
-      newline plus `PUBLIC_URL=…`. Stuart corrected it in Render on 2026-10-02, and it
-      was verified live: exactly the three intended origins, preflights correct.
-    - **RESOLVED in "Security: Harden Production CORS Diagnostics":**
-      - `/api/debug/cors` is now SuperAdmin-only (`GLOBAL_ADMIN`).
-      - `CORS_ORIGINS` is validated at startup, so a malformed value fails the deploy.
-      - An unset value fails closed outside `APP_MODE=demo` (no `*`).
-      - `render.yaml` no longer lists the dead `true911-web-prod` origin and records
-        the verified frontend mapping (www → the service named `true911-web-demo`).
-    - **DEFERRED (intentionally unchanged): `/api/config/features` is unauthenticated**
-      and returns four feature-flag
-      booleans. Low sensitivity; decide whether to gate it.
-    - **`GET /tmobile/wholesale/callback/subscriber-status`** has no auth dependency (a
-      carrier callback; WAF-fronted on the PIT host per `ARCHITECTURE.md`). Review it
-      with the callback auth work.
-    - **Clean:**
-      - no GraphQL; no `/metrics`, `/routes` or `/debug` index;
-      - no alternate OpenAPI/Swagger paths (`/api/openapi.json`, `/swagger.json`,
-        `/openapi.yaml`, `/.well-known/openapi.json` all 404);
-      - `/api/health/auth` requires `GLOBAL_ADMIN` (401);
-      - no schema or source-map files in the repo or the web build (no
-        `sourceMappingURL`); `www.true911.com/openapi.json` is just the SPA page.
-    - **Inherent:** the logged-in portal JS chunk is downloadable (minified, no source
-      maps). Keep proprietary logic server-side (`PUBLIC_PRODUCT_PROOF.md` §6, in #201).
+- **A15. ✅ CLOSED (2026-10-02): production API exposure and CORS hardening.** Verified live.
+  - **PP-0 (PR #203, `56ab75b`):** FastAPI docs and schema are disabled in production:
+    `/docs`, `/redoc`, `/openapi.json` and `/docs/oauth2-redirect` all return 404. They
+    are served only when `APP_MODE=demo`. Before the change, the full schema (≈548 KB)
+    was public.
+  - **Render configuration:** the malformed `CORS_ORIGINS` (a newline plus a pasted
+    `PUBLIC_URL=` assignment) was corrected operationally by Stuart. The allowed origins
+    are now exactly `https://true911.com`, `https://www.true911.com` and
+    `https://true911-web-demo.onrender.com`; `true911-web-prod.onrender.com` and foreign
+    origins are refused. `PUBLIC_URL` is `https://www.true911.com`.
+  - **Hardening (PR #204, `e421861`):**
+    - `CORS_ORIGINS` is validated at startup, so a malformed value fails the deploy.
+    - Production and non-demo modes fail closed when it is unset (no `*`).
+    - `/api/debug/cors` is SuperAdmin-only (401 unauthenticated).
+  - **Topology recorded:** the real production frontend is currently the Render service
+    **named `true911-web-demo`** (`www.true911.com` is a CNAME of
+    `true911-web-demo.onrender.com`). No service answers at
+    `true911-web-prod.onrender.com`. Services were not renamed.
+  - **Spun out (separately scoped, they do not keep A15 open):** A16 below, and the
+    T-Mobile callback authentication item already tracked in the T-Mobile section.
+- **A16. `/api/config/features` hardening (deferred).** Unauthenticated; returns four
+  feature-flag booleans (low sensitivity). The web app doesn't call it (it uses
+  build-time `VITE_FEATURE_*`), but `scripts/lllm_phase1a_smoke.ps1`, the runbooks and
+  two test files call it without a token. If gated, require any authenticated internal
+  user and update that tooling in the same change.
+- **T-Mobile `GET /tmobile/wholesale/callback/subscriber-status`** has no auth
+  dependency (a carrier callback, WAF-fronted on the PIT host). It stays with the
+  separate callback-authentication verification work; deliberately unchanged.
+- **CG. RH life-safety service certification gap (audit 2026-10-02, design only).**
+  - **Today:** the Command Center "Life-safety services: Being finalized by True911"
+    tile is a **hard-coded constant** (`commandCenter.js` `opTiles`; also
+    `selfService.js` hero fact). No field, flag or condition can replace it, and
+    "certified" has **no machine-readable meaning**. The API's `life_safety_services`
+    counts come from heuristic `service_inference` and are deliberately ignored by
+    the UI.
+  - **Canonical model (D-023, #186a):** the engine exists, but there has been no
+    production `--apply`, operator decisions are 0, and #186b is not built. Two
+    recorded dry-runs disagree (FACP 32 vs 9; confirmed services 49 vs 26), so no
+    current certified figure exists.
+  - **Proposed gate:** per service (customer-visible only when CONFIRMED or APPROVED,
+    CURRENT, not REJECTED, with a placed building and fresh sources), rolled up per
+    building (fully, partially or not certified). There is no portfolio-wide boolean.
+  - **Slices:** CG-1 is the customer-read-model leak fix (decodable refs, raw
+    `canonical_name`, MSISDN fallback in `phone_numbers`, plus an active-only location
+    filter). Then a fresh dry-run, RH operator decisions (#188), the canonical apply,
+    and the #186b gated read model.
+  - **FRESH PRODUCTION OBSERVATION (read-only dry-run, 2026-10-02T15:07:24Z;
+    nothing written). This supersedes the older Audit C figures as the baseline.**
+    - **Registry:** 45 PortfolioBuildings, all `approved=True` and `status=active`.
+    - **Counted by the engine:**
+      - confirmed services 26 (FACP 9, ELEVATOR 17, EMERGENCY_PHONE 0);
+      - required confirmed connections 35.
+    - **Not counted:**
+      - probable services 13 (+17 probable connections);
+      - unresolved life-safety services 9;
+      - current UNCLASSIFIED telephone lines 13;
+      - unplaced numbers 3 (`6462359804`, `9193495183`, `9524860240`);
+      - historical or not-current assets 41.
+    - **The engine states "no single precise total"**, and none is stated here.
+    - **Jacksonville:** 2 confirmed current elevators (`9046890616`, `9046890656`);
+      6 probable older elevator-labelled records; NAPCO FACP unresolved; 5 current
+      unclassified lines (`9046890633`, `9046891550`, `9046892688`, `9046892768`,
+      `9047891030`); one suspended old number plus historical assets.
+    - **HIGH `ASSET_PLACEMENT_CONFLICT`** (asset `***8E14`): Dallas Gallery #168 vs
+      Oakbrook #176.
+    - **Watchlist:** Leawood / Beverly Modern; San Rafael / 20 Front Street; Beverly
+      Modern / Hollywood; Roseville, Dawsonville and Long Beach duplicates.
+    - **Not among the 45 approved buildings:** Edina #159 and Raleigh #178
+      (unapproved candidates, operator review).
+  - **READ-ONLY ZOHO/NAPCO SOURCE RECONCILIATION (2026-10-02; Zoho Subscription_Mgmnt,
+    101 RH records; NAPCO radiolist 2026-09-30).** No Zoho record changed. SIM and
+    IMEI values are kept out of this document on purpose.
+    - **Portfolio-wide:**
+      - Zoho Account values are 2026 operator re-assignments, not original evidence.
+      - The device SKU "SLELTE - Fire (Dual Line)", `Emergency_Line=true` and the
+        "Validated" tag were all set by mass updates. None of them is purpose
+        evidence.
+    - **Safe Zoho correction candidates (not performed):**
+      - Princeton #265020: a duplicate of #578 (dropped-digit Starlink 1187020 vs
+        11187020; NAPCO has only 11187020).
+      - Jacksonville #915: a duplicate of #914 (identical identifiers).
+      - Raleigh #955: facility "#110" should be "#178" (110 is the suite).
+      - Leawood #940: its street is Beverly Modern's (8772 Beverly Blvd); likely
+        4800 West 119th St.
+      - Long Beach #4958: a de-activated duplicate of #4910. No Zoho change is needed;
+        treat it as a duplicate, not lineage.
+    - **Canonical associations to correct in True911 (not Zoho):**
+      - `337391000064115039` has no Houston association in Zoho and must not count
+        for Houston. Its Boston #142 account is a 2026 assignment, and Starlink
+        1380014 is not in NAPCO, so its placement is unresolved.
+      - Leawood vs Beverly Modern are separate facilities (stores 150 and 351); the
+        "collision" is a crossed street value.
+      - Long Beach duplicate is a single line.
+    - **Stuart / operator decisions:** listed in the 2026-10-02 certification report.
+      They cover Jacksonville's old six and the five Voice lines, Princeton #903,
+      Houston 7134464506 and the Starlink IDs absent from NAPCO, Leawood's two radios,
+      Hollywood #4515, the San Rafael move, Edina 5483291 (NAPCO calls it Raleigh),
+      #953 "Restoration Main Account", and the Melrose ZIP.
+  - **Matrix done:** `docs/customer/RH_CERTIFICATION_GAP_2026-10-02.md` (fresh
+    dry-run + Zoho/NAPCO). The result is A 5 · B 10 · C 16 · D 5 · E 9 = 45, with a
+    first slice of 20 services at 14 locations.
+    - **Engine corrections found:** an MS130 device serial is read as a NAPCO FACP
+      (Houston's counted FACP); Zoho FACP records are not merged with their radio;
+      "napco:" keys are not checked against the NAPCO export.
+    - **Registry identity defects:** Beverly Modern Gallery (holds store 150 / Leawood)
+      and Hollywood Gallery (holds Melrose #146).
+    - **No operator decisions recorded; no canonical apply; nothing customer-visible
+      changed.**
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 

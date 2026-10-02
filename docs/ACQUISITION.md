@@ -277,7 +277,9 @@ True911 does not certify compliance. Regression guard:
 
 NDAA/TAA statements may return only on a specific offering with evidence. Product
 screenshots, when added (hero direction O1), must come from sanitized fixture data
-and be labelled "Product UI · Sample data".
+and be labelled "Product UI · Sample data". The controlled product-imagery strategy
+(disclosure levels, sharp-vs-abstracted specification, sanitization pipeline,
+competitive review) is in `PUBLIC_PRODUCT_PROOF.md` (proposed).
 
 ## 11. Analytics event boundary (no vendor)
 
@@ -308,6 +310,6 @@ migration history.
 - Prospect acknowledgement email.
 - Zoho lead sync as a recorded side effect.
 - Shared rate limiter.
-- Homepage redesign on sanitized product proof (O1).
+- Homepage redesign on sanitized product proof (O1); see `PUBLIC_PRODUCT_PROOF.md`.
 - An analytics vendor, if approved.
 - The conversion-truth remediation in §9.

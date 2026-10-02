@@ -37,14 +37,21 @@ certified physical portfolio contains.
 
 ## 2. PR sequence
 
-| PR | Scope | Migration |
+> **Program slots are not GitHub PR numbers.** "#187–#193" below name the
+> program's slots. GitHub PR numbers are assigned independently: GitHub #189–#193
+> were unrelated PRs, and #187 happened to match its slot. **Migration numbering
+> corrected 2026-10-02:** migration `056` was used by GitHub PR #198 (acquisition
+> records), so the program's remaining migrations start at **057**. Always confirm
+> the current single Alembic head before numbering a new migration.
+
+| Program slot | Scope | Migration |
 |---|---|---|
-| #187 | Source snapshot store + importers (NAPCO, T-Mobile/Infatrac, Verizon, Red Pocket) — `SOURCE_SNAPSHOTS.md` | 055 |
-| #188 | Lifecycle + carrier reconciliation; Jacksonville decisions previewed then recorded with explicit operator authorisation | 056 |
-| #189 | RH building certification + identity cleanup | 057 |
-| #190 | Canonical geocoding (internal) | 058 |
-| #191 | E911 completion + safety corrections | 059 |
-| #192 | Canonical customer read model + map (flag-gated) | 060 |
+| #187 | Source snapshot store + importers (NAPCO, T-Mobile/Infatrac, Verizon, Red Pocket) — `SOURCE_SNAPSHOTS.md` | 055 (merged) |
+| #188 | Lifecycle + carrier reconciliation; Jacksonville decisions previewed then recorded with explicit operator authorisation | 057 (was 056) |
+| #189 | RH building certification + identity cleanup | 058 (was 057) |
+| #190 | Canonical geocoding (internal) | 059 (was 058) |
+| #191 | E911 completion + safety corrections | 060 (was 059) |
+| #192 | Canonical customer read model + map (flag-gated) | 061 (was 060) |
 | #193 | RH customer acceptance gate + final UX | — |
 
 Each PR starts from updated `main`, is independently reviewable and
