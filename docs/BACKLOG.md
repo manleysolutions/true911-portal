@@ -194,12 +194,17 @@ Branch `fix/canonical-radio-identity`.
     - **Blocked on registry remediation.** These buildings are not approved
       PortfolioBuildings, so the engine refuses their decisions: Leawood (two
       FACP services, elevator), Raleigh (one FACP, two radios) and Boston #142.
+    - **Corrections (2026-10-02):**
+      - Jacksonville's historical set is all seven old numbers, including
+        9046242986 (8 records; 9046490389 appears twice but is one number).
+      - San Rafael 9872590 is operator-placed and CURRENT, but its service type
+        stays unresolved (Connection Type blank), so there is no FACP_SERVICE.
+      - No lifecycle decisions for the Houston elevators or the Princeton FACP.
     - **Registry renames needed:** "Beverly Modern Gallery" (mixed Leawood
       evidence) and "San Rafael … (9000 Northgate Drive)" (its name carries the
       historical address).
     - **Still open, never guessed:**
       - which Jacksonville line is the fax;
-      - whether 9046242986 is a seventh legacy line;
       - the Houston, Roseville and Boston radio ids;
       - the store for 3109276001;
       - the Melrose ZIP;
