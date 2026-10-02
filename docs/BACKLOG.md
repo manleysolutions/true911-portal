@@ -186,8 +186,33 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
     `canonical_name`, MSISDN fallback in `phone_numbers`, plus an active-only location
     filter). Then a fresh dry-run, RH operator decisions (#188), the canonical apply,
     and the #186b gated read model.
-  - **Needed next:** the production read-only dry-run output (`canonical_service_backfill
-    --json`) to build the per-location matrix.
+  - **FRESH PRODUCTION OBSERVATION (read-only dry-run, 2026-10-02T15:07:24Z;
+    nothing written). This supersedes the older Audit C figures as the baseline.**
+    - **Registry:** 45 PortfolioBuildings, all `approved=True` and `status=active`.
+    - **Counted by the engine:**
+      - confirmed services 26 (FACP 9, ELEVATOR 17, EMERGENCY_PHONE 0);
+      - required confirmed connections 35.
+    - **Not counted:**
+      - probable services 13 (+17 probable connections);
+      - unresolved life-safety services 9;
+      - current UNCLASSIFIED telephone lines 13;
+      - unplaced numbers 3 (`6462359804`, `9193495183`, `9524860240`);
+      - historical or not-current assets 41.
+    - **The engine states "no single precise total"**, and none is stated here.
+    - **Jacksonville:** 2 confirmed current elevators (`9046890616`, `9046890656`);
+      6 probable older elevator-labelled records; NAPCO FACP unresolved; 5 current
+      unclassified lines (`9046890633`, `9046891550`, `9046892688`, `9046892768`,
+      `9047891030`); one suspended old number plus historical assets.
+    - **HIGH `ASSET_PLACEMENT_CONFLICT`** (asset `***8E14`): Dallas Gallery #168 vs
+      Oakbrook #176.
+    - **Watchlist:** Leawood / Beverly Modern; San Rafael / 20 Front Street; Beverly
+      Modern / Hollywood; Roseville, Dawsonville and Long Beach duplicates.
+    - **Not among the 45 approved buildings:** Edina #159 and Raleigh #178
+      (unapproved candidates, operator review).
+  - **Status:** the 45-row matrix still needs the run's PER BUILDING / SERVICES /
+    FINDINGS sections (or its JSON). Those were not available to the analysis.
+    **No operator decisions recorded; no canonical apply; nothing customer-visible
+    changed.**
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 
