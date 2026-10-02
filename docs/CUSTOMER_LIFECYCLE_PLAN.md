@@ -1,6 +1,32 @@
 # Customer Lifecycle Plan: conversion truth, first login, portfolio reconciliation, billing
 
-> **Status: PROPOSED. Nothing here is approved for implementation.**
+> **Status: PROPOSED, with the decisions below recorded.** Only items marked
+> **Decided** are policy. Nothing here is implemented unless it says *merged*.
+
+> **Decisions recorded 2026-10-02 (Stuart, morning review):**
+> 1. **#199 split.** The atomicity, retry and 500-sanitization work stays in #199
+>    (`173ce92`, not yet merged). The hop-based client-IP model was removed; client
+>    identity is deferred as BACKLOG A14 (no guessed hop count, no CIDR parser).
+> 2. **CT-1 approved in principle** (D-034). It is implemented for **future**
+>    conversions on branch `fix/conversion-planned-portfolio` (`7b974ae`), **not
+>    merged**, and gated on the production read-only audit (PR #200, not yet run).
+>    Existing rows are untouched.
+> 3. **CT-2:** the self-service invite role is `CUSTOMER_ADMIN` (D-035), on the same
+>    branch, **not merged**.
+> 4. **Billing (planning only):**
+>    - QuickBooks Online remains the invoice/accounting system of record for now.
+>    - True911 will own the customer billing experience; the processor is a later decision.
+>    - True911 never handles raw card or bank credentials.
+>    - `CUSTOMER_MANAGER` may VIEW billing but may not pay or manage payment methods or autopay.
+>    - B1 "Plan & charges" belongs in the RH program once the data is trustworthy.
+> 5. **Export (later):** telephone numbers only where the existing customer API
+>    already exposes them. The never-exported identifier list stands.
+> 6. **Tour (later):**
+>    - Built before Judy's invite.
+>    - No Billing, "Soon" or "Coming Soon" references before Billing exists.
+>    - FL-1 uses localStorage keyed by user and tour version; server persistence comes later.
+> 7. **Naming:** internally the **Portfolio Reconciliation Engine**; for customers
+>    **Portfolio Updates**, "Upload portfolio changes", "Review changes".
 > **Authority Level:** 3 (Execution, planning). **Governed by:** `CONSTITUTION.md`.
 > **Written:** 2026-10-02, in an overnight architecture pass for Stuart's review.
 > It was produced read-only: no code, migrations, production data or Render changes.
@@ -21,7 +47,7 @@ UPLOAD ≠ CANONICAL TRUTH             INVOICE LINE ≠ SERVICE ASSOCIATION (wit
 
 ---
 
-## A. PR #199 final review: recommendation **HOLD**
+## A. PR #199 final review: HOLD → **resolved by split (Decided)**
 
 **Merge-ready (verified by reading the diff and running the tests):**
 - **Create atomicity.** The registration and its acquisition record commit together through `before_commit`. A real commit-time constraint violation rolls back both rows.
@@ -138,7 +164,13 @@ phone / device / carrier ───►    ServiceUnit.meta.requested{…}      Li
 
 A later backfill would be a separate dry-run-first script that touches only rows with zero devices and lines and an unchanged `updated_at`.
 
-**Proposed PR (CT-1, after Stuart approves):** "Conversion creates planned locations, not connected ones." It covers `_materialize_sites` values, `meta.requested`, the readers listed above, the acquisition commit, and rewriting `test_conversion_truth_characterization.py` into regression tests (never Connected, never a live onboarding value, never verified).
+**Status (2026-10-02):** CT-1 + CT-2 are implemented for future conversions on
+`fix/conversion-planned-portfolio` (`7b974ae`, stacked on #199). They are not merged,
+and the PR is held until the read-only audit (#200) has run in production. CT-3 is
+confirmed by reading the code. **CT-4 is confirmed by reproduction:** a dry-run into an
+existing tenant raises `MissingGreenlet`. Both are separate work (BACKLOG A1).
+
+**Proposed PR (CT-1, as originally proposed):** "Conversion creates planned locations, not connected ones." It covers `_materialize_sites` values, `meta.requested`, the readers listed above, the acquisition commit, and rewriting `test_conversion_truth_characterization.py` into regression tests (never Connected, never a live onboarding value, never verified).
 
 **Separate decisions (not bundled into CT-1):**
 - **CT-2:** the invite role (`CUSTOMER_ADMIN`?).
@@ -247,7 +279,7 @@ Desktop ─ Step 2                                   Mobile ─ Step 2 (bottom s
 └──────────────────────────────────────────────────┘  └────────────────────────────────────────┘
 ```
 
-**The first decision (B0) is which system issues invoices today and should keep issuing them.** Options:
+**B0 (Decided, for now): QuickBooks Online remains the invoice and accounting system of record.** The payment processor is a separate, later decision. The analysis that informed it was: Options:
 - QuickBooks Online plus QBO Payments;
 - Stripe Billing plus accounting sync;
 - Zoho Books or Billing, next to the Zoho CRM lifecycle system of record.
@@ -280,8 +312,8 @@ Payment status changes only through **signed processor webhooks**.
 
 | Permission | ADMIN | BILLING | MANAGER | VIEWER/USER |
 |---|---|---|---|---|
-| `CUSTOMER_VIEW_BILLING` (exists) | ✓ | ✓ | ? (§M) | ✗ |
-| `CUSTOMER_PAY_INVOICES` (new) | ✓ | ✓ | ✗ | ✗ |
+| `CUSTOMER_VIEW_BILLING` (exists) | ✓ | ✓ | ✓ (**Decided**: may view) | ✗ |
+| `CUSTOMER_PAY_INVOICES` (new) | ✓ | ✓ | ✗ (**Decided**) | ✗ |
 | `CUSTOMER_MANAGE_PAYMENT_METHODS` / autopay (new) | ✓ | ✓ | ✗ | ✗ |
 | `CUSTOMER_MANAGE_BILLING_CONTACTS` (new) | ✓ | ✓ | ✗ | ✗ |
 
@@ -471,12 +503,12 @@ PUBLIC SITE ─► LIFE-SAFETY ASSESSMENT ─► acquisition_records (inquiry→
 
 ## J. Proposed decisions (to record only once approved)
 
-- **D-034:** Conversion creates planned locations, never operational state (B.3).
-- **D-035:** Customer uploads are evidence. Changes route by ownership class (overlay / governed request / refused). Blank means no change; absence means no information.
-- **D-036:** Billing boundary. True911 represents, the processor executes, accounting records. No card data in True911 (SAQ-A). An invoice line is linked to a service only with a basis.
-- **D-037:** First-login guidance is customer-plane only, skippable, persisted per user, and asserts nothing beyond the existing truth rules.
-- **D-038:** Client-IP trust model for public rate limiting (after the Render verification in §A).
-- **D-039:** Self-service invites use a `CUSTOMER_*` role, not the legacy internal `User` (pending decision).
+- **D-034 (Accepted 2026-10-02, recorded on the CT branch):** Conversion creates planned locations, never operational state (B.3).
+- **D-035 (Accepted 2026-10-02, recorded on the CT branch):** Self-service invites use `CUSTOMER_ADMIN`, not the legacy internal `User`.
+- **D-036 (proposed):** Customer uploads are evidence. Changes route by ownership class (overlay / governed request / refused). Blank means no change; absence means no information.
+- **D-037 (proposed; partly decided above):** Billing boundary. True911 represents, the processor executes, QuickBooks Online records. No card or bank data in True911 (SAQ-A target). An invoice line is linked to a service only with a basis.
+- **D-038 (proposed; partly decided above):** First-login guidance is customer-plane only, skippable, and persisted per user and version. It asserts nothing beyond the existing truth rules.
+- **D-039 (proposed):** Client-IP trust model for public rate limiting, only after the trustworthy parsing boundary is established (BACKLOG A14).
 
 (D-029 is reserved by the unmerged #193.)
 
@@ -484,9 +516,9 @@ PUBLIC SITE ─► LIFE-SAFETY ASSESSMENT ─► acquisition_records (inquiry→
 
 ## K. Recommended order (an improvement on the proposed one)
 
-1. **Resolve #199**: split, or amend per §A. Merge the atomicity and sanitization; land client identity after verification.
+1. **Resolve #199** (Decided: split; done in `173ce92`, awaiting merge). Client identity is deferred (A14).
 2. **The RH Completion Program stays primary (D-025, Master Plan).** New workstreams fit around it, not ahead of it. **Doc drift:** `RH_COMPLETION_PROGRAM.md` reserves migration 056 for slot #188, but #198 used 056, so the program's migrations become 057+. Its "#188–#193" are program slots, not GitHub PR numbers.
-3. **Conversion truth CT-1**: small and no migration, preceded by the read-only production audit and the CT-2 invite-role decision. It is a correctness fix and unblocks everything downstream.
+3. **Conversion truth CT-1 + CT-2** (implemented on a branch; awaits the #200 production audit, then review). No migration.
 4. **Portfolio Export (read-only)**: earlier than import. It is safe, immediately useful to RH, and fixes the schema the import needs.
 5. **First-login tour FL-1**: ideally ready before RH acceptance (#193 slot), since Judy is its first audience.
 6. **Billing B0 decision and B1 read-only "Plan & charges"**: B1 is already specified and in RH Track D.
@@ -509,6 +541,15 @@ Why this order differs:
 
 ---
 
-## L. Open questions for Stuart
+## L. Questions
 
-See the morning report; the authoritative list is in BACKLOG "Customer lifecycle workstreams".
+**Answered 2026-10-02:** #199 split; CT-1; CT-2 role; billing system of record and
+`CUSTOMER_MANAGER` view; export telephone numbers; tour Billing and persistence; engine
+naming; B1 placement (RH program).
+
+**Still open:**
+1. Whether to add tour events to the D-032 event vocabulary.
+2. Whether to retire or gate the three direct-write CSV importers.
+3. Formal acceptance of the proposed D-036 to D-039.
+4. The payment processor (later).
+5. The client-identity trust boundary (A14): Render support answer or diagnostic.

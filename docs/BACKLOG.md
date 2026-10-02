@@ -16,8 +16,9 @@
 ## 🧭 Customer lifecycle workstreams: PROPOSED, NOT APPROVED (2026-10-02)
 
 These are Stuart's product requirements, captured by an overnight architecture pass.
-Design: `docs/CUSTOMER_LIFECYCLE_PLAN.md`. **Nothing here is approved for
-implementation.** Each item enters work only through the Operating Loop (P4/P5).
+Design: `docs/CUSTOMER_LIFECYCLE_PLAN.md`. Only items marked **Decided** (2026-10-02)
+are policy. Nothing is implemented unless it says *merged*. Each item enters work
+only through the Operating Loop (P4/P5).
 The RH Completion Program (D-025) remains the primary objective.
 
 | WS | Workstream | First slice (proposed) | Depends on | Migration? |
@@ -37,14 +38,16 @@ B2–B7 → assessment redesign → homepage → analytics.
 - **#199 trust model.** Render's own article says traffic passes through Cloudflare
   *and* Render's load balancers. Whether the load balancer appends Cloudflare's
   edge IP is undocumented, so `RATE_LIMIT_TRUSTED_PROXY_HOPS=1` may key on edge IPs
-  (shared buckets, lost leads). Recommendation: HOLD and split (plan §A). Supersedes
-  the assumption in A14.
-- **CT-2.** Registration activation invites as `INVITE_ROLE = "User"`, the legacy
-  internal-plane role holding `INTERNAL_OPS`, not a `CUSTOMER_*` role.
+  (shared buckets, lost leads). **Decided: split.** #199 keeps the #198 client key
+  (`173ce92`), and client identity is deferred as A14.
+- **CT-2 (Decided: `CUSTOMER_ADMIN`, D-035).** Registration activation invited as the
+  legacy internal `"User"` role (`INTERNAL_OPS`). The fix is on branch
+  `fix/conversion-planned-portfolio`, not merged.
 - **CT-3.** The convert gate allows `pending_customer_info`, and a pre-set
   `target_tenant_id` silently overrides `tenant_choice`.
-- **CT-4.** Suspected (unverified): the dry-run response reads attributes of expired
-  objects after rollback (`registration_conversion.py:1012-1016`).
+- **CT-4 (CONFIRMED by reproduction).** A dry-run conversion into an EXISTING
+  tenant raises `MissingGreenlet`: it reads expired objects after the dry-run
+  rollback. Separate fix.
 - **CT-6.** The E911 "verified" sets disagree: the engine includes `confirmed`, but
   `serialize.py` and `e911_gaps.py` don't.
 - **Direct-write importers:** `subscriber_import.commit_import`, `site_import_engine`
@@ -56,24 +59,31 @@ B2–B7 → assessment redesign → homepage → analytics.
   `CUSTOMER_API_CONTRACTS.md` §8 says ADMIN and BILLING only.
 - **Stripe** packages in `web/package.json` are unused, and backend tests forbid
   Stripe imports.
-- **RH program migration numbering:** `RH_COMPLETION_PROGRAM.md` reserves 056 for
-  slot #188, but #198 used 056. Program slots are not GitHub PR numbers.
+- **RH program migration numbering: FIXED on this branch.** `RH_COMPLETION_PROGRAM.md` now starts the program's remaining migrations at 057 (056 was used by #198) and labels "#187–#193" as program slots, not GitHub PR numbers.
 - **The "Billing" placeholder conflicts with the tour.** `commandCenter.test.js`
   forbids "Billing"/"Soon" in the shell, so the tour can't point at future Billing.
 
-**Decisions needed from Stuart (morning review):**
-1. #199: split / amend (Cloudflare-range-aware) / verify-then-set-hops.
-2. CT-1 approval, and running the read-only audit of converted sites.
-3. CT-2: the invite role for self-service customers (`CUSTOMER_ADMIN`?).
-4. Billing B0: which system issues invoices today and should remain the invoice system of record (QuickBooks / Stripe Billing / Zoho Books)? Which processor?
-5. `CUSTOMER_MANAGER` billing visibility (permissions.json grants it; docs say no).
-6. Whether the export may include telephone numbers (only where the customer API already shows them).
-7. Tour: whether to mention future Billing (it conflicts with the no-"Soon" rule); whether to add tour events to the D-032 vocabulary.
-8. Tour persistence: localStorage first vs. server table first.
-9. Engine name: "Portfolio Reconciliation Engine" internally, "Portfolio updates" for customers?
-10. Whether Billing B1 rides with the RH program (Track D) or after it.
-11. Whether to retire or gate the direct-write CSV importers.
-12. The proposed decisions D-034 to D-039 (plan §J).
+**Decided 2026-10-02 (Stuart):**
+- #199 split (`173ce92`).
+- CT-1 approved in principle (D-034).
+- CT-2 = `CUSTOMER_ADMIN` (D-035).
+- QuickBooks Online remains the invoice/accounting system of record for now; the processor is a later decision.
+- No raw card or bank data in True911.
+- `CUSTOMER_MANAGER` may view billing but not pay or manage payment methods or autopay.
+- Billing B1 belongs in the RH program once the data is trustworthy.
+- The export includes telephone numbers only where the customer API already exposes them.
+- Tour:
+  - built before Judy's invite;
+  - no Billing/"Soon" references;
+  - FL-1 uses localStorage keyed by user + tour version.
+- Naming: Portfolio Reconciliation Engine internally; for customers "Portfolio Updates" / "Upload portfolio changes" / "Review changes".
+
+**Still open:**
+1. Tour events in the D-032 vocabulary?
+2. Retire or gate the direct-write CSV importers?
+3. Accept the proposed D-036 to D-039 (plan §J).
+4. Payment processor (later).
+5. A14 client-identity boundary (Render support answer or diagnostic).
 
 ## 📥 Public acquisition — deferrals from the durable-acquisition PR (D-030..D-033) [2026-10-01]
 
