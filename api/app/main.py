@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import settings
+from .config import api_docs_enabled, settings
 from .bootstrap import ensure_bootstrap_admin
 from .middleware import RequestVisibilityMiddleware, TmobileCallbackAuditMiddleware
 from .routers import auth, sites, telemetry, audits, incidents, notifications, e911, actions, devices, lines, recordings, events, providers, heartbeat, hardware_models, admin, sims, jobs, webhooks, integration_webhooks, command, command_notifications, command_reports, command_vendors, command_verification, command_templates, command_contracts, command_network, command_testing, command_autonomous, command_site_import, command_device_assignment, carrier_verizon, customers, service_units, provisioning, zoho_crm, zoho_review, vola, deployments, line_intelligence, subscriber_import, public, support, tmobile_callback, health, registrations, acquisition, onboarding_review, calls, llm, device_health, assurance, customer, customer_requests, ops_center, service_classification
@@ -29,7 +29,17 @@ logging.basicConfig(
 
 logger = logging.getLogger("true911")
 
-app = FastAPI(title="TRUE911 API", version="1.0.0")
+# PP-0: framework-generated API docs and the OpenAPI schema are disabled unless
+# APP_MODE is explicitly "demo" (production default => off).  Setting
+# openapi_url=None also removes /docs/oauth2-redirect.
+_DOCS = api_docs_enabled(settings.APP_MODE)
+app = FastAPI(
+    title="TRUE911 API",
+    version="1.0.0",
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 
 
 @app.on_event("startup")

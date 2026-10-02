@@ -52,6 +52,35 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
   - **Constraints:** do NOT guess a hop count, and do not weaken or remove rate
     limiting. A Cloudflare-range-aware parser is one candidate design, not
     approved. See `ACQUISITION.md` §6a.
+- **A15. PP-0: production API documentation exposure (in review: "Security: Disable
+  Public API Schema in Production").**
+  - **Before:** production publicly served `/docs` (200), `/redoc` (200),
+    `/openapi.json` (200, about 548 KB: the full API surface and models) and
+    `/docs/oauth2-redirect` (200).
+  - **After:** all four are absent unless `APP_MODE=demo`. The rule is in
+    `ARCHITECTURE.md`.
+  - **No business API behaviour changed.**
+  - **Exposure audit (read-only, 2026-10-02).** Separate findings, NOT fixed by PP-0:
+    - **`/api/debug/cors` is unauthenticated.** It returns the resolved CORS config. It
+      also revealed a **malformed production `CORS_ORIGINS`**: the last origin carries a
+      newline plus `PUBLIC_URL=…`, apparently two Render env vars pasted into one value.
+      That origin can never match, and `PUBLIC_URL` may be unset. This is an operator
+      Render fix (not done). Separately, decide whether the debug route should require
+      auth or be removed.
+    - **`/api/config/features` is unauthenticated** and returns four feature-flag
+      booleans. Low sensitivity; decide whether to gate it.
+    - **`GET /tmobile/wholesale/callback/subscriber-status`** has no auth dependency (a
+      carrier callback; WAF-fronted on the PIT host per `ARCHITECTURE.md`). Review it
+      with the callback auth work.
+    - **Clean:**
+      - no GraphQL; no `/metrics`, `/routes` or `/debug` index;
+      - no alternate OpenAPI/Swagger paths (`/api/openapi.json`, `/swagger.json`,
+        `/openapi.yaml`, `/.well-known/openapi.json` all 404);
+      - `/api/health/auth` requires `GLOBAL_ADMIN` (401);
+      - no schema or source-map files in the repo or the web build (no
+        `sourceMappingURL`); `www.true911.com/openapi.json` is just the SPA page.
+    - **Inherent:** the logged-in portal JS chunk is downloadable (minified, no source
+      maps). Keep proprietary logic server-side (`PUBLIC_PRODUCT_PROOF.md` §6, in #201).
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 

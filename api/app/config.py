@@ -602,3 +602,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def api_docs_enabled(app_mode) -> bool:
+    """Interactive API docs (/docs, /redoc, /openapi.json) are served ONLY in
+    explicit demo mode (PP-0).  Fail-safe: production, a missing/empty value or
+    any unrecognised value disables them, mirroring APP_MODE's production-safe
+    default.  Local development uses APP_MODE=demo (see .env.example)."""
+    return str(app_mode or "").strip().lower() == "demo"
