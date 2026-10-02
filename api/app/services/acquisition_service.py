@@ -100,8 +100,11 @@ def allowlisted(values, allowed: dict) -> list[str]:
 
 # ── abuse controls ────────────────────────────────────────────────────
 class RateLimiter:
-    """Small in-process sliding-window limiter.  Per API instance (documented
-    limitation); a shared store can replace it without changing callers."""
+    """Small in-process sliding-window limiter.
+
+    PROCESS-LOCAL, NOT fleet-wide: counts live in this Python process's memory,
+    reset on every deploy/restart, and are not shared between uvicorn workers or
+    API instances.  A shared store can replace it without changing callers."""
 
     def __init__(self, limit: int, window_s: int):
         self.limit, self.window = limit, window_s
@@ -131,12 +134,30 @@ DAILY_LIMITER = RateLimiter(30, 86400)
 LOOKUP_LIMITER = RateLimiter(60, 600)
 
 
-def client_key(request) -> str:
-    """Client address for rate limiting: first X-Forwarded-For hop (Render's
-    proxy) else the socket peer.  Only ever used to throttle, never to trust."""
-    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    host = fwd or (request.client.host if request.client else "") or "unknown"
-    return host[:64]
+def client_key(request, trusted_hops: Optional[int] = None) -> str:
+    """Client address for rate limiting.  Only ever used to throttle, never to
+    authenticate or authorise.
+
+    Trust model (docs/ACQUISITION.md §6): ``RATE_LIMIT_TRUSTED_PROXY_HOPS``
+    (default 1) is the number of proxies we operate in front of the API that
+    each APPEND the address they received the connection from to
+    X-Forwarded-For.  The client address is therefore the entry that many
+    places from the RIGHT.  Everything to the left of it is client-supplied and
+    is ignored, so a visitor cannot rotate their identity by sending their own
+    header.  0 = ignore forwarding headers entirely and use the socket peer.
+    With no usable header (local dev, tests) the socket peer is used.
+    """
+    if trusted_hops is None:
+        from app.config import settings
+        trusted_hops = settings.RATE_LIMIT_TRUSTED_PROXY_HOPS
+    peer = (request.client.host if request.client else "") or "unknown"
+    if trusted_hops and trusted_hops > 0:
+        # Several header lines are equivalent to one comma-joined list (RFC 7230).
+        raw = ",".join(request.headers.getlist("x-forwarded-for"))
+        hops = [h.strip() for h in raw.split(",") if h.strip()]
+        if len(hops) >= trusted_hops:
+            return hops[-trusted_hops][:64]
+    return peer[:64]
 
 
 def allow_submission(request) -> bool:
@@ -154,16 +175,13 @@ async def get_by_idempotency_key(db: AsyncSession, key: str) -> Optional[Acquisi
         AcquisitionRecord.idempotency_key == key))).scalars().first()
 
 
-async def create_record(db: AsyncSession, *, kind: str, status: str, entry_point: str,
-                        email: str, idempotency_key: str, attribution: Optional[dict] = None,
-                        company=None, contact_name=None, phone=None, role=None,
-                        num_locations=None, service_interests=None, needs=None,
-                        message=None, registration_ref=None) -> tuple[AcquisitionRecord, bool]:
-    """Persist and COMMIT one acquisition record.  Returns (record, created).
-    A repeated idempotency key returns the existing record (created=False)."""
-    existing = await get_by_idempotency_key(db, idempotency_key)
-    if existing is not None:
-        return existing, False
+def stage_record(db: AsyncSession, *, kind: str, status: str, entry_point: str,
+                 email: str, idempotency_key: str, attribution: Optional[dict] = None,
+                 company=None, contact_name=None, phone=None, role=None,
+                 num_locations=None, service_interests=None, needs=None,
+                 message=None, registration_ref=None) -> AcquisitionRecord:
+    """Add one acquisition record to the session WITHOUT committing, so a
+    caller can make it part of a larger atomic write (the registration wizard)."""
     attr = normalize_attribution(attribution)
     rec = AcquisitionRecord(
         record_ref=_new_ref(), kind=kind, status=status, entry_point=entry_point,
@@ -175,6 +193,17 @@ async def create_record(db: AsyncSession, *, kind: str, status: str, entry_point
         message=message, registration_ref=registration_ref,
         notification_status="pending", notification_attempts=0, **attr)
     db.add(rec)
+    return rec
+
+
+async def create_record(db: AsyncSession, *, idempotency_key: str,
+                        **fields) -> tuple[AcquisitionRecord, bool]:
+    """Persist and COMMIT one acquisition record.  Returns (record, created).
+    A repeated idempotency key returns the existing record (created=False)."""
+    existing = await get_by_idempotency_key(db, idempotency_key)
+    if existing is not None:
+        return existing, False
+    rec = stage_record(db, idempotency_key=idempotency_key, **fields)
     try:
         await db.commit()
     except IntegrityError:
@@ -188,13 +217,21 @@ async def create_record(db: AsyncSession, *, kind: str, status: str, entry_point
     return rec, True
 
 
-async def set_registration_status(db: AsyncSession, registration_ref: str, status: str) -> None:
-    """Move the acquisition record linked to a registration (assessment) forward.
-    Acquisition state only — never a deployment state."""
+async def stage_registration_status(db: AsyncSession, registration_ref: str,
+                                   status: str) -> Optional[AcquisitionRecord]:
+    """Move the linked acquisition record forward WITHOUT committing (joins the
+    caller's transaction).  Acquisition state only — never a deployment state."""
     rec = (await db.execute(select(AcquisitionRecord).where(
         AcquisitionRecord.registration_ref == registration_ref))).scalars().first()
     if rec is not None and rec.status != status:
         rec.status = status
+    return rec
+
+
+async def set_registration_status(db: AsyncSession, registration_ref: str, status: str) -> None:
+    """Committing form of ``stage_registration_status`` (used by conversion)."""
+    rec = await stage_registration_status(db, registration_ref, status)
+    if rec is not None and db.is_modified(rec):
         await db.commit()
 
 

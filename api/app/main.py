@@ -133,14 +133,18 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
     (call_next re-raises), so we re-emit it here.
     """
     request_id = getattr(request.state, "request_id", None)
+    # Full diagnostics stay in the server log, keyed by request_id.  The client
+    # gets a stable generic body: never exception text, SQL, paths or traces.
     logger.error(
-        "Unhandled exception on %s %s request_id=%s:\n%s",
-        request.method, request.url.path, request_id, traceback.format_exc(),
+        "Unhandled exception on %s %s request_id=%s exc_type=%s:\n%s",
+        request.method, request.url.path, request_id, type(exc).__name__,
+        traceback.format_exc(),
     )
     response = JSONResponse(
         status_code=500,
         content={
-            "detail": f"Internal server error: {type(exc).__name__}: {exc}",
+            "detail": "Internal server error.",
+            "error": "internal_error",
             "request_id": request_id,
         },
     )

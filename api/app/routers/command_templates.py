@@ -3,6 +3,7 @@ True911 Command — Site templates and bulk import.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -21,6 +22,7 @@ from ..services.template_engine import apply_template
 from ..services.csv_importer import import_sites_from_csv
 
 router = APIRouter()
+logger = logging.getLogger("true911.command_templates")
 
 
 # ---------------------------------------------------------------------------
@@ -189,9 +191,11 @@ async def bulk_import_sites(
             db, csv_text, current_user.tenant_id, current_user.email,
         )
         await db.commit()
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        raise HTTPException(500, f"Import failed: {str(e)[:300]}")
+        # Diagnostics go to the log; never echo exception/SQL text (sanitized 5xx).
+        logger.exception("site CSV import failed for tenant %s", current_user.tenant_id)
+        raise HTTPException(500, "Import failed due to a server error. No sites were imported.")
 
     return BulkImportResult(**result)
 

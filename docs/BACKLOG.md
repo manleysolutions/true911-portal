@@ -34,6 +34,18 @@ Out of scope by decision in "Fix: Establish Durable Public Acquisition Foundatio
 - **A9. Homepage redesign** on sanitized product proof (hero O1, "Product UI · Sample data").
 - **A10. Remaining blanket claims outside the touched flow.** "NDAA-TAA Compliant" and
   "True911+" in the Reports/SyncStatus export footers; "True911+" in internal UI titles.
+- **A12. Idempotent wizard create.** If the connection drops after the server
+  commits but before the response arrives, the client has no id or token, and a
+  retry creates a second draft. Fixing it needs a client idempotency key on create
+  plus a safe resume-token re-issue (the key must not become a bearer credential
+  stored in plaintext). Found by the failure-boundary hardening.
+- **A13. Vendor 502 passthrough text.** Authenticated operator consoles (`vola`,
+  `zoho_crm`, `carrier_verizon`, `sims`) return upstream error text in 502 bodies.
+  It contains no SQL, but should be reviewed for URLs or credentials. Decide
+  sanitize-and-log or keep for operator debugging.
+- **A14. Verify Render's X-Forwarded-For behaviour.** Confirm the edge appends the
+  connecting address and that there is one proxy layer for
+  `true911-api.onrender.com` (`ACQUISITION.md` §6a). Operator, read-only.
 - **A11. Wizard billing/plan steps vs D-032.** The `/register` wizard still collects plan
   and billing fields. Align the assessment with "no billing in the assessment".
 

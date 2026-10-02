@@ -33,6 +33,10 @@ router = APIRouter()
 _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9-]{16,64}$")
 MAX_LEAD_BYTES = 16 * 1024
 MAX_REGISTRATION_BYTES = 256 * 1024
+# Accurate 503s for writes that were rolled back (nothing durable happened).
+_NOT_SAVED = "We couldn't save your registration, and nothing was stored. Please try again."
+_NOT_SUBMITTED = ("We couldn't submit your registration. It is still saved as a draft — "
+                  "please try submitting again.")
 
 
 def _guard(request: Request, max_bytes: int) -> None:
@@ -98,9 +102,10 @@ async def _accept(db, request, body, *, kind, entry_point, **fields):
         idempotency_key=body.idempotency_key, attribution=body.attribution,
         company=body.company, contact_name=body.name, phone=(body.phone or "").strip() or None,
         **fields)
+    receipt = acq.serialize_receipt(rec)     # from committed state, before any side effect
     if created:
         await acq.notify(db, rec)               # side effect: never decides receipt
-    return acq.serialize_receipt(rec)
+    return receipt
 
 
 @router.post("/request-access", status_code=status.HTTP_201_CREATED)
@@ -232,17 +237,20 @@ async def create_public_registration(
 
     _guard(request, MAX_REGISTRATION_BYTES)
     _honeypot(body.website)
-    result = await reg_svc.create_registration(db, body)
-    try:
-        await acq.create_record(
+
+    async def _stage_assessment(reg):
+        # Same transaction as the registration: both rows commit, or neither.
+        acq.stage_record(
             db, kind="assessment", status="assessment_draft", entry_point="registration_wizard",
-            email=str(body.submitter_email), idempotency_key=f"reg-{result.registration.registration_id}",
+            email=str(body.submitter_email), idempotency_key=f"reg-{reg.registration_id}",
             attribution=body.attribution, company=body.customer_name, contact_name=body.submitter_name,
-            phone=body.submitter_phone, registration_ref=result.registration.registration_id)
-    except Exception:   # noqa: BLE001 — the registration itself is already durable
-        logger.exception("acquisition record for %s could not be created",
-                         result.registration.registration_id)
-        await db.rollback()
+            phone=body.submitter_phone, registration_ref=reg.registration_id)
+
+    try:
+        result = await reg_svc.create_registration(db, body, before_commit=_stage_assessment)
+    except reg_svc.RegistrationNotPersisted:
+        logger.exception("public registration create rolled back; nothing was saved")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _NOT_SAVED)
     await _load_registration_tree(db, result.registration)
     return RegistrationCreateResponse(
         registration=_serialize_registration(result.registration),
@@ -322,21 +330,33 @@ async def submit_public_registration(
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                             "Too many submissions from this connection. Please try again later.")
     registration = await _require_registration(db, registration_id, token)
+    ref = registration.registration_id
+
+    async def _stage_submitted(reg):
+        # Same transaction as the draft -> submitted transition.
+        await acq.stage_registration_status(db, reg.registration_id, "assessment_submitted")
+
     try:
-        await reg_svc.submit_registration(db, registration)
+        await reg_svc.submit_registration(db, registration, before_commit=_stage_submitted)
     except reg_svc.IllegalStatusTransitionError:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Registration has already been submitted.",
         )
-    # acquisition state + internal notification are side effects of a durable submit
+    except reg_svc.RegistrationNotPersisted:
+        logger.exception("public registration submit for %s rolled back; still a draft", ref)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _NOT_SUBMITTED)
+
+    # Internal notification: a post-commit side effect that never decides the response.
     try:
-        await acq.set_registration_status(db, registration.registration_id, "assessment_submitted")
-        rec = await acq.get_by_idempotency_key(db, f"reg-{registration.registration_id}")
+        rec = await acq.get_by_idempotency_key(db, f"reg-{ref}")
         if rec is not None:
             await acq.notify(db, rec)
-    except Exception:   # noqa: BLE001 — never undo a durable submit
-        logger.exception("acquisition update for %s failed", registration.registration_id)
-
+    except Exception:   # noqa: BLE001 — the submit is already committed
+        logger.exception("acquisition notification for %s failed", ref)
+        await db.rollback()
+    # A failed side effect may have rolled the session back (expiring loaded
+    # rows); reload explicitly so the response reflects committed state.
+    await db.refresh(registration)
     await _load_registration_tree(db, registration)
     return _serialize_registration(registration)

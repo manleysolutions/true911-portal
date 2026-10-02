@@ -114,7 +114,8 @@ drift where a flag is active on `api` but inert on `worker` (PR #63).
   `app/database.py` / `app/dependencies.py`.
 - Cross-cutting: `RequestVisibilityMiddleware` stamps every response with
   `X-Request-ID` and logs one line per request; a global exception handler returns
-  JSON 500s so CORS headers survive errors (and the request_id is correlatable).
+  a generic JSON 500 (`internal_error` + request_id, never exception/SQL text) so CORS
+  headers survive errors, and logs the full traceback under that request_id.
 - Feature surfaces self-gate: routers like `llm`, `device_health`, `assurance`
   are registered unconditionally but return **404 when their flag is off**, so
   deploying the code is a no-op until the env var flips.

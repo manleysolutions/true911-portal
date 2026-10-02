@@ -38,6 +38,36 @@ and the acquisition row links to it by `registration_ref`. Submit moves the row 
 `assessment_submitted`, and a real (non-dry-run) internal conversion moves it to
 `converted`.
 
+### 2a. Wizard failure boundaries (hardened after #198)
+
+A response must describe durable state.
+
+- **Create is atomic.** The registration and its acquisition record are one
+  logical operation: the record is staged through
+  `create_registration(..., before_commit=…)` and the two commit together. If
+  the record write or the commit fails, both roll back and the client gets
+  **503 "We couldn't save your registration, and nothing was stored."** A retry
+  creates exactly one registration and one record.
+- **Submit is atomic.** The `draft → submitted` transition and the record's move
+  to `assessment_submitted` commit together through
+  `transition_status(..., before_commit=…)`. On failure the client gets **503 "It
+  is still saved as a draft"**, and the draft is still there: the resume token
+  keeps working and a retry submits it once. A further submit still returns 409.
+- **Notifications come after the commit.** A failed internal notification never
+  changes the response. The handler reloads the registration from committed
+  state before replying, and the quote/assessment receipt is built before
+  `notify()` runs.
+- **The client never duplicates on retry.** Once create succeeds, the wizard
+  keeps that draft's id and resume token (`web/src/lib/registrationSubmit.js`). A
+  retry with the same answers only resubmits it. A 409 counts as "submitted" only
+  after the client reads the registration back with its token and sees it is no
+  longer a draft. Changing answers after a failure starts a new registration; the
+  earlier draft stays visible in the internal queue.
+- **Residual limitation.** If the connection drops after the server commits but
+  before the client receives the response, the client has no id or token, and a
+  retry creates a second draft. Closing that gap needs idempotent create with
+  resume-token re-issue (BACKLOG A12).
+
 ## 3. Acquisition lifecycle (separate from deployment)
 
 `inquiry → assessment_draft → assessment_submitted → under_review → qualified → converted → closed`
@@ -93,14 +123,69 @@ Abuse controls:
 - a honeypot field `website`: a non-empty value gives 422, never a receipt;
 - per-client rate limits: 5 per 10 min and 30 per day on creates/submits, 60 per 10 min
   on resume-token lookups, giving 429;
-- safe error messages.
+- safe error messages (see §6b).
 
 **CAPTCHA is deliberately not added.** A third-party CAPTCHA adds a vendor, a
 privacy surface and accessibility friction. Honeypot + rate limit + size caps are
 proportionate at current volume. Revisit if `acquisition_records` shows abuse.
 
-Limitation: the limiter is in-process, per API instance. A shared store can
-replace `RateLimiter` without changing callers (BACKLOG).
+**The limiter is process-local, not fleet-wide.** Counts live in the memory of one
+Python process. They reset on every deploy or restart, aren't shared between
+uvicorn workers or API instances, and would multiply if the service scaled out.
+Production runs one instance with one process. A shared store can replace
+`RateLimiter` without changing callers (BACKLOG A6). This is not a global
+rate limit and must not be described as one.
+
+### 6a. Client identity for rate limiting (trusted-proxy model)
+
+The limiter keys on a client address. `X-Forwarded-For` can be partly written by
+the client, so only the entry added by a proxy we trust is used:
+
+- `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default **1**) is the number of proxies in
+  front of the API that each **append** the address they received the connection
+  from.
+- The client address is that many entries from the **right**. Entries to its
+  left, including any the visitor sent, are ignored, so rotating a forged header
+  doesn't change the key. Repeated header lines are treated as one list.
+- `0` ignores forwarding headers and uses the socket peer.
+- With no usable header (local dev, tests) the socket peer is used.
+- The address is used only to throttle, never to authenticate or authorise.
+
+**Why 1.** `render.yaml` points the production web at
+`https://true911-api.onrender.com/api` directly, so public form traffic crosses
+one proxy layer (Render's edge). The Cloudflare `CF-Connecting-IP` handling in
+`app/middleware.py` applies only to the T-Mobile PIT callback host. uvicorn
+doesn't rewrite `request.client` here: the start command passes no
+`--forwarded-allow-ips`, and uvicorn trusts only `127.0.0.1` by default. That is
+why the header is read explicitly.
+
+**What an operator must still verify (not inferred).** Confirm with Render's
+documentation or support:
+
+1. Render's edge **appends** the connecting address as the last
+   `X-Forwarded-For` entry for `*.onrender.com` web services, rather than
+   forwarding the client's header unchanged.
+2. There is exactly one Render proxy layer in front of `true911-api`.
+
+If Render replaces the header instead, 1 is still correct. If it forwards the
+client value without appending, no header-based key can be trusted: set the hop
+count to 0, accept that all clients share one bucket per proxy, and revisit.
+If a CDN or a custom domain is ever put in front of the API, raise the hop count
+to match.
+
+### 6b. Server errors
+
+- Unhandled exceptions return a stable body:
+  `{"detail": "Internal server error.", "error": "internal_error", "request_id": …}`.
+  It never includes exception text, SQL, stack traces, file paths or secrets.
+- The full traceback, exception type, method, path and `request_id` are logged
+  server-side. Quote the `X-Request-ID` to find the log line.
+- 4xx responses are unchanged: 422 keeps field-level validation detail, and
+  401/403/404/409/410/429 keep their messages.
+- The internal site-CSV import's 500 no longer echoes the exception.
+- **Audited, not changed:** the authenticated operator consoles return 502s that
+  pass through upstream vendor error text (`vola`, `zoho_crm`, `carrier_verizon`,
+  `sims`). They don't include SQL, but they are listed for review (BACKLOG A13).
 
 ## 7. Assessment vs deployment (D-032)
 
@@ -184,7 +269,16 @@ tracking is installed. Server-confirmed events (`lead_created` and later ones) a
 emitted only from durable state: the client emits `lead_created` only from a real
 receipt.
 
-## 12. Future direction
+## 12. Migration 056 is permanent history
+
+`056_acquisition_records.py` is applied in production (presumed from deployment
+evidence). Never remove, rewrite or renumber it, and never roll back by deleting
+it: a build without 056 can't start against a database at 056 (`Can't locate
+revision '056'`). That rules out Render "Rollback" to a pre-#198 deploy and a
+wholesale `git revert` of #198. Roll back with a forward commit that keeps the
+migration history.
+
+## 13. Future direction
 
 - Internal acquisition review UI (statuses `under_review` / `qualified` / `closed`).
 - Prospect acknowledgement email.

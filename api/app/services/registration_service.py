@@ -256,10 +256,29 @@ class RegistrationNotEditableError(ValueError):
 # CRUD on the staging row
 # ─────────────────────────────────────────────────────────────────────
 
+class RegistrationNotPersisted(Exception):
+    """A registration write was rolled back before commit: NOTHING was saved.
+
+    Raised when a ``before_commit`` hook (e.g. the linked acquisition record)
+    or the commit itself fails, so callers can tell the client truthfully that
+    the operation did not happen and may be retried (D-031)."""
+
+
 @dataclass
 class _CreateResult:
     registration: Registration
     resume_token: str  # plaintext — caller must hand it back to the client
+
+
+async def _commit_atomically(db: AsyncSession, row, before_commit) -> None:
+    """Run the optional pre-commit hook, then commit — all or nothing."""
+    try:
+        if before_commit is not None:
+            await before_commit(row)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise RegistrationNotPersisted(type(exc).__name__) from exc
 
 
 async def create_registration(
@@ -267,11 +286,17 @@ async def create_registration(
     body: RegistrationCreate,
     *,
     tenant_id: str = OPS_TENANT_ID,
+    before_commit=None,
 ) -> _CreateResult:
     """Insert a draft registration plus any inline locations/units.
 
     Returns the persisted ORM row and the plaintext resume token —
     the only time the plaintext is ever exposed.
+
+    ``before_commit(reg)`` (optional, async) stages linked writes that must
+    share this commit — the registration and its acquisition record are one
+    logical operation.  If the hook or the commit fails, everything is rolled
+    back and ``RegistrationNotPersisted`` is raised.
 
     No production-table side effects: this writes only to
     registrations / registration_locations / registration_service_units
@@ -336,7 +361,7 @@ async def create_registration(
         )
     )
 
-    await db.commit()
+    await _commit_atomically(db, reg, before_commit)
     await db.refresh(reg)
     logger.info(
         "Registration created: registration_id=%s tenant_id=%s submitter=%s",
@@ -481,6 +506,8 @@ async def _count_service_units(db: AsyncSession, registration_id: int) -> int:
 async def submit_registration(
     db: AsyncSession,
     registration: Registration,
+    *,
+    before_commit=None,
 ) -> Registration:
     """Move a draft registration to ``submitted``.
 
@@ -500,6 +527,7 @@ async def submit_registration(
         to_status=Status.SUBMITTED,
         actor_email=registration.submitter_email,
         note="submitted via public registration API",
+        before_commit=before_commit,
     )
     return registration
 
@@ -516,6 +544,7 @@ async def transition_status(
     actor_user_id: Optional[uuid.UUID] = None,
     actor_email: Optional[str] = None,
     note: Optional[str] = None,
+    before_commit=None,
 ) -> Registration:
     """Apply a status transition with validation + audit trail.
 
@@ -523,6 +552,10 @@ async def transition_status(
     timestamps that change with the new status.  This is the single
     chokepoint for *all* status changes — direct ORM assignment to
     ``registration.status`` is prohibited by convention.
+
+    ``before_commit(registration)`` (optional, async) stages linked writes
+    into the transition's single commit; on failure everything rolls back and
+    ``RegistrationNotPersisted`` is raised (the prior status is kept).
     """
 
     if to_status not in ALL_STATUSES:
@@ -577,7 +610,7 @@ async def transition_status(
             await db.rollback()
             raise
 
-    await db.commit()
+    await _commit_atomically(db, registration, before_commit)
     await db.refresh(registration)
     # Stash the activation outcome on the instance so the router can
     # surface the freshly-issued invite (plaintext token, etc.) on
