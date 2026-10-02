@@ -689,6 +689,13 @@ side effect of bookkeeping rather than as a decision anybody made.
 - **Consequences:** `app/services/site_lifecycle.py`. Readers made neutral for planned
   sites (see `ACQUISITION.md` §9). No migration. Audit tool:
   `app.audit_registration_conversions`.
+  - **Production audit (2026-10-02):** 2 converted sites, 1 registration; A = 0,
+    B = 0, C = 2. Both are archived/retired Tiffany Gardens sites with no recorded
+    deployment evidence. They are C because of post-conversion edits.
+  - **Stuart decided no remediation**: they are kept as historical records.
+  - The operator promotion path is `onboarding_status` on the internal site edit
+    (`EDIT_SITES`, DataEntry excluded, validated vocabulary). E911 promotion uses
+    the existing provider-evidence verification scripts.
 
 ### D-035 — Self-service registration activation invites CUSTOMER_ADMIN
 - **Date:** 2026-10-02 · **Status:** Accepted (Stuart, CT-2)

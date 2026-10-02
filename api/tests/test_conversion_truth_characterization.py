@@ -195,6 +195,35 @@ def test_planned_site_readers_are_neutral():
     assert "not is_planned_site(s.status)" in inspect.getsource(digest_engine)
 
 
+def test_digest_does_not_report_a_planned_site_as_an_operational_issue():
+    """Behavioural: a planned site is not an attention item; a genuinely
+    disconnected control site still is."""
+    from app.models.autonomous_action import AutonomousAction
+    from app.models.incident import Incident
+    from app.models.operational_digest import OperationalDigest
+    from app.models.verification_task import VerificationTask
+    from app.services.digest_engine import generate_daily_digest
+
+    async def go():
+        sm = await _converted_db()
+        async with sm() as s:
+            eng = s.bind
+        async with eng.begin() as conn:
+            await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=[
+                m.__table__ for m in (Incident, VerificationTask, AutonomousAction, OperationalDigest)]))
+        async with sm() as s:
+            planned = (await s.execute(select(Site))).scalars().first()
+            s.add(Site(site_id="control-offline", tenant_id=planned.tenant_id, site_name="Control",
+                       customer_name="Portfolio Co", status="Not Connected"))
+            await s.commit()
+            digest = await generate_daily_digest(s, planned.tenant_id)
+        summary = json.loads(digest.summary_json)
+        listed = {x["site_id"] for x in summary["sites_attention_list"]}
+        assert planned.site_id not in listed
+        assert "control-offline" in listed and summary["sites_needing_attention"] == 1
+    run(go())
+
+
 def _client(sm, user):
     from tests._customer_db import client_for
     from app.routers import actions

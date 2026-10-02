@@ -236,10 +236,26 @@ requested hardware), a placement, a verified E911 status, or a live onboarding v
 - `attention.js`: customer label "Being set up", unless device evidence says reporting.
 - The customer API already reads Pending Install as "This location is being set up."
 
-**Existing converted rows are NOT changed.** A read-only audit
-(`python -m app.audit_registration_conversions`, PR #200) must classify them first:
-A planned / B deployed with evidence / C ambiguous. Any remediation is a separate,
-dry-run-first, approved script.
+**Existing converted rows are NOT changed.** The read-only audit
+(`python -m app.audit_registration_conversions`, PR #200) classifies converted sites
+as A planned / B deployed with evidence / C ambiguous, using evidence only.
+
+The read-only audit (PR #200, merged `56bbc8c`) was **run in production on
+2026-10-02**: **2 converted sites from 1 registration; A = 0, B = 0, C = 2.**
+- Both sites belong to registration `REG-EE9B668655CC` (tenant
+  `integrity-property-management`): `TIFFANY-GARDENS-EAST` (site_pk 691) and
+  `TIFFANY-GARDENS-NORTH` (site_pk 692).
+- Both are now `status=archived`, `onboarding_status=retired`, `e911_status` NULL,
+  confirmation not required, `address_source` NULL.
+- Neither has **recorded** deployment evidence: 0 lines, 0 devices, 0 heartbeats,
+  0 telemetry (0 simulated), 0 provisioning rows, 0 E911 change logs or reviews, and
+  no invite issued.
+- They are class **C**, not A, only because each was edited after conversion and
+  has one operator audit row (the conservative rule). This does not prove they were
+  never deployed. It records that no deployment evidence exists in True911.
+
+**Stuart's decision: NO remediation.** They are historical records. No backfill
+script is created, and CT-1 changes only future conversions.
 
 ## 10. Public truth rules (D-030)
 
