@@ -2,8 +2,79 @@ from __future__ import annotations
 
 import json
 from functools import cached_property
+from urllib.parse import urlsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def api_docs_enabled(app_mode) -> bool:
+    """Interactive API docs (/docs, /redoc, /openapi.json) are served ONLY in
+    explicit demo mode (PP-0).  Fail-safe: production, a missing/empty value or
+    any unrecognised value disables them, mirroring APP_MODE's production-safe
+    default.  Local development uses APP_MODE=demo (see .env.example)."""
+    return str(app_mode or "").strip().lower() == "demo"
+
+
+def parse_cors_origins(raw, app_mode) -> list[str]:
+    """Parse and VALIDATE ``CORS_ORIGINS``.  Raises ValueError on anything
+    malformed, so a bad production value fails configuration at startup instead
+    of half-working (BACKLOG A15).
+
+    Accepted formats: comma-separated origins, or a JSON list of origins.
+    Spaces/tabs around commas are normalised; trailing slashes are stripped;
+    scheme and host are lower-cased.
+
+    Rejected: a newline or carriage return anywhere (the pasted-env-var mistake);
+    an empty entry; "=" or whitespace inside an origin; anything that is not
+    ``http(s)://host[:port]`` (paths, queries, fragments, credentials); and the
+    wildcard "*" unless APP_MODE is explicitly "demo".
+
+    Unset or empty: explicit demo -> ["*"] (local convenience); anything else
+    -> [] (fail-closed: no cross-origin access).  Same rule as API docs.
+    """
+    demo = api_docs_enabled(app_mode)
+    text = "" if raw is None else str(raw)
+    if "\n" in text or "\r" in text:
+        raise ValueError("CORS_ORIGINS contains a line break; it must be a single line "
+                         "of comma-separated origins")
+    text = text.strip(" \t")
+    if not text:
+        return ["*"] if demo else []
+    if text.startswith("["):
+        try:
+            items = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("CORS_ORIGINS looks like a JSON list but is not valid JSON") from exc
+        if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+            raise ValueError("CORS_ORIGINS JSON must be a list of origin strings")
+    else:
+        items = text.split(",")
+    origins: list[str] = []
+    for item in items:
+        entry = item.strip(" \t")
+        if not entry:
+            raise ValueError("CORS_ORIGINS contains an empty entry")
+        if entry == "*":
+            if not demo:
+                raise ValueError("CORS_ORIGINS wildcard '*' is only permitted when APP_MODE=demo")
+            origins.append("*")
+            continue
+        if "=" in entry or any(c.isspace() for c in entry):
+            raise ValueError(f"CORS_ORIGINS entry is not an origin: {entry[:60]!r}")
+        entry = entry.rstrip("/")
+        parts = urlsplit(entry)
+        try:
+            parts.port  # noqa: B018 — raises on an invalid port
+        except ValueError as exc:
+            raise ValueError(f"CORS_ORIGINS entry has an invalid port: {entry[:60]!r}") from exc
+        if (parts.scheme not in ("http", "https") or not parts.hostname or parts.path
+                or parts.query or parts.fragment or "@" in parts.netloc):
+            raise ValueError(f"CORS_ORIGINS entry must be http(s)://host[:port]: {entry[:60]!r}")
+        origins.append(f"{parts.scheme}://{parts.netloc.lower()}")
+    if "*" in origins and len(origins) > 1:
+        raise ValueError("CORS_ORIGINS wildcard '*' cannot be combined with explicit origins")
+    return origins
 
 
 class Settings(BaseSettings):
@@ -12,7 +83,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    CORS_ORIGINS: str = "*"  # str — parsed into a list by cors_origin_list
+    # Comma-separated (or JSON list) of browser origins allowed to call the API.
+    # Validated at startup (parse_cors_origins).  Unset/empty: APP_MODE=demo ->
+    # "*" for local development; anything else -> no cross-origin access.
+    CORS_ORIGINS: str = ""
     APP_MODE: str = "production"  # "demo" | "production" — default is production-safe
     REDIS_URL: str = ""  # redis://localhost:6379/0 — set in Render env
     INTEGRATION_WEBHOOK_SECRET: str = ""  # shared HMAC secret for Zoho/QB webhooks
@@ -504,6 +578,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    @model_validator(mode="after")
+    def _validate_cors_origins(self):
+        # Fail configuration (and therefore startup) on a malformed value.
+        parse_cors_origins(self.CORS_ORIGINS, self.APP_MODE)
+        return self
+
     @property
     def database_url(self) -> str:
         """Return an asyncpg-compatible connection string.
@@ -521,24 +601,9 @@ class Settings(BaseSettings):
 
     @cached_property
     def cors_origin_list(self) -> list[str]:
-        """Parse CORS_ORIGINS string into a list.
-
-        Accepts any of these formats from the env var:
-            *
-            https://example.com
-            https://a.com,https://b.com
-            ["https://a.com","https://b.com"]
-        Trailing slashes are stripped to avoid origin-mismatch bugs.
-        """
-        raw = self.CORS_ORIGINS.strip()
-        if raw.startswith("["):
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    return [s.strip().rstrip("/") for s in parsed if s.strip()]
-            except json.JSONDecodeError:
-                pass
-        return [s.strip().rstrip("/") for s in raw.split(",") if s.strip()]
+        """Validated CORS origins (see ``parse_cors_origins``).  ``["*"]`` only in
+        explicit demo mode; ``[]`` (no cross-origin access) when unset elsewhere."""
+        return parse_cors_origins(self.CORS_ORIGINS, self.APP_MODE)
 
     @property
     def cors_is_wildcard(self) -> bool:
@@ -602,11 +667,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-
-def api_docs_enabled(app_mode) -> bool:
-    """Interactive API docs (/docs, /redoc, /openapi.json) are served ONLY in
-    explicit demo mode (PP-0).  Fail-safe: production, a missing/empty value or
-    any unrecognised value disables them, mirroring APP_MODE's production-safe
-    default.  Local development uses APP_MODE=demo (see .env.example)."""
-    return str(app_mode or "").strip().lower() == "demo"
