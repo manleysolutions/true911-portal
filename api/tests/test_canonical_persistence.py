@@ -111,7 +111,13 @@ def zrows(extra=()):
     base = [{"zoho_id": "Z1", "facility": "RH Chicago #147", "account": None, "parent": None,
              "msisdn": "2025550102", "connection_type": "Emergency Phone",
              "subscription_type": None, "activation": "Active", "starlink": None, "sim": None,
-             "imei": None, "serial": None, "modified": "2026-09-01T00:00:00+00:00"}]
+             "imei": None, "serial": None, "modified": "2026-09-01T00:00:00+00:00"},
+            # the FACP's service type comes from a Zoho fire-alarm record joined by
+            # its radio (True911 equipment typing alone never confirms an FACP)
+            {"zoho_id": "Z2", "facility": "RH Chicago #147", "account": None, "parent": None,
+             "msisdn": None, "connection_type": "Fire Alarm", "subscription_type": None,
+             "activation": "Active", "starlink": "NAP-0001", "sim": None, "imei": None,
+             "serial": None, "modified": "2026-09-01T00:00:00+00:00"}]
     return base + list(extra)
 
 

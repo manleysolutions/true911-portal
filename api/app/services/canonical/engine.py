@@ -401,6 +401,10 @@ def _records(snap: dict, ix: _Index) -> list[dict]:
             "support_bids": set(ix.site_map.get(str(d.get("site_id")), ())),
             "lines": dl, "units": units,
             "is_facp": _is_facp_device(d, units), "is_napco": _is_napco_device(d),
+            # equipment typing (device type / model / a unit inferred from them)
+            # says what the HARDWARE is; only an operator classification
+            # override says what SERVICE it provides
+            "facp_explicit": d.get("override_service_type") == "Fire Alarm",
             "lifecycle": source_lifecycle(d.get("status")),
             "status": d.get("status"), "observed_at": d.get("last_heartbeat"),
             "location_text": site.get("site_name") or d.get("site_id"),
@@ -1014,6 +1018,21 @@ def _facp_services(bid, recs, fused, assets, finding, napco=None, groups=()) -> 
             sources.add(V.SRC_NAPCO)
         if operator:
             sources.add(V.SRC_OPERATOR)
+        # SERVICE CLASSIFICATION: a CONFIRMED FACP needs genuine service-type
+        # evidence - an operator FACP_SERVICE, a Zoho fire-alarm / FACP label
+        # (SKUs and telephone lines already excluded) or an operator override.
+        # True911 equipment typing alone never confirms it, and neither does
+        # an operator placement or lifecycle decision.
+        explicit = operator or any(
+            (r["source"] == V.SRC_ZOHO and r.get("cat") == V.FACP) or r.get("facp_explicit")
+            for r in comp_recs)
+        if conf == V.CONFIRMED and not explicit:
+            conf = V.PROBABLE
+            evidence.append("FACP type rests only on True911 equipment typing (device type / "
+                            "model / inferred unit) - not service-type evidence")
+            finding("FACP_TYPE_EQUIPMENT_ONLY", V.MEDIUM, bid, key,
+                    "no fire-alarm service-type evidence (Zoho label, operator FACP_SERVICE or "
+                    "override) - capped at PROBABLE, not counted")
         if naps and not operator and not backed and not (claimed - {V.SRC_ZOHO}) \
                 and conf == V.CONFIRMED:
             # a radio id only Zoho reports is Zoho evidence, not NAPCO evidence
