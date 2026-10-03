@@ -368,8 +368,10 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
                 {op.tone !== "good" && <span className="text-slate-500">— {op.summary}</span>}
               </p>
               <p className="text-[12px] text-slate-500">
-                {monitoredSvcs > 0 ? `${monitoredSvcs} monitored life-safety service${monitoredSvcs === 1 ? "" : "s"}` : `${svcList.length} life-safety service${svcList.length === 1 ? "" : "s"}`}
-                {connCount != null && ` · ${connCount} telephone line${connCount === 1 ? "" : "s"}`}
+                {invView
+                  ? invView.headline
+                  : <>{monitoredSvcs > 0 ? `${monitoredSvcs} monitored life-safety service${monitoredSvcs === 1 ? "" : "s"}` : `${svcList.length} life-safety service${svcList.length === 1 ? "" : "s"}`}
+                    {connCount != null && ` · ${connCount} telephone line${connCount === 1 ? "" : "s"}`}</>}
                 <span className="mx-1.5">·</span>E911: <span className="font-medium text-slate-700">{e911State.label}</span>
               </p>
             </div>
@@ -483,22 +485,26 @@ export default function LocationCommandCenter({ locationRef, locationName, inten
           )}
 
           {detail && tab === "connections" && invView && (
+            // canonical mode: the confirmed inventory is authoritative here.  No
+            // inferred services, devices, unlinked or historical numbers, and no
+            // monitoring word attached to a READY service (monitoring is separate).
             <Block title="Service inventory" icon={ShieldCheck}>
               <p className="text-[12px] text-slate-600">{invView.message}</p>
               {invView.services.length > 0 && (
-                <ul className="mt-2 divide-y divide-slate-100">
+                <ul aria-label="Confirmed services" className="mt-2 rounded-lg border border-slate-200 divide-y divide-slate-100">
                   {invView.services.map((s) => (
-                    <li key={s.key} className="py-1.5 flex items-center justify-between gap-3 text-[12px]">
-                      <span className="text-slate-900">{s.label}</span>
-                      <span className="text-slate-500">{[s.paths, s.phone].filter(Boolean).join(" · ")}</span>
+                    <li key={s.key} className="px-3 py-2 flex items-center justify-between gap-3 text-[12.5px]">
+                      <span className="text-slate-900 font-medium">{s.label}</span>
+                      <span className="text-slate-600 tabular-nums">{[s.phone, s.paths].filter(Boolean).join(" · ")}</span>
                     </li>
                   ))}
                 </ul>
               )}
+              {invView.finalizingNote && <p className="mt-2 text-[11.5px] text-slate-500">{invView.finalizingNote}</p>}
             </Block>
           )}
 
-          {detail && tab === "connections" && (
+          {detail && tab === "connections" && !invView && (
             <Block title="Services, telephone lines and devices" icon={PhoneCall}
               count={ws?.location ? `${ws.location.service_count} service${ws.location.service_count === 1 ? "" : "s"} · ${ws.location.connection_count} telephone line${ws.location.connection_count === 1 ? "" : "s"}` : null}>
               {groups.length === 0 ? <Muted>No life-safety services on file yet.</Muted> : (

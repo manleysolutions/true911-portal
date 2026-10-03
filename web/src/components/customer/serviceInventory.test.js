@@ -75,3 +75,22 @@ test("customer inventory UI never says 'certified'", () => {
     assert.doesNotMatch(src, /certified/i, f);
   }
 });
+
+test("drawer: canonical mode replaces the legacy Services & Lines and header counts", () => {
+  const v = locationInventoryView({ state: "PARTIALLY_READY", ready_services: [
+    { service_ref: "lss_2kA", service: "Elevator", name: "Elevator 1", required_paths: 1, telephone_number: "(904) 689-0616" },
+    { service_ref: "lss_2kB", service: "Elevator", name: "Elevator 2", required_paths: 1, telephone_number: "(904) 689-0656" }] });
+  assert.equal(v.headline, "Some service inventory confirmed · additional records being finalized");
+  assert.equal(v.finalizingNote, "Additional service records are being finalized by True911.");
+  assert.deepEqual(v.services.map((s) => [s.label, s.phone, s.paths]),
+    [["Elevator · Elevator 1", "(904) 689-0616", null], ["Elevator · Elevator 2", "(904) 689-0656", null]]);
+  assert.equal(locationInventoryView({ state: "READY", ready_services: [] }).finalizingNote, null);
+  const D = readFileSync(join(here, "LocationCommandCenter.jsx"), "utf8");
+  // the legacy services / lines / devices block renders ONLY when canonical mode is off
+  assert.match(D, /tab === "connections" && !invView && \(/);
+  // the header says readiness, not "N monitored life-safety services · N telephone lines"
+  assert.match(D, /\{invView\s*\?\s*invView\.headline/);
+  // the canonical block carries no monitoring word, status pill or device rows
+  const block = D.split('tab === "connections" && invView && (')[1].split("</Block>")[0];
+  assert.doesNotMatch(block, /Monitored|statusWord|<Pill|equipment|Cpu/);
+});

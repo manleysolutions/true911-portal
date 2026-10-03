@@ -1063,6 +1063,20 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
     connections = build_connections(ctx.key, services, extra_numbers,
                                     {k: v for k, v in overlay.items() if k},
                                     e911, open_requests)
+    # E911 keeps its own (unchanged) inputs: the numbers shown for review come
+    # from the legacy connection set, whatever the inventory mode.
+    e911_numbers = [c["phone_number"] for c in connections if c["phone_number"]]
+    inventory = ((ctx.record or {}).get("service_inventory")
+                 if ctx.mode == "registry" else None)
+    if inventory is not None:
+        # #186b canonical mode: Services & Lines is the canonical inventory ONLY -
+        # one row per READY service (its own carrier line, or none for an FACP).
+        # Legacy inferred services, unlinked / historical numbers and pooled
+        # lines are not presented as customer inventory.
+        services = canonical_services(inventory)
+        connections = build_connections(ctx.key, services, [],
+                                        {k: v for k, v in overlay.items() if k},
+                                        e911, open_requests)
     contacts = _contacts_view(loc_overlay, ctx.site)
     outstanding = _outstanding_actions(protection, e911, contacts["missing"], open_requests)
     return {
@@ -1082,8 +1096,11 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
             # one service may have several connections (lines / numbers), and a
             # connection may exist before it is linked to a service.
             "service_count": len(services),
-            "monitored_service_count": sum(1 for s in services
-                                           if (s.get("status") or {}).get("status") == "Protected"),
+            # monitoring is its own truth: a READY inventory service is never
+            # "monitored" by virtue of being ready
+            "monitored_service_count": (None if inventory is not None else
+                                        sum(1 for s in services
+                                            if (s.get("status") or {}).get("status") == "Protected")),
             "operational_state": cs.operational_state(
                 (protection or {}).get("status"),
                 linked=(ctx.record or {}).get("monitoring_linked", True) if ctx.mode == "registry" else True),
@@ -1094,12 +1111,27 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
         "profile": _profile_view(loc_overlay),
         "contacts": contacts,
         "connections": connections,
-        "e911": {**e911, "dispatch_address": address,
-                 "service_numbers": [c["phone_number"] for c in connections if c["phone_number"]]},
+        "e911": {**e911, "dispatch_address": address, "service_numbers": e911_numbers},
         "requests": [serialize_request(r) for r in requests[:25]],
         "activity": await load_activity(db, user.tenant_id, location_key=ctx.key, limit=30),
         "capabilities": capabilities(user),
     }
+
+
+def canonical_services(inventory: dict) -> list[dict]:
+    """The canonical READY services as the service rows Services & Lines builds
+    its connections from.  Status is UNKNOWN on purpose: inventory readiness is
+    not monitoring evidence.  An FACP carries no number (required paths are a
+    requirement, never a provisioned number)."""
+    from app.services.customer import serialize as cs
+    out = []
+    for s in inventory.get("ready_services") or []:
+        n = pdev.norm_phone(s.get("telephone_number")) if s.get("telephone_number") else None
+        out.append({"service_ref": s["service_ref"], "service": s["service"], "name": s["name"],
+                    "phone_numbers": [n] if n else [], "equipment": [], "attention_items": [],
+                    "status": cs.status_object("Unknown",
+                                               reason="Monitoring status is shown separately.")})
+    return out
 
 
 def _outstanding_actions(protection, e911, contacts_missing, open_requests) -> list:
