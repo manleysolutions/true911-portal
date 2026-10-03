@@ -866,6 +866,13 @@ def strip_internal_markers(name) -> str:
     return re.sub(r"\s+", " ", out).strip(" -–—:,")
 
 
+def customer_text(value):
+    """A registry text field (city / state) in customer form: internal flags
+    stripped, None when nothing customer-safe is left (e.g. a city recorded as
+    "RESEARCH REQUIRED").  Never invents a value."""
+    return strip_internal_markers(value) or None
+
+
 def customer_name(name, fallback: str = "Location") -> str:
     """The ONLY form in which a site / building record name reaches a customer
     (CG-1 L2): internal research / review flags stripped; ``fallback`` when
@@ -879,6 +886,8 @@ def building_display_name(canonical_name, store_number, city, site_type) -> str:
     Gallery' — with the operating company, store jargon and internal review flags
     stripped."""
     label = _BUILDING_CATEGORY_LABEL.get((site_type or "").lower(), "Location")
+    # a flag recorded in the CITY field ("RESEARCH REQUIRED") is not a city
+    city = customer_text(city)
     base = re.sub(r"(?i)\brestoration hardware\b|\brh\b|#\s*\d+|\bstore\b|\(main account\)",
                   " ", strip_internal_markers(canonical_name))
     base = re.sub(r"\s+", " ", base).strip(" -–,")
@@ -906,7 +915,7 @@ def portfolio_building(b: dict) -> dict:
     source-system internals ever."""
     site_type = b.get("site_type")
     store = b.get("store_number") if valid_store_number(b.get("store_number")) else None
-    city = b.get("city")
+    city = customer_text(b.get("city"))
     display = b.get("display_name") or building_display_name(b.get("canonical_name"), store, city, site_type)
     pending = bool(b.get("pending"))
     protection = b.get("protection") or status_object("Unknown")
@@ -923,7 +932,7 @@ def portfolio_building(b: dict) -> dict:
                                     else protection.get("status", "Unknown")),
         "service_address": b.get("address") if not pending else None,
         "city": city,
-        "state": b.get("state"),
+        "state": customer_text(b.get("state")),
         "zip": b.get("zip"),
         "map_point": b.get("map_point"),
         "confidence": confidence_bucket(b.get("confidence")),

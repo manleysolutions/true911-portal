@@ -364,3 +364,39 @@ def test_preview_leak_scan_detects_internal_values():
     assert pv.leak_scan({"x": "RESEARCH REQUIRED Gallery"}, [])
     assert pv.leak_scan({"x": "radio 77110020"}, ["77110020"])
     assert pv.leak_scan({"x": "Elevator 1"}, ["77110020"]) == []
+
+
+def test_preview_with_marker_names_and_cities_scans_clean(canon):
+    """The production failure: buildings whose NAME and CITY carry the internal
+    flag.  The strict leak scan must pass because the names are clean - not
+    because the scan was weakened."""
+    from scripts import canonical_customer_preview as pv
+
+    async def _go():
+        engine, Session = await make_db()
+        try:
+            await seed(Session)
+            await canonical_world(Session)
+            async with Session() as db:
+                for bid, name, st, store in (
+                        (50, "RESEARCH REQUIRED Gallery", "gallery", None),
+                        (51, "RESEARCH REQUIRED Distribution Center", "distribution_center", None),
+                        (52, "RESEARCH REQUIRED Gallery #653", "store", "653")):
+                    db.add(PortfolioBuilding(id=bid, tenant_id=RH, canonical_name=name,
+                                             store_number=store, site_type=st, status="active",
+                                             city="RESEARCH REQUIRED", approved=True))
+                await db.commit()
+            async with Session() as db:
+                res = await pv.preview(db, RH)
+                await db.rollback()
+            return res
+        finally:
+            await engine.dispose()
+    res = asyncio.run(_go())
+    names = [loc["location"] for loc in res["payload"]["locations"]]
+    assert {"Gallery", "Distribution Center", "Gallery #653"} <= set(names)
+    assert res["leak_scan"] == []
+    assert "RESEARCH" not in pv.render(res).upper()
+    # and the scan is still strict: the literal marker anywhere fails it
+    assert pv.leak_scan({"location": "RESEARCH REQUIRED Gallery"}, [])
+    assert pv.leak_scan({"x": {"y": ["RESEARCH REQUIRED Distribution Center"]}}, [])
