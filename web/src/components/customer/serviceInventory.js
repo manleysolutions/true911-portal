@@ -27,19 +27,21 @@ const FALLBACK_MESSAGES = {
 export function portfolioInventoryView(summary) {
   const inv = summary && summary.service_inventory;
   if (!inv) return null;
-  const total = inv.locations_total || 0;
   const withInventory = (inv.locations_ready || 0) + (inv.locations_partially_ready || 0);
-  if (!withInventory) {
-    return { value: INVENTORY_PLACEHOLDER, numeric: false, pending: true,
-      detail: "Service inventory appears as True911 confirms it" };
-  }
+  // location READINESS is the headline - never a service or connection total
+  const breakdown = [
+    [inv.locations_ready, "ready"],
+    [inv.locations_partially_ready, "partially ready"],
+    [inv.locations_being_finalized, "being finalized"],
+    [inv.locations_no_services_on_record, "no services on record"],
+  ].filter(([n]) => n > 0).map(([n, w]) => `${n} ${w}`).join(" · ");
   return {
-    value: `${withInventory} of ${total} locations`,
+    value: withInventory
+      ? `${withInventory} ${withInventory === 1 ? "location has" : "locations have"} confirmed inventory`
+      : INVENTORY_PLACEHOLDER,
     numeric: false,
-    pending: !!inv.records_being_finalized,
-    detail: inv.records_being_finalized
-      ? "Service inventory confirmed by True911 · additional records are being finalized"
-      : "Service inventory confirmed by True911",
+    pending: !!inv.records_being_finalized || !withInventory,
+    detail: breakdown || "Service inventory appears as True911 confirms it",
   };
 }
 

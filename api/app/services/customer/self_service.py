@@ -1184,6 +1184,10 @@ async def action_center(db, user, now) -> dict:
 
     needs_attention, e911_confirm, e911_not_ready, missing_contacts = [], [], [], []
     being_reconciled = []
+    # every location's authoritative E911 state, counted - presentation only, so
+    # the portfolio can be reconciled (confirm + preparing + submitted / pending /
+    # review / on-file == locations).  Never derives or upgrades a state.
+    e911_states = {s: 0 for s in E911_STATE_LABELS}
     for loc in locations:
         name, ref = names[loc["key"]], loc["ref"]
         st = (loc["protection"] or {}).get("status")
@@ -1197,6 +1201,7 @@ async def action_center(db, user, now) -> dict:
                                      "label": op["label"], "reason": op["summary"]})
         e = e911_state(official_verified=loc["official_verified"], has_address=loc["has_address"],
                        latest_request=_latest_e911_request(req_by_loc.get(loc["key"], [])))
+        e911_states[e["state"]] = e911_states.get(e["state"], 0) + 1
         row = {"location_ref": ref, "location": name, "state": e["state"], "label": e["label"],
                "reason": e["reason"], "action": e["customer_action"]}
         if e["customer_action_required"]:
@@ -1239,6 +1244,7 @@ async def action_center(db, user, now) -> dict:
                    "e911_not_ready": len(e911_not_ready),
                    "e911_attention": len(e911_confirm) + len(e911_not_ready),
                    "e911_verification_required": len(e911_confirm) + len(e911_not_ready),
+                   "e911_states": e911_states,
                    "missing_contact_information": len(missing_contacts),
                    "open_requests": len(open_reqs),
                    "being_reconciled": len(being_reconciled)},

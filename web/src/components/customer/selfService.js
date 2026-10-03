@@ -348,7 +348,7 @@ export const TONES = { good: "good", problem: "problem", urgent: "urgent", neutr
 // Location operational state (from the API's `operational_state.state`).
 const OPERATIONAL = {
   monitored: { label: "Monitored", tone: "good" },
-  attention_required: { label: "Needs attention", tone: "problem" },
+  attention_required: { label: "Service issue", tone: "problem" },
   // UNKNOWN states: True911's work, said plainly — never green, never red (D-022)
   being_reconciled: { label: "Monitoring record being confirmed", tone: "neutral", owner: "true911",
     summary: "True911 is confirming this location's monitoring information. No action is needed from you." },
@@ -392,8 +392,8 @@ export function locationTrue911Work(ws, op) {
 // reads "Monitored" (what the evidence supports); "Unknown" is neutral.
 const STATUS_WORDS = {
   Protected: { label: "Monitored", tone: "good" },
-  "Attention Needed": { label: "Needs attention", tone: "problem" },
-  Critical: { label: "Needs attention now", tone: "urgent" },
+  "Attention Needed": { label: "Service issue", tone: "problem" },
+  Critical: { label: "Urgent service issue", tone: "urgent" },
   "Pending Install": { label: "Being installed", tone: "neutral" },
   Inactive: { label: "Inactive", tone: "neutral" },
   Unknown: { label: "Status being confirmed", tone: "neutral" },
@@ -426,7 +426,7 @@ export function portfolioHero(summary, ac) {
 
   const dimensions = [
     { key: "service_status", title: "Service status",
-      value: attention ? plural(attention, "location needs attention", "locations need attention") : "No known service issues",
+      value: attention ? plural(attention, "location has a service issue", "locations have service issues") : "No known service issues",
       detail: attention ? "Being worked on — see Urgent below." : "Based on current monitoring evidence.",
       tone: attention ? "problem" : "good" },
     { key: "monitoring", title: "Monitoring coverage",

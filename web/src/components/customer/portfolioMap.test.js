@@ -127,8 +127,12 @@ test("point signature is stable across re-fetches and changes with the point set
   assert.notEqual(pointsSignature(a), pointsSignature(c));     // filter changed the set → refit
 });
 
-test("missing-coordinate count stays visible in the map footer", () => {
-  assert.match(MAP, /\{hidden > 0 && <div[^>]*>\{hidden\} location\{hidden === 1 \? "" : "s"\} not shown on the map \(no coordinates on file\)\.<\/div>\}/);
+test("missing-coordinate count stays visible in the map footer, as information not a warning", () => {
+  assert.match(MAP, /\{hidden > 0 && \(/);
+  assert.match(MAP, /\{missingPointsText\(hidden\)\}/);
+  assert.match(MAP, /role="note"/);
+  assert.match(MAP, /remain available in the Locations view/);
+  assert.doesNotMatch(MAP, /not shown on the map/);
 });
 
 // ── filters + list/map toggle ────────────────────────────────────────
@@ -163,7 +167,7 @@ test("list and map views share the filtered set and toggle on view state", () =>
 test("status marker semantics are unchanged (wording only changed, D-028)", async () => {
   const { MAP_LEGEND_ITEMS } = await import("./commandCenter.js");
   assert.deepEqual(MAP_LEGEND_ITEMS.map((i) => [i.label, i.token]), [
-    ["Monitored", "good"], ["Needs attention", "attention"], ["Being confirmed by True911", "unknown"],
+    ["Monitored", "good"], ["Service issue", "attention"], ["Being confirmed by True911", "unknown"],
     ["Your action needed", "action"]]);
   assert.match(MAP, /MAP_LEGEND_ITEMS\.map/);
 });

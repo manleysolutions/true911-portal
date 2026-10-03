@@ -23,7 +23,7 @@ import { useCustomerNav } from "@/components/customer/command/CustomerShell";
 // A location without linked monitoring is "Monitoring record being confirmed"
 // (neutral, True911's work) — never "unprotected"; nothing is green without
 // evidence.  No blended health score; no service / connection totals until the
-// canonical inventory is certified; no green E911 until it is provider-backed.
+// canonical inventory is confirmed; no green E911 until it is provider-backed.
 // Every word / colour decision lives in commandCenter.js + selfService.js.
 //
 // Data: GET /customer/portfolio/summary, /customer/locations, /customer/search,
@@ -266,7 +266,7 @@ export default function CustomerAssuranceView() {
 
   const tileClick = (tile) => {
     if (tile.target === "locations") return () => setView("locations");
-    if (tile.target === "attention" && tile.value > 0) return () => { setStatusFilter("Needs attention"); setView("locations"); };
+    if (tile.target === "attention" && tile.value > 0) return () => { setStatusFilter("Service issue"); setView("locations"); };
     if (tile.target === "actions" && actionCenter) return () => setView("actions");
     return null;
   };

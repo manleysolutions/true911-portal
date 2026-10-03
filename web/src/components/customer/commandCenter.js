@@ -8,7 +8,7 @@
 //     authoritative, provider-backed verification (today "Verified" can be derived
 //     from legacy validated/confirmed values).
 //   * No life-safety service or connection totals until the canonical inventory
-//     is certified (D-023) — never derived from numbers, devices or legacy units.
+//     is confirmed (D-023) — never derived from numbers, devices or legacy units.
 //   * Customer action and True911 work are always labelled by owner (D-028).
 // ════════════════════════════════════════════════════════════════════
 
@@ -100,11 +100,13 @@ export function statusStatement(summary, ac, locations = []) {
   if (total === 0) {
     tone = "unknown"; title = "Your locations are being set up";
   } else if (urgent > 0) {
-    tone = "critical"; title = `${plural(urgent, "location needs", "locations need")} attention now`;
+    tone = "critical"; title = `${plural(urgent, "location has an urgent service issue", "locations have urgent service issues")}`;
   } else if (attention > 0) {
-    tone = "attention"; title = `${plural(attention, "location needs", "locations need")} attention`;
+    tone = "attention"; title = `${plural(attention, "location has a service issue", "locations have service issues")}`;
   } else {
-    title = "No known issues requiring attention";
+    // SERVICE health only - customer tasks (E911 confirmations, replies) are
+    // counted in the Action Center and never make this a "service issue"
+    title = "No known service issues";
     // green only when EVERY location is evidence-backed monitored
     tone = monitored === total ? "good" : "unknown";
   }
@@ -148,7 +150,7 @@ export function opTiles(summary, ac, locations = []) {
     { key: "locations", title: "Locations", icon: "locations", token: "neutral",
       value: total, numeric: true, target: "locations",
       detail: [`${ops.monitored || 0} monitored`, being && `${being} being confirmed by True911`].filter(Boolean).join(" · ") },
-    { key: "attention", title: "Needs attention", icon: "attention",
+    { key: "attention", title: "Service issues", icon: "attention",
       token: urgent ? "critical" : attention ? "attention" : "neutral",
       value: attention, numeric: true, target: "attention",
       detail: attention ? "True911 is working on it" : "No known service issues" },
@@ -160,7 +162,7 @@ export function opTiles(summary, ac, locations = []) {
           : { value: "Nothing waiting on you", numeric: false })
         : { value: "Verification by the verification team", numeric: false }),
       detail: ac
-        ? [notReady && `${notReady} being prepared by True911`, "Verified status appears only after official E911 verification"].filter(Boolean).join(" · ")
+        ? [...e911Reconciliation(c).others.map((p) => p.text), "Verified status appears only after official E911 verification"].join(" · ")
         : "Verified status appears only after official E911 verification" },
     servicesTile(m),
   ];
@@ -172,13 +174,40 @@ export function opTiles(summary, ac, locations = []) {
 function servicesTile(m) {
   const inv = portfolioInventoryView(m);
   if (!inv) {
-    return { key: "services", title: "Life-safety services", icon: "services", token: "working",
+    return { key: "services", title: "Service inventory", icon: "services", token: "working",
       value: "Being finalized by True911", numeric: false, target: null,
-      detail: "Service and connection totals appear once your inventory is confirmed" };
+      detail: "Service and connection totals appear once your inventory is confirmed." };
   }
-  return { key: "services", title: "Life-safety services", icon: "services",
+  return { key: "services", title: "Service inventory", icon: "services",
     token: inv.pending ? "working" : "neutral", value: inv.value, numeric: false, target: null,
     detail: inv.detail };
+}
+
+// ── E911 reconciliation ────────────────────────────────────────────
+// Accounts for EVERY location from the API's authoritative per-location E911
+// state (counts.e911_states).  Presentation only - a state is never derived or
+// upgraded here, and an official record reads "record on file", never
+// "verified" (provider-backed verification is not yet available).
+const E911_OTHER_STATES = [
+  ["not_verified", "being prepared by True911"],
+  ["customer_submitted", "submitted · awaiting verification"],
+  ["verification_pending", "verification in progress"],
+  ["requires_review", "correction under review"],
+  ["verified", "record on file"],
+];
+export function e911Reconciliation(counts) {
+  const c = counts || {};
+  const confirm = c.e911_confirmation_required || 0;
+  const st = c.e911_states;
+  if (!st) {               // older payload: what the API used to say, unchanged
+    const nr = c.e911_not_ready || 0;
+    return { confirm, others: nr ? [{ key: "not_verified", count: nr, text: `${nr} being prepared by True911` }] : [],
+      accounted: confirm + nr, total: c.locations ?? null };
+  }
+  const others = E911_OTHER_STATES.filter(([k]) => st[k] > 0)
+    .map(([k, words]) => ({ key: k, count: st[k], text: `${st[k]} ${words}` }));
+  return { confirm, others, accounted: confirm + others.reduce((n, p) => n + p.count, 0),
+    total: c.locations ?? null };
 }
 
 // ── Map markers: shape + glyph + text, never colour alone ───────────
@@ -197,9 +226,15 @@ export function markerView(loc, actionRefs = new Set()) {
     ariaLabel: `${loc?.location || "Location"}: ${label}${action ? ". Your action needed" : ""}`,
   };
 }
+// Locations without a usable map point: the count is always disclosed, in
+// customer words (never geocoded, never placed - D-027).
+export function missingPointsText(n) {
+  return n === 1 ? "1 location is being prepared for map display."
+    : `${n} locations are being prepared for map display.`;
+}
 export const MAP_LEGEND_ITEMS = [
   { token: "good", shape: "circle", label: "Monitored" },
-  { token: "attention", shape: "diamond", label: "Needs attention" },
+  { token: "attention", shape: "diamond", label: "Service issue" },
   { token: "unknown", shape: "ring", label: "Being confirmed by True911" },
   { token: "action", shape: "badge", label: "Your action needed" },
 ];
@@ -255,6 +290,22 @@ export function summarizeTiers(tiers, maxPerTier = 3) {
     const total = t.sections.reduce((n, s) => n + s.items.length, 0);
     return { ...t, sections, total, hidden: total - sections.reduce((n, s) => n + s.items.length, 0) };
   });
+}
+// The Overview's compact action summary: at most `max` rows across the
+// operational tiers IN ORDER (urgent, then your action, then True911's work),
+// each keeping its section (so its ownership label), plus the total of
+// customer actions for the single "View all" link.  The full queue is the
+// Action Center view.
+export function overviewActions(tiers, max = 3) {
+  const rows = [];
+  for (const t of (tiers || []).filter((x) => SUMMARY_TIERS.includes(x.tier))) {
+    for (const s of t.sections || []) {
+      for (const item of s.items || []) {
+        if (rows.length < max) rows.push({ tier: t.tier, section: s, item });
+      }
+    }
+  }
+  return { rows, total: actionTotal(tiers) };
 }
 export function actionTotal(tiers) {
   return (tiers || []).filter((t) => t.tier === "action_needed").reduce((n, t) => n + t.count, 0);

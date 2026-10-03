@@ -185,11 +185,11 @@ test("known failures stay prominent, even without a monitoring link", () => {
   assert.equal(statusWord("Critical").tone, "urgent");
   assert.equal(statusWord("Attention Needed").tone, "problem");
   const crit = locationOperational({ protection: { status: "Critical" }, monitoring_linked: false });
-  assert.equal(crit.label, "Needs attention"); assert.equal(crit.tone, "urgent");
+  assert.equal(crit.label, "Service issue"); assert.equal(crit.tone, "urgent");
   assert.equal(operationalView({ state: "attention_required" }).tone, "problem");
   const hero = portfolioHero({ ...RH_SUMMARY, operational_states: { ...RH_SUMMARY.operational_states, attention_required: 2 } }, RH_AC);
   const svc = hero.dimensions.find((d) => d.key === "service_status");
-  assert.equal(svc.tone, "problem"); assert.equal(svc.value, "2 locations need attention");
+  assert.equal(svc.tone, "problem"); assert.equal(svc.value, "2 locations have service issues");
 });
 
 test("RH portfolio hero states facts without implying failure", () => {

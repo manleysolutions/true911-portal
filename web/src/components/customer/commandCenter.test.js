@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import {
   STATUS_TOKENS, OP_TOKEN, tokenFor, e911Display, E911_PROVIDER_VERIFICATION_AVAILABLE,
   statusStatement, opTiles, markerView, MAP_LEGEND_ITEMS, ownership, heroChips,
-  parseView, summarizeTiers, actionTotal, exceptionsPreview, SUMMARY_TIERS,
+  parseView, summarizeTiers, actionTotal, exceptionsPreview, SUMMARY_TIERS, overviewActions,
+  e911Reconciliation, missingPointsText,
 } from "./commandCenter.js";
 import { locationOperational, actionCenterSections, actionCenterTiers } from "./selfService.js";
 import { mapMarkers } from "./portfolioMap.js";
@@ -50,7 +51,7 @@ const loc = (ref, protection, extra = {}) => ({ location_ref: ref, location: ref
 // ── UNKNOWN is never GOOD and never FAILED ───────────────────────────
 test("UNKNOWN is not rendered as GOOD", () => {
   const st = statusStatement(SUMMARY, AC_DATA, []);
-  assert.equal(st.title, "No known issues requiring attention");
+  assert.equal(st.title, "No known service issues");
   assert.match(st.detail, /^True911 is confirming monitoring information at 16 locations/);
   assert.equal(st.tone, "unknown", "16 unconfirmed locations: the statement is not green");
   assert.notEqual(statusStatement({ ...SUMMARY, operational_states: { ...SUMMARY.operational_states, being_reconciled: 0, not_yet_confirmed: 16 } }, AC_DATA).tone, "good");
@@ -84,7 +85,7 @@ test("a known problem stays prominent; urgent is critical", () => {
   const items = [loc("a", "Critical"), loc("b", "Attention Needed")];
   const st = statusStatement({ ...SUMMARY, operational_states: { ...SUMMARY.operational_states, attention_required: 2 } }, AC_DATA, items);
   assert.equal(st.tone, "critical");
-  assert.equal(st.title, "1 location needs attention now");
+  assert.equal(st.title, "1 location has an urgent service issue");
   assert.equal(markerView(items[0]).token, "critical");
   assert.equal(markerView(items[1]).shape, "diamond");
   const tile = opTiles({ ...SUMMARY, operational_states: { ...SUMMARY.operational_states, attention_required: 2 } }, AC_DATA, items).find((t) => t.key === "attention");
@@ -206,7 +207,9 @@ test("missing coordinates remain disclosed and no map point is fabricated", () =
   assert.match(MAP, /const \{ markers, hidden \} = useMemo\(\(\) => mapMarkers\(locations\), \[locations\]\)/);
   assert.match(MAP, /position=\{point\}/);
   assert.doesNotMatch(MAP, /geocod|nominatim|lat:\s*[-\d]|fallback/i);
-  assert.match(MAP, /not shown on the map \(no coordinates on file\)/);
+  assert.match(MAP, /missingPointsText\(hidden\)/);
+  assert.equal(missingPointsText(16), "16 locations are being prepared for map display.");
+  assert.equal(missingPointsText(1), "1 location is being prepared for map display.");
   assert.match(MAP, /TILE_CONFIG\.url/); assert.match(MAP, /TILE_CONFIG\.attribution/);
 });
 
@@ -260,10 +263,20 @@ test("Overview, Action Center and Locations are real views (?view=), not page se
   assert.match(VIEW, /mode="summary" onViewAll=\{\(\) => setView\("actions"\)\}/);
 });
 
-test("Overview rail summarizes: first items + totals + View all; no nested scrolling", async () => {
+test("Overview rail summarizes: at most 3 rows + the action total + one View all; no nested scrolling", async () => {
   const { actionCenterTiers } = await import("./selfService.js");
   const many = { ...AC_DATA, e911_confirmation_required: Array.from({ length: 35 }, (_, i) => ({ location_ref: `b${i}`, location: `L${i}` })) };
   const full = actionCenterTiers(many);
+  const ov = overviewActions(full, 3);
+  assert.equal(ov.rows.length, 3, "never more than 3 rows on Overview");
+  assert.equal(ov.total, 36, "the CTA carries the real number of customer actions");
+  // order + ownership kept: rows come from the operational tiers, in order, with their section
+  assert.ok(ov.rows.every((r) => SUMMARY_TIERS.includes(r.tier) && r.section && r.section.key));
+  assert.equal(overviewActions([], 3).rows.length, 0);
+  assert.match(AC, /View all \$\{total\} actions/);
+  assert.match(AC, /overviewActions\(all, 3\)/);
+  assert.doesNotMatch(AC.split("function ActionSummary")[1].split("export default")[0], /aria-expanded|AnimatePresence/,
+    "no nested expansion on Overview");
   const sum = summarizeTiers(full);
   assert.deepEqual(sum.map((t) => t.tier), full.map((t) => t.tier).filter((t) => SUMMARY_TIERS.includes(t)));
   const act = sum.find((t) => t.tier === "action_needed");
@@ -275,7 +288,6 @@ test("Overview rail summarizes: first items + totals + View all; no nested scrol
   assert.equal(act.sections[1].items[0].location_ref, "b0");
   // full view keeps every item
   assert.equal(full.find((t) => t.tier === "action_needed").sections.find((s) => s.key === "e911_confirmation_required").items.length, 35);
-  assert.match(AC, /View all \$\{waiting\} actions/);
   assert.doesNotMatch(AC, /overflow-y-auto|max-h-/, "no nested scroll regions in the Action Center");
   assert.doesNotMatch(VIEW, /max-h-\[\d+px\] overflow-y-auto/, "location list scrolls with the page");
 });
@@ -285,6 +297,6 @@ test("Overview location preview is exceptions-first and never relabels a locatio
     loc("crit", "Critical"), loc("ok2", "Protected")];
   const pv = exceptionsPreview(ls, new Set(["ok2"]), 4);
   assert.deepEqual(pv.map((l) => l.location_ref), ["crit", "att", "ok2", "unk"]);
-  assert.deepEqual(pv.map((l) => l.op.label), ["Needs attention", "Needs attention", "Monitored", "Monitoring record being confirmed"]);
+  assert.deepEqual(pv.map((l) => l.op.label), ["Service issue", "Service issue", "Monitored", "Monitoring record being confirmed"]);
   assert.match(VIEW, /View all \{locations\.length\} locations/);
 });
