@@ -9,6 +9,8 @@
 
 // Primary contextual actions, in display order.  `cap` names the capability flag
 // from GET /customer/self-service/capabilities that unlocks it.
+import { portfolioInventoryView } from "./serviceInventory.js";
+
 export const PRIMARY_ACTIONS = [
   { key: "manage_location", label: "Manage Location", cap: "can_manage_location" },
   { key: "manage_connections", label: "Manage Telephone Lines", cap: "can_manage_location" },
@@ -403,6 +405,14 @@ export function statusWord(status) {
 // ── Portfolio hero: facts, four separate dimensions, and who owns what ──
 // Deliberately NO blended health score: documentation / data completeness is
 // "Portfolio setup", never presented as service health.
+// The "Service inventory" fact: the canonical readiness when the backend sends
+// it (#186b), else the original placeholder exactly.  Never a service total.
+function inventoryFact(m) {
+  const inv = portfolioInventoryView(m);
+  if (!inv) return { key: "inventory", label: "Service inventory", value: "Being finalized by True911", pending: true };
+  return { key: "inventory", label: "Service inventory", value: inv.value, detail: inv.detail, pending: inv.pending };
+}
+
 export function portfolioHero(summary, ac) {
   const m = summary || {};
   const ops = m.operational_states || {};
@@ -453,7 +463,7 @@ export function portfolioHero(summary, ac) {
       // The legacy distinct-telephone-number count is NOT a count of life-safety
       // connections (D-023); no service/connection total is shown until the
       // canonical inventory is approved for customer use.
-      { key: "inventory", label: "Service inventory", value: "Being finalized by True911", pending: true },
+      inventoryFact(m),
     ],
     dimensions, customerActions, operationsActions,
   };

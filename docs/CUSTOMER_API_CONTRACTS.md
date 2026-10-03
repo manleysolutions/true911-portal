@@ -48,6 +48,20 @@ shapes below.
   telemetry, IPs, firmware, vendor (Vola) ids, or internal notes — **ever**.
 - **Opaque refs.** Path ids are opaque `*_ref` tokens, server-resolved to
   `WHERE tenant_id == current_user.tenant_id` rows (never the raw `site_id`/db id).
+  - **Format (CG-1, v2):** `<kind>_2<k><ciphertext>`. The ciphertext is
+    deterministic authenticated encryption (AES-SIV), with the kind and version
+    authenticated as associated data.
+  - **Opaque:** no db id, telephone number or canonical key can be recovered by
+    inspecting a ref.
+  - **Fails closed:** a wrong-kind, tampered, truncated, wrong-version or other-key
+    ref resolves to `None`, which the API returns as 404.
+  - **Durable key:** `CUSTOMER_REF_SECRET`, at least 32 characters. Generate it
+    with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+  - **Unset:** a non-durable transitional key (marker `t`) keeps the legacy customer
+    API working, and the canonical read model refuses to run on it.
+  - **Rotation:** refs are never persisted, so setting or rotating the secret only
+    invalidates refs a browser already holds. Old links return 404, the UI
+    reloads fresh refs, and no data migration is needed.
 - **No false green.** A `Protected`/green status is emitted **only** with a populated
   `evidence` object + `as_of`. Missing data → `Unknown`, never green.
 - **Separate axes (D-006).** `protection` (operational), `emergency_address` (E911), and

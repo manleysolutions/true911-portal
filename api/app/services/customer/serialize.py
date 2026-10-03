@@ -179,7 +179,7 @@ def location_summary(site, *, protection: dict) -> dict:
     """List-level Location (no street in list view)."""
     return {
         "location_ref": encode_ref("loc", site.id),
-        "location": site.site_name,
+        "location": customer_name(site.site_name),
         "building_type": site.building_type,
         "city": site.e911_city,
         "state": site.e911_state,
@@ -324,7 +324,7 @@ def e911_summary(site, *, history: Optional[list] = None,
     verified = (site.e911_status or "").lower() in _E911_VERIFIED
     active = (site.status or "").lower() == "active"
     return {
-        "location": site.site_name,
+        "location": customer_name(site.site_name),
         "emergency_dispatch_address": _address(site),
         "verification": {
             "state": e911_state_label(site),
@@ -442,7 +442,7 @@ def location_detail(site, *, protection: dict, services: Optional[list] = None,
     read-only endpoint)."""
     return {
         "location_ref": encode_ref("loc", site.id),
-        "location": site.site_name,
+        "location": customer_name(site.site_name),
         "building_type": site.building_type,
         "service_address": _address(site),
         "protection": protection,
@@ -486,7 +486,7 @@ def attention_item(site, *, protection: dict) -> dict:
     status = protection.get("status", "Unknown")
     return {
         "location_ref": encode_ref("loc", site.id),
-        "location": site.site_name,
+        "location": customer_name(site.site_name),
         "status": status,
         "reason": protection.get("reason") or _CUSTOMER_SUMMARY.get(status, ""),
         "action": _CUSTOMER_ACTION.get(status, ""),
@@ -866,6 +866,14 @@ def strip_internal_markers(name) -> str:
     return re.sub(r"\s+", " ", out).strip(" -–—:,")
 
 
+def customer_name(name, fallback: str = "Location") -> str:
+    """The ONLY form in which a site / building record name reaches a customer
+    (CG-1 L2): internal research / review flags stripped; ``fallback`` when
+    nothing customer-safe is left.  Customer-entered display names are their own
+    text and are not passed through here."""
+    return strip_internal_markers(name) or fallback
+
+
 def building_display_name(canonical_name, store_number, city, site_type) -> str:
     """A calm customer display name — e.g. 'Chicago Gallery #147', 'Linden House
     Gallery' — with the operating company, store jargon and internal review flags
@@ -904,7 +912,7 @@ def portfolio_building(b: dict) -> dict:
     protection = b.get("protection") or status_object("Unknown")
     return {
         "building_ref": b["building_ref"],
-        "canonical_name": b.get("canonical_name"),
+        "canonical_name": customer_name(b.get("canonical_name"), display),
         "display_name": display,
         "store_number": store,
         "site_type": site_type,
@@ -933,15 +941,19 @@ def portfolio_building(b: dict) -> dict:
         "building_health": b.get("separated_health"),
         "maturity": b.get("maturity"),
         "completeness": b.get("completeness"),
+        # #186b canonical service inventory - present ONLY when enabled
+        **({"service_inventory": b["service_inventory"]} if "service_inventory" in b else {}),
     }
 
 
 def portfolio_building_summary(b: dict) -> dict:
     """List-level canonical Building (omits street, mirrors ``location_summary``)."""
     full = portfolio_building(b)
-    return {k: full[k] for k in (
+    extra = ({"service_inventory": {k: full["service_inventory"][k] for k in ("state", "message")}}
+             if "service_inventory" in full else {})
+    return {**extra, **{k: full[k] for k in (
         "building_ref", "canonical_name", "display_name", "store_number", "site_type",
         "building_category", "status", "customer_visible_status", "city", "state",
         "map_point", "confidence", "protection", "monitoring_linked", "operational_state",
         "life_safety_services_count",
-        "equipment_count", "device_count", "phone_number_count", "emergency_address_state")}
+        "equipment_count", "device_count", "phone_number_count", "emergency_address_state")}}

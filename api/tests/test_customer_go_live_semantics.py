@@ -21,6 +21,7 @@ import json
 from sqlalchemy import select
 
 from app.models.device import Device
+from app.models.line import Line
 from app.models.portfolio_registry import PortfolioBuilding, PortfolioDeviceMapping
 from app.models.site import Site
 from app.services.customer import serialize as cs
@@ -50,6 +51,10 @@ async def _extra(Session):
         db.add(PortfolioDeviceMapping(tenant_id=RH, building_id=1, kind="phone",
                                       value="3125550177", value_normalized="3125550177",
                                       source="test", active=True))
+        # the monitored service's number is a provisioned line (Line.did) - a
+        # device MSISDN is never used as the customer's number (CG-1 L3)
+        db.add(Line(line_id="L-147-1", tenant_id=RH, site_id="RH-147", device_id="D-147-1",
+                    provider="t-mobile", did="3125550100", status="active"))
         await db.commit()
 
 

@@ -63,10 +63,7 @@ async def load_portfolio_summary(db: AsyncSession, tenant_id: str, now) -> dict:
         select(Line.did).where(Line.tenant_id == tenant_id, Line.did.isnot(None)))).all():
         if did:
             numbers.add(did.strip())
-    for (msisdn,) in (await db.execute(
-        select(Device.msisdn).where(Device.tenant_id == tenant_id, Device.msisdn.isnot(None)))).all():
-        if msisdn:
-            numbers.add(msisdn.strip())
+    # CG-1 L3: device / SIM MSISDNs are not customer telephone numbers
 
     e911_with_address = sum(1 for s, _p in portfolio
                             if all([s.e911_street, s.e911_city, s.e911_state, s.e911_zip]))
@@ -209,8 +206,10 @@ async def _build_location_services(db, tenant_id, site, now) -> list[dict]:
         present.add(d.device_id)
         u = unit_by_device.get(d.device_id)
         ln = line_by_device.get(d.device_id)
+        # CG-1 L3: a customer number is a provisioned line DID only - a device /
+        # SIM MSISDN is never shown as the customer's number merely as a fallback
         phone = ((line_did_by_id.get(u.line_id) if (u and u.line_id) else None)
-                 or (ln.did if ln else None) or getattr(d, "msisdn", None))
+                 or (ln.did if ln else None))
         items.append({
             "device_id": d.device_id, "model": d.model, "device_type": d.device_type,
             "manufacturer": getattr(d, "manufacturer", None), "carrier": getattr(d, "carrier", None),
@@ -255,7 +254,7 @@ async def load_location_services(db: AsyncSession, tenant_id: str, location_ref:
     site = await resolve_site(db, tenant_id, location_ref)
     if site is None:
         return None
-    return {"location": site.site_name, "services": await _build_location_services(db, tenant_id, site, now)}
+    return {"location": cs.customer_name(site.site_name), "services": await _build_location_services(db, tenant_id, site, now)}
 
 
 # ── Digital Twin location sub-resources (Phase 3/5/7) ────────────────
@@ -263,21 +262,21 @@ async def load_location_documents(db: AsyncSession, tenant_id: str, location_ref
     site = await resolve_site(db, tenant_id, location_ref)
     if site is None:
         return None
-    return {"location": site.site_name, **cs.documents_placeholder()}
+    return {"location": cs.customer_name(site.site_name), **cs.documents_placeholder()}
 
 
 async def load_location_photos(db: AsyncSession, tenant_id: str, location_ref: str):
     site = await resolve_site(db, tenant_id, location_ref)
     if site is None:
         return None
-    return {"location": site.site_name, **cs.photos_placeholder()}
+    return {"location": cs.customer_name(site.site_name), **cs.photos_placeholder()}
 
 
 async def load_location_contacts(db: AsyncSession, tenant_id: str, location_ref: str):
     site = await resolve_site(db, tenant_id, location_ref)
     if site is None:
         return None
-    return {"location": site.site_name, **cs.location_contacts(site)}
+    return {"location": cs.customer_name(site.site_name), **cs.location_contacts(site)}
 
 
 async def load_location_inspections(db: AsyncSession, tenant_id: str, location_ref: str):
@@ -285,7 +284,7 @@ async def load_location_inspections(db: AsyncSession, tenant_id: str, location_r
     if site is None:
         return None
     # No inspection data source yet -> honest empty (real-only).
-    return {"location": site.site_name, **cs.inspections_placeholder(items=[])}
+    return {"location": cs.customer_name(site.site_name), **cs.inspections_placeholder(items=[])}
 
 
 async def load_location_health(db: AsyncSession, tenant_id: str, location_ref: str, now):
@@ -348,7 +347,7 @@ async def load_location_health(db: AsyncSession, tenant_id: str, location_ref: s
         "testing": has_inspection, "compliance": False, "photos": has_photos,
         "e911": verified})
 
-    return {"location": site.site_name, "as_of": now.isoformat(), "health": health,
+    return {"location": cs.customer_name(site.site_name), "as_of": now.isoformat(), "health": health,
             "building_health": separated, "maturity": maturity}
 
 
@@ -358,7 +357,7 @@ async def load_location_timeline(db: AsyncSession, tenant_id: str, location_ref:
     if site is None:
         return None
     logs = await load_e911_history(db, tenant_id, site.site_id)
-    return {"location": site.site_name, "timeline": [cs.timeline_item(lg) for lg in logs]}
+    return {"location": cs.customer_name(site.site_name), "timeline": [cs.timeline_item(lg) for lg in logs]}
 
 
 # ── Enterprise search (Phase 3 + 8) ──────────────────────────────────
@@ -410,7 +409,7 @@ async def search_portfolio(db: AsyncSession, tenant_id: str, q: str, now):
         .order_by(Site.site_name).limit(_SEARCH_MAX))).scalars().all()
     results = [{
         "location_ref": cs.encode_ref("loc", s.id),
-        "location": s.site_name,
+        "location": cs.customer_name(s.site_name),
         "city": s.e911_city,
         "state": s.e911_state,
         "emergency_address_state": cs.e911_state_label(s),

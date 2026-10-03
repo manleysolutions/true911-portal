@@ -13,6 +13,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import { portfolioHero } from "./selfService.js";
+import { portfolioInventoryView } from "./serviceInventory.js";
 
 // ── Semantic status tokens (the ONLY place status colours are defined) ──
 // Classes are literal strings so Tailwind's JIT sees them.  `hex` is for the
@@ -161,10 +162,23 @@ export function opTiles(summary, ac, locations = []) {
       detail: ac
         ? [notReady && `${notReady} being prepared by True911`, "Verified status appears only after official E911 verification"].filter(Boolean).join(" · ")
         : "Verified status appears only after official E911 verification" },
-    { key: "services", title: "Life-safety services", icon: "services", token: "working",
-      value: "Being finalized by True911", numeric: false, target: null,
-      detail: "Service and connection totals appear once your inventory is certified" },
+    servicesTile(m),
   ];
+}
+
+// The services tile: the canonical service-inventory readiness when the backend
+// sends it, else the original placeholder (unchanged).  Never a service or
+// connection total.
+function servicesTile(m) {
+  const inv = portfolioInventoryView(m);
+  if (!inv) {
+    return { key: "services", title: "Life-safety services", icon: "services", token: "working",
+      value: "Being finalized by True911", numeric: false, target: null,
+      detail: "Service and connection totals appear once your inventory is confirmed" };
+  }
+  return { key: "services", title: "Life-safety services", icon: "services",
+    token: inv.pending ? "working" : "neutral", value: inv.value, numeric: false, target: null,
+    detail: inv.detail };
 }
 
 // ── Map markers: shape + glyph + text, never colour alone ───────────

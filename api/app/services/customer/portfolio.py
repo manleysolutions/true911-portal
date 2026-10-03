@@ -212,15 +212,15 @@ async def resolve_location(db: AsyncSession, tenant_id: str, location_ref: str, 
 
 
 async def _location_devices(db, tenant_id, site_id, units, device_by_id, preview, now):
-    """Customer-safe device list for a location.  Resolves each device's
-    line/callback identifier from a linked line (``Line.did``) else its own
-    number (``Device.msisdn``) — tenant-scoped, real data only."""
+    """Customer-safe device list for a location.  Resolves each device's line
+    identifier from a linked line (``Line.did``) only - a device / SIM MSISDN is
+    never shown as a fallback (CG-1 L3) - tenant-scoped, real data only."""
     device_rows = (await db.execute(
         select(Device).where(Device.tenant_id == tenant_id, Device.site_id == site_id)
     )).scalars().all()
     if not device_rows:
         return []
-    # line DID per device (one query for the site), falling back to msisdn.
+    # line DID per device (one query for the site); no MSISDN fallback (CG-1 L3).
     line_did = {
         line_id: did
         for line_id, did, dev_id in (
@@ -233,7 +233,7 @@ async def _location_devices(db, tenant_id, site_id, units, device_by_id, preview
     out = []
     for d in device_rows:
         line_id = unit_line_by_device.get(d.device_id)
-        identifier = (line_did.get(line_id) if line_id else None) or getattr(d, "msisdn", None)
+        identifier = line_did.get(line_id) if line_id else None
         if preview:
             protection = preview_protection(now)
         else:

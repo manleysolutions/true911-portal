@@ -325,6 +325,15 @@ class Settings(BaseSettings):
     FEATURE_CANONICAL_SERVICE_MODEL: str = "false"
     CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST: str = ""
 
+    # ── Customer reference tokens (CG-1) ─────────────────────────────
+    # Dedicated key for the opaque, authenticated customer *_ref tokens
+    # (app/services/customer/refs.py).  >= 32 chars; generate with
+    #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+    # Unset -> refs use a non-durable TRANSITIONAL key and the canonical
+    # customer read model stays OFF (fails closed).  Rotating it only
+    # invalidates refs a browser already holds (refs are never persisted).
+    CUSTOMER_REF_SECRET: str = ""
+
     # ── Operational source snapshots (D-024) ────────────────────────
     # Inventory-certification freshness window for NAPCO / T-Mobile / Verizon /
     # Red Pocket snapshots, measured from the SOURCE effective time.  This is
@@ -649,6 +658,13 @@ class Settings(BaseSettings):
     def customer_portfolio_preview_tenant_id_set(self) -> set[str]:
         """Tenants whose test user may preview ALL (approved + pending) buildings."""
         return {t.strip() for t in self.CUSTOMER_PORTFOLIO_PREVIEW_TENANT_ALLOWLIST.split(",")
+                if t.strip()}
+
+    @property
+    def canonical_service_model_tenant_id_set(self) -> set[str]:
+        """Tenants whose customer view may read the canonical service model
+        (when FEATURE_CANONICAL_SERVICE_MODEL is on)."""
+        return {t.strip() for t in self.CANONICAL_SERVICE_MODEL_TENANT_ALLOWLIST.split(",")
                 if t.strip()}
 
     @property
