@@ -89,6 +89,18 @@ async def _extra(Session):
             PortfolioBuilding(id=30, tenant_id=RH, canonical_name="RESEARCH REQUIRED Gallery #653",
                               store_number="653", site_type="gallery", status="active",
                               approved=True),
+            # the production shape: the internal flag recorded in BOTH the name
+            # and the CITY field
+            PortfolioBuilding(id=33, tenant_id=RH, canonical_name="RESEARCH REQUIRED Gallery",
+                              site_type="gallery", status="active", city="RESEARCH REQUIRED",
+                              state="RESEARCH REQUIRED", approved=True),
+            PortfolioBuilding(id=34, tenant_id=RH,
+                              canonical_name="RESEARCH REQUIRED Distribution Center",
+                              site_type="distribution_center", status="active",
+                              city="RESEARCH REQUIRED", approved=True),
+            PortfolioBuilding(id=35, tenant_id=RH, canonical_name="RESEARCH REQUIRED Gallery #653",
+                              store_number="653", site_type="store", status="active",
+                              city="RESEARCH REQUIRED", approved=True),
             PortfolioBuilding(id=31, tenant_id=RH, canonical_name="Retired Gallery #900",
                               store_number="900", site_type="gallery", status="inactive",
                               approved=True),
@@ -154,6 +166,60 @@ def test_l2_internal_name_markers_never_reach_the_customer(flags):
         assert "RESEARCH" not in text.upper().replace("RESEARCHED", "")
         assert "Gallery #653" in text                          # the real name survives
     run(sc)
+
+
+MARKER_CITY = [encode_ref("bldg", i) for i in (33, 34, 35)]
+
+
+@pytest.mark.parametrize("name,city,store,site_type,expected", [
+    ("RESEARCH REQUIRED Gallery", "RESEARCH REQUIRED", None, "gallery", "Gallery"),
+    ("RESEARCH REQUIRED Distribution Center", "RESEARCH REQUIRED", None, "distribution_center",
+     "Distribution Center"),
+    ("RESEARCH REQUIRED Gallery #653", "RESEARCH REQUIRED", "653", "store", "Gallery #653"),
+    ("RESEARCH REQUIRED Gallery #653", None, "653", "store", "Gallery #653"),
+    ("Chicago Gallery #147", "Chicago", "147", "gallery", "Chicago Gallery #147"),   # unchanged
+])
+def test_l2_marker_in_name_or_city_never_reaches_a_display_name(name, city, store, site_type,
+                                                                 expected):
+    from app.services.customer import serialize as cs
+    assert cs.building_display_name(name, store, city, site_type) == expected
+    assert cs.customer_text("RESEARCH REQUIRED") is None
+    assert cs.customer_text("Chicago") == "Chicago"
+
+
+def test_l2_marker_city_buildings_are_clean_on_every_customer_route(flags):
+    async def sc(c):
+        text = await _all_text(c, MARKER_CITY)
+        assert "RESEARCH" not in text.upper()
+        items = {i["display_name"]: i for i in
+                 (await c.get("/api/customer/locations?page_size=100")).json()["data"]["items"]}
+        for want in ("Gallery", "Distribution Center", "Gallery #653"):
+            assert want in items
+            assert items[want]["city"] is None and items[want]["canonical_name"] == want
+        found = (await c.get("/api/customer/search?q=research")).json()["data"]["results"]
+        assert found == []                           # an internal flag is not searchable
+    run(sc)
+
+
+def test_l2_the_registry_record_itself_is_untouched(flags):
+    async def sc(c):
+        await _all_text(c, MARKER_CITY)
+    run(sc)
+
+    async def check():
+        from sqlalchemy import select
+        engine, Session = await make_db()
+        try:
+            await seed(Session)
+            await _extra(Session)
+            async with Session() as db:
+                b = (await db.execute(select(PortfolioBuilding).where(
+                    PortfolioBuilding.id == 35))).scalar_one()
+                assert (b.canonical_name, b.city) == ("RESEARCH REQUIRED Gallery #653",
+                                                      "RESEARCH REQUIRED")
+        finally:
+            await engine.dispose()
+    asyncio.run(check())
 
 
 def test_l3_device_and_sim_msisdn_are_never_customer_numbers(flags):

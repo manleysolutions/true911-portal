@@ -468,7 +468,7 @@ def _matches(r, ql) -> bool:
         cs.customer_name(r.get("canonical_name"), ""), cs.building_display_name(r.get("canonical_name"),
                                                           r.get("store_number"), r.get("city"),
                                                           r.get("site_type")),
-        r.get("store_number"), r.get("city"), r.get("state")))
+        r.get("store_number"), cs.customer_text(r.get("city")), cs.customer_text(r.get("state"))))
     if ql in hay:
         return True
     # phone / service-type match

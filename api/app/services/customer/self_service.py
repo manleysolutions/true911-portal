@@ -528,8 +528,10 @@ async def _upsert_field(db, user, ctx: LocationContext, subject_key: str, fname:
 
 
 def _current_location_values(ctx: LocationContext) -> dict:
-    return {"canonical_name": ctx.canonical_name, "address": ctx.address, "city": ctx.city,
-            "state": ctx.state, "zip": ctx.zip, "store_number": ctx.store_number,
+    cs = _cs()
+    return {"canonical_name": ctx.canonical_name, "address": ctx.address,
+            "city": cs.customer_text(ctx.city), "state": cs.customer_text(ctx.state),
+            "zip": ctx.zip, "store_number": ctx.store_number,
             "site_type": ctx.site_type}
 
 
