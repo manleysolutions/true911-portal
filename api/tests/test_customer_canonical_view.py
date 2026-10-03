@@ -176,14 +176,26 @@ def test_inventory_is_absent_unless_fully_enabled(canon, variant):
              "no_secret": {"secret": ""}}[variant])
 
     async def sc(c):
-        assert "service_inventory" not in json.dumps(await _everything(c))
+        everything = await _everything(c)
+        assert '"service_inventory":' not in json.dumps(everything)
+        ws = everything[f"/api/customer/locations/{b1()}/workspace"]
+        if variant == "no_secret":
+            # canonical mode IS on: E911 fails closed - never the legacy numbers
+            assert ws["e911"]["service_inventory_source"] == "canonical_unavailable"
+            assert ws["e911"]["service_numbers"] == []
+        else:
+            assert "service_inventory_source" not in ws["e911"]   # legacy E911 exactly
     run(sc)
 
 
 @pytest.mark.parametrize("world", [{"run_degraded": True}, {"run_finished": False}])
 def test_no_clean_apply_run_means_no_inventory(canon, world):
     async def sc(c):
-        assert "service_inventory" not in json.dumps(await _everything(c))
+        everything = await _everything(c)
+        assert '"service_inventory":' not in json.dumps(everything)
+        ws = everything[f"/api/customer/locations/{b1()}/workspace"]
+        assert ws["e911"]["service_inventory_source"] == "canonical_unavailable"
+        assert ws["e911"]["service_numbers"] == []
     run(sc, **world)
 
 

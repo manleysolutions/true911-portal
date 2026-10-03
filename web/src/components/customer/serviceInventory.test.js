@@ -94,3 +94,10 @@ test("drawer: canonical mode replaces the legacy Services & Lines and header cou
   const block = D.split('tab === "connections" && invView && (')[1].split("</Block>")[0];
   assert.doesNotMatch(block, /Monitored|statusWord|<Pill|equipment|Cpu/);
 });
+
+test("Confirm E911 review lists the canonical confirmed services when the API sends them", () => {
+  const OPS = readFileSync(join(here, "LocationOperations.jsx"), "utf8");
+  assert.match(OPS, /e\.services \? \(/);                         // canonical set first
+  assert.match(OPS, /No confirmed service numbers on file yet/);  // fail-closed wording
+  assert.match(OPS, /\(e\.service_numbers \|\| \[\]\)\.join\(" · "\) \|\| "No number on file yet"/);  // flag-off unchanged
+});
