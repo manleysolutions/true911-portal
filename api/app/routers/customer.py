@@ -459,7 +459,10 @@ async def customer_location_services(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
         data = {"location": detail["display_name"], "services": detail["services"]}
         if "service_inventory" in detail:
-            data["service_inventory"] = detail["service_inventory"]
+            # canonical mode: the inventory is authoritative - legacy inferred
+            # service cards (and their devices / numbers) are not presented
+            data = {"location": detail["display_name"], "services": [],
+                    "service_inventory": detail["service_inventory"]}
         return {"as_of": now.isoformat(), "data": data}
     data = await cc.load_location_services(db, current_user.tenant_id, location_ref, now)
     if data is None:

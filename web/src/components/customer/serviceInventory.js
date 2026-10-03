@@ -60,5 +60,17 @@ export function locationInventoryView(inventory) {
       phone: s.telephone_number || null,
     })),
     pending: state === INVENTORY_STATES.PARTIALLY_READY || state === INVENTORY_STATES.BEING_FINALIZED,
+    // the drawer header: readiness language, never a synthetic service / line total
+    headline: HEADLINES[state],
+    finalizingNote: state === INVENTORY_STATES.PARTIALLY_READY
+      ? "Additional service records are being finalized by True911."
+      : state === INVENTORY_STATES.BEING_FINALIZED ? "Service records are being finalized by True911." : null,
   };
 }
+
+const HEADLINES = {
+  READY: "Service inventory confirmed",
+  PARTIALLY_READY: "Some service inventory confirmed · additional records being finalized",
+  BEING_FINALIZED: "Service inventory being finalized by True911",
+  NO_SERVICES_ON_RECORD: "No life-safety services on record",
+};
