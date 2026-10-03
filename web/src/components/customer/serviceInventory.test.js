@@ -24,7 +24,9 @@ const INV = {
 
 test("no service_inventory: both tiles keep the original placeholder exactly", () => {
   const tile = opTiles(SUMMARY_BASE, null).find((t) => t.key === "services");
+  assert.equal(tile.title, "Service inventory");
   assert.equal(tile.value, "Being finalized by True911");
+  assert.equal(tile.detail, "Service and connection totals appear once your inventory is confirmed.");
   assert.equal(tile.numeric, false);
   const fact = portfolioHero(SUMMARY_BASE, null).facts.find((f) => f.key === "inventory");
   assert.deepEqual(fact, { key: "inventory", label: "Service inventory",
@@ -34,10 +36,10 @@ test("no service_inventory: both tiles keep the original placeholder exactly", (
 
 test("with service_inventory: location counts only - never a service or connection total", () => {
   const tile = opTiles({ ...SUMMARY_BASE, service_inventory: INV }, null).find((t) => t.key === "services");
-  assert.equal(tile.value, "2 of 45 locations");
+  assert.equal(tile.title, "Service inventory");
+  assert.equal(tile.value, "2 locations have confirmed inventory");
   assert.equal(tile.numeric, false);
-  assert.match(tile.detail, /confirmed by True911/);
-  assert.match(tile.detail, /being finalized/);
+  assert.equal(tile.detail, "1 ready · 1 partially ready · 40 being finalized · 3 no services on record");
   const text = JSON.stringify(tile);
   assert.doesNotMatch(text, /\b3 services?\b|connections?\b|certif/i);
 });
@@ -46,6 +48,8 @@ test("no ready locations yet: still the placeholder wording", () => {
   const v = portfolioInventoryView({ service_inventory: { ...INV, locations_ready: 0, locations_partially_ready: 0 } });
   assert.equal(v.value, INVENTORY_PLACEHOLDER);
   assert.equal(v.pending, true);
+  const one = portfolioInventoryView({ service_inventory: { ...INV, locations_ready: 1, locations_partially_ready: 0 } });
+  assert.equal(one.value, "1 location has confirmed inventory");
 });
 
 test("location view: states, messages, requirements - never a number for FACP", () => {

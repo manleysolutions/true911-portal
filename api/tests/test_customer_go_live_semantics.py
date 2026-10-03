@@ -252,3 +252,19 @@ def test_json_payload_has_no_internal_terms(flags):
                      "portfolioreviewitem", "source confidence"):
             assert term not in dump.lower(), term
     run(sc)
+
+
+def test_e911_state_counts_reconcile_every_location_without_inventing_verified(flags):
+    """The E911 tile must account for EVERY location using the authoritative
+    per-location state (presentation only): confirm + preparing + the rest ==
+    locations, and the confirm / preparing figures match the action lists."""
+    async def sc(c, Session, state):
+        n = (await _ac(c))["counts"]
+        st = n["e911_states"]
+        assert sum(st.values()) == n["locations"]
+        assert st["customer_confirmation_required"] + st["failed"] == n["e911_confirmation_required"]
+        assert st["not_verified"] == n["e911_not_ready"]
+        assert st["verified"] == 0                       # no official record in this world
+        assert set(st) == {"not_verified", "customer_confirmation_required", "customer_submitted",
+                           "verification_pending", "requires_review", "failed", "verified"}
+    run(sc)

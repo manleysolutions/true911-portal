@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, ZoomControl, useMap } from "react-leaflet";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { X, ChevronRight, MapPin } from "lucide-react";
+import { X, ChevronRight, MapPin, Info } from "lucide-react";
 import { mapMarkers, pointsSignature } from "@/components/customer/portfolioMap";
 import { TILE_CONFIG, TILE_FAILURE_THRESHOLD } from "@/lib/mapTiles";
-import { STATUS_TOKENS, markerView, MAP_LEGEND_ITEMS, e911Display } from "@/components/customer/commandCenter";
+import { STATUS_TOKENS, markerView, MAP_LEGEND_ITEMS, e911Display, missingPointsText } from "@/components/customer/commandCenter";
 import { StatusChip, E911Badge } from "@/components/customer/command/CommandParts";
 
 // ════════════════════════════════════════════════════════════════════
@@ -152,7 +152,14 @@ export default function CommandMap({ locations, actionRefs, highlightRef, onHove
           </ul>
         </div>
       </div>
-      {hidden > 0 && <div className="px-4 py-2 border-t border-slate-100 text-[11px] text-slate-500">{hidden} location{hidden === 1 ? "" : "s"} not shown on the map (no coordinates on file).</div>}
+      {/* the count stays visible; a location without a point is never placed (D-027) */}
+      {hidden > 0 && (
+        <div role="note" title="Their location records remain available in the Locations view."
+          className="px-4 py-2 border-t border-slate-100 flex items-center gap-1.5 text-[11.5px] text-slate-600">
+          <Info className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" aria-hidden="true" />
+          <span>{missingPointsText(hidden)}<span className="sr-only"> Their location records remain available in the Locations view.</span></span>
+        </div>
+      )}
     </div>
   );
 }
