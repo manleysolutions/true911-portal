@@ -102,7 +102,15 @@ function E911Wizard({ ws, onClose, onDone, post }) {
       <p className="text-[12px] text-slate-500">Review what 911 dispatchers would see for <strong>{ws.location.display_name}</strong>. Your confirmation is recorded and the verification team completes the official verification.</p>
       <div className="rounded-lg border border-slate-200 p-3 space-y-2">
         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">1 · Service numbers</p>
-        <p className="text-[12.5px] text-slate-800">{(e.service_numbers || []).join(" · ") || "No number on file yet"}</p>
+        {/* canonical mode: the confirmed services and their numbers - the exact set
+            the attestation records; legacy mode: the existing number list */}
+        {e.services ? (
+          e.services.length > 0 ? (
+            <ul className="text-[12.5px] text-slate-800 space-y-0.5">
+              {e.services.map((s) => <li key={s.telephone_number}>{s.name || s.service} — <span className="tabular-nums">{s.telephone_number}</span></li>)}
+            </ul>
+          ) : <p className="text-[12.5px] text-slate-800">No confirmed service numbers on file yet</p>
+        ) : <p className="text-[12.5px] text-slate-800">{(e.service_numbers || []).join(" · ") || "No number on file yet"}</p>}
         <Check k="number_confirmed">These are the numbers used by this location's life-safety services.</Check>
       </div>
       <div className="rounded-lg border border-slate-200 p-3 space-y-2">

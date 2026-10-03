@@ -179,14 +179,20 @@ def test_jacksonville_historical_and_pooled_numbers_are_not_customer_inventory(c
     run(sc)
 
 
-def test_e911_and_the_flag_off_legacy_view_are_unchanged(canon):
+def test_e911_state_is_unchanged_and_the_flag_off_legacy_view_is_unchanged(canon):
+    """E911 STATE / address / provenance are identical in both modes; only the
+    eligible service-number set differs (canonical READY numbers vs legacy)."""
+    inventory_keys = ("service_numbers", "services", "service_inventory_source")
+
     async def both(c):
         ws = await _get(c, f"/api/customer/locations/{jax()}/workspace")
         return ws["e911"], ws
     e911_on, _ = run(both)
     canon(on="false")
     e911_off, legacy = run(both)
-    assert e911_on == e911_off                                # E911 untouched by canonical mode
+    strip = lambda e: {k: v for k, v in e.items() if k not in inventory_keys}  # noqa: E731
+    assert strip(e911_on) == strip(e911_off)                  # E911 state computation untouched
+    assert "service_inventory_source" not in e911_off         # flag off: legacy E911 exactly
     assert "service_inventory" not in legacy["location"]
     legacy_numbers = {x["phone_number"] for x in legacy["connections"]}
     assert fmt(HISTORICAL[0]) in legacy_numbers               # legacy view as before (flag off)

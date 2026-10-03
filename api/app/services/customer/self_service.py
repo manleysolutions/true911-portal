@@ -864,13 +864,21 @@ async def submit_e911_verification(db, user, ctx: LocationContext, body: dict) -
     contact = clean_contact(body.get("contact"), "contact") if body.get("contact") else None
     note = _clean_text(body.get("note"), 2000, "note")
     now = datetime.now(timezone.utc)
-    phones = sorted({p for p in ((ctx.record or {}).get("connection_numbers") or [])})
-    if ctx.mode == "site" and ctx.site is not None:
-        from app.services.customer import portfolio as cportfolio
-        eps = await cportfolio.load_e911_endpoints(db, user.tenant_id, ctx.site.site_id)
-        phones = sorted({n for n in (pdev.norm_phone(e.get("callback_number")) for e in eps) if n})
+    elig = e911_service_inventory(user, ctx)
+    if elig is not None:
+        # canonical mode: EXACTLY the canonical-safe set the review showed -
+        # never the legacy line / device / registry numbers (fail closed)
+        phones = list(elig["numbers"])
+    else:
+        phones = sorted({p for p in ((ctx.record or {}).get("connection_numbers") or [])})
+        if ctx.mode == "site" and ctx.site is not None:
+            from app.services.customer import portfolio as cportfolio
+            eps = await cportfolio.load_e911_endpoints(db, user.tenant_id, ctx.site.site_id)
+            phones = sorted({n for n in (pdev.norm_phone(e.get("callback_number")) for e in eps) if n})
     snapshot = {"dispatch_address": _dispatch_address(ctx),
                 "location": ctx.canonical_name, "service_numbers": phones}
+    if elig is not None:
+        snapshot.update(services=elig["services"], service_inventory_source=elig["source"])
     changes = {
         "attestation": {"attested_by": getattr(user, "name", None) or user.email,
                         "attested_by_email": user.email, "attested_at": now.isoformat(),
@@ -1111,11 +1119,43 @@ async def location_workspace(db, user, ctx: LocationContext, now) -> dict:
         "profile": _profile_view(loc_overlay),
         "contacts": contacts,
         "connections": connections,
-        "e911": {**e911, "dispatch_address": address, "service_numbers": e911_numbers},
+        "e911": {**e911, "dispatch_address": address, **_e911_inventory_view(user, ctx, e911_numbers)},
         "requests": [serialize_request(r) for r in requests[:25]],
         "activity": await load_activity(db, user.tenant_id, location_key=ctx.key, limit=30),
         "capabilities": capabilities(user),
     }
+
+
+# Services whose telephone number may accompany an E911 confirmation.  An FACP
+# never contributes a number (its paths are requirements, not numbers).
+_E911_NUMBERED_SERVICES = ("Elevator", "Emergency Phone")
+
+
+def e911_service_inventory(user, ctx: "LocationContext"):
+    """The service / telephone inventory eligible to accompany an E911
+    confirmation, or None when canonical mode is OFF for the tenant (the caller
+    then keeps its existing legacy behaviour exactly).
+
+    Canonical mode ON: ONLY the customer-safe canonical READY Elevator /
+    Emergency Phone services with their own carrier-line number.  Historical,
+    pooled / unclassified, probable and FACP records never contribute.  If the
+    canonical inventory is unavailable (failed closed, no clean run, site-mode
+    fallback) the list is EMPTY - never the legacy line / device inventory.
+    Address confirmation is unaffected."""
+    from app.services.customer import canonical_view as cview
+    if not cview.canonical_mode_enabled(getattr(user, "tenant_id", None)):
+        return None
+    inv = (ctx.record or {}).get("service_inventory") if ctx.mode == "registry" else None
+    if inv is None:
+        return {"source": "canonical_unavailable", "services": [], "numbers": []}
+    services, numbers = [], []
+    for s in inv.get("ready_services") or []:
+        n = pdev.norm_phone(s.get("telephone_number")) if s.get("telephone_number") else None
+        if s.get("service") in _E911_NUMBERED_SERVICES and n and n not in numbers:
+            numbers.append(n)
+            services.append({"service": s["service"], "name": s.get("name"),
+                             "telephone_number": format_phone(n)})
+    return {"source": "canonical", "services": services, "numbers": numbers}
 
 
 def canonical_services(inventory: dict) -> list[dict]:
@@ -1132,6 +1172,17 @@ def canonical_services(inventory: dict) -> list[dict]:
                     "status": cs.status_object("Unknown",
                                                reason="Monitoring status is shown separately.")})
     return out
+
+
+def _e911_inventory_view(user, ctx, legacy_numbers) -> dict:
+    """The numbers the Confirm E911 review shows - the SAME set the attestation
+    will record.  Canonical mode: canonical READY numbered services only; off:
+    the existing legacy numbers, unchanged."""
+    elig = e911_service_inventory(user, ctx)
+    if elig is None:
+        return {"service_numbers": legacy_numbers}
+    return {"service_numbers": [format_phone(n) for n in elig["numbers"]],
+            "services": elig["services"], "service_inventory_source": elig["source"]}
 
 
 def _outstanding_actions(protection, e911, contacts_missing, open_requests) -> list:
